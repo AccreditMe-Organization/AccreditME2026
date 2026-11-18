@@ -64,10 +64,27 @@ export function isWorkingDay(dt: DateTime, { calendar, holidays }: LoadedCalenda
   // Luxon weekday: 1=Mon…7=Sun. Modulo 7 maps Sunday (7) → 0, matching our 0=Sun convention.
   if (!calendar.workingDays.includes(dt.weekday % 7)) return false;
   return !holidays.some((h) => {
-    const hDate = DateTime.fromJSDate(h.date).setZone(calendar.timezone);
+    // ACC-318 — a holiday is a CALENDAR DAY, stored as midnight UTC of that
+    // date. Its day is read in UTC, never in the organisation's zone: in a zone
+    // behind UTC, midnight UTC is the evening before, so 25 December would fall
+    // on the 24th. `dt` is already the organisation's local day.
+    const hDate = DateTime.fromJSDate(h.date, { zone: 'utc' });
     if (h.isRecurring) return hDate.month === dt.month && hDate.day === dt.day;
     return hDate.month === dt.month && hDate.day === dt.day && hDate.year === dt.year;
   });
+}
+
+/**
+ * ACC-319 — a day's working window as two real instants in the calendar's
+ * zone. The difference between them is that day's REAL working hours: one
+ * fewer, or one more, on a day the clocks change inside the window. Both the
+ * deadline and the hours-between maths read a day through this, so they agree.
+ */
+function windowOf(day: DateTime, calendar: WorkingCalendarShape): { open: DateTime; close: DateTime } {
+  const [startHour, startMin] = parseHHmm(calendar.workingHoursStart);
+  const [endHour, endMin] = parseHHmm(calendar.workingHoursEnd);
+  const midnight = day.startOf('day');
+  return { open: midnight.set({ hour: startHour, minute: startMin }), close: midnight.set({ hour: endHour, minute: endMin }) };
 }
 
 function nextWorkingStart(dt: DateTime, loaded: LoadedCalendar): DateTime {
@@ -102,35 +119,19 @@ function nextWorkingDayStart(current: DateTime, loaded: LoadedCalendar): DateTim
  * opening. The inverse of hoursBetweenWith().
  */
 export function deadlineWith(loaded: LoadedCalendar, start: DateTime, workingHours: number): DateTime {
-  const { calendar } = loaded;
-  const [endHour, endMin] = parseHHmm(calendar.workingHoursEnd);
-  const workingHoursPerDay = hoursPerDayOf(calendar);
-
   // Normalize: advance to next valid working period if start is outside one
-  let current = nextWorkingStart(start.setZone(calendar.timezone), loaded);
-
-  // Hours remaining in the current working day from `current`
-  const todayEnd = current.startOf('day').set({ hour: endHour, minute: endMin });
-  const remainingInToday = todayEnd.diff(current, 'hours').hours;
-
+  let current = nextWorkingStart(start.setZone(loaded.calendar.timezone), loaded);
   let remainingHours = workingHours;
 
-  // Fits entirely within today's remaining working hours
-  if (remainingHours <= remainingInToday) {
-    return current.plus({ hours: remainingHours }).toUTC();
-  }
-
-  // Use up today, then advance to the next working day
-  remainingHours -= remainingInToday;
-  current = nextWorkingDayStart(current, loaded);
-
-  // Subtract full working days until less than one day remains
-  while (remainingHours > workingHoursPerDay) {
-    remainingHours -= workingHoursPerDay;
+  // ACC-319 — each day gives what is REALLY left of its window (elapsed time,
+  // so a day the clocks change gives one hour fewer or more), never a fixed
+  // end − start. The remainder lands inside the day that holds it.
+  for (;;) {
+    const availableToday = windowOf(current, loaded.calendar).close.diff(current, 'hours').hours;
+    if (remainingHours <= availableToday) return current.plus({ hours: remainingHours }).toUTC();
+    remainingHours -= availableToday;
     current = nextWorkingDayStart(current, loaded);
   }
-
-  return current.plus({ hours: remainingHours }).toUTC();
 }
 
 /**
@@ -142,8 +143,6 @@ export function deadlineWith(loaded: LoadedCalendar, start: DateTime, workingHou
 export function hoursBetweenWith(loaded: LoadedCalendar, from: DateTime, to: DateTime): number {
   if (to <= from) return 0;
   const { calendar } = loaded;
-  const [startHour, startMin] = parseHHmm(calendar.workingHoursStart);
-  const [endHour, endMin] = parseHHmm(calendar.workingHoursEnd);
 
   const start = from.setZone(calendar.timezone);
   const end = to.setZone(calendar.timezone);
@@ -151,8 +150,8 @@ export function hoursBetweenWith(loaded: LoadedCalendar, from: DateTime, to: Dat
   let total = 0;
   for (let day = start.startOf('day'); day < end; day = day.plus({ days: 1 })) {
     if (!isWorkingDay(day, loaded)) continue;
-    const open = day.set({ hour: startHour, minute: startMin });
-    const close = day.set({ hour: endHour, minute: endMin });
+    // ACC-319 — the same window deadlineWith() reads, so the two agree.
+    const { open, close } = windowOf(day, calendar);
     const overlapStart = open > start ? open : start;
     const overlapEnd = close < end ? close : end;
     if (overlapEnd > overlapStart) {

@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DateTime } from 'luxon';
 import { WorkingCalendarService } from './working-calendar.service';
@@ -70,6 +71,8 @@ const mockPrisma = {
   workingCalendar: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    createMany: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
   },
   auditLog: {
@@ -100,6 +103,13 @@ describe('WorkingCalendarService', () => {
         return Promise.resolve(null);
       },
     );
+    // ACC-317 — the row createMany() inserted (or found already there), read back.
+    let inserted: typeof CAL_A | null = null;
+    mockPrisma.workingCalendar.createMany.mockImplementation(({ data }: { data: Partial<typeof CAL_A>[] }) => {
+      inserted = { ...CAL_A, ...data[0]! };
+      return Promise.resolve({ count: 1 });
+    });
+    mockPrisma.workingCalendar.findUniqueOrThrow.mockImplementation(() => Promise.resolve(inserted));
     mockPrisma.publicHoliday.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -123,21 +133,25 @@ describe('WorkingCalendarService', () => {
       expect(mockPrisma.workingCalendar.create).not.toHaveBeenCalled();
     });
 
-    it('creates GCC default when no calendar exists', async () => {
-      mockPrisma.workingCalendar.findUnique.mockResolvedValueOnce(null);
-      mockPrisma.workingCalendar.create.mockResolvedValueOnce({
-        ...CAL_A, timezone: 'Asia/Riyadh', workingDays: [0, 1, 2, 3, 4],
+    // ACC-317 — the GCC default is inserted with skipDuplicates (INSERT … ON
+    // CONFLICT DO NOTHING, proved in working-calendar.db-spec.ts), then read
+    // back; never a plain create, which fails when another first read wins.
+    it('creates the GCC default with an insert that skips a duplicate, never a plain create', async () => {
+      const result = await service.getOrCreate('org-new');
+      expect(mockPrisma.workingCalendar.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            organizationId: 'org-new',
+            timezone: 'Asia/Riyadh',
+            workingDays: [0, 1, 2, 3, 4],
+            workingHoursStart: '08:00',
+            workingHoursEnd: '16:00',
+          },
+        ],
+        skipDuplicates: true,
       });
-      const result = await service.getOrCreate(ORG_A);
-      expect(mockPrisma.workingCalendar.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          organizationId: ORG_A,
-          timezone: 'Asia/Riyadh',
-          workingDays: [0, 1, 2, 3, 4],
-          workingHoursStart: '08:00',
-          workingHoursEnd: '16:00',
-        }),
-      });
+      expect(mockPrisma.workingCalendar.findUniqueOrThrow).toHaveBeenCalledWith({ where: { organizationId: 'org-new' } });
+      expect(mockPrisma.workingCalendar.create).not.toHaveBeenCalled();
       expect(result.workingDays).toEqual([0, 1, 2, 3, 4]);
     });
   });
@@ -159,9 +173,6 @@ describe('WorkingCalendarService', () => {
     });
 
     it('matches the zone getOrCreate() would store for a tenant without a calendar', async () => {
-      mockPrisma.workingCalendar.create.mockImplementationOnce(({ data }: { data: typeof CAL_A }) =>
-        Promise.resolve({ ...CAL_A, ...data }),
-      );
       const effective = await service.getEffectiveTimeZone('org-without-calendar');
       const created = await service.getOrCreate('org-without-calendar');
       expect(effective).toBe(created.timezone);
@@ -185,8 +196,9 @@ describe('WorkingCalendarService', () => {
         'actor-1',
       );
 
+      // ACC-318 — the date at midnight UTC, the calendar day every zone reads.
       expect(mockPrisma.publicHoliday.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ workingCalendarId: CAL_A.id, nameEn: 'National Day' }),
+        data: expect.objectContaining({ workingCalendarId: CAL_A.id, nameEn: 'National Day', date: new Date('2026-09-23T00:00:00.000Z') }),
       });
       expect(result.id).toBe(HOLIDAY_A.id);
       expect(mockAuditLog.log).toHaveBeenCalledWith(
@@ -377,6 +389,28 @@ describe('WorkingCalendarService', () => {
       const local = result.setZone('Asia/Riyadh');
       expect(local.weekday % 7).toBe(1); // Monday — recurring holiday still skipped in 2026
       expect(local.hour).toBe(10);
+    });
+  });
+
+  // ACC-318 — only a real IANA zone is saved, refused with a code before anything is written.
+  describe('update — the time zone', () => {
+    it.each(['Not/AZone', 'GMT+3 Riyadh', ''])('refuses %p with 400 WORKING_CALENDAR_TIMEZONE_INVALID, writing nothing', async (timezone) => {
+      const refusal = await service.update(ORG_A, { timezone }, 'actor-1').then(
+        () => null,
+        (e: unknown) => e as BadRequestException,
+      );
+      expect(refusal).toBeInstanceOf(BadRequestException);
+      expect(refusal!.getResponse()).toEqual(expect.objectContaining({ statusCode: 400, code: 'WORKING_CALENDAR_TIMEZONE_INVALID' }));
+      expect(mockPrisma.workingCalendar.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it.each(['America/New_York', 'Europe/London', 'Asia/Riyadh'])('saves %p', async (timezone) => {
+      mockPrisma.workingCalendar.update.mockResolvedValueOnce({ ...CAL_A, timezone });
+      await expect(service.update(ORG_A, { timezone }, 'actor-1')).resolves.toEqual(expect.objectContaining({ timezone }));
+      expect(mockPrisma.workingCalendar.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: ORG_A }, data: expect.objectContaining({ timezone }) }),
+      );
     });
   });
 

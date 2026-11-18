@@ -79,7 +79,7 @@ export interface ITaskRecordList {
   matching: number;
   scope: 'all' | 'own';
   /** ACC-244 — which list this is: one record's tasks, or an organisation-wide view. */
-  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created';
+  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created' | 'person';
   /** Only on the first page: the assignee and pool filter options. */
   facets: ITaskRecordListFacets | null;
   /** Where `around` sits (0-based) under this sort and these filters; null when absent or not matched. */

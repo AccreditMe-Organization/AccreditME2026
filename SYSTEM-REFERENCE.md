@@ -4719,9 +4719,19 @@ due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
   treats a before-opening time the same way.
 - **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
   Plan: `backend/Plans/step-175-deadline-before-opening.md`.
-- **Known, not built:** a holiday in a zone west of UTC lands a day early
-  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
-  saving. Every tenant is UTC+3 today.
+- **A holiday is its calendar day in every zone (ACC-318).** The API accepts
+  its date as `YYYY-MM-DD` only (a real date, no time, no offset: the pipe's
+  400 otherwise), the shape the screen sends, and stores that date at midnight
+  UTC (`holidayDateAt()`). `isWorkingDay()` (`working-time.ts`) reads its day
+  in UTC, never in the
+  organisation's zone. Before, a zone west of UTC read 25 December as the 24th.
+- **Each day counts its REAL working hours (ACC-319).** `deadlineWith()` spends
+  what is really left of each day's window, and `hoursBetweenWith()` sums the
+  same window (`windowOf()`), so the two agree on a day the clocks change inside
+  the window: London 00:00–08:00 has 7 hours on 29 March 2026 and 9 on
+  25 October, and a deadline never lands after the close. Before, every full day
+  counted a fixed end − start. Zones without clock changes (every Gulf zone) are
+  unchanged.
 
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
@@ -4993,12 +5003,13 @@ audit-logs (`{ escalatedTo, tier }` on a real fire, or
 an empty array — a skip, not a thrown error, matching Section 3.4's
 own framing of an unresolvable target as a real, unremarkable state).
 
-Working-hours gating is unchanged from the pre-ACC-46 mechanism:
-`isWithinWorkingHours()` (`:508`, re-implements the day/hour/holiday
-check inline since no dedicated method exists on
-`WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
-"Escalation triggers only fire during working hours," still genuinely
-enforced. Recording the breach (`slaBreachedAt`) is unconditional
+Working-hours gating wraps both tiers' firing — CLAUDE.md's "Escalation
+triggers only fire during working hours," still genuinely enforced. Since
+ACC-318 there is ONE rule, `isWorkingMomentWith()` (`working-time.ts`): the
+overdue pass asks it on the calendar it already loaded for the organisation,
+and `isWithinWorkingHours()` (the stage and pool escalations) asks it on
+`loadCalendar()`, read without creating a row. The hand copy is gone; its
+holiday check read the date in the organisation's zone. Recording the breach (`slaBreachedAt`) is unconditional
 regardless of working hours; only the escalation notify/stamp/audit-log
 steps are gated.
 
@@ -5782,12 +5793,22 @@ list.**
 |---|---|---|
 | On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
 | Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys. **ACC-120 slice 3:** My tasks (`mine`) and Created by me (`created`) need no key and are never a 403 | the view's tasks AND `taskVisibleSql()` |
+| **A person (`person`, ACC-216)** | yourself, or `users:view` — else a 403 naming it, BEFORE any read (the same for a real colleague and an invented id); then the person is read with `{ id, organizationId }`, so an invented id and another organisation's person are the identical 404 | the tasks the person is ON (`currentActiveAssigneeOfSql()`) AND `taskVisibleSql()`, in the `WHERE` before `LIMIT`; `view: 'person'`, `scope: 'all'` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
+**A person's tasks (ACC-216, plan `step-216-sessions-and-tasks.md` §5, Option A).**
+- **"On a task" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE` (`task-pool.ts`): a current assignee row (picked pool rows included) AND the person is ACTIVE. So a deactivated person has no tasks, even for a View all holder, whatever rows they left.
+  - `currentActiveAssigneeOf(userId)` is the Prisma form, built on `CURRENT_ACTIVE_ASSIGNEE`.
+  - `currentActiveAssigneeOfSql(userId)` is its SQL twin. `HAS_CURRENT_ACTIVE_ASSIGNEE_SQL` and it are built from the same two fragments, so they cannot drift.
+  - `task-pool.current-active.db-spec.ts` pins each SQL form to its Prisma form on a real Postgres.
+- **Nobody gains access:** the person is one condition beside the viewer's own rule, so every row is a task the viewer's task page already admits (`task-record-list.person.db-spec.ts` checks exactly that, per viewer).
+- **Never combined** with a record or a `view`: a 400, nothing read.
+- **The panel** (`record-panel?person=`) is the first five of the same scope, and never offers New task (`canCreate: false`): a person is not a record.
+
 | Endpoint | Returns |
 |---|---|
-| `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
+| `GET /tasks/record-panel?sourceType&sourceId`, or `?person` (ACC-216) | `{ total, scope, rows, canCreate }` — the first five of the order below; `total` is every task the viewer can see on the record, or that the person is on |
 | `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, the record types, the unit view's units and — ACC-120 slice 3 — `statusCounts`, all over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters. Each row carries `rejectedBy` (`{ id, name }` or null, ACC-120 slice 3) beside `rejectedReason` |
 
 Both are declared before `':id'`, with no `@Permissions` — the service
@@ -10477,7 +10498,10 @@ days.
 ### 9.7 The Tenant's Time Zone — One Field (ACC-94 D3, ACC-97)
 
 **`WorkingCalendar.timezone` is the organisation's ONLY time zone.** It is
-edited on the Working Calendar screen (`PATCH /working-calendar`) and read by
+edited on the Working Calendar screen (`PATCH /working-calendar`), which saves
+only a real IANA zone (Luxon's `IANAZone.isValidZone`, the library the deadline
+maths uses) and refuses anything else with 400
+`WORKING_CALENDAR_TIMEZONE_INVALID`, nothing written (ACC-318). It is read by
 **`WorkingCalendarService.calculateDeadline()`** (every SLA due date),
 **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date
 display** (via `GET /auth/me`). Display uses the zone the SLA engine computes
@@ -10506,6 +10530,16 @@ creation never set it; every row holds the column default) and returned by
 A new organisation's calendar starts at the GCC default (`getOrCreate()` seeds
 `GCC_DEFAULT`); a tenant outside that zone sets it on the Working Calendar
 screen.
+
+**The row is created by its first read, once (ACC-317).** `getOrCreate()` reads
+the row; when there is none it inserts the default with `createMany({
+skipDuplicates: true })`, which Prisma sends as `INSERT … ON CONFLICT DO
+NOTHING`, then reads it back. First reads at the same moment all get the one
+row, and none fails on the unique key. An `upsert` with an empty `update` is
+NOT used: measured on Postgres, Prisma sends it as a read, an insert and a read
+(an emulated upsert, the same race). `working-calendar.db-spec.ts` proves the
+statement and eight simultaneous first reads. Nothing is created at tenant
+bootstrap.
 
 ---
 
