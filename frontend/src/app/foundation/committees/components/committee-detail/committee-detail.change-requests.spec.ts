@@ -44,7 +44,7 @@ const COMMITTEE = (stageRules: CommitteeStageRulesDto): CommitteeDetailDto => ({
   isDissolving: false,
   stageRules,
   typeValue: null,
-  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true },
 });
 
 
