@@ -1234,6 +1234,13 @@ model OrgPosition {
   grade              Int
   isSingleAssignee   Boolean  @default(false)
   isUnitHeadPosition Boolean  @default(false)
+  /// The PERMISSION BRIDGE: a person holds a position, a head-conferring position
+  /// confers this role, and the role carries permissions. Read by the
+  /// head-authority grant chain (UserService.syncHeadAuthorityRoleGrant() →
+  /// RoleService.grantRoleViaHeadAuthority()); proved by
+  /// foundation/user/org-position-role-grant.db-spec.ts. NOT a workflow assignee:
+  /// stages are worked by their `who` pools (ACC-271), never by a role. Do not
+  /// remove it (ACC-136, Ahmad 27 Sep).
   roleId             String?
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
