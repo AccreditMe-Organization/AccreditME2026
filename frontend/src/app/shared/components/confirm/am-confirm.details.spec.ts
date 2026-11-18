@@ -5,6 +5,7 @@ import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
 import { AmConfirmOptions, AmConfirmService, CONFIRM_ACCEPT_CLASS } from './am-confirm.service';
 import { ConfirmHostComponent } from './confirm-host.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 /**
  * ACC-240 — ask()'s optional `details`: lines listed in the confirm, before the
@@ -22,6 +23,8 @@ class HostComponent {
 }
 
 describe('AmConfirmService.ask() — details (ACC-240)', () => {
+  // The gap below is measured (CC-333): in the app's own font, not a fallback.
+  useLayoutFonts();
   let fixture: ComponentFixture<HostComponent>;
 
   beforeEach(() => {
