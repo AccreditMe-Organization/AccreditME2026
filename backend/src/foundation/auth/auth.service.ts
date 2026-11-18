@@ -804,7 +804,10 @@ export class AuthService {
     // INACTIVE, and the check above catches that. But tenant.guard.ts's own
     // comment says the mechanism is also meant to cover a password change, and
     // the first caller that bumps the version WITHOUT deactivating would have
-    // reopened the hole with nothing failing to say so.
+    // reopened the hole with nothing failing to say so. (Since then password
+    // reset and the two-step reset do exactly that, and since ACC-216 CC-301
+    // deactivation bumps it through endEverySessionInTx() too, revoking the
+    // refresh rows as well.)
     //
     // NULL means the row was written before this column existed. Treated as
     // "unknown", which falls back to the status check — exactly the behaviour

@@ -117,6 +117,35 @@ async function decide(
 }
 
 /**
+ * Q-A's rule, the one place it is decided: may this action be done on the
+ * actor's OWN membership row? Allowed, and not granted by the seat alone for an
+ * action in SEAT_NEVER_ON_OWN_ROW. The write (assertMemberAction) and the read
+ * (committeeMemberActionsFor's change_own_seat) both ask this.
+ */
+function allowedOnOwnRow(verdict: Verdict, action: MemberAction): boolean {
+  return verdict.actions[action] && !(SEAT_NEVER_ON_OWN_ROW.includes(action) && verdict.bySeat.has(action));
+}
+
+/** ACC-320 — the committee read's member actions: the four, and whether the viewer may change their OWN seat. */
+export type CommitteeMemberActions = MemberActions & { change_own_seat: boolean };
+
+/**
+ * ACC-320 — what GET /committees/:id says the viewer may do: the four actions,
+ * plus `change_own_seat` from the same decide() pass and allowedOnOwnRow(), so
+ * the page reads the server's answer instead of copying Q-A. No extra query.
+ */
+export async function committeeMemberActionsFor(
+  client: Client,
+  organizationId: string,
+  committeeId: string,
+  viewer: CommitteeViewer,
+  options: { seat?: string | null } = {},
+): Promise<CommitteeMemberActions> {
+  const verdict = await decide(client, organizationId, committeeId, viewer, MEMBER_ACTION_KEYS, options.seat);
+  return { ...verdict.actions, change_own_seat: allowedOnOwnRow(verdict, 'change_member_seat') };
+}
+
+/**
  * What this viewer may do on this committee, by the one rule. `seat` is the
  * viewer's seat when the caller has already read it (CommitteeAccess.seat).
  */
@@ -169,7 +198,7 @@ export async function assertMemberAction(
   const verdict = await decide(client, organizationId, committeeId, viewer, [action], undefined);
 
   if (verdict.actions[action]) {
-    if (!(verdict.bySeat.has(action) && SEAT_NEVER_ON_OWN_ROW.includes(action) && options.targetMemberId)) return;
+    if (allowedOnOwnRow(verdict, action) || !options.targetMemberId) return;
     const target = await client.committeeMember.findFirst({
       where: { id: options.targetMemberId, committeeId, organizationId },
       select: { userId: true },

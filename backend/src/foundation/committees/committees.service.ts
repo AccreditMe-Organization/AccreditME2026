@@ -36,7 +36,7 @@ import { committeeStagesAndCounts } from './committee-stage-counts';
 import { committeeTypeValues } from './committee-type-values';
 import { CommitteeChangedException } from './committee-edit-refusal';
 import { committeeStageRefusalMessage } from './committee-stage-refusal';
-import { assertMemberAction, memberActionsFor } from './member-actions';
+import { assertMemberAction, committeeMemberActionsFor } from './member-actions';
 import {
   CommitteeViewer,
   assertMaySeeCommittee,
@@ -176,7 +176,8 @@ export class CommitteesService {
       // ACC-283 PR 6 — what this viewer may do here, by the one rule, from the seat
       // the access check just read: no query for a holder of every key, one seat
       // read for a member short of one.
-      memberActionsFor(this.prisma, organizationId, committee.id, viewer, { seat: access.seat }),
+      // ACC-320 — and change_own_seat, from the same pass.
+      committeeMemberActionsFor(this.prisma, organizationId, committee.id, viewer, { seat: access.seat }),
     ]);
     const fact = facts.get(committee.id);
     return {
