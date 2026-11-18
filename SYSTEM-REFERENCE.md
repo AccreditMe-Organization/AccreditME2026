@@ -580,6 +580,17 @@ elsewhere.**
     `{ blockers: [{ category, count, names }] }`. Nothing is cleared for the admin.
   - **The pre-flight:** `GET /roles/:id/deactivation-check` (`roles:manage`)
     returns `{ canDeactivate, rootRole, blockers }` from the same function.
+  - **The screen:** Deactivate on the Roles row ⋯ reads the pre-flight first.
+    - **Blockers:** `RoleInUseDialogComponent` lists them by category: a
+      counted heading (`plural.role.inUse.*`), the names, and "Showing 10 of N"
+      when there are more. It has Close only.
+    - **None:** the plain confirm ("Nobody holds it now…"), which never counts
+      people.
+    - **A `ROLE_IN_USE` after the confirm** (something arrived in between)
+      opens the same dialog from the refusal's own blockers.
+    - **The 420 cap:** the list is an inner-scroll frame (plain text, nothing
+      floats). The body measures 326px in English and 332px in Arabic with four
+      categories of ten names (`role-in-use-dialog.layout.spec.ts`).
   - **Deactivating `BASE_USER` no longer touches the MEETING workflow.** No
     seeded stage names a role: `minutes_review` is the committee chair plus
     `MEETING_APPROVERS` (ACC-316). It would remove `BASE_USER`'s five keys from
@@ -717,7 +728,7 @@ endpoint. Grepped for actual callers (not just the service definition):
 | `updateRole()` | `PATCH /roles/:id` | `role-form` |
 | `assignPermissions()` | `PATCH /roles/:id/permissions` | `role-permission-matrix` |
 | `deactivateRole()` | `POST /roles/:id/deactivate` | `role-list` |
-| `deactivationCheck()` | `GET /roles/:id/deactivation-check` | none yet (the Deactivate dialog, ACC-154) |
+| `deactivationCheck()` | `GET /roles/:id/deactivation-check` | `role-list` (Deactivate, before it confirms; ACC-154) |
 | `activateRole()` | `POST /roles/:id/activate` | `role-list` |
 | `getUserRoles()` | `GET /users/:id/roles` | `user-role-assignment` |
 | `assignRoleToUser()` | `POST /users/:id/roles` | `user-role-assignment` |
