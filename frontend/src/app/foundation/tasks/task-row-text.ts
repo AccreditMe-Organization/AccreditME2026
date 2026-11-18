@@ -107,9 +107,19 @@ export class TaskRowText {
     return null;
   }
 
+  /**
+   * CC-338 — line 2's status word, or null where line 2 already starts with the
+   * hold part: a held task's due label is "⏸ On hold to … · due …", so "On hold"
+   * again only pushes the rest into the ellipsis. The one rule for every line 2:
+   * the record panel, a person's panel and the list's phone cards.
+   */
+  lineStatus(row: ITaskRecordRowDto): string | null {
+    return row.status === 'ON_HOLD' ? null : this.translate.instant(this.statusKey(row));
+  }
+
   /** Line 2 after the due label: "{who} · {status} · {fact}". Only this part is cut. */
   tail(row: ITaskRecordRowDto): string {
-    return [this.who(row), this.translate.instant(this.statusKey(row)), this.fact(row)].filter((p) => !!p).join(' · ');
+    return [this.who(row), this.lineStatus(row), this.fact(row)].filter((p) => !!p).join(' · ');
   }
 
   /**
@@ -120,7 +130,7 @@ export class TaskRowText {
    * puts the whole line in the title attribute.
    */
   personTail(row: ITaskRecordRowDto): string {
-    return [this.translate.instant(this.statusKey(row)), this.fact(row), this.recordLabel(row)].filter((p) => !!p).join(' · ');
+    return [this.lineStatus(row), this.fact(row), this.recordLabel(row)].filter((p) => !!p).join(' · ');
   }
 
   /**

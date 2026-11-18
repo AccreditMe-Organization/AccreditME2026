@@ -119,6 +119,13 @@ interface ViewRow {
   fact: string | null;
   /** Under the title: the record, then the fact, as one line (whole in its tooltip when cut). */
   subLine: string | null;
+  /**
+   * A phone card's line after the due label (CC-338): My tasks' priority, else the
+   * assignee (never on a person's list), then line 2's status word (none for a
+   * held task: its due label already says so). Rendered after a no-break space,
+   * so every "·" has a space on both sides.
+   */
+  cardTail: string;
   tagKey: string | null;
   recordLine: string | null;
   /** ACC-120 slice 3 — the own views: the record's name (or its type word), and where it opens. */
@@ -399,14 +406,11 @@ interface ViewRow {
                       }
                       <span class="am-tl__sub">
                         <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
-                        @if (isMine()) {
-                          <span class="am-tl__tail"> · {{ r.priority.label }} · {{ r.statusKey | translate }}</span>
-                        } @else if (isPerson()) {
-                          <!-- CC-329/331 — no name (it is the person's own list); a no-break
-                               space keeps the space before "·" in this flex line. -->
-                          <span class="am-tl__tail" data-testid="task-list-card-tail">&nbsp;· {{ r.statusKey | translate }}</span>
-                        } @else {
-                          <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
+                        <!-- CC-338 — one card tail for every list (cardTail); a no-break
+                             space keeps the space before "·" in this flex line, which a
+                             plain leading space loses. -->
+                        @if (r.cardTail) {
+                          <span class="am-tl__tail" data-testid="task-list-card-tail">&nbsp;· {{ r.cardTail }}</span>
                         }
                         @if (r.overdue) {
                           <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)] ms-1" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
@@ -759,6 +763,9 @@ export class TaskListViewComponent {
         tagKey: this.text.requirementKey(row),
         recordLine,
         subLine: [recordLine, fact].filter(Boolean).join(' · ') || null,
+        cardTail: [this.isMine() ? this.priorityText(row.priority).label : this.isPerson() ? null : this.text.who(row), this.text.lineStatus(row)]
+          .filter(Boolean)
+          .join(' · '),
         recordName: own && row.record ? this.recordName(row.record) : null,
         recordHref: own && row.record ? this.recordHref(row.record) : null,
         overdue: own && isTaskOverdue(row, now),

@@ -109,7 +109,9 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
               }
             } @else {
               <span class="am-rtp__due" [attr.data-tone]="r.due.tone" [attr.title]="r.due.text">{{ r.due.text }}</span>
-              <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
+              @if (r.tail) {
+                <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
+              }
             }
           </span>
         </li>
