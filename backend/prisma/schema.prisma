@@ -264,6 +264,10 @@ enum SetupConditionType {
   // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
   // reader; PR 2's detector is the first writer.
   COMMITTEE_MISSING_REQUIRED_SEAT
+  // ACC-261 — the organisation has not confirmed where its files go
+  // (storageConfirmedAt null), so every upload is refused. Written only by the
+  // detector that deploys with it, never before (ACC-173's rule).
+  STORAGE_NOT_CONFIRMED
 }
 
 // ACC-271 — who works a stage, one kind per entry; entries join with "or".

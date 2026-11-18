@@ -504,6 +504,85 @@ describe('SetupHealthPageComponent — SharePoint storage Fix (ACC-260)', () => 
   });
 });
 
+// ACC-261 — "File storage not confirmed": every upload is refused until a
+// location is confirmed, so its Fix opens File storage (tenant:manage_config).
+describe('SetupHealthPageComponent — file storage not confirmed (ACC-261)', () => {
+  const at = new Date().toISOString();
+  const notConfirmed: SetupConditionDto = {
+    id: 'nc',
+    type: 'STORAGE_NOT_CONFIRMED',
+    severity: 'BLOCKS_WORK',
+    objectId: 'org-a',
+    subject: {},
+    openedAt: at,
+    ageBasis: 'FIRST_DETECTED',
+    lastSeenAt: at,
+    clearedAt: null,
+  };
+  const almostFull: SetupConditionDto = { ...notConfirmed, id: 'af', type: 'STORAGE_ALMOST_FULL', severity: 'AT_RISK', subject: { usedBytes: 9, limitBytes: 10, percent: 90 } };
+
+  function render(permissions: string[], arabic = false): SetupHealthPageComponent {
+    TestBed.configureTestingModule({
+      imports: [SetupHealthPageComponent],
+      providers: [
+        ConfirmationService,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.includes(p) } },
+        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(arabic ? 'ar' : 'en');
+    const fixture = TestBed.createComponent(SetupHealthPageComponent);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne(`${environment.apiUrl}/setup-health`)
+      .flush({
+        open: [almostFull, notConfirmed],
+        recentlyCleared: [],
+        freshness: ['STORAGE_NOT_CONFIRMED', 'STORAGE_ALMOST_FULL'].map((type) => ({ type, status: 'CURRENT', computedAt: at })),
+      });
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  const rowOf = (page: SetupHealthPageComponent) => page.groups().find((g) => g.type === 'STORAGE_NOT_CONFIRMED')!.rows[0]!;
+
+  it('opens File storage, for a holder of tenant:manage_config, and says what it blocks', () => {
+    const row = rowOf(render(['setup:view', 'tenant:manage_config']));
+    expect(row.fix).toEqual({ label: 'Set up file storage', link: ['/admin-settings/storage'], queryParams: {} });
+    expect(row.fixNeeds).toBeNull();
+    expect(row.objectName).toBe('File storage');
+    expect(row.severity).toBe('BLOCKS_WORK');
+    expect(row.consequence).toBe('Uploads are blocked: nobody in the organization can add files until a location is confirmed.');
+    expect(row.hint).toContain('confirm it on File storage');
+  });
+
+  it('without tenant:manage_config: no Fix, and the row says what fixing it needs', () => {
+    const row = rowOf(render(['setup:view']));
+    expect(row.fix).toBeNull();
+    expect(row.fixNeeds).toBe('Fixing this needs permission to set up email, storage, deadlines and AI.');
+  });
+
+  it('reads in Arabic', () => {
+    const row = rowOf(render(['setup:view', 'tenant:manage_config'], true));
+    expect(row.fix?.label).toBe('إعداد تخزين الملفات');
+    expect(row.objectName).toBe('تخزين الملفات');
+    expect(row.consequence).toBe('الرفع موقوف: لا يمكن لأحد في المنشأة إضافة ملفات حتى يُؤكَّد موقع التخزين.');
+  });
+
+  it('is listed first of the storage conditions: it blocks every upload', () => {
+    const types = render(['setup:view']).groups().map((g) => g.type);
+    expect(types.indexOf('STORAGE_NOT_CONFIRMED')).toBeLessThan(types.indexOf('STORAGE_ALMOST_FULL'));
+  });
+});
+
 // ACC-120 slice 11, PR D — the org unit record: Set type and the open-ended
 // acting head's Fix go to the unit's record, ACTING_HEAD_OPEN_ENDED is listed
 // at all (the API reported it since slice 2 and this page dropped it), and the

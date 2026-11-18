@@ -89,6 +89,8 @@ export function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         queryParams: {},
         permissions: ['tenant:manage_config'],
       };
+    case 'STORAGE_NOT_CONFIRMED':
+    // ACC-261 — File storage, where a location is chosen, tested and confirmed.
     case 'STORAGE_ACCESS_WITHDRAWN':
     case 'STORAGE_SECRET_EXPIRING':
       // ACC-260 — File storage, which shows the withdrawn access or the
@@ -178,6 +180,7 @@ export class SetupConditionRows {
       hint:
         condition.type === 'STAGE_WITHOUT_ASSIGNEE' ||
         condition.type === 'STORAGE_ALMOST_FULL' ||
+        condition.type === 'STORAGE_NOT_CONFIRMED' ||
         condition.type === 'STORAGE_ACCESS_WITHDRAWN' ||
         condition.type === 'STORAGE_SECRET_EXPIRING'
           ? this.translate.instant(`setupHealth.hint.${condition.type}`)
@@ -209,7 +212,9 @@ export class SetupConditionRows {
   objectName(condition: SetupConditionDto): string {
     const s = condition.subject;
     if (condition.type === 'TASK_WITHOUT_OWNER') return s.title ?? '—';
-    if (condition.type === 'STORAGE_ALMOST_FULL') return this.translate.instant('setupHealth.storageObject');
+    if (condition.type === 'STORAGE_ALMOST_FULL' || condition.type === 'STORAGE_NOT_CONFIRMED') {
+      return this.translate.instant('setupHealth.storageObject');
+    }
     if (condition.type === 'STORAGE_ACCESS_WITHDRAWN' || condition.type === 'STORAGE_SECRET_EXPIRING') {
       return this.translate.instant('setupHealth.sharePointObject');
     }
@@ -244,6 +249,8 @@ export class SetupConditionRows {
           percent: this.format.number(s.percent ?? 0),
           limit: this.files.size(s.limitBytes ?? 0),
         });
+      case 'STORAGE_NOT_CONFIRMED':
+        return t('storageNotConfirmed');
       case 'STORAGE_ACCESS_WITHDRAWN':
         return t(`sharePointWithdrawn.${s.reason ?? 'UNKNOWN'}`);
       case 'STORAGE_SECRET_EXPIRING':
