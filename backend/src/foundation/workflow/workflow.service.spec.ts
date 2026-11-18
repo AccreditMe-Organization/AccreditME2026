@@ -2609,6 +2609,8 @@ describe('WorkflowService', () => {
         toStageId: `to-${id}`,
         toStageNameEn: `Stage ${id}`,
         toStageNameAr: null,
+        // ACC-316 PR 3a — a committee move needs no reason.
+        needsReason: false,
       });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
@@ -2654,7 +2656,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({
             where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } },
             // ACC-282 — the label and the next stage come with the move, in the same read.
-            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true } } }),
+            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true, flags: true } } }),
           }),
         );
       });

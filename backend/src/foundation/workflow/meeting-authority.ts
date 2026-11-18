@@ -79,8 +79,13 @@ export type MeetingAuthorityClient = Pick<
   'meeting' | 'committeeMember' | 'committeeSeatAction' | 'user' | 'orgUnitHeadAssignment' | '$queryRaw'
 >;
 
-interface MeetingOwner {
-  id: string;
+/**
+ * ACC-316 PR 3a — whose meetings: a committee (with its owning unit) or a unit.
+ * `key` names the answer: a meeting's id, or any key a caller chooses for an
+ * owner with no meeting yet (scheduling one).
+ */
+export interface MeetingOwner {
+  key: string;
   committeeId: string | null;
   /** The owning unit: the meeting's own, else its committee's. */
   unitId: string | null;
@@ -103,6 +108,24 @@ export async function resolveMeetingStageKinds(
 
   const owners = await meetingOwners(client, organizationId, meetingIds);
   if (owners.length === 0) return out;
+  return resolveOwnerStageKinds(client, organizationId, owners, kinds, now);
+}
+
+/**
+ * ACC-316 PR 3a — the same predicates for OWNERS, keyed by each owner's `key`:
+ * who may schedule for a committee or a unit before a meeting exists. The one
+ * body resolveMeetingStageKinds() runs too, so the two cannot disagree.
+ */
+export async function resolveOwnerStageKinds(
+  client: MeetingAuthorityClient,
+  organizationId: string,
+  owners: readonly MeetingOwner[],
+  kinds: ReadonlySet<MeetingStageKind>,
+  now: Date = new Date(),
+): Promise<Map<MeetingStageKind, Map<string, string[]>>> {
+  const out = new Map<MeetingStageKind, Map<string, string[]>>();
+  for (const kind of kinds) out.set(kind, new Map());
+  if (owners.length === 0 || kinds.size === 0) return out;
   const rules = [...kinds].map((kind) => [kind, MEETING_KIND_RULES[kind]] as const);
 
   const seatActions = [...new Set(rules.map(([, r]) => r.seatAction).filter((a): a is SeatActionKey => a !== null))];
@@ -131,10 +154,26 @@ export async function resolveMeetingStageKinds(
       if (owner.unitId && rule.subunitsKey && (!isCommittee || rule.subunitsForCommittees)) {
         for (const id of headsAbove.get(`${owner.unitId} ${rule.subunitsKey}`) ?? []) ids.add(id);
       }
-      byMeeting.set(owner.id, [...ids].sort());
+      byMeeting.set(owner.key, [...ids].sort());
     }
   }
   return out;
+}
+
+/**
+ * Is `viewerId` one of this kind's people for this owner? The meeting writes
+ * ask it (PR 3a), so a button and a stage's pool read the same predicate.
+ */
+export async function isMeetingKindMember(
+  client: MeetingAuthorityClient,
+  organizationId: string,
+  owner: MeetingOwner,
+  kind: MeetingStageKind,
+  viewerId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const people = await resolveOwnerStageKinds(client, organizationId, [owner], new Set([kind]), now);
+  return people.get(kind)?.get(owner.key)?.includes(viewerId) ?? false;
 }
 
 /** Each meeting's committee and owning unit, in ONE query. */
@@ -143,7 +182,7 @@ async function meetingOwners(client: MeetingAuthorityClient, organizationId: str
     where: { organizationId, id: { in: [...meetingIds] } },
     select: { id: true, committeeId: true, orgUnitId: true, committee: { select: { orgUnitId: true } } },
   });
-  return rows.map((r) => ({ id: r.id, committeeId: r.committeeId, unitId: r.orgUnitId ?? r.committee?.orgUnitId ?? null }));
+  return rows.map((r) => ({ key: r.id, committeeId: r.committeeId, unitId: r.orgUnitId ?? r.committee?.orgUnitId ?? null }));
 }
 
 /**

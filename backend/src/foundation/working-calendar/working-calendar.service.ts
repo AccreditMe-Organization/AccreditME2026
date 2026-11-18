@@ -14,6 +14,7 @@ import {
   LoadedCalendar,
   deadlineWith,
   hoursBetweenWith,
+  isWorkingDay,
   readWorkingHoursPerDay,
 } from './working-time';
 
@@ -351,6 +352,43 @@ export class WorkingCalendarService {
   async workingHoursBetween(from: DateTime, to: DateTime, organizationId: string): Promise<number> {
     if (to <= from) return 0;
     return hoursBetweenWith(await this.loadCalendar(organizationId), from, to);
+  }
+
+  // ACC-316 — WORKING DAYS, not hours, for a meeting series and the minutes
+  // review. A day is an ISO date (yyyy-MM-dd) in the organisation's own zone,
+  // the calendar's; no time is involved. Both read the calendar once
+  // (loadCalendar(), read-only) and stop after a year of days, so a calendar
+  // with no working day refuses rather than loops.
+  private static readonly DAY_SEARCH_LIMIT = 366;
+
+  /** The first working day ON or AFTER `day`: where a weekend or holiday meeting moves to. */
+  async nextWorkingDay(day: string, organizationId: string): Promise<string> {
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    for (let i = 0; i <= WorkingCalendarService.DAY_SEARCH_LIMIT; i++) {
+      if (isWorkingDay(candidate, loaded)) return candidate.toISODate()!;
+      candidate = candidate.plus({ days: 1 });
+    }
+    throw new BadRequestException('The working calendar has no working day within a year.');
+  }
+
+  /** The date `count` working days after `day` (`day` itself never counts): the review date's default. */
+  async addWorkingDays(day: string, count: number, organizationId: string): Promise<string> {
+    if (!Number.isInteger(count) || count < 1) throw new BadRequestException('count must be a whole number of at least 1.');
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    let left = count;
+    for (let i = 0; i < WorkingCalendarService.DAY_SEARCH_LIMIT * count; i++) {
+      candidate = candidate.plus({ days: 1 });
+      if (isWorkingDay(candidate, loaded) && --left === 0) return candidate.toISODate()!;
+    }
+    throw new BadRequestException('The working calendar has no working day within a year.');
+  }
+
+  private dayInZone(day: string, timezone: string): DateTime {
+    const parsed = DateTime.fromISO(day, { zone: timezone });
+    if (!parsed.isValid || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('A day is a date written yyyy-MM-dd.');
+    return parsed.startOf('day');
   }
 
   private toInterface(record: {

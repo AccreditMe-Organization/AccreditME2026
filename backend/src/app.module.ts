@@ -16,6 +16,7 @@ import { OrgPositionModule } from './foundation/org-position/org-position.module
 import { TaskModule } from './foundation/task/task.module';
 import { FileStorageModule } from './foundation/file-storage/file-storage.module';
 import { CommitteesModule } from './foundation/committees/committees.module';
+import { MeetingsModule } from './foundation/meetings/meetings.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
 import { SetupHealthModule } from './foundation/setup-health/setup-health.module';
@@ -51,6 +52,7 @@ import { throttlerOptions } from './common/throttle/throttle.config';
     TaskModule,
     FileStorageModule,
     CommitteesModule,
+    MeetingsModule,
     AuthModule,
     UserModule,
     SetupHealthModule,
