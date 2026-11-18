@@ -14,6 +14,7 @@ import { TaskRequestService } from '../task/task-request.service';
 import { DateTime } from 'luxon';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { MeetingInviteeSyncService } from '../meetings/invitees/meeting-invitee-sync.service';
 import { CURRENT_ACTIVE_ASSIGNEE } from '../task/task-pool';
 import { LoadedCalendar, hoursBetweenWith } from '../working-calendar/working-time';
 import { WorkflowService } from './workflow.service';
@@ -105,6 +106,8 @@ const mockWorkingCalendar = {
 };
 // ACC-313 — the due-soon reminder runs as its own step; its own spec covers it.
 const mockDueWarnings = { sweep: jest.fn() };
+// ACC-316 PR 3b — the meeting invitees' recomputer, its own step.
+const mockMeetingInvitees = { sweep: jest.fn().mockResolvedValue({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0, demoted: 0 }) };
 const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = {
   // ACC-46 Section 2.7.e, Commit 4 — the real tier-based escalation firing
@@ -222,6 +225,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: TaskRequestService, useValue: mockTaskRequestService },
         { provide: TaskDueWarningService, useValue: mockDueWarnings },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
+        { provide: MeetingInviteeSyncService, useValue: mockMeetingInvitees },
       ],
     }).compile();
 
@@ -1819,6 +1823,23 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       await expect(runProcess()).rejects.toThrow(/1 failed step\(s\): sweepDueWarnings/);
       // The vacancy sweep, the last step, still ran.
+      expect(mockPrisma.organization.findMany).toHaveBeenCalled();
+    });
+  });
+
+  // ACC-316 PR 3b — the meeting invitees' scheduled recomputer (ACC-82's rule).
+  describe('sweepMeetingInvitees (ACC-316)', () => {
+    it('runs once per pass, with the pass’s instant', async () => {
+      await runProcess();
+
+      expect(mockMeetingInvitees.sweep).toHaveBeenCalledTimes(1);
+      expect(mockMeetingInvitees.sweep.mock.calls[0][0]).toBeInstanceOf(Date);
+    });
+
+    it('is its own isolated step: a failing invitee pass does not stop the other sweeps', async () => {
+      mockMeetingInvitees.sweep.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(runProcess()).rejects.toThrow(/1 failed step\(s\): sweepMeetingInvitees/);
       expect(mockPrisma.organization.findMany).toHaveBeenCalled();
     });
   });

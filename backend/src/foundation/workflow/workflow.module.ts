@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
@@ -11,7 +12,7 @@ import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
-import { StageRulesService } from './stage-rules.service';
+import { StageRulesModule } from './stage-rules.module';
 import { StageWhoOptionsService } from './stage-who-options.service';
 import { WorkflowAwaitingService } from './workflow-awaiting.service';
 import { WorkflowService } from './workflow.service';
@@ -27,6 +28,10 @@ import { StagePoolModule } from './stage-pool.module';
   imports: [
     PrismaModule,
     QueueModule,
+    // ACC-316 PR 3b — SlaMonitorProcessor.sweepMeetingInvitees(). Imports only
+    // Prisma and the queues: no cycle.
+    MeetingInviteesModule,
+    StageRulesModule,
     WorkingCalendarModule,
     forwardRef(() => TenantModule),
     // No forwardRef needed on this edge — NotificationModule is @Global(),
@@ -71,14 +76,14 @@ import { StagePoolModule } from './stage-pool.module';
     WorkflowTemplateService,
     WorkflowService,
     StageTaskDefinitionService,
-    // ACC-255 — what a record's current stage allows; read by the modules.
-    StageRulesService,
     // ACC-271 PR 5a — the stage editor's person and committee pickers.
     StageWhoOptionsService,
     // ACC-271 — Home's "Awaiting my action": the records waiting on the viewer.
     WorkflowAwaitingService,
     ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
   ],
-  exports: [WorkflowTemplateService, WorkflowService, StageRulesService],
+  // ACC-255 — what a record's current stage allows; read by the modules. Its own
+  // module since ACC-316 PR 3b (the invitee sync needs it), re-exported here.
+  exports: [WorkflowTemplateService, WorkflowService, StageRulesModule],
 })
 export class WorkflowModule {}

@@ -1390,6 +1390,55 @@ them together with their resolver.
        missing).
      - **No migration.** Proved by `meetings.db-spec.ts` (real Postgres) and
        `meetings.service.spec.ts` (the isolation gate).
+   - **6.2 PR 3b as built (18 Nov):** SYSTEM-REFERENCE §18.8–§18.12.
+     - **Invitees:** scheduling fills in the MEMBER rows (the committee's
+       active members with their seats, or the unit's own people).
+       `MeetingInviteeSync` keeps them current:
+       - its entry points: committee, unit, person, sweep;
+       - the writers call it after they commit, never failing the write;
+       - `SlaMonitorProcessor.sweepMeetingInvitees()` is the scheduled
+         recomputer;
+       - "open" means the stage allows `manage_guests` and the meeting has not
+         started;
+       - each meeting changes in a transaction that takes its instance FOR
+         SHARE first.
+     - **Guests** (organisation and outside): added and removed by a
+       scheduler. Once the agenda is issued, they are invited at once.
+     - **Answers:** until the start time. A change to "Can't attend" tells the
+       organiser, flagged (quorum, officer seat, presenter). The record carries
+       the summary for a scheduler and `myAnswer` for an invitee.
+     - **The agenda:** ordered items, presenters who are invitees (a person
+       not yet invited is added as a guest), standing, and "Agenda changed"
+       after issue.
+     - **Papers and attachments:** files owned by the agenda item or the
+       meeting, guarded by the meeting's visibility rule; restored to their
+       record by the recycle bin.
+     - **The clash check:** `POST /meetings/clashes`, strict overlap, cancelled
+       meetings left out, one query.
+     - **Outside-guest emails:** the `outside-email` job, in the
+       organisation's language, at issue, reschedule and cancel.
+     - **Deliberate omissions:**
+       - "Open actions from the last meeting" reads action items, so it ships
+         with PR 4's minutes;
+       - "an outside guest never owns an action item" is PR 4's write rule;
+       - the Home "Answer the invitation" row is the screens' (PR 6).
+     - **§3.9 is out of date in one detail:** ACC-95's `counted()` now
+       exists (`common/i18n/plural.ts`). Meeting notices still store no count.
+     - **Lane B's review of #351 (Prompt 153), all built:**
+       - a presenting member who leaves becomes an organisation guest;
+       - a presenter added as a guest needs `manage_guests`;
+       - agenda item locks keep no paper alive past its item;
+       - the clash check names no meeting the asker can't open, and checks
+         only invitees;
+       - https-only meeting links, with escaping pinned;
+       - the meeting row FOR UPDATE after the instance in every people,
+         agenda and answer write;
+       - the answer's clock after the locks;
+       - the clash window prefilter;
+       - DTO caps;
+       - the sync importing its services' modules (`StageRulesModule`);
+       - auth's call after the audit row.
+     - **No migration.**
 4. **PR 4: minutes and review, backend.**
    - Changes:
      - attendance (pre-filled from "Can't attend") and quorum;

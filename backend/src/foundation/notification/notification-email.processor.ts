@@ -7,6 +7,7 @@ import {
   SecurityNoticeJobData,
   renderSecurityNotice,
 } from './security-notice';
+import { OUTSIDE_EMAIL_JOB, OutsideEmailJobData } from './outside-email';
 
 interface EmailDeliveryJobData {
   notificationId: string;
@@ -26,9 +27,16 @@ export class NotificationEmailProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<EmailDeliveryJobData | SecurityNoticeJobData>): Promise<void> {
+  async process(job: Job<EmailDeliveryJobData | SecurityNoticeJobData | OutsideEmailJobData>): Promise<void> {
     if (job.name === SECURITY_NOTICE_JOB) {
       await this.sendSecurityNotice(job.data as SecurityNoticeJobData);
+      return;
+    }
+    // ACC-316 PR 3b — an outside guest's email: chosen when enqueued
+    // (NotificationService.sendOutsideEmail()), sent as is.
+    if (job.name === OUTSIDE_EMAIL_JOB) {
+      const { to, subject, body, direction } = job.data as OutsideEmailJobData;
+      await this.email.send({ to, subject, body, direction });
       return;
     }
     const { notificationId, organizationId } = job.data as EmailDeliveryJobData;
