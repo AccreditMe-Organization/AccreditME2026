@@ -832,6 +832,90 @@ describe('WorkflowTemplateService', () => {
 
   });
 
+  // ── escalationConfig (ACC-105) ───────────────────────────────────────────────
+
+  // ACC-105 (defect 4) — the stage's escalation rules are checked on every write,
+  // like its other ids: their shape, and each person (ACTIVE, in the
+  // organisation) and role (active, in the organisation), in one read each.
+  describe('escalation rules on a stage write (ACC-105)', () => {
+    const NEW = { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } };
+    const refusal = async (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: { getResponse?: () => unknown }) => (e.getResponse ? e.getResponse() : e),
+      );
+    beforeEach(() => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.create.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStage.update.mockResolvedValue(BASE_STAGE);
+    });
+
+    it.each([
+      ['not a list of rules', { notifyUserId: 'user-a', afterHours: 4 }],
+      ['afterHours missing', [{ notifyUserId: 'user-a' }]],
+      ['afterHours not a number', [{ afterHours: '4', notifyUserId: 'user-a' }]],
+      ['afterHours not positive', [{ afterHours: 0, notifyUserId: 'user-a' }]],
+      ['nobody to tell', [{ afterHours: 4 }]],
+      ['an unknown key', [{ afterHours: 4, notifyUserId: 'user-a', notifyEmail: 'x@example.test' }]],
+      ['an id that is not text', [{ afterHours: 4, notifyUserId: 42 }]],
+    ])('refuses a rule with %s (STAGE_ESCALATION_INVALID, SHAPE), writing nothing', async (_case, escalationConfig) => {
+      const got = await refusal(service.addStage('template-1', { ...NEW, escalationConfig } as never, ORG_A, ACTOR));
+      expect(got).toEqual(expect.objectContaining({ statusCode: 400, code: 'STAGE_ESCALATION_INVALID', reason: 'SHAPE' }));
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a person who is not an ACTIVE user of this organisation (USER), on add and on update', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      const config = [{ afterHours: 4, notifyUserId: 'user-elsewhere' }];
+      expect(await refusal(service.addStage('template-1', { ...NEW, escalationConfig: config } as never, ORG_A, ACTOR))).toEqual(
+        expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'USER', rule: 0 }),
+      );
+      expect(await refusal(service.updateStage('stage-1', { escalationConfig: config } as never, ORG_A, ACTOR))).toEqual(
+        expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'USER', rule: 0 }),
+      );
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['user-elsewhere'] }, organizationId: ORG_A, status: 'ACTIVE' } }),
+      );
+    });
+
+    it('refuses a role that is not an active role of this organisation (ROLE)', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      const got = await refusal(
+        service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-elsewhere' }] } as never, ORG_A, ACTOR),
+      );
+      expect(got).toEqual(expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'ROLE', rule: 0 }));
+      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['role-elsewhere'] }, organizationId: ORG_A, isActive: true } }),
+      );
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    it('saves valid rules, reading the people and the roles once each, however many rules', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-a' }, { id: 'user-b' }]);
+      mockPrisma.role.findMany.mockResolvedValue([{ id: 'role-q' }]);
+      const escalationConfig = [
+        { afterHours: 4, notifyUserId: 'user-a' },
+        { afterHours: 8, notifyRoleId: 'role-q' },
+        { afterHours: 16, notifyUserId: 'user-b', notifyRoleId: 'role-q' },
+      ];
+      await service.addStage('template-1', { ...NEW, escalationConfig } as never, ORG_A, ACTOR);
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ escalationConfig }) }),
+      );
+      expect(mockPrisma.user.findMany.mock.calls.filter(([a]) => JSON.stringify(a).includes('"status":"ACTIVE"'))).toHaveLength(1);
+      expect(mockPrisma.role.findMany.mock.calls.filter(([a]) => JSON.stringify(a).includes('"isActive":true'))).toHaveLength(1);
+    });
+
+    it('clears the rules with an empty list or null, checking nothing', async () => {
+      for (const escalationConfig of [[], null]) {
+        await expect(service.updateStage('stage-1', { escalationConfig } as never, ORG_A, ACTOR)).resolves.toBeDefined();
+      }
+    });
+  });
+
   // ── updateStage ──────────────────────────────────────────────────────────────
 
   describe('updateStage', () => {
