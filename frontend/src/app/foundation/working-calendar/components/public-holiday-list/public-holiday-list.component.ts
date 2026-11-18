@@ -295,7 +295,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             <span class="truncate text-[13px]" dir="rtl">{{ holiday.nameAr || '—' }}</span>
           }
           @if (visible('date')) {
-            <span class="text-[13px]" dir="ltr">{{ holiday.date | amDate }}</span>
+            <span class="text-[13px]">{{ holiday.date | amDate }}</span>
           }
           @if (visible('isRecurring')) {
             <span>

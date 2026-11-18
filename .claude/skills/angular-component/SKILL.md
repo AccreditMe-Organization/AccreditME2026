@@ -2,599 +2,221 @@
 name: angular-component
 description: Angular component structure and styling rules for AccreditMe. Invoke manually with /angular-component when creating any new Angular component, page, or service.
 disable-model-invocation: true
-allowed-tools: Read Glob Grep Write Edit Bash(npx tsc --noEmit) Bash(git add frontend/src/*) Bash(git add frontend/src/assets/*) Bash(git commit *) Bash(git status *)
+allowed-tools: Read Glob Grep Write Edit Bash(npx tsc --noEmit *) Bash(npx ng build) Bash(npx ng test *) Bash(npm run check:*) Bash(git add frontend/src/*) Bash(git add frontend/src/assets/*) Bash(git commit *) Bash(git status *)
 ---
 
-# AccreditMe — Angular Component Scaffold Rules
+# AccreditMe — Angular Component Rules
 
-Read this skill completely before creating any new Angular component, page, or service.
-Every frontend file in AccreditMe follows these conventions without exception.
-Consistency makes the codebase navigable, RTL-safe, and brand-consistent.
+Read this before writing any Angular component, page or service. Each rule names
+the file that implements it: **read that file for the API**, it is not copied
+here. A rule a scan enforces says so; the scan fails CI.
 
----
-
-## Component Location Reference
-
-```
-frontend/src/app/
-├── core/                         # Singleton services — provided once app-wide
-│   ├── services/                 # AuthService, TenantService, UserService
-│   ├── guards/                   # AuthGuard, PermissionGuard
-│   └── interceptors/             # AuthInterceptor (attaches JWT to all requests)
-│
-├── shared/                       # Reusable across all modules
-│   ├── components/               # StatusPill, ConfirmDialog, EmptyState, etc.
-│   ├── directives/               # PermissionDirective, RtlDirective
-│   └── pipes/                    # TranslateLookupPipe, DateFormatPipe, TruncatePipe
-│
-├── layout/                       # App shell — rendered once, wraps everything
-│   ├── topbar/                   # Logo, search, notifications, user avatar
-│   ├── sidebar/                  # Module navigation, collapse support
-│   └── layout.component.ts       # Grid shell: topbar + sidebar + router-outlet
-│
-├── foundation/                   # Foundation module UIs
-│   ├── admin-settings/           # Tenant admin settings hub
-│   ├── auth/                     # Login, MFA, accept-invitation, password reset
-│   ├── tenant/                   # Tenant settings and provider config
-│   ├── organization/             # Org unit hierarchy, org chart
-│   ├── working-calendar/         # Working calendar, holidays, working hours
-│   ├── lookup/                   # Lookup category and value management
-│   ├── roles/                    # Role and permission management
-│   ├── org-position/             # Org position (grade/seniority) management
-│   ├── workflow/                 # Workflow template and stage configuration
-│   ├── notification/             # Notification bell and inbox
-│   ├── tasks/                    # My tasks inbox, task detail
-│   ├── user/                     # User management, invite, assign roles
-│   └── committees/               # Committee management, membership
-│                                  # (Meeting Management not built yet — no folder)
-│
-├── modules/                      # Functional module UIs
-│   ├── standards/                # Standards hierarchy, measurable elements
-│   ├── documents/                # Document lifecycle, review, approval
-│   ├── quality-improvement/      # Incidents, gaps, corrective actions
-│   └── audit/                    # Audit plans, execution, findings, reports
-│
-├── platform/                     # Super admin portal (platform admins only)
-│   ├── tenants/                  # Tenant list, detail, suspend, impersonate
-│   ├── billing/                  # Revenue, plan distribution, churn
-│   └── health/                   # System health, job queues, error rates
-│
-└── dashboard/                    # Main dashboard — AI morning briefing + KPIs
-```
-
-`foundation/` above is verified against the actual
-`frontend/src/app/foundation/` folder listing — re-check with
-`ls frontend/src/app/foundation` if this list is ever in doubt.
-`modules/`, `platform/billing/`, `platform/health/`, and `dashboard/`
-are target layout for functional modules not yet built, not a claim
-they currently exist.
+Paths are under `frontend/src/app/` unless they start with `frontend/`.
 
 ---
 
-## Required File Structure Per Feature Area
-
-Every feature area follows this exact structure:
+## Where things live
 
 ```
-{feature}/
-├── {feature}.routes.ts
-├── {feature}.service.ts
-├── {feature}-list/
-│   ├── {feature}-list.component.ts
-│   └── {feature}-list.component.html
-├── {feature}-detail/
-│   ├── {feature}-detail.component.ts
-│   └── {feature}-detail.component.html
-├── {feature}-form/
-│   ├── {feature}-form.component.ts
-│   └── {feature}-form.component.html
-└── interfaces/
-    └── {feature}.interface.ts
+core/        app-wide services, guards, interceptors, formatting/, http/, theme/,
+             navigation/ (nav-items.ts — the rail, guard, breadcrumb and title)
+shared/      components/ (am-*, app-*), directives, pipes, utils
+layout/      app-shell, sidebar (the rail), topbar, breadcrumb
+foundation/  one folder per module (committees/, tasks/, workflow/, …)
+platform/    the platform admin portal
 ```
+
+A new module's screens go in `foundation/{module}/`: a `{module}.service.ts`,
+`interfaces/`, and `components/{name}/{name}.component.ts` (+ `.html`). Look at
+`foundation/committees/` as the model. A new page gets a nav item in
+`core/navigation/nav-items.ts`, never a second label list (route `data`, a card
+array).
 
 ---
 
-## Component TypeScript Template
+## Component basics
 
-```typescript
-// {feature}-list.component.ts
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { TranslateModule } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
-import { ButtonModule } from 'primeng/button';
-import { ProgressSpinnerModule } from 'primeng/progressspinner';
-// Import ONLY the PrimeNG modules this component actually uses
-
-import { {Feature}Service } from '../{feature}.service';
-import { I{Feature} } from '../interfaces/{feature}.interface';
-
-@Component({
-  selector: 'app-{feature}-list',
-  standalone: true,
-  imports: [
-    CommonModule,
-    TranslateModule,
-    TableModule,
-    ButtonModule,
-    ProgressSpinnerModule,
-    // Only what this component uses — never import entire PrimeNG
-  ],
-  templateUrl: './{feature}-list.component.html',
-})
-export class {Feature}ListComponent implements OnInit {
-  private readonly {feature}Service = inject({Feature}Service);
-
-  // Always use Signals for state — never direct property mutation
-  items = signal<I{Feature}[]>([]);
-  loading = signal(false);
-  error = signal<string | null>(null);
-  selectedItem = signal<I{Feature} | null>(null);
-
-  ngOnInit(): void {
-    this.loadItems();
-  }
-
-  private loadItems(): void {
-    this.loading.set(true);
-    this.error.set(null);
-
-    this.{feature}Service.findAll().subscribe({
-      next: (data) => {
-        this.items.set(data);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.error.set('errors.loadFailed');
-        this.loading.set(false);
-      },
-    });
-  }
-}
-```
+- **Standalone**, `inject()` for dependencies, `input()` / `output()` /
+  `signal()` / `computed()` — no `@Input`, no `EventEmitter`, no mutable state
+  fields.
+- **Built-in control flow only**: `@if` / `@for (…; track …)` / `@switch`. Never
+  `*ngIf`, `*ngFor` or `CommonModule` for them.
+- **Import `TranslatePipe` from `@ngx-translate/core` per component**, and only
+  the PrimeNG / shared components the template uses. Never `TranslateModule`
+  (no component imports it).
+- **Reactive Forms** only. Never send `organizationId`; the server takes it
+  from the session.
+- **HTTP goes through the module's service**, never `HttpClient` in a component.
+- **A request has loading, error and empty states**: see
+  `core/request-outcome/request-outcome.ts`. An empty message never shows while
+  loading.
 
 ---
 
-## Component Template Rules
+## Dialogs — `app-edit-dialog`
 
-```html
-<!-- {feature}-list.component.html -->
+`shared/components/edit-dialog/edit-dialog.component.ts` — REQUIRED for every
+create/edit dialog. Content goes in through a `TemplateRef` (`[content]`),
+which is what recreates the form on every open.
 
-<!-- Page wrapper — always these Tailwind classes, never custom CSS -->
-<div class="flex flex-col gap-4 p-6 h-full">
-  <!-- Page header — breadcrumb + title + primary action -->
-  <div class="flex items-center justify-between">
-    <div>
-      <p-breadcrumb [model]="breadcrumbItems" />
-      <h1 class="text-xl font-medium text-slate-700 mt-1">
-        {{ '{feature}.pageTitle' | translate }}
-      </h1>
-    </div>
-    <p-button
-      [label]="'{feature}.actions.create' | translate"
-      icon="ti ti-plus"
-      (onClick)="openCreateDialog()"
-    />
-  </div>
-
-  <!-- Loading state — always show spinner during API calls -->
-  <div *ngIf="loading()" class="flex items-center justify-center h-full">
-    <p-progressSpinner />
-  </div>
-
-  <!-- Error state — never silent failures -->
-  <div
-    *ngIf="error() && !loading()"
-    class="flex items-center justify-center h-full"
-  >
-    <p-message severity="error" [text]="error()! | translate" />
-  </div>
-
-  <!-- Data table — always scrollable, always fills remaining space -->
-  <p-table
-    *ngIf="!loading() && !error()"
-    [value]="items()"
-    scrollable
-    scrollHeight="flex"
-    styleClass="p-datatable-sm"
-    [rowHover]="true"
-  >
-    <ng-template pTemplate="header">
-      <tr>
-        <th>{{ '{feature}.columns.name' | translate }}</th>
-        <th>{{ '{feature}.columns.status' | translate }}</th>
-        <th class="w-24">{{ 'common.columns.actions' | translate }}</th>
-      </tr>
-    </ng-template>
-
-    <ng-template pTemplate="body" let-item>
-      <tr>
-        <td>{{ item.name }}</td>
-        <td>
-          <!-- Status pill — use semantic CSS class, never hardcode colors -->
-          <span class="status-pill status-{{ item.status }}">
-            {{ 'status.' + item.status | translate }}
-          </span>
-        </td>
-        <td>
-          <div class="flex gap-1">
-            <p-button
-              icon="ti ti-eye"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              (onClick)="view(item)"
-            />
-            <p-button
-              icon="ti ti-edit"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              (onClick)="edit(item)"
-            />
-          </div>
-        </td>
-      </tr>
-    </ng-template>
-
-    <!-- Empty state -->
-    <ng-template pTemplate="emptymessage">
-      <tr>
-        <td colspan="3" class="text-center py-12 text-slate-400">
-          {{ '{feature}.messages.empty' | translate }}
-        </td>
-      </tr>
-    </ng-template>
-  </p-table>
-</div>
-```
+- **The body is capped at 420px.** Never raise the cap. Measure the body in
+  BOTH languages, with the fields wrapped and the actions in the footer.
+- **If it overflows, compact first:** `density="compact"`, actions in the
+  footer, two short related fields on one row.
+  `check:dialog-density` requires compact density for five or more field
+  blocks.
+- **Step only for an overflow you measured** and could not compact away, on a
+  seam the form already has (`am-step-strip`, e.g.
+  `foundation/tasks/components/task-form/task-form-steps.component.ts`).
+  Groups filled in any order under one Save are tabs (`am-tab-strip`, e.g.
+  `foundation/committees/components/committee-form/committee-form.component.ts`).
+- **A panel too tall for the body opens as its own layer**, never inline.
+- **Save is never disabled for an invalid form.** Pressing it reveals every
+  error and moves focus to the first one. `committee-form.component.ts` states
+  the rule (artboard 14, rule 5.2), and `shared/components/field/reveal-errors.ts`
+  is the helper for a step's Next.
+- **A warning returned by a save keeps the dialog open until dismissed**, and
+  nothing it triggers may refresh a parent that destroys it (CLAUDE.md,
+  ACC-55).
+- **Confirmations go through `AmConfirmService.ask()`**
+  (`shared/components/confirm/am-confirm.service.ts`), with translated words.
+  Enforced by `check:confirm-through-helper` and `check:confirm-translated`.
+- **A list in a popup is `am-list-dialog`**
+  (`shared/components/list-dialog/`), exempt from the cap. Plain lists use
+  `size="compact"` with `am-simple-list` inside.
 
 ---
 
-## API Service Template
+## Fields
 
-```typescript
-// {feature}.service.ts
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import { I{Feature} } from './interfaces/{feature}.interface';
-import { Create{Feature}Dto } from './interfaces/{feature}-create.dto';
-
-@Injectable({ providedIn: 'root' })
-export class {Feature}Service {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiUrl}/api/v1/{feature}`;
-
-  findAll(): Observable<I{Feature}[]> {
-    return this.http.get<I{Feature}[]>(this.baseUrl);
-  }
-
-  findOne(id: string): Observable<I{Feature}> {
-    return this.http.get<I{Feature}>(`${this.baseUrl}/${id}`);
-  }
-
-  create(dto: Create{Feature}Dto): Observable<I{Feature}> {
-    return this.http.post<I{Feature}>(this.baseUrl, dto);
-  }
-
-  update(id: string, dto: Partial<Create{Feature}Dto>): Observable<I{Feature}> {
-    return this.http.patch<I{Feature}>(`${this.baseUrl}/${id}`, dto);
-  }
-
-  remove(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
-  }
-}
-```
+- **Every form field is wrapped in `am-field` with `[control]`**
+  (`shared/components/field/field.component.ts`). Without `[control]` it can't
+  show an error. Enforced by `check:field-control`.
+- **Any choice with 5 or more options is `app-overlay-select`**
+  (`shared/components/overlay-select/overlay-select.component.ts`), never
+  `p-select` or `p-cascadeSelect`.
+  - Hierarchies use `optionGroupLabel` / `optionGroupChildren`.
+  - Set `[groupsSelectable]="false"` when the groups are categories, not
+    choices.
+  - Raw PrimeNG overlays inside a dialog are caught by `check:dialog-overlays`.
+- **Inline multi-select is `p-listbox`**, never `p-multiselect`.
+- **Icon-only buttons are `am-icon-button`** with its required `label`. Enforced
+  by `check:icon-labels`.
 
 ---
 
-## Interface Template
+## Dates, numbers and counted strings
 
-```typescript
-// interfaces/{feature}.interface.ts
-export interface I{Feature} {
-  id: string;
-  organizationId: string;
-  name: string;
-  description?: string;
-  status: string;
-  createdBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-```
+Only through `core/formatting/`, by meaning. Enforced by `check:formatting`.
 
----
-
-## Reactive Form Template
-
-All forms use Angular Reactive Forms — never template-driven forms.
-
-```typescript
-// {feature}-form.component.ts
-import { Component, inject, input, output } from '@angular/core';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
-import { CommonModule } from '@angular/common';
-import { TranslateModule } from '@ngx-translate/core';
-import { InputTextModule } from 'primeng/inputtext';
-import { TextareaModule } from 'primeng/textarea';
-import { ButtonModule } from 'primeng/button';
-
-@Component({
-  selector: 'app-{feature}-form',
-  standalone: true,
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    TranslateModule,
-    InputTextModule,
-    TextareaModule,
-    ButtonModule,
-  ],
-  templateUrl: './{feature}-form.component.html',
-})
-export class {Feature}FormComponent {
-  // Use input() signals for inputs — not @Input() decorator
-  initialData = input<Partial<I{Feature}> | null>(null);
-
-  // Use output() signals — not @Output() EventEmitter
-  saved = output<void>();
-  cancelled = output<void>();
-
-  private readonly fb = inject(FormBuilder);
-  saving = signal(false);
-
-  form: FormGroup = this.fb.group({
-    name: ['', [Validators.required, Validators.maxLength(255)]],
-    description: ['', [Validators.maxLength(2000)]],
-    // Add fields specific to this feature
-    // NEVER include organizationId — set by backend from JWT
-  });
-
-  onSubmit(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
-    this.saving.set(true);
-    // call service — set saving back to false in subscription
-  }
-
-  isInvalid(field: string): boolean {
-    const control = this.form.get(field);
-    return !!(control?.invalid && control?.touched);
-  }
-}
-```
-
-```html
-<!-- {feature}-form.component.html -->
-<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-  <!-- Name field -->
-  <div class="flex flex-col gap-1">
-    <label for="name" class="text-sm font-medium text-slate-700">
-      {{ '{feature}.labels.name' | translate }}
-      <span class="text-red-500">*</span>
-    </label>
-    <input
-      pInputText
-      id="name"
-      formControlName="name"
-      [placeholder]="'{feature}.placeholders.name' | translate"
-      [ngClass]="{ 'ng-invalid ng-dirty': isInvalid('name') }"
-    />
-    <small class="text-red-500" *ngIf="isInvalid('name')">
-      {{ 'validation.required' | translate }}
-    </small>
-  </div>
-
-  <!-- Description field -->
-  <div class="flex flex-col gap-1">
-    <label for="description" class="text-sm font-medium text-slate-700">
-      {{ '{feature}.labels.description' | translate }}
-    </label>
-    <textarea
-      pTextarea
-      id="description"
-      formControlName="description"
-      [placeholder]="'{feature}.placeholders.description' | translate"
-      rows="4"
-    ></textarea>
-  </div>
-
-  <!-- Form actions -->
-  <div class="flex justify-end gap-2 pt-2">
-    <p-button
-      [label]="'common.actions.cancel' | translate"
-      severity="secondary"
-      [text]="true"
-      (onClick)="cancelled.emit()"
-      [disabled]="saving()"
-    />
-    <p-button
-      [label]="'common.actions.save' | translate"
-      type="submit"
-      [loading]="saving()"
-    />
-  </div>
-</form>
-```
+- **In templates:** the `amDate`, `amDateTime`, `amRelative`, `amDuration`,
+  `amNumber`, `amCount` and `amMoney` pipes (`format.pipes.ts`).
+- **In TypeScript:** `FormatService` (`format.service.ts`).
+- **Never** `| date`, `DatePipe`, `toLocale*String`, `new Intl.*`, Angular's
+  number pipes, or a unit typed onto a number (`n + 'h'`).
+- **Counted strings** are plural objects in the i18n files' `plural` section,
+  with every category: six for Arabic, two for English.
+- **`p-inputNumber` and `p-paginator`** need `InputNumberLatinDigits` /
+  `PaginatorLatinDigits` (`core/formatting/latin-digits.ts`) imported in that
+  component; the scan fails a file without them.
 
 ---
 
-## Styling Rules — Non-Negotiable
+## Language and Arabic
 
-### Use Design Tokens — Never Hardcode Colors
-
-```html
-<!-- WRONG — hardcoded color -->
-<div style="background-color: #2E6FA3">
-  <div class="bg-blue-600">
-    <!-- RIGHT — design token -->
-    <div class="bg-[var(--am-blue-primary)]"></div>
-  </div>
-</div>
-```
-
-### Use Tailwind for Layout — Never Bootstrap or Inline Styles
-
-```html
-<!-- WRONG -->
-<div class="row">
-  <div class="col-md-8">
-    <div style="display: flex; gap: 16px">
-      <!-- RIGHT -->
-      <div class="grid grid-cols-3 gap-4">
-        <div class="col-span-2">
-          <div class="flex gap-4"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-```
-
-### RTL Safety — Always Use Logical Properties
-
-```html
-<!-- WRONG — does not flip in Arabic RTL mode -->
-<div class="pl-4 pr-2 text-left ml-auto">
-  <!-- RIGHT — flips automatically in RTL -->
-  <div class="ps-4 pe-2 text-start ms-auto"></div>
-</div>
-```
-
-### PrimeNG Tables — Always Scrollable
-
-```html
-<!-- WRONG — page scrolls instead of table -->
-<p-table [value]="items()">
-  <!-- RIGHT — table fills viewport, page never scrolls -->
-  <p-table [value]="items()" scrollable scrollHeight="flex"></p-table
-></p-table>
-```
+- **Every visible string is a translation key**, in BOTH
+  `frontend/src/assets/i18n/en.json` and `ar.json`, with real Arabic.
+- **A record's name is shown with `LanguageService.bilingual(en, ar)`**
+  (`core/services/language.service.ts`). Never `isArabic() ? ar : en`, which
+  goes blank when the Arabic is null. A dropdown gets a resolved `label` built
+  in a `computed()`, never `optionLabel="nameAr"`.
+- **Arabic fields are never required.** The server stores an empty one as null
+  (`@Transform(trimToNull)`); never validate one as required.
+- **Arabic copy addresses the reader in the singular** and uses no gendered
+  verb about a person. Use a noun phrase, e.g. «مقدَّم من {{name}}»; see
+  `foundation/home/home-arabic.spec.ts`.
+- **Tenant data is never translated.** Labels and names stored on records are
+  shown as stored, never `| translate`.
+- **A workflow enum is shown in words**, through its label helper. Enforced by
+  `check:workflow-enum-display`.
 
 ---
 
-## Translation Rules
+## Styling
 
-Every visible string goes through ngx-translate.
-Never hardcode English or Arabic text in templates.
-
-### Translation Key Convention
-
-```
-{feature}.pageTitle
-{feature}.columns.{columnName}
-{feature}.actions.{actionName}
-{feature}.labels.{labelName}
-{feature}.placeholders.{fieldName}
-{feature}.messages.empty
-{feature}.messages.createSuccess
-{feature}.messages.updateSuccess
-{feature}.messages.deleteConfirm
-common.actions.save
-common.actions.cancel
-common.actions.delete
-common.actions.edit
-common.columns.actions
-status.draft
-status.active
-status.inactive
-validation.required
-validation.maxLength
-errors.loadFailed
-```
-
-### Add to BOTH files before committing
-
-```
-frontend/src/assets/i18n/en.json
-frontend/src/assets/i18n/ar.json
-```
-
-Arabic translations must be actual Arabic text — not placeholders.
-If Arabic translation is unknown — mark it clearly with a TODO comment
-and add the English text temporarily so the app does not break.
+- **Tokens only.** Colour, size, space and radius come from
+  `frontend/src/styles/design-tokens.scss` (Tailwind reads the same set through
+  `tailwind-theme.scss`). Never a literal colour, px size or radius in a
+  component, and never `--am-text-secondary` (retired; use `--am-ink-500`).
+  - `check:contrast` checks the token pairs.
+  - `check:retired-ink` keeps the retired ink out of `shared/` and `layout/`.
+- **Tailwind for layout**, logical properties for RTL (`ps-`, `pe-`, `ms-`,
+  `me-`, `text-start`). No inline `style=""`, no Bootstrap.
+- **A new PrimeNG component** must be added to the theme
+  (`core/theme/accreditme-preset.ts`). Enforced by `check:theme-components`.
 
 ---
 
-## Routes Template
+## Lists and record pages
 
-```typescript
-// {feature}.routes.ts
-import { Routes } from '@angular/router';
-
-export const {FEATURE}_ROUTES: Routes = [
-  {
-    path: '',
-    loadComponent: () =>
-      import('./{feature}-list/{feature}-list.component')
-        .then(m => m.{Feature}ListComponent),
-  },
-  {
-    path: ':id',
-    loadComponent: () =>
-      import('./{feature}-detail/{feature}-detail.component')
-        .then(m => m.{Feature}DetailComponent),
-  },
-];
-```
-
-Register in parent routing file as lazy-loaded route:
-
-```typescript
-{
-  path: '{feature}',
-  loadChildren: () =>
-    import('./path/to/{feature}/{feature}.routes')
-      .then(m => m.{FEATURE}_ROUTES),
-  canActivate: [AuthGuard],
-}
-```
+- **Page lists are `app-data-list`** (`shared/components/data-list/`).
+- **Sorting is a column header**, `am-sort-header`
+  (`shared/components/sort-header/sort-header.component.ts`, with `nextSort()`
+  as the one press rule).
+  - Never a toolbar sort dropdown; the exception is phone cards, which have no
+    headers.
+  - A column the server can't sort by stays plain text.
+- **Column tracks are fixed or `fr`**, never `auto`, `min-content` or
+  `max-content` (`gridSuffix` in `data-list.component.ts`).
+  - Cells take `min-inline-size: 0`.
+  - Long text gets an ellipsis, with the full text in a tooltip.
+- **Record page panels are `am-capped-panel`**
+  (`shared/components/capped-panel/`): five rows, a fixed height, and "See
+  all" opening an `am-list-dialog`.
+  - Row actions are `am-row-menu`.
+  - Example: `foundation/committees/components/committee-members-panel/`.
+- **Page title and actions are `app-page-header`.** A create action in it sits
+  behind a permission gate (`check:create-gating`), and so does every write
+  control (`check:action-gating`).
 
 ---
 
-## TypeScript and Template Verification
+## The server decides; the screen renders
 
-Run after completing all component files:
+- **No screen keeps a copy of a server rule.** Render the flags the response
+  carries: `actions`, `memberActions`, `stageRules`, a `/moves` list,
+  `recordRoutes`. Never re-derive them from permission strings, a stage key or
+  a stage name. Example: `foundation/committees/committee-offers.ts`.
+- **A refusal is said from its CODE, never the server's English `message`.**
+  - Read the code with `refusalCode()` / `refusalBody()` (`core/http/refusal.ts`).
+  - Map it in a `*-refusal.ts` beside the module. Examples:
+    `foundation/workflow/workflow-refusal.ts`,
+    `foundation/committees/committee-stage-refusal.ts`,
+    `foundation/organization/root-unit-refusal.ts`, `core/ai/ai-refusal.ts`.
+  - Show it under the field it concerns, naming the numbers and the way out.
+
+---
+
+## Verify before committing
+
+From `frontend/`:
 
 ```bash
-cd frontend && npx tsc --noEmit
-cd frontend && npx ng build
+npx tsc --noEmit -p tsconfig.app.json
+npx tsc --noEmit -p tsconfig.spec.json
+npx ng build                                  # the only check of templates
+npx ng test --watch=false --browsers=ChromeHeadless
 ```
 
-Both must produce zero errors before committing.
+Then run every `check:*` script, **discovered from `package.json`, never
+listed by hand**, and report each by name with its exit status:
 
-**Run `ng build` too — `tsc --noEmit` cannot check your template.**
-It does not invoke the Angular compiler, so `strictTemplates` never
-applies: a binding to a field the type does not have compiles clean.
-That matters most in this skill, which is where templates get
-written. `ng test` will not save you either — it only compiles
-components a spec imports, so a component without a spec is checked
-by nothing until `ng build` runs (ACC-72, found live in ACC-70).
+```bash
+for s in $(node -e "const s=require('./package.json').scripts;console.log(Object.keys(s).filter(k=>k.startsWith('check:')).join(' '))"); do
+  npm run "$s" >/dev/null 2>&1; echo "$s exit=$?"
+done
+```
 
----
-
-## Final Checklist Before Committing Any Component
-
-- [ ] Component is standalone — no NgModule
-- [ ] Only imports PrimeNG modules it actually uses
-- [ ] State managed with Signals — no direct property mutation
-- [ ] No hardcoded colors — design tokens only
-- [ ] No Bootstrap classes — Tailwind only for layout
-- [ ] No inline styles — Tailwind or tokens only
-- [ ] RTL tested — logical properties used (ps-, pe-, ms-, me-)
-- [ ] All visible strings use translate pipe — no hardcoded text
-- [ ] Translation keys added to BOTH en.json AND ar.json
-- [ ] Forms use Reactive Forms — not template-driven
-- [ ] Loading state shown during API calls
-- [ ] Error state handled — no silent failures
-- [ ] Empty state shown when no data
-- [ ] Table uses scrollable + scrollHeight="flex"
-- [ ] API calls go through service — never directly in component
-- [ ] TypeScript errors: zero — npx tsc --noEmit
-- [ ] Routes registered in parent routing file
+`tsc` never type-checks a template, and `ng test` compiles only what a spec
+imports, so `ng build` is required (ACC-72). Gate each command on its own exit
+status; never pipe it through `grep` or `head`.

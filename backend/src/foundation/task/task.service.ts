@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
+import { counted } from '../../common/i18n/plural';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -33,6 +34,7 @@ import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.serv
 import { OutOfOfficeCoverEntry, coverEntries } from '../../common/services/out-of-office-cover';
 import {
   CURRENT_ACTIVE_ASSIGNEE,
+  currentActiveAssigneeIds,
   isPoolMember,
   POOL_LABEL_INCLUDE,
   poolLabel,
@@ -570,7 +572,9 @@ export class TaskService {
         {
           userId,
           titleEn: 'New task assigned',
-          bodyEn: `You have been assigned: "${task.title}"${coveringSuffix(coveringFor.get(userId))}`,
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: `You have been assigned: "${task.title}"${coveringSuffix(coveringFor.get(userId)).en}`,
+          bodyAr: `أُسندت إليك المهمة «${task.titleAr ?? task.title}»${coveringSuffix(coveringFor.get(userId)).ar}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -1092,7 +1096,7 @@ export class TaskService {
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, viewer.id);
 
     const name = await this.userName(viewer.id, organizationId);
-    for (const userId of activeAssigneeIds(existing, viewer.id)) {
+    for (const userId of await this.activeAssigneeIds(existing.id, organizationId, viewer.id)) {
       await this.notificationService.create(
         {
           userId,
@@ -1609,7 +1613,9 @@ export class TaskService {
         {
           userId,
           titleEn: 'Task reassigned to you',
-          bodyEn: `"${task.title}" has been reassigned to you${coveringSuffix(coveringFor.get(userId))}. Reason: ${dto.reason}`,
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: `"${task.title}" has been reassigned to you${coveringSuffix(coveringFor.get(userId)).en}. Reason: ${dto.reason}`,
+          bodyAr: `أُعيد إسناد المهمة «${task.titleAr ?? task.title}» إليك${coveringSuffix(coveringFor.get(userId)).ar}. السبب: ${dto.reason}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -1877,11 +1883,16 @@ export class TaskService {
     }
 
     if (validToUserId && reassignedCount > 0) {
+      // ACC-95 — counted in each language's own plural forms, never "task(s)".
+      const title = counted(reassignedCount, DEPARTURE_REASSIGNED_TITLE);
+      const body = counted(reassignedCount, DEPARTURE_REASSIGNED_BODY);
       await this.notificationService.create(
         {
           userId: validToUserId,
-          titleEn: 'Tasks reassigned to you',
-          bodyEn: `${reassignedCount} task(s) have been reassigned to you following a colleague's departure.`,
+          titleEn: title.en,
+          titleAr: title.ar,
+          bodyEn: body.en,
+          bodyAr: body.ar,
           channel: 'IN_APP',
         },
         organizationId,
@@ -2145,7 +2156,9 @@ export class TaskService {
           {
             userId,
             titleEn: 'New task assigned',
+            titleAr: 'مهمة جديدة مُسندة إليك',
             bodyEn: `You have been assigned: "${task.title}"`,
+            bodyAr: `أُسندت إليك المهمة «${task.titleAr ?? task.title}»`,
             objectType: 'Task',
             objectId: task.id,
           },
@@ -2407,7 +2420,7 @@ export class TaskService {
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
     if (en.length === 0) return;
-    for (const userId of activeAssigneeIds(before, actorId)) {
+    for (const userId of await this.activeAssigneeIds(before.id, organizationId, actorId)) {
       await this.notificationService.create(
         {
           userId,
@@ -2426,6 +2439,12 @@ export class TaskService {
   private async announcesDueChanges(organizationId: string): Promise<boolean> {
     const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
     return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
+  }
+
+  // ACC-174 — the people on a task, less the person acting. ACC-315: on it means
+  // ACC-86's rule (currentActiveAssigneeIds): someone no longer ACTIVE is not told.
+  private async activeAssigneeIds(taskId: string, organizationId: string, exceptUserId: string): Promise<string[]> {
+    return (await currentActiveAssigneeIds(this.prisma, taskId, organizationId)).filter((id) => id !== exceptUserId);
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
@@ -2610,12 +2629,36 @@ async function endStaleRows(tx: TaskTx, taskId: string, organizationId: string, 
   ).count;
 }
 
-// ACC-174 — the people currently on a task, less the person acting.
-function activeAssigneeIds(task: TaskWithAssigneeRows, exceptUserId: string): string[] {
-  return task.assignees.filter((a) => a.removedAt === null && a.userId !== exceptUserId).map((a) => a.userId);
+/** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. ACC-95: both languages. */
+function coveringSuffix(coveredName: string | undefined): { en: string; ar: string } {
+  return coveredName ? { en: ` (covering for ${coveredName})`, ar: ` (نيابةً عن «${coveredName}»)` } : { en: '', ar: '' };
 }
 
-/** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. */
-function coveringSuffix(coveredName: string | undefined): string {
-  return coveredName ? ` (covering for ${coveredName})` : '';
-}
+// ACC-95 — the departure notice to the acting user, counted. Arabic is passive,
+// so no verb agrees with a person; every category the language has is here.
+export const DEPARTURE_REASSIGNED_TITLE = {
+  en: { one: 'Task reassigned to you', other: 'Tasks reassigned to you' },
+  ar: {
+    zero: 'لم يُعَد إسناد أي مهمة إليك',
+    one: 'أُعيد إسناد مهمة إليك',
+    two: 'أُعيد إسناد مهمتين إليك',
+    few: 'أُعيد إسناد {count} مهام إليك',
+    many: 'أُعيد إسناد {count} مهمة إليك',
+    other: 'أُعيد إسناد {count} مهمة إليك',
+  },
+} as const;
+
+export const DEPARTURE_REASSIGNED_BODY = {
+  en: {
+    one: '{count} task has been reassigned to you because a colleague left.',
+    other: '{count} tasks have been reassigned to you because a colleague left.',
+  },
+  ar: {
+    zero: 'لم يُعَد إسناد أي مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    one: 'أُعيد إسناد مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    two: 'أُعيد إسناد مهمتين إليك بعد مغادرة أحد أعضاء المنشأة.',
+    few: 'أُعيد إسناد {count} مهام إليك بعد مغادرة أحد أعضاء المنشأة.',
+    many: 'أُعيد إسناد {count} مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    other: 'أُعيد إسناد {count} مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+  },
+} as const;

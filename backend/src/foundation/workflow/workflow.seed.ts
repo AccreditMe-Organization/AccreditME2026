@@ -3,7 +3,7 @@
 // a stage says who works it (`who`) and a move who makes it (`mover`); the
 // seed names no role, permission or trigger.
 
-import { COMMITTEE_ACTIONS, STAGE_FLAG } from './record-registry';
+import { COMMITTEE_ACTIONS, MEETING_ACTIONS, STAGE_FLAG } from './record-registry';
 
 // ACC-255 — today's committee rules, reproduced exactly (the plan's §4.1):
 // membership in every stage, Edit details in Formation only, a change request
@@ -50,7 +50,21 @@ export interface SeedTransition {
 export type SeedWho =
   // ACC-283 PR 4 — ORG_UNIT_HEAD with no unit is the record's own unit
   // (RECORD_ROUTES): Terms Review is decided by the committee's unit head.
-  | { mode: 'ANY_ONE' | 'ALL'; entries: readonly ({ kind: 'CREATOR' } | { kind: 'ORG_UNIT_HEAD' })[] }
+  //
+  // ACC-316 — a meeting's own kinds (no fields), and COMMITTEE with no
+  // committee (the record's) narrowed to a seat named by its lookup KEY,
+  // resolved to the shared committee_member_role value when the seed is applied.
+  | {
+      mode: 'ANY_ONE' | 'ALL';
+      entries: readonly (
+        | { kind: 'CREATOR' }
+        | { kind: 'ORG_UNIT_HEAD' }
+        | { kind: 'MEETING_SCHEDULERS' }
+        | { kind: 'MEETING_RECORDERS' }
+        | { kind: 'MEETING_APPROVERS' }
+        | { kind: 'COMMITTEE'; seatKey: string }
+      )[];
+    }
   | { mode: 'ANY_ONE' | 'ALL'; startingAssignment: true };
 
 export interface SeedStage {
@@ -233,27 +247,62 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
   },
 
   // ── 6. MEETING ────────────────────────────────────────────────────────────
+  // ACC-316 PR 2 — the decided flow (plan step-316 §3.8): Planned → Issue
+  // Agenda → Agenda Issued → Record Minutes → Minutes Draft → Distribute
+  // Minutes → Minutes Review → Approve Minutes → Minutes Approved; Return for
+  // Correction back to Minutes Draft; Cancel Meeting from Planned and Agenda
+  // Issued. The old draft-to-draft "Return for Correction" is gone.
+  // Distribute and Return carry the meeting's own writes (the review date, the
+  // review round), so they are the app's moves, fired by the meeting endpoints
+  // (PR 4) for whoever meeting-authority.ts allows.
   {
     objectType: 'MEETING',
     nameEn: 'Meeting Management',
     nameAr: 'إدارة الاجتماعات',
     stages: [
-      { key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'agenda_ready', nameEn: 'Agenda Ready', nameAr: 'الأجندة جاهزة', order: 20, isInitial: false, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ALL', startingAssignment: true } },
-      { key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      {
+        key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false,
+        actions: [MEETING_ACTIONS.EDIT_DETAILS, MEETING_ACTIONS.MANAGE_AGENDA, MEETING_ACTIONS.MANAGE_GUESTS, MEETING_ACTIONS.RESCHEDULE, MEETING_ACTIONS.ANSWER_INVITATION],
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'MEETING_SCHEDULERS' }] },
+      },
+      {
+        key: 'agenda_ready', nameEn: 'Agenda Issued', nameAr: 'الأجندة مُصدَرة', order: 20, isInitial: false, isFinal: false,
+        actions: [MEETING_ACTIONS.EDIT_DETAILS, MEETING_ACTIONS.MANAGE_AGENDA, MEETING_ACTIONS.MANAGE_GUESTS, MEETING_ACTIONS.RESCHEDULE, MEETING_ACTIONS.ANSWER_INVITATION, MEETING_ACTIONS.RECORD_ATTENDANCE],
+        flags: [STAGE_FLAG.AGENDA_ISSUED],
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'MEETING_SCHEDULERS' }, { kind: 'MEETING_RECORDERS' }] },
+      },
+      {
+        key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16,
+        actions: [MEETING_ACTIONS.RECORD_ATTENDANCE, MEETING_ACTIONS.RECORD_MINUTES],
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'MEETING_RECORDERS' }] },
+      },
+      {
+        key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 16,
+        actions: [MEETING_ACTIONS.APPLY_SUGGESTIONS, MEETING_ACTIONS.CHANGE_ACTION_DATES, MEETING_ACTIONS.SUGGEST_CORRECTION],
+        // A committee's minutes are its Chair's alone (Ahmad, 18 Nov): the
+        // record's committee, chairman seat. A unit meeting's approvers come
+        // from MEETING_APPROVERS, which is nobody for a committee meeting.
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'COMMITTEE', seatKey: 'chairman' }, { kind: 'MEETING_APPROVERS' }] },
+      },
+      {
+        key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, slaWorkingHours: 8,
+        actions: [], flags: [STAGE_FLAG.MINUTES_FINAL],
+        who: { mode: 'ANY_ONE', startingAssignment: true },
+      },
+      {
+        key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true,
+        actions: [], flags: [STAGE_FLAG.MEETING_CANCELLED],
+        who: { mode: 'ANY_ONE', startingAssignment: true },
+      },
     ],
     transitions: [
-      { fromStageKey: 'planned', toStageKey: 'agenda_ready', labelEn: 'Prepare Agenda', labelAr: 'إعداد الأجندة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'planned', toStageKey: 'agenda_ready', labelEn: 'Issue Agenda', labelAr: 'إصدار الأجندة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'planned', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'agenda_ready', toStageKey: 'minutes_draft', labelEn: 'Record Minutes', labelAr: 'تسجيل المحضر', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
       { fromStageKey: 'agenda_ready', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_review', labelEn: 'Distribute Minutes', labelAr: 'توزيع المحضر', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_review', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', mover: 'PERSON', kind: 'RETURN', isApprovalPath: false, actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_review', labelEn: 'Distribute Minutes', labelAr: 'توزيع المحضر', mover: 'APP', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', mover: 'APP', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -269,8 +318,8 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
       // starting assignment. Existing organisations keep what they set; no
       // backfill. A vacant head means an empty pool, flagged unassigned.
       { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', entries: [{ kind: 'ORG_UNIT_HEAD' }] } },
-      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
       { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
       // ACC-255 PR 2 (Ahmad, Q-A): a dissolved committee's members can't be changed;
       // Dissolution Pending still allows it. Existing organisations: backfill:acc255-dissolved-membership.

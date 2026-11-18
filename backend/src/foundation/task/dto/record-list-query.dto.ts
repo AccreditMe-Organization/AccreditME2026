@@ -38,12 +38,24 @@ const toList = ({ value }: { value: unknown }) =>
   value === undefined || value === '' ? undefined : Array.isArray(value) ? value : String(value).split(',');
 
 export class RecordPanelQueryDto {
+  /**
+   * A record (both of these), or ACC-216's person (`person`): exactly one of
+   * the two. The service refuses anything else with a 400.
+   */
+  @IsOptional()
   @IsIn(SOURCE_TYPES)
-  sourceType!: (typeof SOURCE_TYPES)[number];
+  sourceType?: (typeof SOURCE_TYPES)[number];
 
+  @IsOptional()
   @IsString()
   @MaxLength(64)
-  sourceId!: string;
+  sourceId?: string;
+
+  /** ACC-216 — a person's own Tasks panel: the first five tasks they are on that the viewer may see. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  person?: string;
 }
 
 export class RecordListQueryDto {
@@ -71,6 +83,17 @@ export class RecordListQueryDto {
   @IsOptional()
   @IsIn(RECORD_LIST_VIEWS)
   view?: RecordListView;
+
+  /**
+   * ACC-216 (plan step-216 §5, Option A) — a PERSON's tasks: the tasks this
+   * user is an active assignee on, AND the viewer's own visibility rule. Never
+   * with a record or a view (400). Yourself, or users:view (403 naming it,
+   * before any read); another organisation's person is the 404.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  person?: string;
 
   /** ACC-244 — a record-type filter for the organisation-wide views. */
   @IsOptional()

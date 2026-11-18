@@ -62,13 +62,16 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
         seatChangesSeat:             { type: 'boolean', labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
         seatRequestsChange:          { type: 'boolean', labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
         seatDecidesReportingChanges: { type: 'boolean', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
+        // ACC-316 — the meeting seat actions (seat-actions.ts).
+        seatSchedulesMeetings:       { type: 'boolean', labelEn: 'Schedule meetings',                               labelAr: 'جدولة الاجتماعات' },
+        seatRecordsMinutes:          { type: 'boolean', labelEn: 'Record the minutes',                              labelAr: 'تسجيل المحضر' },
       },
     },
     sortOrder: 20,
     values: [
-      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatDecidesReportingChanges: true } },
+      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatDecidesReportingChanges: true, seatSchedulesMeetings: true } },
       { key: 'vice_chairman', labelEn: 'Vice Chairman', labelAr: 'نائب الرئيس', sortOrder: 20 },
-      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true } },
+      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatSchedulesMeetings: true, seatRecordsMinutes: true } },
       { key: 'member',        labelEn: 'Member',        labelAr: 'عضو',         sortOrder: 40 },
       { key: 'observer',      labelEn: 'Observer',      labelAr: 'مراقب',       sortOrder: 50 },
       { key: 'advisor',       labelEn: 'Advisor',       labelAr: 'مستشار',      sortOrder: 60 },

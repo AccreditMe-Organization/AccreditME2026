@@ -43,7 +43,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
           <span class="am-cp-l1">
             <span class="am-cmh__dot" [style.background]="color(e.action)" aria-hidden="true"></span>
             <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
-            <span class="am-cmh__date" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
+            <span class="am-cmh__date">{{ format.date(e.effectiveDate) }}</span>
           </span>
           <span class="am-cp-l2"><span class="am-cp-cut" [title]="detail(e)">{{ detail(e) }}</span></span>
         </li>
@@ -56,7 +56,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
         <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
       </span>
       <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)">{{ detail(e) }}</span>
-      <span class="text-[var(--am-ink-700)] whitespace-nowrap" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
+      <span class="text-[var(--am-ink-700)] whitespace-nowrap" data-history-date>{{ format.date(e.effectiveDate) }}</span>
     </ng-template>
     <ng-template #popupBody>
       <am-simple-list

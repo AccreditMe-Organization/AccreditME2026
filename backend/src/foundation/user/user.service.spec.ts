@@ -1,6 +1,14 @@
 import { IUser } from './interfaces/user.interface';
 import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
-import { UserService, toSafeUser } from './user.service';
+import {
+  DEPARTURE_SUMMARY_REASSIGNED,
+  DEPARTURE_SUMMARY_UNASSIGNED,
+  MISSING_PLACEMENT_BODY,
+  MISSING_PLACEMENT_TITLE,
+  UserService,
+  toSafeUser,
+} from './user.service';
+import { counted } from '../../common/i18n/plural';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -2500,6 +2508,55 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-95 — the departure notice to the other admins: both languages, each
+  // clause counted and left out at zero, "UNASSIGNED" said in words.
+  describe('the departure notice to the other admins (ACC-95)', () => {
+    type Notify = (admins: { userId: string }[], org: string, user: { name: string }, reassigned: number, unassigned: number) => Promise<void>;
+    const notify = (reassigned: number, unassigned: number): Promise<void> =>
+      (service as unknown as { notifyTenantAdminsOfDeparture: Notify }).notifyTenantAdminsOfDeparture.call(
+        service,
+        [{ userId: 'admin-1' }],
+        ORG_A,
+        { name: 'Departing User' },
+        reassigned,
+        unassigned,
+      );
+    const sent = (): Record<string, unknown> => (mockNotification.create.mock.calls[0] as [Record<string, unknown>])[0];
+
+    it('names the person in both languages, with both clauses counted', async () => {
+      await notify(3, 1);
+      expect(sent()).toEqual({
+        userId: 'admin-1',
+        titleEn: 'Departing User has been deactivated',
+        titleAr: 'أُلغي تفعيل حساب «Departing User»',
+        bodyEn: "Departing User's account was deactivated. 3 tasks reassigned. 1 task is unassigned and needs someone assigned by hand.",
+        bodyAr: 'أُلغي تفعيل حساب «Departing User». أُعيد إسناد 3 مهام. مهمة واحدة بلا مسؤول وتحتاج إلى إسناد يدوي.',
+        channel: 'IN_APP',
+      });
+    });
+
+    it('leaves a clause out at zero, and both when nothing moved', async () => {
+      await notify(2, 0);
+      expect([sent()['bodyEn'], sent()['bodyAr']]).toEqual([
+        "Departing User's account was deactivated. 2 tasks reassigned.",
+        'أُلغي تفعيل حساب «Departing User». أُعيد إسناد مهمتين.',
+      ]);
+      mockNotification.create.mockClear();
+      await notify(0, 0);
+      expect([sent()['bodyEn'], sent()['bodyAr']]).toEqual(["Departing User's account was deactivated.", 'أُلغي تفعيل حساب «Departing User».']);
+    });
+
+    it.each([
+      [1, '1 task reassigned.', 'أُعيد إسناد مهمة واحدة.', '1 task is unassigned and needs someone assigned by hand.', 'مهمة واحدة بلا مسؤول وتحتاج إلى إسناد يدوي.'],
+      [2, '2 tasks reassigned.', 'أُعيد إسناد مهمتين.', '2 tasks are unassigned and need someone assigned by hand.', 'مهمتان بلا مسؤول وتحتاجان إلى إسناد يدوي.'],
+      [3, '3 tasks reassigned.', 'أُعيد إسناد 3 مهام.', '3 tasks are unassigned and need someone assigned by hand.', '3 مهام بلا مسؤول وتحتاج إلى إسناد يدوي.'],
+      [11, '11 tasks reassigned.', 'أُعيد إسناد 11 مهمة.', '11 tasks are unassigned and need someone assigned by hand.', '11 مهمة بلا مسؤول وتحتاج إلى إسناد يدوي.'],
+    ])('counts %i in both clauses, in both languages', (n, reEn, reAr, unEn, unAr) => {
+      expect(counted(n, DEPARTURE_SUMMARY_REASSIGNED)).toEqual({ en: reEn, ar: reAr });
+      expect(counted(n, DEPARTURE_SUMMARY_UNASSIGNED)).toEqual({ en: unEn, ar: unAr });
+    });
+  });
+
   // ACC-40 Section 2.4 — remediation report, not a data migration.
   describe('notifyTenantAdminsOfIncompleteProfiles', () => {
     it('does nothing when no active user is missing a position or org unit', async () => {
@@ -2524,13 +2581,33 @@ describe('UserService', () => {
         where: { organizationId: ORG_A, key: 'TENANT_ADMIN' },
       });
       expect(mockNotification.create).toHaveBeenCalledTimes(2);
-      expect(mockNotification.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('2') }),
-        ORG_A,
-      );
-      expect(mockNotification.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-2', titleEn: expect.stringContaining('2') }),
-        ORG_A,
+      // ACC-95 — counted in both languages; the Arabic forms have no verb.
+      for (const userId of ['admin-1', 'admin-2']) {
+        expect(mockNotification.create).toHaveBeenCalledWith(
+          {
+            userId,
+            titleEn: '2 active users are missing a position or org unit',
+            titleAr: 'مستخدمان نشطان بلا مسمى وظيفي أو وحدة تنظيمية',
+            bodyEn: '2 active users in your organization have no position or org unit. Update each profile to complete the record.',
+            bodyAr: 'مستخدمان نشطان بلا مسمى وظيفي أو وحدة تنظيمية. يلزم تحديث ملف كل منهم لإكمال بياناته.',
+          },
+          ORG_A,
+        );
+      }
+    });
+
+    it.each([
+      [1, '1 active user is missing a position or org unit', 'مستخدم نشط واحد بلا مسمى وظيفي أو وحدة تنظيمية'],
+      [2, '2 active users are missing a position or org unit', 'مستخدمان نشطان بلا مسمى وظيفي أو وحدة تنظيمية'],
+      [3, '3 active users are missing a position or org unit', '3 مستخدمين نشطين بلا مسمى وظيفي أو وحدة تنظيمية'],
+      [11, '11 active users are missing a position or org unit', '11 مستخدمًا نشطًا بلا مسمى وظيفي أو وحدة تنظيمية'],
+    ])('ACC-95: the title for %i user(s) is counted in both languages', (n, en, ar) => {
+      expect(counted(n, MISSING_PLACEMENT_TITLE)).toEqual({ en, ar });
+      expect(counted(n, MISSING_PLACEMENT_BODY).ar).toBe(`${ar}. يلزم تحديث ملف كل منهم لإكمال بياناته.`);
+      expect(counted(n, MISSING_PLACEMENT_BODY).en).toBe(
+        n === 1
+          ? '1 active user in your organization has no position or org unit. Update each profile to complete the record.'
+          : `${n} active users in your organization have no position or org unit. Update each profile to complete the record.`,
       );
     });
 

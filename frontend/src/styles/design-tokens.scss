@@ -138,6 +138,9 @@
   --am-form-control-height: 36px;
   --am-form-row-gap:        12px;
   --am-form-max-width:      640px;
+  // A field's message slot (am-field): one line, reserved so the layout never
+  // jumps. Read by layouts that centre beside a field's control (ACC-313).
+  --am-field-message-line:  17px;
   // ACC-292 — a find box above a page of cards: "Find a setting" at most 420px.
   --am-find-max-width:      420px;
 
