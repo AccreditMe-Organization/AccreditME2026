@@ -83,10 +83,18 @@ export interface UserPermissionGrantDto extends UserRoleGrantDto {
  */
 export type RoleReferenceCategory = 'USER_GRANTS' | 'POSITION_GRANTS' | 'POSITIONS' | 'STAGE_ESCALATIONS';
 
+/** One named holder or reference, in both languages. A person's name is nameEn, with nameAr null. */
+export interface RoleReferenceNameDto {
+  nameEn: string;
+  nameAr: string | null;
+  /** STAGE_ESCALATIONS only: the workflow the stage belongs to. */
+  workflow?: { nameEn: string; nameAr: string | null };
+}
+
 export interface RoleReferenceBlockerDto {
   category: RoleReferenceCategory;
   count: number;
-  names: string[];
+  names: RoleReferenceNameDto[];
 }
 
 /** GET /roles/:id/deactivation-check — the same check the deactivate refusal (409 ROLE_IN_USE) runs. */
