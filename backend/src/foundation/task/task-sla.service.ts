@@ -157,13 +157,21 @@ export class TaskSlaService {
 
   /** A date in the tenant's time zone, in English and Arabic, for server text. */
   async forPeople(date: Date, organizationId: string): Promise<PeopleDate> {
-    const zone = await this.workingCalendar.getEffectiveTimeZone(organizationId);
-    const at = DateTime.fromJSDate(date).setZone(zone);
-    return {
-      en: at.setLocale('en-GB').toFormat('d LLL yyyy, HH:mm'),
-      ar: at.reconfigure({ locale: 'ar', numberingSystem: 'latn' }).toFormat('d LLLL yyyy، HH:mm'),
-    };
+    return peopleDateIn(date, await this.workingCalendar.getEffectiveTimeZone(organizationId));
   }
+}
+
+/**
+ * A date in a time zone already read, in English and Arabic, for server text.
+ * ACC-313 — the reminder sweep reads the zone once per organisation and words
+ * every task's date with it.
+ */
+export function peopleDateIn(date: Date, zone: string): PeopleDate {
+  const at = DateTime.fromJSDate(date).setZone(zone);
+  return {
+    en: at.setLocale('en-GB').toFormat('d LLL yyyy, HH:mm'),
+    ar: at.reconfigure({ locale: 'ar', numberingSystem: 'latn' }).toFormat('d LLLL yyyy، HH:mm'),
+  };
 }
 
 /** The latest of the dates given, ignoring nulls. The first is required. */

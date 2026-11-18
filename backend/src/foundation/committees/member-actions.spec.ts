@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MEMBER_ACTIONS, MEMBER_ACTION_KEYS, assertMemberAction, memberActionsFor } from './member-actions';
+import { MEMBER_ACTIONS, MEMBER_ACTION_KEYS, MemberAction, SEAT_NEVER_ON_OWN_ROW, assertMemberAction, committeeMemberActionsFor, memberActionsFor } from './member-actions';
 
 /**
  * ACC-283 PR 6 — the rule's truth table, and what each answer costs in queries
@@ -93,6 +93,69 @@ describe('memberActionsFor — the rule (ACC-283 PR 6)', () => {
   it('only the asked actions are decided', async () => {
     const { typed } = client('secretary', [{ roleValueId: 'secretary', actionKey: 'add_member' }]);
     expect(await memberActionsFor(typed, ORG, COMMITTEE, { id: 'u', permissions: [] }, { actions: ['request_change'] })).toEqual(all(false));
+  });
+});
+
+// ACC-320 — the committee read says whether the viewer may change their OWN seat,
+// from the same decide() pass and Q-A's one rule (SEAT_NEVER_ON_OWN_ROW).
+describe('committeeMemberActionsFor — change_own_seat (ACC-320)', () => {
+  const CHANGE_KEY = MEMBER_ACTIONS.change_member_seat.permission;
+  const seatOnly = () => client('secretary', [{ roleValueId: 'secretary', actionKey: 'change_member_seat' }]);
+  const ownSeat = async (c: ReturnType<typeof client>, permissions: string[]) =>
+    (await committeeMemberActionsFor(c.typed, ORG, COMMITTEE, { id: 'u', permissions })).change_own_seat;
+
+  it('true for a role-path holder: the key with committees:view, or the key as a member', async () => {
+    expect(await ownSeat(client(null), [VIEW, CHANGE_KEY])).toBe(true);
+    expect(await ownSeat(client('member'), [CHANGE_KEY])).toBe(true);
+  });
+
+  it('false for a member whose SEAT alone allows changing seats (Q-A), though change_member_seat is true', async () => {
+    const got = await committeeMemberActionsFor(seatOnly().typed, ORG, COMMITTEE, { id: 'u', permissions: [] });
+    expect([got.change_member_seat, got.change_own_seat]).toEqual([true, false]);
+  });
+
+  it('false with neither the role nor the seat', async () => {
+    expect(await ownSeat(client('member'), [])).toBe(false);
+    expect(await ownSeat(client(null), [VIEW])).toBe(false);
+  });
+
+  it('is computed from SEAT_NEVER_ON_OWN_ROW, never apart from it: emptied, the seat-only member may change their own seat', async () => {
+    const list = SEAT_NEVER_ON_OWN_ROW as MemberAction[];
+    const saved = [...list];
+    list.splice(0);
+    try {
+      expect(await ownSeat(seatOnly(), [])).toBe(true);
+    } finally {
+      list.push(...saved);
+    }
+    expect(await ownSeat(seatOnly(), [])).toBe(false);
+  });
+
+  it('adds one field and leaves the four actions exactly as memberActionsFor() decides them', async () => {
+    const c = seatOnly();
+    const { change_own_seat, ...four } = await committeeMemberActionsFor(c.typed, ORG, COMMITTEE, { id: 'u', permissions: [] });
+    expect(typeof change_own_seat).toBe('boolean');
+    expect(four).toEqual(await memberActionsFor(seatOnly().typed, ORG, COMMITTEE, { id: 'u', permissions: [] }));
+  });
+
+  it("agrees with the write on the actor's own row, for each kind of viewer", async () => {
+    // The actor's own membership row is the target: the write's Q-A check reads it.
+    const cases: [() => ReturnType<typeof client>, string[]][] = [
+      [() => client(null, [], { userId: 'u' }), [VIEW, CHANGE_KEY]],
+      [() => client('member', [], { userId: 'u' }), [CHANGE_KEY]],
+      [() => client('secretary', [{ roleValueId: 'secretary', actionKey: 'change_member_seat' }], { userId: 'u' }), []],
+      [() => client('member', [], { userId: 'u' }), []],
+    ];
+    for (const [make, permissions] of cases) {
+      const read = await ownSeat(make(), permissions);
+      const write = await assertMemberAction(make().typed, ORG, COMMITTEE, { id: 'u', permissions }, 'change_member_seat', {
+        targetMemberId: 'm-own',
+      }).then(
+        () => true,
+        () => false,
+      );
+      expect({ permissions, read }).toEqual({ permissions, read: write });
+    }
   });
 });
 

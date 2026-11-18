@@ -649,4 +649,22 @@ describe('WorkingCalendarService', () => {
       );
     });
   });
+  // ACC-313 — the SLA sweep's loader reads; it never creates a calendar row,
+  // so two workers sweeping at once cannot both insert one.
+  describe('loadCalendar (ACC-313)', () => {
+    it('loads the organisation’s own calendar and holidays', async () => {
+      const loaded = await service.loadCalendar(ORG_A);
+      expect(loaded.calendar.timezone).toBe(CAL_A.timezone);
+      expect(mockPrisma.publicHoliday.findMany).toHaveBeenCalledWith({ where: { workingCalendarId: CAL_A.id }, orderBy: { date: 'asc' } });
+    });
+
+    it('an organisation with no calendar reads the default, and nothing is created', async () => {
+      const loaded = await service.loadCalendar('org-without-calendar');
+      expect(loaded).toEqual({
+        calendar: { timezone: 'Asia/Riyadh', workingDays: [0, 1, 2, 3, 4], workingHoursStart: '08:00', workingHoursEnd: '16:00' },
+        holidays: [],
+      });
+      expect(mockPrisma.workingCalendar.create).not.toHaveBeenCalled();
+    });
+  });
 });

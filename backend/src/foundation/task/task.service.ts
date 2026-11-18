@@ -16,6 +16,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
+import { taskSlaNoticesFromSettings } from '../tenant/task-sla-settings';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { assertHoldsCreateKey, holdsTaskKey } from './task-record-types';
 import { assertMayCreateTasks, assertRecordAcceptsTasks } from './task-record-choices';
@@ -53,6 +54,7 @@ import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.d
 import { aTaskThatIs } from './task-status-label';
 import {
   CancelledRequest,
+  DUE_WARNING_CLEARED,
   HOLD_CLEARED,
   OPEN_REQUEST_INCLUDE,
   auditCancelledRequests,
@@ -1007,6 +1009,8 @@ export class TaskService {
         data.slaStartAt = this.sla.startOf(existing);
         data.slaLimitAt = limitAt;
         if (dueAt && dueAt > now) Object.assign(data, ESCALATION_CLEARED);
+        // ACC-313 — a new due date, or a new priority's window, re-arms the reminder.
+        Object.assign(data, DUE_WARNING_CLEARED);
       }
 
       const task = await tx.task.update({ where: { id }, data });
@@ -1195,6 +1199,7 @@ export class TaskService {
           slaLimitAt: limitAt,
           slaExtendedTo: null,
           ...ESCALATION_CLEARED,
+          ...DUE_WARNING_CLEARED,
           reopenedReason: dto.reason,
           reopenedAt: now,
           reopenedById: viewer.id,
@@ -1560,6 +1565,8 @@ export class TaskService {
           rejectedAt: null,
           rejectedById: null,
           ...HOLD_CLEARED,
+          // ACC-313 (Q5) — the new holder is reminded, but only while the due time is ahead.
+          ...(existing.dueAt && existing.dueAt > now ? DUE_WARNING_CLEARED : {}),
           ...toPoolColumns(placement?.target ?? null),
           ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
@@ -2386,7 +2393,10 @@ export class TaskService {
   ): Promise<void> {
     const en: string[] = [];
     const ar: string[] = [];
-    if (changed.dueChanged && after.dueAt) {
+    // ACC-313 — the organisation's switch governs the due-date clause only:
+    // a priority change is still announced, without the date (Q7). It is read
+    // only when the date moved, so other edits cost no read.
+    if (changed.dueChanged && after.dueAt && (await this.announcesDueChanges(organizationId))) {
       const due = await this.sla.forPeople(after.dueAt, organizationId);
       en.push(`it is now due ${due.en}`);
       ar.push(`أصبح موعد استحقاقها ${due.ar}`);
@@ -2396,6 +2406,7 @@ export class TaskService {
       en.push(`its priority is now ${words.en}`);
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
+    if (en.length === 0) return;
     for (const userId of activeAssigneeIds(before, actorId)) {
       await this.notificationService.create(
         {
@@ -2410,6 +2421,11 @@ export class TaskService {
         organizationId,
       );
     }
+  }
+
+  private async announcesDueChanges(organizationId: string): Promise<boolean> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
