@@ -1053,10 +1053,6 @@ export class AuthService {
       );
     }
 
-    // ACC-316 PR 3b — now ACTIVE, the person is a MEMBER invitee of their unit's
-    // and committees' open meetings.
-    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'an accepted invitation', (s) => s.forUser(user.organizationId, user.id));
-
     await this.auditLog.log({
       tenantId: user.organizationId,
       actorId: user.id,
@@ -1065,6 +1061,10 @@ export class AuthService {
       objectId: user.id,
       metadata: { event: 'invitation_accepted' },
     });
+
+    // ACC-316 PR 3b — now ACTIVE, the person is a MEMBER invitee of their unit's
+    // and committees' open meetings. After the audit row, as every other writer.
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'an accepted invitation', (s) => s.forUser(user.organizationId, user.id));
   }
 
   /**
