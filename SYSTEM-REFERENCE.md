@@ -4759,6 +4759,14 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
   by `organizationId` and name the organisation as the object, in one
   `where`.
+  - **The unit stamp (CC-332):** every task SLA audit row written since
+    PR 4 carries `metadata.escalationHoursUnit = 'WORKING'`
+    (`WORKING_HOURS_STAMP`): limits, escalation, the old whole-policy save,
+    the switch and Reset alike. Each history row returns it as
+    `escalationHoursUnit: 'WORKING' | null`.
+    - The screen reads it first.
+    - A row without it was saved before PR 4, when escalation counted clock
+      hours, and falls back to the row's shape.
 - **Notices (ACC-313 PR 3), a sibling key `settings.taskSlaNotices`**:
   `{ warnBeforeDue: { LOW..CRITICAL: 'OFF'|'H1'|'H2'|'H4'|'H8'|'WORKING_DAY' },
   notifyOnDueChange }`, read only through `taskSlaNoticesFromSettings()`
