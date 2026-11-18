@@ -64,6 +64,7 @@ import {
 import { assertNotAccountOwner } from '../roles/account-owner';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
 import { AccountOwnerProtectedException } from '../roles/role-permission-refusal';
+import { RoleInactiveException } from '../roles/role-active';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 import { buildTenantUrl } from '../../common/config/app-url.config';
@@ -1353,6 +1354,14 @@ export class UserService {
     // legitimately fire during one.
     if (!position.isActive) {
       throw new ConflictException('This position is inactive and cannot be assigned');
+    }
+    // ACC-154 — a head position grants its role to whoever holds it
+    // (syncHeadAuthorityRoleGrant), and a deactivated role is never given out
+    // again. Refused here, before anything is written; the grant itself
+    // re-checks under the role's lock.
+    if (position.isUnitHeadPosition && position.roleId) {
+      const role = await this.prisma.role.findFirst({ where: { id: position.roleId, organizationId }, select: { isActive: true } });
+      if (role && !role.isActive) throw new RoleInactiveException();
     }
 
     await this.validateSingleAssigneeCap(
