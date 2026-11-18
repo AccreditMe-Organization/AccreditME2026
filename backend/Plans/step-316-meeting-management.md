@@ -1424,6 +1424,20 @@ them together with their resolver.
        - the Home "Answer the invitation" row is the screens' (PR 6).
      - **§3.9 is out of date in one detail:** ACC-95's `counted()` now
        exists (`common/i18n/plural.ts`). Meeting notices still store no count.
+     - **Lane B's review of #351 (Prompt 153), all built:**
+       - a presenting member who leaves becomes an organisation guest;
+       - a presenter added as a guest needs `manage_guests`;
+       - agenda item locks keep no paper alive past its item;
+       - the clash check names no meeting the asker can't open, and checks
+         only invitees;
+       - https-only meeting links, with escaping pinned;
+       - the meeting row FOR UPDATE after the instance in every people,
+         agenda and answer write;
+       - the answer's clock after the locks;
+       - the clash window prefilter;
+       - DTO caps;
+       - the sync importing its services' modules (`StageRulesModule`);
+       - auth's call after the audit row.
      - **No migration.**
 4. **PR 4: minutes and review, backend.**
    - Changes:

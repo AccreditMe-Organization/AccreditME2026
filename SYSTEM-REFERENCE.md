@@ -16912,7 +16912,10 @@ user).
   sweep:
   - adds the missing MEMBER rows (an organisation guest who becomes a member
     turns into a MEMBER row and keeps their answer);
-  - removes the MEMBER rows no longer expected, with their answers;
+  - removes the MEMBER rows no longer expected, with their answers — except a
+    leaver who presents an agenda item: that row becomes an organisation guest
+    (`addedAsPresenter`), keeping its answer and the presenter link, and the
+    organiser is told in the app;
   - refreshes a member's seat snapshot.
 
   Guests are never touched.
@@ -16920,7 +16923,8 @@ user).
   (Planned and Agenda Issued, seeded) and the meeting has not started. Held and
   cancelled meetings never change.
 - **Each meeting changes in its own short transaction:** the instance FOR SHARE
-  first (as every invitee write), then a fresh read under it.
+  first, then the meeting row FOR UPDATE (as every invitee write), then a fresh
+  read under them.
 - **A member added after the agenda is issued** is stamped invited and told
   (the invitation), after the commit.
 - **ACC-82's rule:** correctness rests on the scheduled recomputer,
@@ -16934,15 +16938,24 @@ user).
   - a change of unit on the profile;
   - deactivation and reactivation;
   - an accepted invitation.
-- **A module of its own** (`MeetingInviteesModule`) importing only Prisma and
-  the queues (ACC-297's shape), so those modules and the sweep import it with
-  no cycle. The writers inject it `@Optional()`, so a service built by hand in
-  a spec needs none.
+- **A module of its own** (`MeetingInviteesModule`). It imports the modules that
+  own what it uses (`NotificationModule`, `WorkingCalendarModule`, and
+  `StageRulesModule`), so it shares their single instances. `StageRulesModule`
+  is StageRulesService on its own, which `WorkflowModule` re-exports, so the
+  sync uses it with no cycle.
+- **The writers inject it `@Optional()`,** so a service built by hand in a spec
+  needs none. `meeting-invitees.wiring.spec.ts` compiles the real `AppModule`
+  and proves every writer and the sweep hold it, each instance from its own
+  module.
 
 ### 18.9 Guests and answers (PR 3b)
 
-`MeetingPeopleService`. Every write takes the instance FOR SHARE first (the
-stage's rule), then writes, with an audit row.
+`MeetingPeopleService`. Every write takes the instance FOR SHARE (the stage's
+rule), then the meeting row FOR UPDATE, then writes, with an audit row. The row
+lock serialises the writes on one meeting (a duplicate-guest check, an answer
+against the sync). A unique or missing-row error that still slips through is a
+coded 409 (`MEETING_ALREADY_INVITED` or `MEETING_CHANGED`), never a 500. An
+answer reads its deadline's clock after the locks.
 
 | Route | Who | Does |
 |---|---|---|
@@ -16997,7 +17010,13 @@ stage's rule), then writes, with an audit row.
     once added);
   - by `userId`: an organisation person not yet invited becomes an organisation
     guest in the same write (`addedAsPresenter`), invited at once if the agenda
-    is issued.
+    is issued. That is adding a guest, so the stage must allow `manage_guests`
+    too, with the refusal Add a guest gives.
+- **Locks:** every agenda write takes the instance FOR SHARE, then the meeting
+  row FOR UPDATE (`max(order) + 1` reads a settled state). A removal also takes
+  the item FOR UPDATE; a paper upload holds it FOR SHARE. So no paper outlives
+  its item: a removal waits for a paper being recorded and takes it too, and an
+  upload whose item is removed meanwhile is refused, its bytes discarded.
 - **After issue, the invited users are told what changed** ("Agenda changed").
 - **Removing an item soft-deletes its papers.**
 - **Refusals:**
@@ -17038,14 +17057,18 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
 
 - **The people checked:** those sent, else the meeting's invitees with a user,
   else the owner's members.
+- **Only the owner's members and this meeting's invitees** may be checked; a
+  sent `userIds` naming anyone else is 400 `MEETING_CLASH_PERSON_NOT_INVITEE`.
 - **What counts:** for each time and person, the other meetings they are an
   invitee of, not cancelled (by the `MEETING_CANCELLED` flag), whose time
   STRICTLY overlaps. Back-to-back is not a clash, and the same series counts.
+  The query is prefiltered to the times' window, padded by the longest meeting
+  allowed (1,440 minutes), on the `scheduledAt` index.
 - **Outside guests** are not checked.
 - **A warning, never a block.**
 - **Who may ask:** whoever may schedule for the owner, or edit the meeting;
-  anyone else gets that endpoint's refusal. The other meeting's title is given
-  only if the asker may open it (null: "another meeting").
+  anyone else gets that endpoint's refusal. The other meeting's id and title are
+  given only if the asker may open it (both null: "another meeting").
 - **One query** for every time and person.
 - **Refusals:** `MEETING_CLASH_OWNER_REQUIRED` 400, `MEETING_CLASH_TOO_MANY_TIMES`
   400, `MEETING_OWNER_NOT_FOUND` 404.
@@ -17060,7 +17083,10 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
 - **An outside guest's email** is `NotificationService.sendOutsideEmail()`: the
   `email-delivery` job `outside-email`, with no Notification row.
   - The text is chosen in the ORGANISATION's language when enqueued.
-  - Subject plus one paragraph, with the meeting's place and online link.
+  - Subject plus one paragraph, with the meeting's place and online link (https
+    only). The renderer escapes the body before it links anything, and links
+    only AccreditMe's own URLs, so a tag typed in a title, place or reason stays
+    text and the meeting's link is never an anchor.
   - No link into AccreditMe, no papers, no minutes.
 - **An outside guest is emailed:**
   - at issue (the invitation), or at once if added after;
