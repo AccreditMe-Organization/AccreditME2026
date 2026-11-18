@@ -54,8 +54,9 @@ const MEMBERS = ['add_member', 'change_member_role', 'remove_member'];
 const EXPECTED_COMMITTEE = {
   formation: { actions: ['edit_details', ...MEMBERS].sort(), flags: [] as string[] },
   terms_review: { actions: MEMBERS, flags: [] as string[] },
-  active: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
-  suspended: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
+  // ACC-316 — a meeting may be scheduled on the in-force stages.
+  active: { actions: [...MEMBERS, 'request_change', 'schedule_meeting'].sort(), flags: ['IN_FORCE'] },
+  suspended: { actions: [...MEMBERS, 'request_change', 'schedule_meeting'].sort(), flags: ['IN_FORCE'] },
   dissolution_pending: { actions: MEMBERS, flags: ['DISSOLVING'] },
   // ACC-255 PR 2 (Q-A): a dissolved committee's members can't be changed.
   dissolved: { actions: [] as string[], flags: ['DISSOLVING'] },
@@ -145,7 +146,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       const active = await stageId(o.id, 'COMMITTEE', 'active');
       await prisma.workflowStageRecordAction.deleteMany({ where: { stageId: active, actionKey: 'request_change' } });
       await applyWorkflowSeed(prisma, o.id, SEEDS);
-      expect((await rulesByKey(o.id, 'COMMITTEE'))['active']!.actions).toEqual(MEMBERS);
+      expect((await rulesByKey(o.id, 'COMMITTEE'))['active']!.actions).toEqual([...MEMBERS, 'schedule_meeting'].sort());
     });
   });
 
@@ -264,7 +265,10 @@ describe('Stage rules against a real database (ACC-255)', () => {
   });
 
   describe('D14 — a committee with no workflow instance allows nothing (§13 count 7 is 0 on the shared database)', () => {
-    const NOTHING = { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false };
+    const NOTHING = { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false, schedule_meeting: false };
+    // The committee read keeps its own five (ICommitteeStageRules); scheduling a
+    // meeting reaches it with the meeting screens (ACC-316 PR 6).
+    const READ_NOTHING = { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false };
 
     it("is allowed none of the five actions and has no flags: in the engine's answer, the committee read and the list", async () => {
       const o = await org();
@@ -282,9 +286,9 @@ describe('Stage rules against a real database (ACC-255)', () => {
       }
 
       const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
-      expect((await committees.getCommitteeDetail(committee.id, o.id, { id: 'viewer-1', permissions: ['committees:view'] })).stageRules).toEqual({ actions: NOTHING, flags: [] });
+      expect((await committees.getCommitteeDetail(committee.id, o.id, { id: 'viewer-1', permissions: ['committees:view'] })).stageRules).toEqual({ actions: READ_NOTHING, flags: [] });
       const row = (await committees.listCommittees(o.id, { id: 'viewer-1', permissions: ['committees:view'] })).find((c) => c.id === committee.id);
-      expect(row?.stageRules).toEqual({ actions: NOTHING, flags: [] });
+      expect(row?.stageRules).toEqual({ actions: READ_NOTHING, flags: [] });
 
       // An open change request on it keeps the moves an unkeyed stage gave:
       // with no flags, the §4.2 derivation allows edit, withdraw and reject.
@@ -342,7 +346,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       expect(rows[0]).toMatchObject({
         actorId: o.actorId,
         action: 'UPDATE',
-        before: { actions: ['add_member', 'remove_member', 'change_member_role', 'request_change'] },
+        before: { actions: ['add_member', 'remove_member', 'change_member_role', 'request_change', 'schedule_meeting'] },
         after: { actions: ['add_member'] },
       });
 

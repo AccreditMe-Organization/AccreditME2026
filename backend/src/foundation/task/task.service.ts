@@ -10,12 +10,14 @@ import {
 } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
+import { counted } from '../../common/i18n/plural';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
+import { taskSlaNoticesFromSettings } from '../tenant/task-sla-settings';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { assertHoldsCreateKey, holdsTaskKey } from './task-record-types';
 import { assertMayCreateTasks, assertRecordAcceptsTasks } from './task-record-choices';
@@ -53,6 +55,7 @@ import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.d
 import { aTaskThatIs } from './task-status-label';
 import {
   CancelledRequest,
+  DUE_WARNING_CLEARED,
   HOLD_CLEARED,
   OPEN_REQUEST_INCLUDE,
   auditCancelledRequests,
@@ -568,7 +571,9 @@ export class TaskService {
         {
           userId,
           titleEn: 'New task assigned',
-          bodyEn: `You have been assigned: "${task.title}"${coveringSuffix(coveringFor.get(userId))}`,
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: `You have been assigned: "${task.title}"${coveringSuffix(coveringFor.get(userId)).en}`,
+          bodyAr: `أُسندت إليك المهمة «${task.titleAr ?? task.title}»${coveringSuffix(coveringFor.get(userId)).ar}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -1007,6 +1012,8 @@ export class TaskService {
         data.slaStartAt = this.sla.startOf(existing);
         data.slaLimitAt = limitAt;
         if (dueAt && dueAt > now) Object.assign(data, ESCALATION_CLEARED);
+        // ACC-313 — a new due date, or a new priority's window, re-arms the reminder.
+        Object.assign(data, DUE_WARNING_CLEARED);
       }
 
       const task = await tx.task.update({ where: { id }, data });
@@ -1195,6 +1202,7 @@ export class TaskService {
           slaLimitAt: limitAt,
           slaExtendedTo: null,
           ...ESCALATION_CLEARED,
+          ...DUE_WARNING_CLEARED,
           reopenedReason: dto.reason,
           reopenedAt: now,
           reopenedById: viewer.id,
@@ -1560,6 +1568,8 @@ export class TaskService {
           rejectedAt: null,
           rejectedById: null,
           ...HOLD_CLEARED,
+          // ACC-313 (Q5) — the new holder is reminded, but only while the due time is ahead.
+          ...(existing.dueAt && existing.dueAt > now ? DUE_WARNING_CLEARED : {}),
           ...toPoolColumns(placement?.target ?? null),
           ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
@@ -1602,7 +1612,9 @@ export class TaskService {
         {
           userId,
           titleEn: 'Task reassigned to you',
-          bodyEn: `"${task.title}" has been reassigned to you${coveringSuffix(coveringFor.get(userId))}. Reason: ${dto.reason}`,
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: `"${task.title}" has been reassigned to you${coveringSuffix(coveringFor.get(userId)).en}. Reason: ${dto.reason}`,
+          bodyAr: `أُعيد إسناد المهمة «${task.titleAr ?? task.title}» إليك${coveringSuffix(coveringFor.get(userId)).ar}. السبب: ${dto.reason}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -1870,11 +1882,16 @@ export class TaskService {
     }
 
     if (validToUserId && reassignedCount > 0) {
+      // ACC-95 — counted in each language's own plural forms, never "task(s)".
+      const title = counted(reassignedCount, DEPARTURE_REASSIGNED_TITLE);
+      const body = counted(reassignedCount, DEPARTURE_REASSIGNED_BODY);
       await this.notificationService.create(
         {
           userId: validToUserId,
-          titleEn: 'Tasks reassigned to you',
-          bodyEn: `${reassignedCount} task(s) have been reassigned to you following a colleague's departure.`,
+          titleEn: title.en,
+          titleAr: title.ar,
+          bodyEn: body.en,
+          bodyAr: body.ar,
           channel: 'IN_APP',
         },
         organizationId,
@@ -2138,7 +2155,9 @@ export class TaskService {
           {
             userId,
             titleEn: 'New task assigned',
+            titleAr: 'مهمة جديدة مُسندة إليك',
             bodyEn: `You have been assigned: "${task.title}"`,
+            bodyAr: `أُسندت إليك المهمة «${task.titleAr ?? task.title}»`,
             objectType: 'Task',
             objectId: task.id,
           },
@@ -2386,7 +2405,10 @@ export class TaskService {
   ): Promise<void> {
     const en: string[] = [];
     const ar: string[] = [];
-    if (changed.dueChanged && after.dueAt) {
+    // ACC-313 — the organisation's switch governs the due-date clause only:
+    // a priority change is still announced, without the date (Q7). It is read
+    // only when the date moved, so other edits cost no read.
+    if (changed.dueChanged && after.dueAt && (await this.announcesDueChanges(organizationId))) {
       const due = await this.sla.forPeople(after.dueAt, organizationId);
       en.push(`it is now due ${due.en}`);
       ar.push(`أصبح موعد استحقاقها ${due.ar}`);
@@ -2396,6 +2418,7 @@ export class TaskService {
       en.push(`its priority is now ${words.en}`);
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
+    if (en.length === 0) return;
     for (const userId of activeAssigneeIds(before, actorId)) {
       await this.notificationService.create(
         {
@@ -2410,6 +2433,11 @@ export class TaskService {
         organizationId,
       );
     }
+  }
+
+  private async announcesDueChanges(organizationId: string): Promise<boolean> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
@@ -2599,7 +2627,36 @@ function activeAssigneeIds(task: TaskWithAssigneeRows, exceptUserId: string): st
   return task.assignees.filter((a) => a.removedAt === null && a.userId !== exceptUserId).map((a) => a.userId);
 }
 
-/** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. */
-function coveringSuffix(coveredName: string | undefined): string {
-  return coveredName ? ` (covering for ${coveredName})` : '';
+/** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. ACC-95: both languages. */
+function coveringSuffix(coveredName: string | undefined): { en: string; ar: string } {
+  return coveredName ? { en: ` (covering for ${coveredName})`, ar: ` (نيابةً عن «${coveredName}»)` } : { en: '', ar: '' };
 }
+
+// ACC-95 — the departure notice to the acting user, counted. Arabic is passive,
+// so no verb agrees with a person; every category the language has is here.
+export const DEPARTURE_REASSIGNED_TITLE = {
+  en: { one: 'Task reassigned to you', other: 'Tasks reassigned to you' },
+  ar: {
+    zero: 'لم يُعَد إسناد أي مهمة إليك',
+    one: 'أُعيد إسناد مهمة إليك',
+    two: 'أُعيد إسناد مهمتين إليك',
+    few: 'أُعيد إسناد {count} مهام إليك',
+    many: 'أُعيد إسناد {count} مهمة إليك',
+    other: 'أُعيد إسناد {count} مهمة إليك',
+  },
+} as const;
+
+export const DEPARTURE_REASSIGNED_BODY = {
+  en: {
+    one: '{count} task has been reassigned to you because a colleague left.',
+    other: '{count} tasks have been reassigned to you because a colleague left.',
+  },
+  ar: {
+    zero: 'لم يُعَد إسناد أي مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    one: 'أُعيد إسناد مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    two: 'أُعيد إسناد مهمتين إليك بعد مغادرة أحد أعضاء المنشأة.',
+    few: 'أُعيد إسناد {count} مهام إليك بعد مغادرة أحد أعضاء المنشأة.',
+    many: 'أُعيد إسناد {count} مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+    other: 'أُعيد إسناد {count} مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+  },
+} as const;

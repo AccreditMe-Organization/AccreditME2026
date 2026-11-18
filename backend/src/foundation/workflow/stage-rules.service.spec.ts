@@ -52,7 +52,7 @@ describe('StageRulesService (ACC-255)', () => {
         stageNameEn: 'Active',
         stageNameAr: 'نشطة',
         flags: ['IN_FORCE'],
-        actions: { edit_details: false, add_member: true, remove_member: true, change_member_role: true, request_change: true },
+        actions: { edit_details: false, add_member: true, remove_member: true, change_member_role: true, request_change: true, schedule_meeting: false },
       });
     });
 
@@ -95,7 +95,7 @@ describe('StageRulesService (ACC-255)', () => {
           stageNameEn: null,
           stageNameAr: null,
           flags: [],
-          actions: { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false },
+          actions: { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false, schedule_meeting: false },
         });
         expect(prisma.workflowStage.findFirst).not.toHaveBeenCalled();
       }
@@ -109,7 +109,7 @@ describe('StageRulesService (ACC-255)', () => {
       });
       const rules = await new StageRulesService(prisma as unknown as PrismaService).currentStageRules('COMMITTEE', 'c-1', ORG);
       expect(rules.flags).toEqual(['DISSOLVING']);
-      expect(Object.keys(rules.actions)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
+      expect(Object.keys(rules.actions)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change', 'schedule_meeting']);
       expect(rules.actions['add_member']).toBe(true);
     });
   });

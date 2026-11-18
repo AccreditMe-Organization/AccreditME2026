@@ -12,6 +12,17 @@ type RequestClient = Pick<PrismaService, 'taskRequest'>;
 /** A hold's three fields, all cleared — on resume, and when a hold ends early. */
 export const HOLD_CLEARED = { heldAt: null, onHoldUntil: null, heldFromStatus: null } as const;
 
+/**
+ * ACC-313 — re-arms the due-soon reminder. `Task.dueWarnedAt` means "the people
+ * on this task have been reminded about its CURRENT due time", so it is cleared
+ * whenever that stops being true: a new due date or priority (an edit, an
+ * approved extension, an approved hold), a reopen, and a reassign while the due
+ * time is still ahead (Q5). Never on a pick, a release or a resume (plan §3.3).
+ * Kept apart from ESCALATION_CLEARED, which is applied only when the new due
+ * date is ahead.
+ */
+export const DUE_WARNING_CLEARED = { dueWarnedAt: null } as const;
+
 /** The statuses a person may ask about: Assigned (and legacy OVERDUE) or In progress. */
 export const REQUESTABLE_STATUSES: readonly string[] = ['PENDING', 'OVERDUE', 'IN_PROGRESS'];
 

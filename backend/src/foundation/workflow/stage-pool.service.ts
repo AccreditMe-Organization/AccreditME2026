@@ -4,6 +4,7 @@ import type { WorkflowObjectType, WorkflowStageAssignee } from '../../../generat
 import { findCurrentHeadHoldersForUnits, findRunningActingCoversForUnits } from '../organization/unit-headship';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { activeCoverOf } from '../../common/services/out-of-office-cover';
+import { isMeetingStageKind, resolveMeetingStageKinds, type MeetingStageKind } from './meeting-authority';
 
 /**
  * ACC-271 — who works a converted stage (plan §4.1). A stage's pool is the
@@ -67,7 +68,16 @@ export function mayActInStagePool(pool: StagePool, userId: string): boolean {
 
 type PoolClient = Pick<
   PrismaService,
-  'workflowStageAssignee' | 'workflowInstanceStage' | 'user' | 'orgUnitHeadAssignment' | 'committeeMember' | 'committee' | 'meeting'
+  | 'workflowStageAssignee'
+  | 'workflowInstanceStage'
+  | 'user'
+  | 'orgUnitHeadAssignment'
+  | 'committeeMember'
+  | 'committee'
+  | 'meeting'
+  // ACC-316 — the meeting kinds' reads (meeting-authority.ts).
+  | 'committeeSeatAction'
+  | '$queryRaw'
 >;
 
 type RouteKind = 'unitsOf' | 'committeesOf';
@@ -133,6 +143,9 @@ export class StagePoolService {
     const needUnit = new Map<WorkflowObjectType, Set<string>>();
     const needCommittee = new Map<WorkflowObjectType, Set<string>>();
     const needCreator = new Set<string>();
+    // ACC-316 — a meeting kind on a MEETING record; on any other record it resolves to nobody.
+    const needMeetingKinds = new Set<MeetingStageKind>();
+    const needMeetings = new Set<string>();
     const add = (map: Map<WorkflowObjectType, Set<string>>, type: WorkflowObjectType, id: string): void => {
       const set = map.get(type) ?? new Set<string>();
       set.add(id);
@@ -143,12 +156,17 @@ export class StagePoolService {
         if (entry.kind === 'ORG_UNIT_HEAD' && !entry.orgUnitId) add(needUnit, request.instance.objectType, request.instance.objectId);
         if (entry.kind === 'COMMITTEE' && !entry.committeeId) add(needCommittee, request.instance.objectType, request.instance.objectId);
         if (entry.kind === 'CREATOR') needCreator.add(request.instance.id);
+        if (isMeetingStageKind(entry.kind) && request.instance.objectType === 'MEETING') {
+          needMeetingKinds.add(entry.kind);
+          needMeetings.add(request.instance.objectId);
+        }
       }
     }
-    const [recordUnits, recordCommittees, creators] = await Promise.all([
+    const [recordUnits, recordCommittees, creators, meetingPeople] = await Promise.all([
       this.recordRefs(client, needUnit, 'unitsOf', organizationId),
       this.recordRefs(client, needCommittee, 'committeesOf', organizationId),
       this.creatorsOf(client, [...needCreator], organizationId),
+      resolveMeetingStageKinds(client, organizationId, [...needMeetings], needMeetingKinds, now),
     ]);
 
     // ── Each entry's target, now that the record's own are known.
@@ -198,6 +216,15 @@ export class StagePoolService {
             }
             break;
           }
+          // ACC-316 — who may schedule, record or approve this meeting
+          // (meeting-authority.ts); nobody for a record that is not a meeting.
+          case 'MEETING_SCHEDULERS':
+          case 'MEETING_RECORDERS':
+          case 'MEETING_APPROVERS':
+            if (request.instance.objectType === 'MEETING') {
+              targets.userIds.push(...(meetingPeople.get(entry.kind)?.get(request.instance.objectId) ?? []));
+            }
+            break;
         }
       }
       targetsByRequest.set(request.key, targets);

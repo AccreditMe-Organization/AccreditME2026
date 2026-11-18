@@ -118,10 +118,32 @@ export const STALE_CURRENT_ASSIGNEE = {
   user: { status: { not: 'ACTIVE' } },
 } as const satisfies Prisma.TaskAssigneeWhereInput;
 
-/** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). The user is joined by its primary key. */
-export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa
-  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"
-  WHERE xa."taskId" = t.id AND xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE')`;
+/**
+ * ACC-216 — ONE given user is on a task: CURRENT_ACTIVE_ASSIGNEE for that person (a
+ * current row of theirs, and they are ACTIVE), built on it rather than a second
+ * literal. Someone no longer ACTIVE is on nothing: their leftover rows don't count.
+ */
+export function currentActiveAssigneeOf(userId: string) {
+  return { ...CURRENT_ACTIVE_ASSIGNEE, userId } as const satisfies Prisma.TaskAssigneeWhereInput;
+}
+
+// The SQL forms are built from these two fragments, so they cannot drift apart:
+// the row joined to its user (by primary key, in the task's organisation), and
+// CURRENT_ACTIVE_ASSIGNEE's condition on it. task-pool.current-active.db-spec.ts
+// pins each SQL form to its Prisma form on a real Postgres.
+const ASSIGNEE_ROW_SQL = Prisma.sql`SELECT 1 FROM "TaskAssignee" xa
+  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"`;
+const CURRENT_ACTIVE_ROW_SQL = Prisma.sql`xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE'`;
+
+/** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). */
+export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
+  WHERE xa."taskId" = t.id AND ${CURRENT_ACTIVE_ROW_SQL})`;
+
+/** SQL: ONE given user is on the task aliased `t` (currentActiveAssigneeOf()'s twin). ACC-216's person scope reads it. */
+export function currentActiveAssigneeOfSql(userId: string): Prisma.Sql {
+  return Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
+  WHERE xa."taskId" = t.id AND xa."userId" = ${userId} AND ${CURRENT_ACTIVE_ROW_SQL})`;
+}
 
 const IS_POOL_TASK_SQL = Prisma.sql`(t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)`;
 
@@ -193,6 +215,54 @@ export async function resolvePoolMemberIds(
     select: { userId: true },
   });
   return members.map((m) => m.userId);
+}
+
+/** A pool's key in resolvePoolMembersBatch()'s answer. */
+export function poolKey(target: PoolTarget): string {
+  return target.kind === 'POSITION'
+    ? `P:${target.orgUnitId}:${target.positionId}`
+    : `C:${target.committeeId}:${target.roleValueId}`;
+}
+
+/**
+ * ACC-313 — the members of many pools at once, by resolvePoolMemberIds()'s
+ * rule (position holders in the unit, or members holding the committee seat;
+ * ACTIVE only), in at most one query per pool kind. A pool nobody is in maps
+ * to an empty list.
+ */
+export async function resolvePoolMembersBatch(
+  client: PoolClient,
+  targets: readonly PoolTarget[],
+  organizationId: string,
+): Promise<Map<string, string[]>> {
+  const members = new Map<string, string[]>(targets.map((t) => [poolKey(t), []]));
+  const add = (key: string, userId: string) => {
+    const list = members.get(key);
+    if (list && !list.includes(userId)) list.push(userId);
+  };
+  const positions = targets.flatMap((t) =>
+    t.kind === 'POSITION' ? [{ primaryOrgUnitId: t.orgUnitId, positionId: t.positionId }] : [],
+  );
+  const seats = targets.flatMap((t) =>
+    t.kind === 'COMMITTEE_ROLE' ? [{ committeeId: t.committeeId, roleValueId: t.roleValueId }] : [],
+  );
+  const [holders, seated] = await Promise.all([
+    positions.length > 0
+      ? client.user.findMany({
+          where: { organizationId, status: 'ACTIVE', OR: positions },
+          select: { id: true, positionId: true, primaryOrgUnitId: true },
+        })
+      : Promise.resolve([]),
+    seats.length > 0
+      ? client.committeeMember.findMany({
+          where: { organizationId, isActive: true, user: { status: 'ACTIVE' }, OR: seats },
+          select: { userId: true, committeeId: true, roleValueId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  for (const h of holders) add(`P:${h.primaryOrgUnitId}:${h.positionId}`, h.id);
+  for (const m of seated) add(`C:${m.committeeId}:${m.roleValueId}`, m.userId);
+  return members;
 }
 
 export async function isPoolMember(

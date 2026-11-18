@@ -220,6 +220,11 @@ describe('WorkflowTemplateService', () => {
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
     mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
+    // ACC-316 — the seed's seat-narrowed COMMITTEE entries resolve their shared
+    // committee_member_role value by key (workflow-seed-apply.ts).
+    mockPrisma.lookupValue.findMany.mockImplementation((args?: { where?: { key?: { in?: string[] } } }) =>
+      Promise.resolve((args?.where?.key?.in ?? []).map((key) => ({ id: `lookup-${key}-id`, key }))),
+    );
     // ACC-57 / ACC-191 — clearAllMocks keeps implementations a test set, so
     // the reads the new checks make start empty in every test: no stages read
     // back (readStartEnd), no lock rows, nothing referencing, nothing run.
@@ -369,7 +374,7 @@ describe('WorkflowTemplateService', () => {
 
       const created = mockPrisma.workflowTransition.create.mock.calls.map(([arg]: [{ data: { kind: string } }]) => arg.data.kind);
       // ACC-190's 14 and 8, plus ACC-239's change request: one return, four exits.
-      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(15);
+      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(14); // ACC-316: the meeting's draft-to-draft Return is gone
       expect(created.filter((k: string) => k === 'EXIT')).toHaveLength(12);
       expect(created.every((k: string) => ['ADVANCE', 'RETURN', 'EXIT'].includes(k))).toBe(true);
       const actionTypes = mockPrisma.workflowTransitionAction.create.mock.calls.map(([arg]: [{ data: { actionType: string } }]) => arg.data.actionType);
@@ -407,7 +412,41 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
     });
 
-    it("writes the seed key on every COMMITTEE and COMMITTEE_CHANGE_REQUEST stage, and on no other template's", async () => {
+    // ACC-316 — the meeting's Minutes Review names the Chair's seat by its
+    // lookup key; the seed writes the shared value's id, resolved once.
+    it("writes Minutes Review's Chair entry with the shared chairman seat, and the meeting's own kinds", async () => {
+      installFakeStore();
+
+      await service.seedDefaultWorkflows(ORG_A);
+
+      expect(mockPrisma.lookupValue.findMany).toHaveBeenCalledWith({
+        where: { organizationId: null, key: { in: ['chairman'] }, category: { key: 'committee_member_role', organizationId: null } },
+        select: { id: true, key: true },
+      });
+      const entries = mockPrisma.workflowStageAssignee.createMany.mock.calls.flatMap(
+        ([arg]: [{ data: { kind: string; committeeRoleValueId?: string; organizationId: string }[] }]) => arg.data,
+      );
+      expect(entries.every((e: { organizationId: string }) => e.organizationId === ORG_A)).toBe(true);
+      expect(entries.filter((e: { kind: string }) => e.kind === 'COMMITTEE')).toEqual([
+        expect.objectContaining({ kind: 'COMMITTEE', committeeRoleValueId: 'lookup-chairman-id', order: 1 }),
+      ]);
+      expect(entries.filter((e: { kind: string }) => e.kind.startsWith('MEETING_')).map((e: { kind: string }) => e.kind)).toEqual([
+        'MEETING_SCHEDULERS',
+        'MEETING_SCHEDULERS',
+        'MEETING_RECORDERS',
+        'MEETING_RECORDERS',
+        'MEETING_APPROVERS',
+      ]);
+    });
+
+    it('refuses to seed when a seat the seed names is not a shared committee_member_role value', async () => {
+      installFakeStore();
+      mockPrisma.lookupValue.findMany.mockResolvedValueOnce([]);
+
+      await expect(service.seedDefaultWorkflows(ORG_A)).rejects.toThrow("Workflow seed names the seat 'chairman'");
+    });
+
+    it("writes the seed key on every COMMITTEE, COMMITTEE_CHANGE_REQUEST and MEETING stage, and on no other template's", async () => {
       installFakeStore();
 
       await service.seedDefaultWorkflows(ORG_A);
@@ -415,8 +454,8 @@ describe('WorkflowTemplateService', () => {
       const created = mockPrisma.workflowStage.create.mock.calls.map(
         ([arg]: [{ data: { nameEn: string; key?: string } }]) => arg.data,
       );
-      // ACC-233 keyed the committee lifecycle; ACC-239 the change request's six stages.
-      const keyedSeeds = SYSTEM_WORKFLOW_SEED.filter((w) => w.objectType === 'COMMITTEE' || w.objectType === 'COMMITTEE_CHANGE_REQUEST');
+      // ACC-233 keyed the committee lifecycle; ACC-239 the change request's six stages; ACC-316 the meeting's.
+      const keyedSeeds = SYSTEM_WORKFLOW_SEED.filter((w) => ['COMMITTEE', 'COMMITTEE_CHANGE_REQUEST', 'MEETING'].includes(w.objectType));
       const keyedStages = keyedSeeds.flatMap((w) => w.stages);
       const keyed = created.filter((d: { key?: string }) => d.key !== undefined);
       expect(keyed.map((d: { key?: string }) => d.key)).toEqual(keyedStages.map((st) => st.key));
@@ -1446,11 +1485,11 @@ describe('WorkflowTemplateService', () => {
 
     // ACC-239 added one return (Return for changes) and four exits (Reject, and
     // Withdraw from each of the three open stages) to ACC-190's 14 and 8.
-    it('marks 15 returns and 12 exits, and leaves every other transition an ADVANCE', () => {
+    it('marks 14 returns and 12 exits, and leaves every other transition an ADVANCE (ACC-316 removed the meeting draft-to-draft Return)', () => {
       const kinds = transitions.map((t) => t.kind ?? 'ADVANCE');
-      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(15);
+      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(14);
       expect(kinds.filter((k) => k === 'EXIT')).toHaveLength(12);
-      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 27);
+      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 26);
     });
 
     it.each([
@@ -1489,7 +1528,7 @@ describe('WorkflowTemplateService', () => {
 
         const result = await service.getTemplateById('template-1', ORG_A);
 
-        expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
+        expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change', 'schedule_meeting']);
         // ACC-255 PR 4b-be (G1) — each action carries the permission it pairs with.
         expect(result.recordActions?.[0]).toEqual({
           key: 'edit_details',
@@ -1502,6 +1541,7 @@ describe('WorkflowTemplateService', () => {
           'committees:remove_member',
           'committees:change_member_role',
           'committees:edit_details',
+          'meetings:schedule',
         ]);
         expect(result.stageFlags).toEqual([
           { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },

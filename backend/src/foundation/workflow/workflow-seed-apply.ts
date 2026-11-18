@@ -22,11 +22,37 @@ export type WorkflowSeedDb = Pick<
   | 'workflowTransitionAction'
   | 'workflowStageRecordAction'
   | 'workflowStageAssignee'
+  // ACC-316 — a seeded COMMITTEE entry names its seat by key (seatValueIds()).
+  | 'lookupValue'
 >;
+
+/**
+ * ACC-316 — the shared committee_member_role values the seeds' COMMITTEE
+ * entries name, by key, in ONE query (only when a seed names one). A key with
+ * no shared value is an error: the seed and lookup.seed.ts disagree.
+ */
+async function seatValueIds(db: WorkflowSeedDb, seeds: readonly SeedWorkflow[]): Promise<Map<string, string>> {
+  const keys = new Set<string>();
+  for (const w of seeds) {
+    for (const stage of w.stages) {
+      if (!('entries' in stage.who)) continue;
+      for (const e of stage.who.entries) if (e.kind === 'COMMITTEE') keys.add(e.seatKey);
+    }
+  }
+  if (keys.size === 0) return new Map();
+  const rows = await db.lookupValue.findMany({
+    where: { organizationId: null, key: { in: [...keys] }, category: { key: 'committee_member_role', organizationId: null } },
+    select: { id: true, key: true },
+  });
+  const byKey = new Map(rows.map((r) => [r.key, r.id]));
+  for (const key of keys) if (!byKey.has(key)) throw new Error(`Workflow seed names the seat '${key}', which is not a shared committee_member_role value`);
+  return byKey;
+}
 
 export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: string, seeds: readonly SeedWorkflow[]): Promise<void> {
   // ACC-271 PR 6b — the seed names no role (it named them for the old people
-  // columns), so nothing is resolved before writing.
+  // columns). ACC-316 — a COMMITTEE entry's seat is resolved once, up front.
+  const seats = await seatValueIds(db, seeds);
   for (const seedWorkflow of seeds) {
     const existingTemplate = await db.workflowTemplate.findFirst({
       where: { organizationId, objectType: seedWorkflow.objectType, isDefault: true },
@@ -105,7 +131,13 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
       }
       if (!existingStage && 'entries' in seedStage.who && seedStage.who.entries.length > 0) {
         await db.workflowStageAssignee.createMany({
-          data: seedStage.who.entries.map((entry, i) => ({ organizationId, stageId: stage.id, order: i + 1, kind: entry.kind })),
+          data: seedStage.who.entries.map((entry, i) => ({
+            organizationId,
+            stageId: stage.id,
+            order: i + 1,
+            kind: entry.kind,
+            ...(entry.kind === 'COMMITTEE' && { committeeRoleValueId: seats.get(entry.seatKey)! }),
+          })),
         });
       }
 

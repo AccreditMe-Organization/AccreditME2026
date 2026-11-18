@@ -1,5 +1,5 @@
 import { WorkflowObjectType } from '../../../generated/prisma/client';
-import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 
 /**
  * ACC-255 — what can be done to a record, what a stage means, and which record
@@ -65,8 +65,29 @@ export const COMMITTEE_ACTIONS = {
   REMOVE_MEMBER: 'remove_member',
   CHANGE_MEMBER_ROLE: 'change_member_role',
   REQUEST_CHANGE: 'request_change',
+  // ACC-316 — a meeting may be scheduled for the committee only where its stage
+  // allows it (seeded on the In force stages).
+  SCHEDULE_MEETING: 'schedule_meeting',
 } as const;
 export type CommitteeAction = (typeof COMMITTEE_ACTIONS)[keyof typeof COMMITTEE_ACTIONS];
+
+/**
+ * ACC-316 — what a meeting's stage may allow. Plan step-316 §3.8's table.
+ * Nothing calls the engine about them until the meeting endpoints (PR 3).
+ */
+export const MEETING_ACTIONS = {
+  EDIT_DETAILS: 'edit_details',
+  MANAGE_AGENDA: 'manage_agenda',
+  MANAGE_GUESTS: 'manage_guests',
+  RESCHEDULE: 'reschedule',
+  ANSWER_INVITATION: 'answer_invitation',
+  RECORD_ATTENDANCE: 'record_attendance',
+  RECORD_MINUTES: 'record_minutes',
+  APPLY_SUGGESTIONS: 'apply_suggestions',
+  CHANGE_ACTION_DATES: 'change_action_dates',
+  SUGGEST_CORRECTION: 'suggest_correction',
+} as const;
+export type MeetingAction = (typeof MEETING_ACTIONS)[keyof typeof MEETING_ACTIONS];
 
 /** The stage flags (ACC-255). Keys are code; their meaning is the label. */
 export const STAGE_FLAG = {
@@ -76,6 +97,12 @@ export const STAGE_FLAG = {
   IN_FORCE: 'IN_FORCE',
   /** Reaching this stage applies an approved change request. Exactly one stage per template. */
   APPLIES_APPROVED_CHANGE: 'APPLIES_APPROVED_CHANGE',
+  /** ACC-316 — the meeting's agenda has been issued: invitees are told on entry. */
+  AGENDA_ISSUED: 'AGENDA_ISSUED',
+  /** ACC-316 — the meeting is cancelled: it takes no new tasks. */
+  MEETING_CANCELLED: 'MEETING_CANCELLED',
+  /** ACC-316 — the minutes are approved: entering it turns action items into tasks. Exactly one stage. */
+  MINUTES_FINAL: 'MINUTES_FINAL',
 } as const;
 export type StageFlag = (typeof STAGE_FLAG)[keyof typeof STAGE_FLAG];
 
@@ -84,6 +111,11 @@ const committeeAction = (key: CommitteeAction, permissionKey: string, onNewStage
   labelKey: `workflow.recordAction.COMMITTEE.${key}`,
   permissionKey,
   ...(onNewStage && { onNewStage }),
+});
+const meetingAction = (key: MeetingAction, permissionKey: string): RecordActionDef => ({
+  key,
+  labelKey: `workflow.recordAction.MEETING.${key}`,
+  permissionKey,
 });
 const flag = (key: StageFlag, cardinality: StageFlagCardinality): StageFlagDef => ({ key, labelKey: `workflow.stageFlag.${key}`, cardinality });
 
@@ -96,12 +128,30 @@ export const RECORD_ACTIONS: Partial<Record<WorkflowObjectType, readonly RecordA
     // Raising a change request is checked against Edit details
     // (committee-change-request.service.ts, requirePermission on create).
     committeeAction(COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEES_PERMISSIONS.EDIT_DETAILS),
+    // ACC-316 — the role path of scheduling; a seat's schedule_meeting is the other (meeting-authority.ts).
+    committeeAction(COMMITTEE_ACTIONS.SCHEDULE_MEETING, MEETINGS_PERMISSIONS.SCHEDULE),
+  ],
+  // ACC-316 — each action's role-path key (meeting-authority.ts reads the same
+  // keys, beside the seat path). Answering and suggesting belong to an invitee
+  // or a present member, who need only see the meeting.
+  MEETING: [
+    meetingAction(MEETING_ACTIONS.EDIT_DETAILS, MEETINGS_PERMISSIONS.SCHEDULE),
+    meetingAction(MEETING_ACTIONS.MANAGE_AGENDA, MEETINGS_PERMISSIONS.SCHEDULE),
+    meetingAction(MEETING_ACTIONS.MANAGE_GUESTS, MEETINGS_PERMISSIONS.SCHEDULE),
+    meetingAction(MEETING_ACTIONS.RESCHEDULE, MEETINGS_PERMISSIONS.SCHEDULE),
+    meetingAction(MEETING_ACTIONS.ANSWER_INVITATION, MEETINGS_PERMISSIONS.VIEW),
+    meetingAction(MEETING_ACTIONS.RECORD_ATTENDANCE, MEETINGS_PERMISSIONS.RECORD_MINUTES),
+    meetingAction(MEETING_ACTIONS.RECORD_MINUTES, MEETINGS_PERMISSIONS.RECORD_MINUTES),
+    meetingAction(MEETING_ACTIONS.APPLY_SUGGESTIONS, MEETINGS_PERMISSIONS.RECORD_MINUTES),
+    meetingAction(MEETING_ACTIONS.CHANGE_ACTION_DATES, MEETINGS_PERMISSIONS.RECORD_MINUTES),
+    meetingAction(MEETING_ACTIONS.SUGGEST_CORRECTION, MEETINGS_PERMISSIONS.VIEW),
   ],
 };
 
 export const STAGE_FLAGS: Partial<Record<WorkflowObjectType, readonly StageFlagDef[]>> = {
   COMMITTEE: [flag(STAGE_FLAG.DISSOLVING, 'any'), flag(STAGE_FLAG.IN_FORCE, 'any')],
   COMMITTEE_CHANGE_REQUEST: [flag(STAGE_FLAG.APPLIES_APPROVED_CHANGE, 'exactlyOne')],
+  MEETING: [flag(STAGE_FLAG.AGENDA_ISSUED, 'any'), flag(STAGE_FLAG.MEETING_CANCELLED, 'any'), flag(STAGE_FLAG.MINUTES_FINAL, 'exactlyOne')],
 };
 
 /** Read by step 2's conditions; defined now, read by nothing in ACC-255. */
@@ -110,6 +160,8 @@ export const RECORD_FIELDS: Partial<Record<WorkflowObjectType, readonly RecordFi
     { key: 'typeValueId', labelKey: 'workflow.recordField.COMMITTEE.typeValueId', kind: 'lookup' },
     { key: 'orgUnitId', labelKey: 'workflow.recordField.COMMITTEE.orgUnitId', kind: 'orgUnit' },
   ],
+  // ACC-316 — defined for step 2's conditions; read by nothing yet.
+  MEETING: [{ key: 'typeValueId', labelKey: 'workflow.recordField.MEETING.typeValueId', kind: 'lookup' }],
 };
 
 export function recordActionsFor(objectType: WorkflowObjectType): readonly RecordActionDef[] {
