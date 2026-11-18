@@ -51,7 +51,11 @@ export async function prepareTransitionEffects(prisma: PrismaService, ctx: Trans
 }
 
 export async function applyTransitionEffects(tx: EngineTx, p: PreparedTransitionEffects): Promise<void> {
-  for (const { effect, prepared } of p.effects) await effect.apply?.(tx, p.ctx, prepared);
+  for (const entry of p.effects) {
+    const result = await entry.effect.apply?.(tx, p.ctx, entry.prepared);
+    // What apply() read under the lock is what finish() acts on.
+    if (result !== undefined) entry.prepared = result;
+  }
 }
 
 export async function finishTransitionEffects(deps: TransitionEffectDeps, p: PreparedTransitionEffects): Promise<void> {

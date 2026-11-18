@@ -1,4 +1,4 @@
-import type { PrismaService } from '../../prisma/prisma.service';
+import type { EngineTx } from '../workflow/workflow.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import type { AnyTransitionEffect, TransitionEffectContext, TransitionEffectDeps } from '../workflow/transition-effect.types';
 import { transitionEffect } from '../workflow/transition-effect.types';
@@ -12,15 +12,19 @@ import { transitionEffect } from '../workflow/transition-effect.types';
  * nothing on a real record. The outside guests' emails are PR 3b's too.
  */
 
+/**
+ * What a meeting effect hands to finish(): read inside the move's transaction,
+ * under the instance's lock, so it is the meeting and its attendees as they
+ * stand when the move commits. Null until apply() has run.
+ */
 interface Invited {
   title: string;
-  /** Attendee rows with a user, and their users. */
-  attendeeIds: string[];
+  /** The users to tell. */
   userIds: string[];
 }
 
-async function meetingTitle(prisma: PrismaService, ctx: TransitionEffectContext): Promise<string> {
-  const meeting = await prisma.meeting.findFirst({ where: { id: ctx.objectId, organizationId: ctx.organizationId }, select: { title: true } });
+async function meetingTitle(tx: EngineTx, ctx: TransitionEffectContext): Promise<string> {
+  const meeting = await tx.meeting.findFirst({ where: { id: ctx.objectId, organizationId: ctx.organizationId }, select: { title: true } });
   return meeting?.title ?? '';
 }
 
@@ -40,30 +44,31 @@ async function notifyAll(
 }
 
 /**
- * The agenda is issued: every invitee with a user who has not been invited yet
- * is stamped `invitedAt`, inside the move, and told after it commits.
+ * The agenda is issued: EVERY attendee with a user and no `invitedAt`, as the
+ * rows stand inside the move's transaction, is stamped and told after it
+ * commits. Not the rows prepare() could read before the lock: someone added in
+ * between would never be invited. (PR 3b: adding an invitee takes the
+ * meeting's instance FOR SHARE first, so it waits for this move or follows it.)
  */
-const agendaIssued = transitionEffect<Invited>({
+const agendaIssued = transitionEffect<Invited | null>({
   key: 'meeting.agenda_issued',
   flag: STAGE_FLAG.AGENDA_ISSUED,
-  async prepare(prisma, ctx) {
-    const [title, rows] = await Promise.all([
-      meetingTitle(prisma, ctx),
-      prisma.meetingAttendee.findMany({
+  async prepare() {
+    return null;
+  },
+  async apply(tx, ctx) {
+    const [title, stamped] = await Promise.all([
+      meetingTitle(tx, ctx),
+      tx.meetingAttendee.updateManyAndReturn({
         where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: null },
-        select: { id: true, userId: true },
+        data: { invitedAt: new Date() },
+        select: { userId: true },
       }),
     ]);
-    return { title, attendeeIds: rows.map((r) => r.id), userIds: rows.map((r) => r.userId!) };
-  },
-  async apply(tx, ctx, prepared) {
-    if (prepared.attendeeIds.length === 0) return;
-    await tx.meetingAttendee.updateMany({
-      where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, id: { in: prepared.attendeeIds }, invitedAt: null },
-      data: { invitedAt: new Date() },
-    });
+    return { title, userIds: stamped.map((r) => r.userId!) };
   },
   async finish(deps, ctx, prepared) {
+    if (!prepared) return;
     await notifyAll(deps, ctx, prepared.userIds, {
       titleEn: 'Meeting invitation',
       titleAr: 'دعوة إلى اجتماع',
@@ -73,21 +78,25 @@ const agendaIssued = transitionEffect<Invited>({
   },
 });
 
-/** The meeting is cancelled: everyone already invited is told, with the reason. */
-const cancelled = transitionEffect<Invited>({
+/** The meeting is cancelled: everyone invited when the move commits is told, with the reason. */
+const cancelled = transitionEffect<Invited | null>({
   key: 'meeting.cancelled',
   flag: STAGE_FLAG.MEETING_CANCELLED,
-  async prepare(prisma, ctx) {
+  async prepare() {
+    return null;
+  },
+  async apply(tx, ctx) {
     const [title, rows] = await Promise.all([
-      meetingTitle(prisma, ctx),
-      prisma.meetingAttendee.findMany({
+      meetingTitle(tx, ctx),
+      tx.meetingAttendee.findMany({
         where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: { not: null } },
-        select: { id: true, userId: true },
+        select: { userId: true },
       }),
     ]);
-    return { title, attendeeIds: rows.map((r) => r.id), userIds: rows.map((r) => r.userId!) };
+    return { title, userIds: rows.map((r) => r.userId!) };
   },
   async finish(deps, ctx, prepared) {
+    if (!prepared) return;
     const reason = ctx.comment?.trim() ?? '';
     await notifyAll(deps, ctx, prepared.userIds, {
       titleEn: 'Meeting cancelled',

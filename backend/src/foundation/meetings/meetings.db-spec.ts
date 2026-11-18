@@ -49,6 +49,8 @@ import { StagePoolService } from '../workflow/stage-pool.service';
 import { applyWorkflowSeed } from '../workflow/workflow-seed-apply';
 import { writeStartingAssignments } from '../workflow/workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
+import { STAGE_FLAG } from '../workflow/record-registry';
+import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffects } from '../workflow/transition-effects';
 import { copyDefaultSeatActions } from '../committees/seat-actions';
 import { MeetingsService, type MeetingViewer } from './meetings.service';
 
@@ -519,6 +521,32 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         permissions: [MEETING_TASKS_PERMISSIONS.CREATE],
       });
       expect(committeeMember.items.map((i) => i.id)).toContain(open.id);
+    });
+
+    it('Agenda Issued invites whoever is an attendee when the move commits, not when it was prepared', async () => {
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
+      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['member']! } });
+      const ctx = {
+        objectType: 'MEETING' as const,
+        objectId: m.id,
+        organizationId: a.orgId,
+        actorId: a.people['chair']!,
+        kind: 'ADVANCE' as const,
+        fromStageFlags: [],
+        toStageFlags: [STAGE_FLAG.AGENDA_ISSUED],
+        comment: null,
+      };
+
+      const prepared = await prepareTransitionEffects(prisma, ctx);
+      // Added after the reads, before the move's transaction.
+      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['secretary']! } });
+      await prisma.$transaction((tx) => applyTransitionEffects(tx as never, prepared));
+      await finishTransitionEffects({ prisma, notifications }, prepared);
+
+      const rows = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, invitedAt: true } });
+      expect(rows.every((r) => r.invitedAt !== null)).toBe(true);
+      expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId).sort()).toEqual([a.people['member'], a.people['secretary']].sort());
     });
   });
 

@@ -31,7 +31,13 @@ export interface TransitionEffect<P> {
   /** The flag of the stage entered that runs it. */
   flag: string;
   prepare(prisma: PrismaService, ctx: TransitionEffectContext): Promise<P>;
-  apply?(tx: EngineTx, ctx: TransitionEffectContext, prepared: P): Promise<void>;
+  /**
+   * Writes inside the move's transaction, under the instance's lock. What it
+   * returns (if anything) replaces the prepared value for finish(): a write that
+   * must act on the rows as they stand at commit, not as prepare() read them
+   * before the lock, reads them here and hands them on.
+   */
+  apply?(tx: EngineTx, ctx: TransitionEffectContext, prepared: P): Promise<P | void>;
   finish?(deps: TransitionEffectDeps, ctx: TransitionEffectContext, prepared: P): Promise<void>;
 }
 
