@@ -3809,7 +3809,6 @@
     "roles": {
       "heading": "Roles",
       "empty": "No roles.",
-      "emptyBody": "Roles decide what this person can see and do.",
       "fromPosition": "Comes with the head position {{position}}",
       "fromPositionUnnamed": "Comes with a head position"
     },
