@@ -128,14 +128,6 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       expect(written().LOW).toEqual({ dueAfterHours: DEFAULT_TASK_SLA_SETTINGS.LOW.dueAfterHours, ...ESCALATION.LOW });
     });
 
-    it('the old whole-policy save writes all three values of every priority', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      expect(written()).toEqual(CUSTOM_SLA);
-    });
-
     it('a missing organisation is a 404, with nothing written and nothing logged', async () => {
       stored(null);
 
@@ -174,17 +166,6 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       const entry = auditLog.log.mock.calls[0][0] as { before: Record<string, object>; metadata: object };
       expect(entry.metadata).toEqual({ event: 'task_sla_escalation_updated', escalationHoursUnit: 'WORKING' });
       expect(entry.before['LOW']).toEqual({ managerEscalationAfterHours: 48, headEscalationAfterHours: 96 });
-    });
-
-    it('the old save is recorded the same way, as task_sla_updated', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      const entry = auditLog.log.mock.calls[0][0] as { objectType: string; after: object; metadata: object };
-      expect(entry.objectType).toBe(TASK_SLA_AUDIT_OBJECT_TYPE);
-      expect(entry.after).toEqual(CUSTOM_SLA);
-      expect(entry.metadata).toEqual({ event: 'task_sla_updated', escalationHoursUnit: 'WORKING' });
     });
 
     it('a save that changes nothing writes nothing and logs nothing', async () => {

@@ -148,18 +148,6 @@ describe('TaskSlaPolicyService — warnings before due (ACC-313 PR 4)', () => {
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('the old whole-policy save is held to the same limit rule', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS, taskSlaNotices: { warnBeforeDue: { ...OFF, HIGH: 'H8' }, notifyOnDueChange: true } });
-      const all = { ...DEFAULT_TASK_SLA_SETTINGS, HIGH: { ...DEFAULT_TASK_SLA_SETTINGS.HIGH, dueAfterHours: 8 } };
-
-      const error = await service.replaceAll('org-a', all, 'user-1').catch((e: unknown) => e);
-
-      expect((error as WorkflowRefusalException).getResponse()).toEqual(
-        expect.objectContaining({ code: 'TASK_SLA_LIMIT_NOT_AFTER_WARNING', priority: 'HIGH' }),
-      );
-      expect(tx.$executeRaw).not.toHaveBeenCalled();
-    });
-
     it('1 working day is the calendar’s working day: it fits a 16-hour limit on 8 hours, not on 16', async () => {
       stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS }); // High's limit is 16
       await service.saveEscalation('org-a', escalation({ HIGH: 'WORKING_DAY' }), 'user-1');

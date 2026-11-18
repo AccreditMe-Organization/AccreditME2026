@@ -19,7 +19,6 @@ import {
   UpdateTaskSlaLimitsDto,
   UpdateTaskSlaNoticesDto,
 } from './dto/update-task-sla-sections.dto';
-import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
   ITaskSlaChange,
   ITaskSlaHistoryPage,
@@ -138,11 +137,6 @@ export class TaskSlaPolicyService {
       if (warning !== undefined) warnings[p] = warning;
     }
     return this.save(organizationId, actorId, 'task_sla_escalation_updated', ESCALATION_FIELDS, dto, null, warnings);
-  }
-
-  /** The old whole-policy PATCH, kept until the new screen ships, under the same lock. */
-  replaceAll(organizationId: string, dto: UpdateTaskSlaDto, actorId: string): Promise<ITaskSlaSettings> {
-    return this.save(organizationId, actorId, 'task_sla_updated', ALL_FIELDS, dto, (p) => dto[p].dueAfterHours);
   }
 
   /** The whole policy the page reads: the tiers and the notices. */
