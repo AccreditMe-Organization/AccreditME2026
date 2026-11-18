@@ -2425,7 +2425,7 @@
         "recorded": "Recorded in the change history with your name and the previous values.",
         "open": "Reset to defaults…",
         "confirmHeader": "Reset to defaults?",
-        "confirmBody": "Every value on this page goes back to the defaults a new organisation gets. Tasks created after this use them; open tasks keep the limits they were created with.",
+        "confirmBody": "New tasks use these values; open tasks keep the limits they were created with.",
         "confirmAccept": "Reset to defaults",
         "confirmDetails": {
           "limits": "Time limits: back to the defaults",
