@@ -91,7 +91,7 @@ interface PanelRow {
                 <span class="am-hs__track-after"></span>
               </div>
               <div class="am-hs__track-labels">
-                <span dir="ltr">{{ bar.from }}</span>
+                <span>{{ bar.from }}</span>
                 <span class="am-hs__track-flag-label">{{ bar.flag }}</span>
                 <span>{{ 'headship.cover.noEndDate' | translate }}</span>
               </div>
