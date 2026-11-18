@@ -9,7 +9,8 @@
  *   npm run backfill:acc316-seat-defaults -- --execute # apply
  *   npm run backfill:acc316-seat-defaults              # again: must report 0
  *
- * Runs AFTER PR 2 deploys. Plan: backend/Plans/step-316-meeting-management.md §6.
+ * Runs ONCE, AFTER PR 3a deploys, with the other two ACC-316 backfills (lane B,
+ * Prompt 139). Plan: backend/Plans/step-316-meeting-management.md §6.
  *
  * WHAT IT WRITES, per non-platform organisation: for each committee with NO
  * row for a new action, that action's default rows (the seats whose default

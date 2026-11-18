@@ -6,7 +6,8 @@
  *   npm run backfill:acc316-meeting-keys -- --execute # apply
  *   npm run backfill:acc316-meeting-keys              # again: must report 0
  *
- * Runs AFTER PR 2 deploys. Plan: backend/Plans/step-316-meeting-management.md §6.
+ * Runs ONCE, AFTER PR 3a deploys, with the other two ACC-316 backfills (lane B,
+ * Prompt 139). Plan: backend/Plans/step-316-meeting-management.md §6.
  *
  * WHAT IS GRANTED, to a role found by its system key: the role's seeded share
  * of meetings:schedule, meetings:schedule_subunits and meetings:approve_subunits

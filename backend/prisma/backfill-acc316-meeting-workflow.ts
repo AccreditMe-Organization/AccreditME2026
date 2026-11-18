@@ -8,8 +8,9 @@
  *   npm run backfill:acc316-meeting-workflow -- --execute # apply
  *   npm run backfill:acc316-meeting-workflow              # again: must report 0
  *
- * Runs AFTER PR 2 deploys (the pool kinds must be resolvable when a stage
- * names them).
+ * Runs ONCE, AFTER PR 3a deploys, with the other two ACC-316 backfills (lane B,
+ * Prompt 139); not before PR 2, since the pool kinds must be resolvable when a
+ * stage names them.
  *
  * KEYS FIRST. MEETING became a keyed template in PR 2 (its app moves are found
  * by stage key). Existing meeting stages have none, so a stage is found by its
