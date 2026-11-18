@@ -721,6 +721,33 @@ describe('RoleService', () => {
   // ── deactivateRole / reactivateRole — admin lockout protection ───────────────
 
   describe('deactivateRole', () => {
+    // ACC-154 — refused while anything holds or names the role, before any write.
+    it('refuses with 409 ROLE_IN_USE while a user still holds the role, writing nothing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([]) // the role row lock
+        .mockResolvedValueOnce([{ name: 'Huda', total: 1 }]); // USER_GRANTS
+
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { statusCode: 409, code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: ['Huda'] }] },
+      });
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('ACC-154 — the deactivation check reads every category by the role id AND its organisation', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+
+      await expect(service.deactivationCheck('role-1', ORG_A)).resolves.toEqual({ canDeactivate: true, rootRole: false, blockers: [] });
+
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'role-1', organizationId: ORG_A } }));
+      const queries = mockPrisma.$queryRaw.mock.calls.map(([sql]) => sql as { values: unknown[] });
+      expect(queries).toHaveLength(4);
+      for (const q of queries) {
+        expect(q.values).toEqual(expect.arrayContaining(['role-1', ORG_A]));
+        expect(q.values).not.toContain(ORG_B);
+      }
+    });
+
     it('deactivates a non-admin role and writes audit log', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.role.update.mockResolvedValue({ ...BASE_ROLE, isActive: false });
