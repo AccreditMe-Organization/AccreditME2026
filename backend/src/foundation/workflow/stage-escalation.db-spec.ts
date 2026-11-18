@@ -58,6 +58,7 @@ describe('Stage SLA escalation fires each rule once, in working hours, on a real
     unused,
     unused,
     unused,
+    unused, // ACC-316 PR 3b — the meeting invitee sync; this spec runs other sweeps only
   );
   const sweepAt = async (iso: string): Promise<void> => {
     useFixedClock(new Date(iso));

@@ -75,7 +75,7 @@ audit's starting point, not be mistaken for having already done it.
 15. Deployment — Railway IaC and migrations (ACC-127) — ✅ built (15.3 = what survives an apply; 15.5 = the migration step)
 16. File storage — per organisation, and file evidence (ACC-177; SharePoint ACC-185; the screens ACC-260) — ✅ built (16.11 = the recycle bin; 16.14 = SharePoint)
 17. AI foundation — metering, credit periods, switches, platform key only (ACC-194) — ✅ built
-18. Meetings — one meeting's record (ACC-316 PR 3a) — 🟡 backend only; invitees, the agenda, minutes and screens are later PRs
+18. Meetings — one meeting's record (ACC-316 PR 3a, 3b) — 🟡 backend only; minutes, series and screens are later PRs (18.8 = invitees and the sync; 18.11 = the clash check)
 
 ---
 
@@ -15661,7 +15661,7 @@ model StoredFile {
   mimeType       String                 // decided by the server from content
   sizeBytes      Int
   sha256         String @db.Char(64)
-  ownerType      StoredFileOwnerType    // TASK; MEETING and MEETING_AGENDA_ITEM exist (ACC-316 PR 1) but nothing writes them yet
+  ownerType      StoredFileOwnerType    // TASK; MEETING (a meeting's attachment) and MEETING_AGENDA_ITEM (a paper), ACC-316 PR 3b, §18.10
   ownerId        String
   uploadedById, uploadedAt
   deletedAt, deletedById                // the 30-day soft delete; bytes KEPT
@@ -16738,12 +16738,12 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
-2's (§1, §2.18, §2.19, §3.16). PR 3b adds invitees, guests, answers, the agenda
-and the clash check; PR 4 the minutes.
+2's (§1, §2.18, §2.19, §3.16). PR 3b added invitees, guests, answers, the agenda,
+files and the clash check (§18.8–§18.12); PR 4 the minutes.
 
 ### 18.1 The routes
 
@@ -16892,3 +16892,205 @@ none.
 Both take `yyyy-MM-dd` days and read the organisation's calendar (working days
 and holidays). A calendar with no working day in a year is a 400. PR 4's review
 date reads them.
+
+### 18.8 Invitees and `MeetingInviteeSync` (PR 3b)
+
+`MeetingAttendee` holds every invitee: a `MEMBER`, an organisation guest
+(`ORG_GUEST`) or an outside guest (`OUTSIDE_GUEST`, a name and an email, no
+user).
+
+- **Scheduling fills in the MEMBER invitees**, in the scheduling transaction:
+  - a committee meeting: its active members of an active committee who are
+    ACTIVE people, each with a snapshot of their seat;
+  - a unit meeting: the unit's own ACTIVE people (`primaryOrgUnitId`), no
+    sub-units.
+
+  Not yet invited (`invitedAt` null): the invitation goes out when the agenda
+  is issued.
+- **`MeetingInviteeSyncService`** (`meetings/invitees/`) keeps them current.
+  It is ONE place, with entry points for a committee, a unit, a person, and the
+  sweep:
+  - adds the missing MEMBER rows (an organisation guest who becomes a member
+    turns into a MEMBER row and keeps their answer);
+  - removes the MEMBER rows no longer expected, with their answers — except a
+    leaver who presents an agenda item: that row becomes an organisation guest
+    (`addedAsPresenter`), keeping its answer and the presenter link, and the
+    organiser is told in the app;
+  - refreshes a member's seat snapshot.
+
+  Guests are never touched.
+- **Only OPEN meetings change:** the current stage allows `manage_guests`
+  (Planned and Agenda Issued, seeded) and the meeting has not started. Held and
+  cancelled meetings never change.
+- **Each meeting changes in its own short transaction:** the instance FOR SHARE
+  first, then the meeting row FOR UPDATE (as every invitee write), then a fresh
+  read under them.
+- **A member added after the agenda is issued** is stamped invited and told
+  (the invitation), after the commit.
+- **ACC-82's rule:** correctness rests on the scheduled recomputer,
+  `SlaMonitorProcessor.sweepMeetingInvitees()`. It is an isolated step, every
+  15 minutes, over every open meeting in batches of 200.
+- **The writers' calls only make a change show sooner.** Each runs after the
+  writer commits and never fails it (`refreshMeetingInvitees()`, logged by
+  error kind):
+  - committee add (and reactivate), seat change and removal;
+  - user transfer;
+  - a change of unit on the profile;
+  - deactivation and reactivation;
+  - an accepted invitation.
+- **A module of its own** (`MeetingInviteesModule`). It imports the modules that
+  own what it uses (`NotificationModule`, `WorkingCalendarModule`, and
+  `StageRulesModule`), so it shares their single instances. `StageRulesModule`
+  is StageRulesService on its own, which `WorkflowModule` re-exports, so the
+  sync uses it with no cycle.
+- **The writers inject it `@Optional()`,** so a service built by hand in a spec
+  needs none. `meeting-invitees.wiring.spec.ts` compiles the real `AppModule`
+  and proves every writer and the sweep hold it, each instance from its own
+  module.
+
+### 18.9 Guests and answers (PR 3b)
+
+`MeetingPeopleService`. Every write takes the instance FOR SHARE (the stage's
+rule), then the meeting row FOR UPDATE, then writes, with an audit row. The row
+lock serialises the writes on one meeting (a duplicate-guest check, an answer
+against the sync). A unique or missing-row error that still slips through is a
+coded 409 (`MEETING_ALREADY_INVITED` or `MEETING_CHANGED`), never a 500. An
+answer reads its deadline's clock after the locks.
+
+| Route | Who | Does |
+|---|---|---|
+| `GET /meetings/:id/attendees` | whoever sees the meeting | the invitees; an outside guest's email and everyone's answer only for a scheduler, a person's own answer always |
+| `POST /meetings/:id/guests` | a scheduler, stage `manage_guests` | `{ userId }` (an ACTIVE person of the organisation) or `{ outsideName, outsideEmail, outsideOrganisation?, outsideRole? }` |
+| `DELETE /meetings/:id/guests/:attendeeId` | the same | a guest only |
+| `PUT /meetings/:id/answer` | the invitee themselves, stage `answer_invitation`, before the start | `{ answer: ATTENDING \| CANT_ATTEND, note? }`, any number of times |
+
+- **A guest added while the meeting is planned** is invited when the agenda is
+  issued. **One added after** is invited at once: a user in the app and by
+  email, an outside guest by email.
+- **A change TO "Can't attend"** tells the organiser in the app only, with the
+  note. It is flagged ("needs your attention") when:
+  - the members not marked "Can't attend" fall below the quorum, or
+  - the person holds the Chair or Secretary seat, or
+  - the person presents an item.
+
+  Saying it again tells nobody again.
+- **The record** (`GET /meetings/:id`) gains `may.manageGuests`,
+  `may.manageAgenda` and `may.answer`; `answers` (MEMBER answers: members,
+  attending, can't, no answer, the quorum, below quorum) for a scheduler only;
+  and `myAnswer` for an invitee.
+- **Refusals:**
+
+  | Code | Status |
+  |---|---|
+  | `MEETING_GUEST_REQUIRED` | 400 |
+  | `MEETING_PERSON_NOT_FOUND` | 404 |
+  | `MEETING_ALREADY_INVITED` | 409 (an outside guest's email compared without case) |
+  | `MEETING_ATTENDEE_NOT_FOUND` | 404 |
+  | `MEETING_MEMBER_NOT_REMOVABLE` | 409 (a member is the committee's or unit's) |
+  | `MEETING_GUEST_PRESENTS` | 409 |
+  | `MEETING_NOT_INVITED` | 403 |
+  | `MEETING_STARTED` | 409 |
+
+- **Not counted toward quorum:** guests (the summary counts MEMBER answers
+  only).
+- **An outside guest never owns an action item:** that rule belongs to PR 4,
+  where action items are written.
+
+### 18.10 Agenda, papers and attachments (PR 3b)
+
+**The agenda** (`MeetingAgendaService`): `GET`/`POST /meetings/:id/agenda`,
+`PATCH`/`DELETE /meetings/:id/agenda/:itemId`, and `PUT
+/meetings/:id/agenda/order` (every item's id, once).
+
+- **Items:** title, description, duration, `standing` and a presenter, in
+  `order`.
+- **Who writes:** a scheduler, while the stage allows `manage_agenda`.
+- **The presenter is an INVITEE** (`presenterAttendeeId`):
+  - by `attendeeId`: a member, a guest, or an outside guest (who presents only
+    once added);
+  - by `userId`: an organisation person not yet invited becomes an organisation
+    guest in the same write (`addedAsPresenter`), invited at once if the agenda
+    is issued. That is adding a guest, so the stage must allow `manage_guests`
+    too, with the refusal Add a guest gives.
+- **Locks:** every agenda write takes the instance FOR SHARE, then the meeting
+  row FOR UPDATE (`max(order) + 1` reads a settled state). A removal also takes
+  the item FOR UPDATE; a paper upload holds it FOR SHARE. So no paper outlives
+  its item: a removal waits for a paper being recorded and takes it too, and an
+  upload whose item is removed meanwhile is refused, its bytes discarded.
+- **After issue, the invited users are told what changed** ("Agenda changed").
+- **Removing an item soft-deletes its papers.**
+- **Refusals:**
+  - `MEETING_AGENDA_TITLE_REQUIRED` 400;
+  - `MEETING_AGENDA_ITEM_NOT_FOUND` 404;
+  - `MEETING_AGENDA_ORDER_MISMATCH` 400;
+  - `MEETING_PRESENTER_NOT_FOUND` 404.
+- **"Open actions from the last meeting"** reads the previous meeting's action
+  items. That arrives with the minutes (PR 4).
+
+**Files** (`MeetingFilesService`): attachments are owned by the meeting
+(`StoredFileOwnerType` `MEETING`); papers by an agenda item
+(`MEETING_AGENDA_ITEM`).
+
+| Route | Does |
+|---|---|
+| `GET /meetings/:id/files` | both lists |
+| `POST /meetings/:id/files` | upload an attachment (multipart) |
+| `POST /meetings/:id/agenda/:itemId/files` | upload a paper (multipart) |
+| `GET /meetings/:id/files/:fileId/view` | the in-app viewer's 15-minute link |
+| `GET /meetings/:id/files/:fileId/download` | a 15-minute download link |
+| `DELETE /meetings/:id/files/:fileId` | the 30-day soft delete |
+
+- **Seeing:** whoever sees the meeting, organisation guests included once
+  invited.
+- **Nobody outside the meeting reaches a file:** the identical 404. A file of
+  another meeting, asked through this one, is "File not found".
+- **Writing:** a scheduler, stage `manage_agenda`, checked before any byte is
+  stored and again under the lock.
+- **The recycle bin** restores an attachment to its meeting and a paper to its
+  agenda item, and refuses `FILE_RECORD_GONE` when that is gone.
+
+### 18.11 The clash check (PR 3b)
+
+`POST /meetings/clashes` (`MeetingClashService`) takes the owner (`committeeId`
+or `orgUnitId`, for a new meeting) or `meetingId` (its own time left out), an
+optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
+
+- **The people checked:** those sent, else the meeting's invitees with a user,
+  else the owner's members.
+- **Only the owner's members and this meeting's invitees** may be checked; a
+  sent `userIds` naming anyone else is 400 `MEETING_CLASH_PERSON_NOT_INVITEE`.
+- **What counts:** for each time and person, the other meetings they are an
+  invitee of, not cancelled (by the `MEETING_CANCELLED` flag), whose time
+  STRICTLY overlaps. Back-to-back is not a clash, and the same series counts.
+  The query is prefiltered to the times' window, padded by the longest meeting
+  allowed (1,440 minutes), on the `scheduledAt` index.
+- **Outside guests** are not checked.
+- **A warning, never a block.**
+- **Who may ask:** whoever may schedule for the owner, or edit the meeting;
+  anyone else gets that endpoint's refusal. The other meeting's id and title are
+  given only if the asker may open it (both null: "another meeting").
+- **One query** for every time and person.
+- **Refusals:** `MEETING_CLASH_OWNER_REQUIRED` 400, `MEETING_CLASH_TOO_MANY_TIMES`
+  400, `MEETING_OWNER_NOT_FOUND` 404.
+
+### 18.12 Notices and outside-guest emails (PR 3b)
+
+- **Every meeting notice's words are in `meeting-notices.ts`, in English and
+  Arabic.** The Arabic names a person in a noun phrase, with no gendered verb.
+  Every send goes through `meeting-send.ts` (`notifyUsers`,
+  `emailOutsideGuests`), each on its own: a failure is logged and the rest go.
+  The actor is never told.
+- **An outside guest's email** is `NotificationService.sendOutsideEmail()`: the
+  `email-delivery` job `outside-email`, with no Notification row.
+  - The text is chosen in the ORGANISATION's language when enqueued.
+  - Subject plus one paragraph, with the meeting's place and online link (https
+    only). The renderer escapes the body before it links anything, and links
+    only AccreditMe's own URLs, so a tag typed in a title, place or reason stays
+    text and the meeting's link is never an anchor.
+  - No link into AccreditMe, no papers, no minutes.
+- **An outside guest is emailed:**
+  - at issue (the invitation), or at once if added after;
+  - on reschedule (the new time and the reason);
+  - on cancel (the reason).
+
+  The last two go only to those already invited.
