@@ -539,6 +539,27 @@ elsewhere.**
   remaining holder of it. No equivalent lockout exists for any other
   role — `TENANT_ADMIN` (matched by `role.key === 'TENANT_ADMIN'`) is
   the only one hardcoded with this protection.
+- **ACC-154 — no role is deactivated while anything holds or names it**,
+  system or custom (Ahmad, 30 Sep). `roleReferences()` (`role-references.ts`)
+  is the one check:
+  - **What it counts:**
+    - `USER_GRANTS`: direct grants, users of any status;
+    - `POSITION_GRANTS`: grants through a head position;
+    - `POSITIONS`: `OrgPosition.roleId`;
+    - `STAGE_ESCALATIONS`: a stage's `escalationConfig[].notifyRoleId`, ACC-105.
+  - **What no longer names a role:** a stage's people (no ROLE kind since
+    ACC-271) and transitions.
+  - **The reads:** one query per category, each scoped by the role's id AND
+    organisation, returning the total and up to 10 names.
+  - **The refusal:** `deactivateRole()` runs the check inside its transaction,
+    under the role row lock, and refuses with 409 `ROLE_IN_USE`
+    `{ blockers: [{ category, count, names }] }`. Nothing is cleared for the admin.
+  - **The pre-flight:** `GET /roles/:id/deactivation-check` (`roles:manage`)
+    returns `{ canDeactivate, rootRole, blockers }` from the same function.
+  - **Deactivating `BASE_USER` no longer touches the MEETING workflow.** No
+    seeded stage names a role: `minutes_review` is the committee chair plus
+    `MEETING_APPROVERS` (ACC-316). It would remove `BASE_USER`'s five keys from
+    its holders, and it is refused anyway while anyone holds the role.
 - **`getRoles()`** — filters `PLATFORM_ADMIN` out of the list for any
   non-platform organization (UX-only defense-in-depth; `PlatformGuard`
   is the real gate, not this filter).
@@ -672,6 +693,7 @@ endpoint. Grepped for actual callers (not just the service definition):
 | `updateRole()` | `PATCH /roles/:id` | `role-form` |
 | `assignPermissions()` | `PATCH /roles/:id/permissions` | `role-permission-matrix` |
 | `deactivateRole()` | `POST /roles/:id/deactivate` | `role-list` |
+| `deactivationCheck()` | `GET /roles/:id/deactivation-check` | none yet (the Deactivate dialog, ACC-154) |
 | `activateRole()` | `POST /roles/:id/activate` | `role-list` |
 | `getUserRoles()` | `GET /users/:id/roles` | `user-role-assignment` |
 | `assignRoleToUser()` | `POST /users/:id/roles` | `user-role-assignment` |
