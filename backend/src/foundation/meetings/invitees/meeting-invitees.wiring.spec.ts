@@ -20,6 +20,9 @@ import { AuthService } from '../../auth/auth.service';
 import { SlaMonitorProcessor } from '../../workflow/sla-monitor.processor';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MeetingInviteeSyncService } from './meeting-invitee-sync.service';
+import { NotificationService } from '../../notification/notification.service';
+import { WorkingCalendarService } from '../../working-calendar/working-calendar.service';
+import { StageRulesService } from '../../workflow/stage-rules.service';
 
 /**
  * PrismaService is a LEAF of the graph (it injects nothing), and the unit suite
@@ -77,6 +80,20 @@ describe('MeetingInviteeSync is wired into every writer of the real app (ACC-316
   ] as const)('%s holds the sync', (_name, writer) => {
     const sync = syncOf(app.get(writer, { strict: false }));
     expect(sync).toBeInstanceOf(MeetingInviteeSyncService);
+  });
+
+  it("the sync uses the app's own single instances, never private copies (lane B's review)", () => {
+    const sync = app.get(MeetingInviteeSyncService, { strict: false }) as unknown as Record<string, unknown>;
+    // Which modules hold the very instance the sync was given: the service's own module, and no copy.
+    const owners = (token: unknown, instance: unknown): string[] => {
+      const modules = (app as unknown as { container: { getModules(): Map<string, { metatype: { name: string }; providers: Map<unknown, { instance: unknown }> }> } }).container.getModules();
+      return [...modules.values()].filter((m) => m.providers.get(token)?.instance === instance).map((m) => m.metatype.name);
+    };
+    expect({
+      notifications: owners(NotificationService, sync['notifications']),
+      calendar: owners(WorkingCalendarService, sync['calendar']),
+      stageRules: owners(StageRulesService, sync['stageRules']),
+    }).toEqual({ notifications: ['NotificationModule'], calendar: ['WorkingCalendarModule'], stageRules: ['StageRulesModule'] });
   });
 
   it('the SLA sweep holds it too (sweepMeetingInvitees)', () => {
