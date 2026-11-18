@@ -36,3 +36,16 @@ function ltrAncestor(element: Element): Element | null {
   }
   return null;
 }
+
+/**
+ * CC-326 — the same rule for an Arabic PHRASE around a formatted date or time
+ * («منذ 5 نوفمبر 2026», «دخلت هذه المرحلة قبل يومين»): it takes the page's
+ * direction too. Non-vacuity first: the span exists and starts with the phrase.
+ */
+export function expectPhraseInPageDirection(span: Element | null | undefined, startsWith: string): void {
+  expect(span).withContext('the phrase is rendered').toBeTruthy();
+  const text = (span?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  expect(text.startsWith(startsWith)).withContext(`"${text}" starts with "${startsWith}"`).toBeTrue();
+  expect(span!.getAttribute('dir')).withContext(`"${text}" carries no dir`).toBeNull();
+  expect(ltrAncestor(span!)).withContext(`"${text}" sits inside no dir="ltr"`).toBeNull();
+}
