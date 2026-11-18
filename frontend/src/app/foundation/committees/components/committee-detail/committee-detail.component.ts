@@ -588,15 +588,12 @@ export class CommitteeDetailComponent implements OnInit {
   // the committee is offered no Edit, whatever they hold.
   // ACC-283 PR 6 — Add member, Remove, Change seat and Request a change come
   // from the server's memberActions (a seat can grant them), never from the
-  // viewer's permission strings. The one permission still read for them is the
-  // own-row rule's: a seat never changes its holder's own seat.
+  // viewer's permission strings; ACC-320 — Change seat on your own row too
+  // (memberActions.change_own_seat).
   readonly offers = computed(() =>
     committeeOffers(
       this.committee()?.stageRules,
-      {
-        editDetails: this.canEdit(),
-        changeMemberRole: this.navigationAccess.hasPermission('committees:change_member_role'),
-      },
+      { editDetails: this.canEdit() },
       this.committee()?.mayWrite ?? false,
       this.committee()?.memberActions,
     ),

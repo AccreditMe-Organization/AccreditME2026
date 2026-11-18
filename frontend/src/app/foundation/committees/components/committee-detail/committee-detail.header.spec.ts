@@ -70,6 +70,8 @@ function byRole(held: readonly string[], mayWrite: boolean): CommitteeMemberActi
     remove_member: has('committees:remove_member'),
     change_member_seat: has('committees:change_member_role'),
     request_change: has('committees:edit_details'),
+    // ACC-320 — the role's path reaches the viewer's own row too.
+    change_own_seat: has('committees:change_member_role'),
   };
 }
 
@@ -167,7 +169,8 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
   // ACC-283 PR 6 — the offers read the server's memberActions, never the
   // viewer's keys: a Secretary holding none is offered what their seat allows.
   it('a seat-only Secretary (no keys) is offered what memberActions grants, where the stage allows it', () => {
-    const all = { add_member: true, remove_member: true, change_member_seat: true, request_change: true };
+    // The server: a seat grants the four, never the holder's own seat (change_own_seat false).
+    const all = { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: false };
     const page = render(FORMATION_RULES, [], { memberActions: all });
     expect(has(page, 'committee-members-add')).withContext('Add member').toBeTrue();
     expect(panel().canChangeRole()).withContext('Change seat (another row)').toBeTrue();
@@ -181,8 +184,21 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
   });
 
   it('holding the keys is not enough when the server says no', () => {
-    render(FORMATION_RULES, ALL, { memberActions: { add_member: false, remove_member: false, change_member_seat: false, request_change: false } });
+    render(FORMATION_RULES, ALL, { memberActions: { add_member: false, remove_member: false, change_member_seat: false, request_change: false, change_own_seat: false } });
     expect([panel().canAddMember(), panel().canChangeRole(), panel().canChangeOwnSeat(), panel().canRemove()]).toEqual([false, false, false, false]);
+  });
+
+  // ACC-320 — Change seat on your own row is the server's change_own_seat, never a
+  // permission string the page reads.
+  it('your own row: the server says change_own_seat true → offered, with no key held', () => {
+    render(FORMATION_RULES, [], { memberActions: { add_member: false, remove_member: false, change_member_seat: false, request_change: false, change_own_seat: true } });
+    expect(panel().canChangeOwnSeat()).toBeTrue();
+  });
+
+  it('your own row: the server says change_own_seat false → not offered, though the viewer holds committees:change_member_role', () => {
+    render(FORMATION_RULES, ALL, { memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: false } });
+    expect(panel().canChangeRole()).withContext('another row').toBeTrue();
+    expect(panel().canChangeOwnSeat()).withContext('your own row').toBeFalse();
   });
 
   it('each member action follows its own permission', () => {
@@ -250,8 +266,8 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
   });
 
   describe('committeeOffers()', () => {
-    const everything = { editDetails: true, changeMemberRole: true };
-    const member = { add_member: true, remove_member: true, change_member_seat: true, request_change: true };
+    const everything = { editDetails: true };
+    const member = { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true };
 
     it('the locked line is "no edit here, not in force, not being dissolved"', () => {
       expect(committeeOffers(tenantStageRules([]), everything, true, member).lockedLine).toBeTrue();

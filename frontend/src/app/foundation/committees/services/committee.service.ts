@@ -129,6 +129,12 @@ export interface CommitteeMemberActionsDto {
   remove_member: boolean;
   change_member_seat: boolean;
   request_change: boolean;
+  /**
+   * ACC-320 — Change seat on the viewer's OWN membership row. A seat never changes
+   * its holder's own seat (the server's SEAT_NEVER_ON_OWN_ROW), so this is true
+   * only on the role's path. Always sent (committeeMemberActionsFor()).
+   */
+  change_own_seat: boolean;
 }
 
 /** ACC-281 — another committee a record names, and whether this viewer may open it. */

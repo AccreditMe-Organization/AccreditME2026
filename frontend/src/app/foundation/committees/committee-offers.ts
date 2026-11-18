@@ -21,11 +21,11 @@ import type { CommitteeMemberActionsDto, CommitteeStageRulesDto } from './servic
  *                     member-actions.ts is the rule, never copied here) AND the
  *                     stage allows it. So a dissolved committee offers none
  *                     (Ahmad, Q-A), and one being dissolved still offers them.
- *   changeOwnSeat     Change seat on the viewer's OWN row: changeMemberRole AND
- *                     the viewer holds committees:change_member_role. A seat
- *                     never changes its holder's own seat (the server's
- *                     SEAT_NEVER_ON_OWN_ROW), so on the seat alone the item is
- *                     absent. Remove on your own row is removeMember, as on any
+ *   changeOwnSeat     Change seat on the viewer's OWN row: the server's
+ *                     `memberActions.change_own_seat` (ACC-320; a seat never
+ *                     changes its holder's own seat, SEAT_NEVER_ON_OWN_ROW) AND the
+ *                     stage allows change_member_role. No copy of that rule is
+ *                     kept here. Remove on your own row is removeMember, as on any
  *                     row: leaving is not an escalation.
  *
  * ACC-283 — Edit and the locked line also need the server's `mayWrite` (GET
@@ -51,10 +51,9 @@ export interface CommitteeOffers {
   changeOwnSeat: boolean;
 }
 
-/** The viewer's own permissions this page still reads: Edit's, and the own-row rule's. */
+/** The viewer's own permission this page still reads: Edit's (not a seat action). */
 export interface CommitteePermissions {
   editDetails: boolean;
-  changeMemberRole: boolean;
 }
 
 /**
@@ -76,6 +75,7 @@ export const NO_MEMBER_ACTIONS: CommitteeMemberActionsDto = {
   add_member: false,
   remove_member: false,
   change_member_seat: false,
+  change_own_seat: false,
   request_change: false,
 };
 
@@ -97,6 +97,6 @@ export function committeeOffers(
     addMember: member.add_member && allows.add_member,
     removeMember: member.remove_member && allows.remove_member,
     changeMemberRole,
-    changeOwnSeat: changeMemberRole && can.changeMemberRole,
+    changeOwnSeat: member.change_own_seat && allows.change_member_role,
   };
 }
