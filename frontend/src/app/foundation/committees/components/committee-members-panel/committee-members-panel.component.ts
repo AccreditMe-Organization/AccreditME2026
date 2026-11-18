@@ -24,10 +24,12 @@ type PanelState = 'loading' | 'error' | 'ready';
  * (their own, or anyone's with what the users route requires), else it is
  * plain.
  *
- * Change role and Remove leave the row for a worded ⋯ menu (Q12) — the same
- * permissions as before (committees:change_member_role,
- * committees:remove_member), an item the viewer cannot use is absent, and a
- * row with neither has no ⋯. The page owns the dialogs; this panel asks.
+ * Change role and Remove leave the row for a worded ⋯ menu (Q12): an item the
+ * viewer cannot use is absent, and a row with neither has no ⋯. ACC-283 PR 6 —
+ * the page decides them from the server's memberActions and the stage
+ * (committee-offers.ts); on the viewer's OWN row Change seat follows
+ * `canChangeOwnSeat`, because a seat never changes its holder's own seat. The
+ * page owns the dialogs; this panel asks.
  */
 @Component({
   selector: 'app-committee-members-panel',
@@ -139,6 +141,8 @@ export class CommitteeMembersPanelComponent {
   readonly committeeName = input.required<string>();
   readonly canAddMember = input(false);
   readonly canChangeRole = input(false);
+  /** Change seat on the viewer's own row (committee-offers.ts, changeOwnSeat). */
+  readonly canChangeOwnSeat = input(false);
   readonly canRemove = input(false);
   readonly addRequested = output<void>();
   readonly changeRoleRequested = output<CommitteeMemberRowDto>();
@@ -203,7 +207,10 @@ export class CommitteeMembersPanelComponent {
 
   menuFor(m: CommitteeMemberRowDto): RowMenuItem[][] | null {
     const items: RowMenuItem[] = [];
-    if (this.canChangeRole()) items.push({ id: 'changeRole', label: this.translate.instant('committee.changeRole') });
+    const ownRow = this.auth.currentUser()?.id === m.userId;
+    if (ownRow ? this.canChangeOwnSeat() : this.canChangeRole()) {
+      items.push({ id: 'changeRole', label: this.translate.instant('committee.changeRole') });
+    }
     if (this.canRemove()) items.push({ id: 'remove', label: this.translate.instant('committee.removeMember'), danger: true });
     return items.length ? [items] : null;
   }
