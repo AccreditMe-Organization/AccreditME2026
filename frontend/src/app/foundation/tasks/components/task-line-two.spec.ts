@@ -192,7 +192,7 @@ function visibleBox(el: Element, card: Element): { left: number; right: number; 
   return box;
 }
 
-describe('A held phone card names its assignee, measured (CC-339)', () => {
+describe('A held phone card names its assignee and its record, measured (CC-339, CC-341)', () => {
   useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let http: HttpTestingController;
@@ -261,24 +261,28 @@ describe('A held phone card names its assignee, measured (CC-339)', () => {
         const line = Array.from(card.querySelectorAll('.am-tl__sub')).map(lineText).join(' | ');
         expect(line).not.toContain(` · ${ON_HOLD[lang]}`);
 
-        // The assignee: ONE element holds the name, and all of it can be seen.
-        const holders = Array.from(card.querySelectorAll<HTMLElement>('*')).filter(
-          (e) => e.textContent!.includes(NAME) && !Array.from(e.children).some((c) => c.textContent!.includes(NAME)),
-        );
-        expect(holders.length).withContext('one element names the assignee').toBe(1);
-        const holder = holders[0]!;
-        expect(holder.scrollWidth).withContext(`"${textOf(holder)}" is cut (${holder.scrollWidth} > ${holder.clientWidth})`).toBeLessThanOrEqual(holder.clientWidth);
-        const text = document.createRange();
-        text.selectNodeContents(holder);
-        const textBox = text.getBoundingClientRect();
-        const seen = visibleBox(holder, card);
-        expect(textBox.width).toBeGreaterThan(60); // non-vacuity: the name has width
-        expect(seen.right - seen.left).withContext('the part of the name that can be seen').toBeGreaterThanOrEqual(textBox.width - 1);
-        // Not painted under the button either.
-        const overlaps = seen.left < buttonBox.right && seen.right > buttonBox.left && seen.top < buttonBox.bottom && seen.bottom > buttonBox.top;
-        expect(overlaps).withContext('the name under "Resume now"').toBeFalse();
-        expect(seen.left).toBeGreaterThanOrEqual(cardBox.left - 1);
-        expect(seen.right).toBeLessThanOrEqual(cardBox.right + 1);
+        // The assignee and the record's name (CC-341): each held by ONE element,
+        // all of it seen — not cut, not hard-clipped, not under the button.
+        const expectSeen = (wanted: string, what: string) => {
+          const holders = Array.from(card.querySelectorAll<HTMLElement>('*')).filter(
+            (e) => e.textContent!.includes(wanted) && !Array.from(e.children).some((c) => c.textContent!.includes(wanted)),
+          );
+          expect(holders.length).withContext(`one element names ${what}`).toBe(1);
+          const holder = holders[0]!;
+          expect(holder.scrollWidth).withContext(`${what}: "${textOf(holder)}" is cut (${holder.scrollWidth} > ${holder.clientWidth})`).toBeLessThanOrEqual(holder.clientWidth);
+          const text = document.createRange();
+          text.selectNodeContents(holder);
+          const textBox = text.getBoundingClientRect();
+          const seen = visibleBox(holder, card);
+          expect(textBox.width).withContext(`${what} has width`).toBeGreaterThan(60); // non-vacuity
+          expect(seen.right - seen.left).withContext(`the part of ${what} that can be seen`).toBeGreaterThanOrEqual(textBox.width - 1);
+          const overlaps = seen.left < buttonBox.right && seen.right > buttonBox.left && seen.top < buttonBox.bottom && seen.bottom > buttonBox.top;
+          expect(overlaps).withContext(`${what} under "Resume now"`).toBeFalse();
+          expect(seen.left).toBeGreaterThanOrEqual(cardBox.left - 1);
+          expect(seen.right).toBeLessThanOrEqual(cardBox.right + 1);
+        };
+        expectSeen(NAME, 'the assignee');
+        expectSeen(lang === 'en' ? 'Infection Control Committee' : 'لجنة مكافحة العدوى', "the record's name");
 
         // Every "·" is clipped at the start of a line and shown after a part on it:
         // a part starting a row sits 1em before the line's start, every other part after it.

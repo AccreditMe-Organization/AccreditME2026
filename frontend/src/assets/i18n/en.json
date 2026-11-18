@@ -2726,7 +2726,7 @@
     "due": {
       "completedOn": "✓ Completed {{date}}",
       "cancelledOn": "Cancelled {{date}}",
-      "onHoldDue": "⏸ On hold to {{hold}} · due {{date}}",
+      "onHoldDue": "⏸ On hold to {{hold}} · Due {{date}}",
       "onHold": "⏸ On hold to {{hold}}",
       "none": "No due date",
       "overdue": "⚠ {{span}} overdue · {{date}}",

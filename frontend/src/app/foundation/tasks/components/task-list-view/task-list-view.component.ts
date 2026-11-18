@@ -132,6 +132,8 @@ interface ViewRow {
    * sight; each "·" is the Due cell's clipped padding, so none starts a line.
    */
   cardParts: { text: string; due: boolean }[];
+  /** CC-341 — a phone card's record line, part by part: the type word, then the name. */
+  recordParts: string[];
   tagKey: string | null;
   recordLine: string | null;
   /** ACC-120 slice 3 — the own views: the record's name (or its type word), and where it opens. */
@@ -408,9 +410,23 @@ interface ViewRow {
                           @if (r.recordHref) {<a class="text-[var(--am-primary-700)] no-underline hover:underline focus-visible:outline-[length:var(--am-focus-ring-width)] focus-visible:outline-[var(--am-focus-ring)]" [routerLink]="r.recordHref" data-testid="task-list-record">{{ r.recordName }}</a>} @else {<span data-testid="task-list-record">{{ r.recordName }}</span>}
                         </span>
                       } @else if (r.recordLine) {
-                        <span class="am-tl__sub am-tl__tail">{{ r.recordLine }}</span>
+                        <!-- CC-341 — the record line wraps by part like the due line below:
+                             a name too wide beside the next step takes its own row, and a
+                             part too long for a row ends in "…", never a hard clip. -->
+                        <span class="am-tl__sub overflow-hidden" [attr.title]="r.recordLine" data-testid="task-list-card-record-line">
+                          <span class="flex flex-auto flex-wrap min-w-0 -ms-[1em]">
+                            @for (part of r.recordParts; track $index) {
+                              <span
+                                class="am-tl__part relative min-w-0 max-w-full ps-[1em] overflow-hidden text-ellipsis whitespace-nowrap before:absolute before:start-0 before:w-[1em] before:text-center before:content-['·']"
+                                data-testid="task-list-card-record"
+                                >{{ part }}</span
+                              >
+                            }
+                          </span>
+                        </span>
                       }
                       <!-- CC-339 — the due label's parts, then the card tail's (cardParts),
+                           the record line's rule above (the same part classes),
                            wrapping between parts. Each part's "·" sits in its 1em start
                            padding and the line clips the first 1em, as in the Due cell, so a
                            part that starts a line shows no "·"; a part too long for a line
@@ -784,6 +800,7 @@ export class TaskListViewComponent {
         subLine: [recordLine, fact].filter(Boolean).join(' · ') || null,
         cardTail,
         cardParts: [...dueParts.map((text) => ({ text, due: true })), ...cardTail.map((text) => ({ text, due: false }))],
+        recordParts: row.record ? this.recordParts(row.record) : [],
         recordName: own && row.record ? this.recordName(row.record) : null,
         recordHref: own && row.record ? this.recordHref(row.record) : null,
         overdue: own && isTaskOverdue(row, now),
@@ -1197,7 +1214,12 @@ export class TaskListViewComponent {
   }
 
   private recordLine(record: NonNullable<ITaskRecordRowDto['record']>): string {
+    return this.recordParts(record).join(' · ');
+  }
+
+  /** The record line's parts: the type word, then the name when the server sent one. */
+  private recordParts(record: NonNullable<ITaskRecordRowDto['record']>): string[] {
     const type = this.recordTypeWord(record.type);
-    return record.nameEn ? `${type} · ${this.language.bilingual(record.nameEn, record.nameAr)}` : type;
+    return record.nameEn ? [type, this.language.bilingual(record.nameEn, record.nameAr)] : [type];
   }
 }

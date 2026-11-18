@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * list (Record Tasks Panel §1).
  *
  * The due label leads the second line and is never cut: "⚠ 4 days overdue ·
- * 8 Oct 2026", "⏸ On hold to 20 Oct 2026 · due 27 Oct 2026", "✓ Completed
+ * 8 Oct 2026", "⏸ On hold to 20 Oct 2026 · Due 27 Oct 2026", "✓ Completed
  * 2 Oct 2026". Overdue and On hold always carry a symbol AND words, never
  * colour alone. Dates go through the formatting layer (ACC-94); a span of time
  * is a duration, never a plural object.
