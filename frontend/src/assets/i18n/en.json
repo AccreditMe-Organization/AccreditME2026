@@ -733,7 +733,12 @@
     },
     "refusal": {
       "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
-      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
+      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first.",
+      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first."
+    },
+    "inUse": {
+      "title": "“{{name}}” can't be deactivated yet",
+      "lead": "It's still in use. Remove each of these first, then deactivate it."
     },
     "form": {
       "nameRequired": "Enter the role's name in English.",
@@ -2966,6 +2971,24 @@
       "stillHere": {
         "one": "Your {{count}} change is still here.",
         "other": "Your {{count}} changes are still here."
+      },
+      "inUse": {
+        "USER_GRANTS": {
+          "one": "Given directly to {{count}} user",
+          "other": "Given directly to {{count}} users"
+        },
+        "POSITION_GRANTS": {
+          "one": "Given to {{count}} user through a head position",
+          "other": "Given to {{count}} users through a head position"
+        },
+        "POSITIONS": {
+          "one": "Set on {{count}} position",
+          "other": "Set on {{count}} positions"
+        },
+        "STAGE_ESCALATIONS": {
+          "one": "Named in the escalation of {{count}} workflow stage",
+          "other": "Named in the escalation of {{count}} workflow stages"
+        }
       },
       "deactivateHolders": {
         "one": "{{count}} person holds it and loses its permissions now.",
