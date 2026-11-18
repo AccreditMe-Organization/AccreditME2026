@@ -120,12 +120,18 @@ interface ViewRow {
   /** Under the title: the record, then the fact, as one line (whole in its tooltip when cut). */
   subLine: string | null;
   /**
-   * A phone card's line after the due label (CC-338): My tasks' priority, else the
+   * A phone card's parts after the due label (CC-338): My tasks' priority, else the
    * assignee (never on a person's list), then line 2's status word (none for a
-   * held task: its due label already says so). Rendered after a no-break space,
-   * so every "·" has a space on both sides.
+   * held task: its due label already says so).
    */
-  cardTail: string;
+  cardTail: string[];
+  /**
+   * CC-339 — a phone card's due line, part by part: the due label's parts, then
+   * cardTail's. The line wraps BETWEEN parts, so a long due label ("⏸ On hold to …
+   * · due …") beside a next-step button no longer squeezes the assignee out of
+   * sight; each "·" is the Due cell's clipped padding, so none starts a line.
+   */
+  cardParts: { text: string; due: boolean }[];
   tagKey: string | null;
   recordLine: string | null;
   /** ACC-120 slice 3 — the own views: the record's name (or its type word), and where it opens. */
@@ -404,14 +410,23 @@ interface ViewRow {
                       } @else if (r.recordLine) {
                         <span class="am-tl__sub am-tl__tail">{{ r.recordLine }}</span>
                       }
-                      <span class="am-tl__sub">
-                        <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
-                        <!-- CC-338 — one card tail for every list (cardTail); a no-break
-                             space keeps the space before "·" in this flex line, which a
-                             plain leading space loses. -->
-                        @if (r.cardTail) {
-                          <span class="am-tl__tail" data-testid="task-list-card-tail">&nbsp;· {{ r.cardTail }}</span>
-                        }
+                      <!-- CC-339 — the due label's parts, then the card tail's (cardParts),
+                           wrapping between parts. Each part's "·" sits in its 1em start
+                           padding and the line clips the first 1em, as in the Due cell, so a
+                           part that starts a line shows no "·"; a part too long for a line
+                           is cut with an ellipsis, whole in the card's text. -->
+                      <span class="am-tl__sub overflow-hidden" data-testid="task-list-card-line">
+                        <span class="flex flex-auto flex-wrap min-w-0 -ms-[1em]">
+                          @for (part of r.cardParts; track $index) {
+                            <span
+                              class="am-tl__part relative min-w-0 max-w-full ps-[1em] overflow-hidden text-ellipsis whitespace-nowrap before:absolute before:start-0 before:w-[1em] before:text-center before:content-['·']"
+                              [class.am-tl__due]="part.due"
+                              [attr.data-tone]="part.due ? r.due.tone : null"
+                              [attr.data-testid]="part.due ? 'task-list-card-due' : 'task-list-card-tail'"
+                              >{{ part.text }}</span
+                            >
+                          }
+                        </span>
                         @if (r.overdue) {
                           <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)] ms-1" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
                         }
@@ -751,11 +766,15 @@ export class TaskListViewComponent {
       const fact = this.text.fact(row);
       const recordLine = row.record ? this.recordLine(row.record) : null;
       const own = !!this.ownView();
+      const dueParts = cut < 0 ? [due.text] : [due.text.slice(0, cut), due.text.slice(cut + 3)];
+      const cardTail = [this.isMine() ? this.priorityText(row.priority).label : this.isPerson() ? null : this.text.who(row), this.text.lineStatus(row)].filter(
+        (p): p is string => !!p,
+      );
       return {
         row,
         title: this.text.title(row),
         due,
-        dueParts: cut < 0 ? [due.text] : [due.text.slice(0, cut), due.text.slice(cut + 3)],
+        dueParts,
         who: this.text.who(row),
         position: this.text.position(row),
         statusKey: this.text.statusKey(row),
@@ -763,9 +782,8 @@ export class TaskListViewComponent {
         tagKey: this.text.requirementKey(row),
         recordLine,
         subLine: [recordLine, fact].filter(Boolean).join(' · ') || null,
-        cardTail: [this.isMine() ? this.priorityText(row.priority).label : this.isPerson() ? null : this.text.who(row), this.text.lineStatus(row)]
-          .filter(Boolean)
-          .join(' · '),
+        cardTail,
+        cardParts: [...dueParts.map((text) => ({ text, due: true })), ...cardTail.map((text) => ({ text, due: false }))],
         recordName: own && row.record ? this.recordName(row.record) : null,
         recordHref: own && row.record ? this.recordHref(row.record) : null,
         overdue: own && isTaskOverdue(row, now),

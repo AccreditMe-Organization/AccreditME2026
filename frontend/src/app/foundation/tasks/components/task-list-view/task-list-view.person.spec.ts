@@ -113,7 +113,12 @@ describe('TaskListViewComponent — a person\'s tasks (ACC-216)', () => {
       const card = rowEls()[0]!;
       expect(card.classList).toContain('am-tl__item--card'); // non-vacuity: a phone card
       expect(card.textContent).not.toContain('Dr. Sara Al-Qahtani');
-      const lines = Array.from(card.querySelectorAll<HTMLElement>('.am-tl__sub')).map((l) => l.textContent!.replace(/ /g, ' ').replace(/\s+/g, ' ').trim());
+      // A card's due line is parts, each after a CSS "·" (CC-339): read as joined by " · ".
+      const flat = (e: Element) => e.textContent!.replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+      const lines = Array.from(card.querySelectorAll<HTMLElement>('.am-tl__sub')).map((l) => {
+        const parts = l.querySelectorAll('.am-tl__part');
+        return parts.length ? Array.from(parts).map(flat).join(' · ') : flat(l);
+      });
       expect(lines.length).toBeGreaterThan(0);
       expect(lines.some((l) => l.includes('·'))).withContext('non-vacuity: a line with a separator').toBeTrue();
       for (const line of lines) {
