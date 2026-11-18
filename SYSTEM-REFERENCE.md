@@ -569,7 +569,9 @@ elsewhere.**
   - **What it counts:**
     - `USER_GRANTS`: direct grants;
     - `POSITION_GRANTS`: grants through a head position;
-    - `POSITIONS`: `OrgPosition.roleId`;
+    - `POSITIONS`: an ACTIVE position's `OrgPosition.roleId`. An inactive
+      position does not block: if it is reactivated it maps to an inactive
+      role, which grants nothing, and its role can be changed;
     - `STAGE_ESCALATIONS`: a stage's `escalationConfig[].notifyRoleId`, ACC-105.
   - **What no longer names a role:** a stage's people (no ROLE kind since
     ACC-271) and transitions.
@@ -583,24 +585,66 @@ elsewhere.**
     count and an empty `names`; counts are always given. This holds for the
     pre-flight and for the refusal alike.
   - **The reads:** one query per category, each scoped by the role's id AND
-    organisation, returning the total and up to 10 names.
+    organisation, returning the total and up to 10 names. The pre-flight runs
+    the four with `Promise.all`; inside the deactivate's transaction they stay
+    sequential.
+  - **Names are data, not a label:** each carries `nameEn` and `nameAr` (a
+    person has one name, in `nameEn`), and a stage carries its workflow's names
+    apart (`workflow`). The screen builds the label in the reader's language
+    with `LanguageService.bilingual()`; a stage reads "workflow — stage".
   - **The refusal:** `deactivateRole()` runs the check inside its transaction,
     under the role row lock, and refuses with 409 `ROLE_IN_USE`
     `{ blockers: [{ category, count, names }] }`. Nothing is cleared for the admin.
   - **The pre-flight:** `GET /roles/:id/deactivation-check` (`roles:manage`)
-    returns `{ canDeactivate, rootRole, blockers }` from the same function.
+    returns `{ canDeactivate, rootRole, blockers }` from the same function. For
+    an already inactive role it agrees with deactivate, which does nothing:
+    no blockers, `canDeactivate: true`.
+  - **A deactivated role is never given out again: 409 `ROLE_INACTIVE`**
+    (`role-active.ts`), from `assignRoleToUser()`, `grantRoleViaHeadAuthority()`
+    and a position's role (`OrgPositionService.validateRoleReference()`, on
+    create and on a CHANGED role only, so a position whose role was later
+    deactivated can still be renamed). `roleId: null` clears a position's role,
+    which is how a POSITIONS blocker is removed in the app.
+    - **The race is closed by a lock, not a read.** `deactivateRole()` takes the
+      role FOR UPDATE, then reads what holds it. Each writer takes the role FOR
+      SHARE inside its own transaction, scoped by id and organisation, and reads
+      `isActive` from the locked row (`lockActiveRole()`,
+      `lockRolesForShare()`). A writer that locks first holds the deactivate,
+      which then sees it (`ROLE_IN_USE`); a writer queued behind a deactivate
+      reads it inactive (`ROLE_INACTIVE`).
+    - **Stage escalations:** `assertEscalationRules()` now runs inside the
+      stage save's transaction, its roles locked FOR SHARE; an inactive role is
+      still `STAGE_ESCALATION_INVALID` with reason `ROLE`.
+    - **Refused before anything is written** where a flow writes first and
+      grants last: `validatePositionAssignment()` (invite, edit profile,
+      transfer, appoint head, appoint successor) for a head position whose role
+      is inactive, and `assignActingHead()`, which now resolves the cover's
+      head role before its writes. The grant itself re-checks under the lock.
+    - **Said from its code on every screen that can meet it**
+      (`roleInactiveMessage()`, `roles/role-inactive-refusal.ts`): Manage
+      roles, the position form, the transfer wizard, appoint head, appoint
+      successor, set acting head, invite, edit profile and the headship
+      actions.
   - **The screen:** Deactivate on the Roles row ⋯ reads the pre-flight first.
     - **Blockers:** `RoleInUseDialogComponent` lists them by category: a
       counted heading (`plural.role.inUse.*`), the names, and "Showing 10 of N"
       when there are more. A category with no names (not the reader's to see)
-      is the count line alone. It has Close only.
+      is the count line alone. POSITION_GRANTS adds that ending the headship
+      removes it, and POSITIONS that changing the position's role does. A
+      category the screen does not know is left out; with none left, the plain
+      `roles.refusal.roleInUse`. It has Close only.
+    - **One check at a time:** while a pre-flight is out, another press, on
+      that row or another, runs nothing.
     - **None:** the plain confirm ("Nobody holds it now…"), which never counts
       people.
     - **A `ROLE_IN_USE` after the confirm** (something arrived in between)
       opens the same dialog from the refusal's own blockers.
     - **The 420 cap:** the list is an inner-scroll frame (plain text, nothing
-      floats). The body measures 326px in English and 332px in Arabic with four
-      categories of ten names (`role-in-use-dialog.layout.spec.ts`).
+      floats), at most `--am-dialog-scroll-list-max`. It is a tab stop only
+      while it scrolls. The body measures 326px in English and 332px in Arabic
+      with four categories of ten names (`role-in-use-dialog.layout.spec.ts`).
+    - **One Arabic verb:** «إلغاء تفعيل» throughout the flow, the one the roles
+      screens already used (the confirm's header said «تعطيل»).
   - **Deactivating `BASE_USER` no longer touches the MEETING workflow.** No
     seeded stage names a role: `minutes_review` is the committee chair plus
     `MEETING_APPROVERS` (ACC-316). It would remove `BASE_USER`'s five keys from
