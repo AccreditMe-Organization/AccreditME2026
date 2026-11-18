@@ -10,6 +10,7 @@ import {
   paginated,
 } from '../../common/interfaces/paginated-response.interface';
 import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
+import { OUTSIDE_EMAIL_JOB, OutsideEmailJobData, OutsideEmailText } from './outside-email';
 
 export interface GetNotificationsOptions {
   status?: 'UNREAD' | 'READ' | 'DISMISSED';
@@ -41,6 +42,25 @@ export class NotificationService {
     private readonly auditLog: AuditLogService,
     @InjectQueue('email-delivery') private readonly emailDeliveryQueue: Queue,
   ) {}
+
+  /**
+   * ACC-316 PR 3b — an email to an address with no user (a meeting's outside
+   * guest), in the ORGANISATION's language: no Notification row, no link.
+   * Enqueued on email-delivery like every email; the worker sends it.
+   */
+  async sendOutsideEmail(organizationId: string, to: string, text: OutsideEmailText): Promise<void> {
+    const organization = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { language: true } });
+    if (!organization) throw new NotFoundException('Organisation not found');
+    const arabic = organization.language === 'ar';
+    const data: OutsideEmailJobData = {
+      organizationId,
+      to,
+      subject: arabic ? text.subjectAr : text.subjectEn,
+      body: arabic ? text.bodyAr : text.bodyEn,
+      direction: arabic ? 'rtl' : 'ltr',
+    };
+    await this.emailDeliveryQueue.add(OUTSIDE_EMAIL_JOB, data, { removeOnComplete: true, removeOnFail: { age: 7 * 24 * 3600 } });
+  }
 
   // dto.userId is re-validated against organizationId here — the layer
   // boundary, not just the one call site that currently passes it
