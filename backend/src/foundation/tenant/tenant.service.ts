@@ -41,7 +41,7 @@ import {
   ITaskSlaSettings,
 } from './interfaces/tenant.interface';
 import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitlements';
-import { DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
+import { DEFAULT_TASK_SLA_NOTICES, DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
 
 // ACC-46 Section 2.7.d — replaces TaskService's own old
 // DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
@@ -492,7 +492,11 @@ export class TenantService {
       data: {
         isBootstrapped: true,
         bootstrappedAt: new Date(),
-        settings: { ...existingSettings, taskSla: DEFAULT_TASK_SLA_SETTINGS } as unknown as Prisma.InputJsonValue,
+        settings: {
+          ...existingSettings,
+          taskSla: DEFAULT_TASK_SLA_SETTINGS,
+          taskSlaNotices: DEFAULT_TASK_SLA_NOTICES,
+        } as unknown as Prisma.InputJsonValue,
       },
     });
 

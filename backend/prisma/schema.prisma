@@ -278,6 +278,12 @@ enum StageAssigneeKind {
   ORG_UNIT_HEAD // the head (or acting head) of a unit; no unit = the record's unit
   CREATOR // whoever moved the record into its first stage (was SELF)
   COMMITTEE // a committee's members, optionally one member role; no committee = the record's committee
+  // ACC-316 — Meetings only, no fields: who may schedule, record and approve a
+  // meeting, read through meeting-authority.ts. Offered by no record type and
+  // resolving to nobody until the Meetings PR that reads them.
+  MEETING_SCHEDULERS
+  MEETING_RECORDERS
+  MEETING_APPROVERS
 }
 
 // ACC-271 — how the stage's people decide, when there are several.
@@ -499,6 +505,16 @@ model Organization {
 
   workflowStageTaskDefinitions WorkflowStageTaskDefinition[] // ACC-190
   passwordResetLinks           PasswordResetLink[]
+  meetingSeries                MeetingSeries[] // ACC-316
+  agendaItems                  AgendaItem[]
+  meetingAttendees             MeetingAttendee[]
+  meetingDecisions             MeetingDecision[]
+  meetingActionItems           MeetingActionItem[]
+  meetingOpenActionNotes       MeetingOpenActionNote[]
+  meetingReviewAnswers         MeetingReviewAnswer[]
+  meetingSuggestions           MeetingSuggestion[]
+  meetingReviewChanges         MeetingReviewChange[]
+  meetingReschedules           MeetingReschedule[]
 
   @@index([slug])
   @@index([status])
@@ -673,8 +689,21 @@ model User {
   userTransferEventsAsReplacement UserTransferEvent[]        @relation("UserTransferEventReplacement")
   userTransferEventsAsNewManager  UserTransferEvent[]        @relation("UserTransferEventNewManager")
 
-  stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionUser") // ACC-190
-  passwordResetLinks   PasswordResetLink[]
+  stageTaskDefinitions          WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionUser") // ACC-190
+  passwordResetLinks            PasswordResetLink[]
+  meetingsApproved              Meeting[]                     @relation("MeetingApprovedBy") // ACC-316
+  meetingSeriesCreated          MeetingSeries[]               @relation("MeetingSeriesCreatedBy")
+  meetingInvitations            MeetingAttendee[]             @relation("MeetingAttendeeUser")
+  meetingAttendanceRecorded     MeetingAttendee[]             @relation("MeetingAttendanceRecordedBy")
+  meetingAttendeesAdded         MeetingAttendee[]             @relation("MeetingAttendeeCreatedBy")
+  meetingActionItemsOwned       MeetingActionItem[]           @relation("MeetingActionItemOwner")
+  meetingActionItemsCreated     MeetingActionItem[]           @relation("MeetingActionItemCreatedBy")
+  meetingOpenActionNotesUpdated MeetingOpenActionNote[]       @relation("MeetingOpenActionNoteUpdatedBy")
+  meetingReviewAnswers          MeetingReviewAnswer[]
+  meetingSuggestionsAuthored    MeetingSuggestion[]           @relation("MeetingSuggestionAuthor")
+  meetingSuggestionsDecided     MeetingSuggestion[]           @relation("MeetingSuggestionDecidedBy")
+  meetingReviewChanges          MeetingReviewChange[]
+  meetingReschedules            MeetingReschedule[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -834,6 +863,9 @@ model LookupValue {
   poolTasks    Task[]         @relation("TaskAssignedCommitteeRole") // ACC-167
 
   stageTaskDefinitionRoles WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommitteeRole") // ACC-190
+  meetingTypes             Meeting[]                     @relation("MeetingType") // ACC-316
+  meetingSeriesTypes       MeetingSeries[]               @relation("MeetingSeriesType")
+  meetingAttendeeSeats     MeetingAttendee[]             @relation("MeetingAttendeeSeat")
 
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
@@ -910,8 +942,8 @@ model OrgUnit {
   // who finds only the correction cannot tell whether the exemption was removed
   // or never existed. The migration that applies NOT NULL is still outstanding.
   //
-  // A REAL RELATION, unlike Committee.typeValueId and Meeting.typeValueId, which
-  // are bare String columns with no `@relation`. The divergence is deliberate:
+  // A REAL RELATION, unlike Committee.typeValueId, which is a bare String
+  // column with no `@relation` (Meeting.typeValueId gained one in ACC-316). The divergence is deliberate:
   // nothing hard-deletes a lookup value (removeValue() soft-deletes by setting
   // isActive, and SYSTEM values refuse deletion outright — "Use hide instead"),
   // so the foreign key constrains nothing anyone does and buys real referential
@@ -988,6 +1020,8 @@ model OrgUnit {
   poolTasks                       Task[]                  @relation("TaskAssignedOrgUnit") // ACC-167
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionOrgUnit") // ACC-190
+  meetings             Meeting[] // ACC-316
+  meetingSeries        MeetingSeries[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -1625,6 +1659,8 @@ model Task {
   requests                   TaskRequest[]
   workflowInstanceStage      WorkflowInstanceStage?       @relation(fields: [workflowInstanceStageId], references: [id])
   stageTaskDefinition        WorkflowStageTaskDefinition? @relation(fields: [stageTaskDefinitionId], references: [id], onDelete: SetNull)
+  meetingActionItem          MeetingActionItem? // ACC-316
+  meetingOpenActionNotes     MeetingOpenActionNote[]
 
   @@index([organizationId])
   @@index([status])
@@ -1793,6 +1829,10 @@ model TaskEvidence {
 // here when they reuse file storage.
 enum StoredFileOwnerType {
   TASK
+  // ACC-316 — a meeting's attachments, and an agenda item's papers. No row
+  // holds either until the Meetings code that reads them is deployed.
+  MEETING
+  MEETING_AGENDA_ITEM
 }
 
 // One uploaded file. Each row remembers the provider and location it was
@@ -1999,6 +2039,7 @@ model Committee {
   seatActions          CommitteeSeatAction[] // ACC-283
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommittee") // ACC-190
+  meetingSeries        MeetingSeries[] // ACC-316
 
   @@index([organizationId])
   @@index([orgUnitId]) // ACC-135
@@ -2135,43 +2176,386 @@ enum CommitteeMembershipAction {
 // ---------------------------------------------------------------------------
 
 model Meeting {
-  id                String    @id @default(cuid())
-  organizationId    String
-  committeeId       String?
-  organizerId       String
-  title             String
-  typeValueId       String
-  scheduledAt       DateTime
-  location          String?
-  meetingUrl        String?
-  status            String    @default("DRAFT")
-  minutesText       String?
-  minutesApprovedAt DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  organizationId     String
+  committeeId        String?
+  organizerId        String
+  title              String
+  typeValueId        String
+  scheduledAt        DateTime
+  location           String?
+  meetingUrl         String?
+  status             String    @default("DRAFT")
+  minutesText        String?
+  minutesApprovedAt  DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  // ACC-316 — a meeting belongs to a committee OR an org unit (checked in the
+  // service). The rest is plan step-316 §3; nothing reads these yet.
+  orgUnitId          String?
+  durationMinutes    Int?
+  // A unit meeting's own quorum, set when scheduling (committees use theirs).
+  unitQuorum         Int?
+  // The quorum as at attendance, so a later change doesn't rewrite history.
+  quorumAtAttendance Int?
+  seriesId           String?
+  seriesIndex        Int?
+  // The fields this meeting changed "this meeting only", kept through "this
+  // and all later" edits of its series.
+  ownEdits           String[]  @default([])
+  // The review date, a day held as its UTC midnight (as PublicHoliday.date).
+  reviewBy           DateTime?
+  reviewRound        Int       @default(0)
+  approvedById       String?
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  committee    Committee?   @relation(fields: [committeeId], references: [id])
-  organizer    User         @relation("MeetingOrganizer", fields: [organizerId], references: [id])
-  agendaItems  AgendaItem[]
+  organization    Organization            @relation(fields: [organizationId], references: [id])
+  committee       Committee?              @relation(fields: [committeeId], references: [id])
+  organizer       User                    @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  agendaItems     AgendaItem[]
+  // ACC-316
+  typeValue       LookupValue             @relation("MeetingType", fields: [typeValueId], references: [id])
+  orgUnit         OrgUnit?                @relation(fields: [orgUnitId], references: [id])
+  series          MeetingSeries?          @relation(fields: [seriesId], references: [id])
+  approvedBy      User?                   @relation("MeetingApprovedBy", fields: [approvedById], references: [id])
+  attendees       MeetingAttendee[]
+  decisions       MeetingDecision[]
+  actionItems     MeetingActionItem[]
+  openActionNotes MeetingOpenActionNote[]
+  reviewAnswers   MeetingReviewAnswer[]
+  suggestions     MeetingSuggestion[]
+  reviewChanges   MeetingReviewChange[]
+  reschedules     MeetingReschedule[]
 
   @@index([organizationId])
   @@index([committeeId])
   @@index([scheduledAt])
+  @@index([orgUnitId])
+  @@index([seriesId])
 }
 
 model AgendaItem {
-  id          String  @id @default(cuid())
-  meetingId   String
-  title       String
-  description String?
-  order       Int
-  duration    Int?
-  presenter   String?
+  id                  String  @id @default(cuid())
+  meetingId           String
+  title               String
+  description         String?
+  order               Int
+  duration            Int?
+  // ACC-316 — superseded by presenterAttendeeId; dropped in the contract step.
+  presenter           String?
+  // ACC-316 — NOT NULL from the start: the table has no rows and no writer.
+  organizationId      String
+  // The presenter is an invitee: a member, a guest, or an outside guest.
+  presenterAttendeeId String?
+  // Copied in by a series' standing agenda.
+  standing            Boolean @default(false)
+  // The minutes for this item.
+  discussion          String?
 
-  meeting Meeting @relation(fields: [meetingId], references: [id])
+  meeting           Meeting               @relation(fields: [meetingId], references: [id])
+  organization      Organization          @relation(fields: [organizationId], references: [id])
+  presenterAttendee MeetingAttendee?      @relation("AgendaItemPresenter", fields: [presenterAttendeeId], references: [id], onDelete: SetNull)
+  decisions         MeetingDecision[]
+  actionItems       MeetingActionItem[]
+  suggestions       MeetingSuggestion[]
+  reviewChanges     MeetingReviewChange[]
 
   @@index([meetingId])
+  @@index([organizationId])
+}
+
+// ACC-316 — a repeating pattern that creates ordinary meetings ahead of time
+// (plan step-316 §3.2). Owned by a committee OR an org unit, as a meeting is.
+model MeetingSeries {
+  id              String                @id @default(cuid())
+  organizationId  String
+  committeeId     String?
+  orgUnitId       String?
+  subject         String
+  typeValueId     String
+  // Minutes after midnight, in the organisation's time zone.
+  startMinute     Int
+  durationMinutes Int
+  location        String?
+  meetingUrl      String?
+  every           MeetingSeriesEvery
+  onKind          MeetingSeriesOn
+  // 1-7, Monday first, as Luxon.
+  weekday         Int?
+  dayOfMonth      Int?
+  ordinal         MeetingSeriesOrdinal?
+  // Days held as their UTC midnight.
+  firstDate       DateTime
+  endsOn          DateTime?
+  count           Int?
+  standingAgenda  Json                  @default("[]")
+  createdById     String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  endedAt         DateTime?
+  endReason       String?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  committee    Committee?   @relation(fields: [committeeId], references: [id])
+  orgUnit      OrgUnit?     @relation(fields: [orgUnitId], references: [id])
+  typeValue    LookupValue  @relation("MeetingSeriesType", fields: [typeValueId], references: [id])
+  createdBy    User         @relation("MeetingSeriesCreatedBy", fields: [createdById], references: [id])
+  meetings     Meeting[]
+
+  @@index([organizationId])
+  @@index([committeeId])
+  @@index([orgUnitId])
+}
+
+// ACC-316 — an invitee: a member of the committee or unit, a person in the
+// organisation added as a guest, or an outside guest (name and email, no
+// account). Also their answer to the invitation and their attendance.
+model MeetingAttendee {
+  id                     String                   @id @default(cuid())
+  organizationId         String
+  meetingId              String
+  kind                   MeetingAttendeeKind
+  userId                 String?
+  outsideName            String?
+  outsideEmail           String?
+  outsideOrganisation    String?
+  outsideRole            String?
+  // A member's seat when invited, a snapshot.
+  seatValueId            String?
+  attendance             MeetingAttendance?
+  attendanceRecordedAt   DateTime?
+  attendanceRecordedById String?
+  answer                 MeetingInvitationAnswer?
+  answerNote             String?
+  answeredAt             DateTime?
+  // When the invitation went out: the notice for a user, the email otherwise.
+  invitedAt              DateTime?
+  addedAsPresenter       Boolean                  @default(false)
+  // The review round whose reminder this member was sent (one per round).
+  reviewRemindedRound    Int?
+  createdAt              DateTime                 @default(now())
+  createdById            String?
+
+  organization         Organization @relation(fields: [organizationId], references: [id])
+  meeting              Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user                 User?        @relation("MeetingAttendeeUser", fields: [userId], references: [id])
+  seatValue            LookupValue? @relation("MeetingAttendeeSeat", fields: [seatValueId], references: [id])
+  attendanceRecordedBy User?        @relation("MeetingAttendanceRecordedBy", fields: [attendanceRecordedById], references: [id])
+  createdBy            User?        @relation("MeetingAttendeeCreatedBy", fields: [createdById], references: [id])
+  presenting           AgendaItem[] @relation("AgendaItemPresenter")
+
+  @@unique([meetingId, userId])
+  @@index([organizationId])
+  @@index([meetingId])
+  @@index([userId])
+}
+
+// ACC-316 — a decision taken on an agenda item; a vote is counts only.
+model MeetingDecision {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  agendaItemId   String
+  order          Int
+  text           String
+  votesFor       Int?
+  votesAgainst   Int?
+  votesAbstain   Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agendaItem   AgendaItem   @relation(fields: [agendaItemId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([meetingId])
+  @@index([agendaItemId])
+}
+
+// ACC-316 — an action item drafted in the minutes; it becomes a task only when
+// the minutes are approved (taskId set then).
+model MeetingActionItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  agendaItemId   String
+  title          String
+  ownerUserId    String
+  dueAt          DateTime
+  taskId         String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agendaItem   AgendaItem   @relation(fields: [agendaItemId], references: [id])
+  owner        User         @relation("MeetingActionItemOwner", fields: [ownerUserId], references: [id])
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("MeetingActionItemCreatedBy", fields: [createdById], references: [id])
+
+  @@index([organizationId])
+  @@index([meetingId])
+  @@index([agendaItemId])
+  @@index([ownerUserId])
+}
+
+// ACC-316 — the Secretary's note on an open action from the last meeting.
+model MeetingOpenActionNote {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  taskId         String
+  note           String
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  task         Task         @relation(fields: [taskId], references: [id])
+  updatedBy    User?        @relation("MeetingOpenActionNoteUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([meetingId, taskId])
+  @@index([organizationId])
+}
+
+// ACC-316 — a present member's "No corrections" in a review round.
+model MeetingReviewAnswer {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  round          Int
+  userId         String
+  answeredAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([meetingId, round, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+// ACC-316 — a reviewer's suggested correction, applied or declined by the
+// Secretary. No agenda item = the minutes as a whole.
+model MeetingSuggestion {
+  id             String                  @id @default(cuid())
+  organizationId String
+  meetingId      String
+  round          Int
+  agendaItemId   String?
+  authorId       String
+  text           String
+  status         MeetingSuggestionStatus @default(OPEN)
+  reply          String?
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime                @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agendaItem   AgendaItem?  @relation(fields: [agendaItemId], references: [id])
+  author       User         @relation("MeetingSuggestionAuthor", fields: [authorId], references: [id])
+  decidedBy    User?        @relation("MeetingSuggestionDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([organizationId])
+  @@index([meetingId])
+  @@index([authorId])
+}
+
+// ACC-316 — a change the Secretary made during review ("Changed during
+// review: item 2, decision").
+model MeetingReviewChange {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  round          Int
+  agendaItemId   String?
+  what           String
+  actorId        String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agendaItem   AgendaItem?  @relation(fields: [agendaItemId], references: [id])
+  actor        User         @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId])
+  @@index([meetingId])
+}
+
+// ACC-316 — every reschedule, newest first for "Rescheduled from …".
+model MeetingReschedule {
+  id             String           @id @default(cuid())
+  organizationId String
+  meetingId      String
+  fromAt         DateTime
+  toAt           DateTime
+  reason         String
+  scope          MeetingEditScope
+  actorId        String
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  actor        User         @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId])
+  @@index([meetingId])
+}
+
+enum MeetingSeriesEvery {
+  WEEK_1
+  WEEK_2
+  MONTH_1
+  MONTH_3
+  MONTH_6
+  MONTH_12
+}
+
+enum MeetingSeriesOn {
+  WEEKDAY
+  DAY_OF_MONTH
+  ORDINAL_WEEKDAY
+}
+
+enum MeetingSeriesOrdinal {
+  FIRST
+  SECOND
+  THIRD
+  FOURTH
+  LAST
+}
+
+enum MeetingAttendeeKind {
+  MEMBER
+  ORG_GUEST
+  OUTSIDE_GUEST
+}
+
+// Online counts as present: there is no separate online kind (ACC-316).
+enum MeetingAttendance {
+  PRESENT
+  APOLOGIES
+  ABSENT
+}
+
+enum MeetingInvitationAnswer {
+  ATTENDING
+  CANT_ATTEND
+}
+
+enum MeetingSuggestionStatus {
+  OPEN
+  APPLIED
+  DECLINED
+}
+
+enum MeetingEditScope {
+  THIS_ONLY
+  THIS_AND_LATER
 }
 
 // ---------------------------------------------------------------------------

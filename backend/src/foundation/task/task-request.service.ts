@@ -18,7 +18,7 @@ import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } fr
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskSlaService, latest } from './task-sla.service';
 import { aTaskThatIs } from './task-status-label';
-import { HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
+import { DUE_WARNING_CLEARED, HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
 import { lockWorkflowInstance, moveStageDeadlineForTaskInTx } from './stage-deadline';
 import { recordNamesOf, recordOf } from './task-record-names';
 
@@ -251,6 +251,8 @@ export class TaskRequestService {
             slaBreachedAt: null,
             managerEscalatedAt: null,
             headEscalatedAt: null,
+            // ACC-313 — the new due date re-arms the reminder.
+            ...DUE_WARNING_CLEARED,
           },
         });
       } else {
@@ -291,6 +293,8 @@ export class TaskRequestService {
             slaStartAt,
             slaLimitAt,
             slaExtendedTo,
+            // ACC-313 — the window moves at approval, so the reminder re-arms.
+            ...DUE_WARNING_CLEARED,
             // A due date moved past now re-arms escalation; one still past keeps
             // its stamps, so a breach is not escalated twice.
             ...(heldHours > 0 && dueAt && dueAt > now

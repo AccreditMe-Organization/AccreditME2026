@@ -3510,6 +3510,7 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
     | CREATOR | nothing |
     | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
+    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **Not usable yet (ACC-316 PR 1):** no record type offers them, so a save is `WHO_KIND_NOT_ALLOWED`, and `StagePoolService` resolves them to nobody. The Meetings PR that adds their resolvers offers them for MEETING only (plan `backend/Plans/step-316-meeting-management.md` §3.8) |
   - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
     - `WHO_MODE_UNKNOWN`;
     - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
@@ -4770,8 +4771,88 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
   by `organizationId` and name the organisation as the object, in one
   `where`.
+  - **The unit stamp (CC-332):** every task SLA audit row written since
+    PR 4 carries `metadata.escalationHoursUnit = 'WORKING'`
+    (`WORKING_HOURS_STAMP`): limits, escalation, the old whole-policy save,
+    the switch and Reset alike. Each history row returns it as
+    `escalationHoursUnit: 'WORKING' | null`.
+    - The screen reads it first.
+    - A row without it was saved before PR 4, when escalation counted clock
+      hours, and falls back to the row's shape.
+- **Notices (ACC-313 PR 3), a sibling key `settings.taskSlaNotices`**:
+  `{ warnBeforeDue: { LOW..CRITICAL: 'OFF'|'H1'|'H2'|'H4'|'H8'|'WORKING_DAY' },
+  notifyOnDueChange }`, read only through `taskSlaNoticesFromSettings()`
+  (`task-sla-settings.ts`). A missing key, or a value the API never writes,
+  reads as the default (every reminder Off, the switch on), so no backfill;
+  `bootstrap()` writes both keys. `warnBeforeDue` is stored and read by
+  nothing yet (the reminder sweep, PR 4).
+- **`GET /tenant/task-sla/policy`** answers `{ tiers, notices }`.
+  **`PATCH /tenant/task-sla/notices`** `{ notifyOnDueChange }` writes only
+  `settings.taskSlaNotices`, under the same lock, keeping the stored
+  reminders; audit event `task_sla_notices_updated`, before/after the switch
+  alone. **`POST /tenant/task-sla/reset`** (no body, 200) writes the default
+  tiers AND notices in one locked `jsonb_set`, for tasks created afterwards
+  only (no open task is read or written, ACC-174); audit event
+  `task_sla_reset`, before the whole policy, after the defaults. It is refused
+  with `TASK_SLA_EXCEEDS_STAGE_DEADLINES`, nothing written, when the default
+  limits break a stage deadline. Both write nothing when nothing changes. The
+  history names them `kind: 'notices'` and `'reset'`.
+- **Warn before due (ACC-313 PR 4).**
+  - **Saved with escalation:** each priority's `warnBeforeDue` rides, optional,
+    on `PATCH /tenant/task-sla/escalation`. A body without it keeps the stored
+    warning. It is written to `settings.taskSlaNotices` only, under the same
+    lock, and the audit row gains `warnBeforeDue` beside that priority's hours.
+  - **The rule (Q2):** a warning that is not Off must be shorter than its
+    priority's limit (`warningFitsLimit()`, `task-sla-settings.ts`). "1 working
+    day" is the calendar's working day (`readWorkingHoursPerDay()`,
+    `working-calendar/working-time.ts`, read without creating a row). It is
+    refused from both sides, nothing written:
+    - a warning at or past its saved limit: 400 `TASK_SLA_WARNING_NOT_BEFORE_DUE`;
+    - a limit at or under its saved warning: 400
+      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. The old whole-policy PATCH is held to
+      it too.
+
+    Both carry `{ priority, warning, limitHours }`.
+  - **`GET …/policy`** also answers `workingHoursPerDay`.
+  - **The sweep:** `TaskDueWarningService.sweep()`, the SLA monitor's own
+    isolated step `sweepDueWarnings`, after the hold sweep, so only where the
+    workers run (ACC-92). One read finds the organisations with any warning on.
+    Then, per organisation, only in working hours, it takes one calendar load
+    and one candidate query: `PENDING`/`IN_PROGRESS`, `dueWarnedAt` null, due
+    inside its priority's window, with someone on it or a pool.
+    - **"Someone on it" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE`
+      (`task-pool.ts`): a current row held by an ACTIVE user. The candidate
+      query and its assignee select both read it; there is no second copy.
+    - **The claim:** `UPDATE "Task" SET "dueWarnedAt" = now … AND
+      "dueWarnedAt" IS NULL RETURNING id`, so two workers remind once.
+    - **Who is reminded:** one `createInAppMany` ("Task due soon"), sent after
+      the claim, never to acting users.
+      - A task someone is on: those people.
+      - A task with a pool and nobody on it, including one whose only current
+        row is held by someone no longer ACTIVE: the pool's members, resolved
+        by `resolvePoolMembersBatch()` (the pool rule, batched).
+      - A task with no pool and nobody on it: not picked and not claimed, so
+        `dueWarnedAt` stays null and a later holder is still reminded.
+    - A failed notice is logged, not retried. A warning a calendar change made
+      too long is treated as Off.
+    - Closed organisations (ACC-168) are not left out yet, as with the other
+      sweeps; that background work is a follow-up ticket's.
+  - **`DUE_WARNING_CLEARED`** (`task-request-lifecycle.ts`) re-arms it: an edit
+    that changes the due date or priority, an approved extension or hold, a
+    reopen, and a reassign while the due time is ahead. Never a pick, a release
+    or a resume.
+  - Proved against a real Postgres by `task-due-warning.db-spec.ts`: two
+    workers, ten rounds, one notice each; and both ACC-86 cases above (a
+    leaver's row sends the reminder to the pool; a task with nobody on it
+    stays unclaimed until someone ACTIVE is).
+- **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
+  due-date clause. With it off, a due-date edit is not announced, and a
+  priority change is announced without the date. The setting is read only on
+  an edit that moved the date. Reopen, the extension and hold decisions and
+  resume still name the date.
 - Proved against a real Postgres by `task-sla-policy.db-spec.ts` (ten rounds
-  of concurrent section saves, the other keys surviving). Plan:
+  of concurrent section saves, the other keys surviving; the switch beside a
+  limits save; Reset leaving an open task unchanged). Plan:
   `backend/Plans/step-313-task-sla-settings.md`.
 
 Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):
@@ -4873,7 +4954,11 @@ while held. Holds are ended by their own step, `sweepDueHolds()` (3.10).
 
 For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
-(Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
+(Section 3.3) and computes `hoursSinceDue`. **ACC-313 (Q1): `hoursSinceDue`
+is WORKING hours** — `hoursBetweenWith(calendar, dueAt, now)` on the
+organisation's calendar, loaded once per organisation per pass — like the
+limits, so a task overdue across a weekend is escalated later than the clock
+would say. Nothing already fired is undone. Two-tier, strictly
 sequential, if/else-if — **no fall-through**:
 
 - `!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours`
@@ -15441,7 +15526,7 @@ model StoredFile {
   mimeType       String                 // decided by the server from content
   sizeBytes      Int
   sha256         String @db.Char(64)
-  ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
+  ownerType      StoredFileOwnerType    // TASK; MEETING and MEETING_AGENDA_ITEM exist (ACC-316 PR 1) but nothing writes them yet
   ownerId        String
   uploadedById, uploadedAt
   deletedAt, deletedById                // the 30-day soft delete; bytes KEPT

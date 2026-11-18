@@ -56,6 +56,12 @@ export const KIND_FIELDS: Readonly<Record<StageAssigneeKind, { uses: readonly Wh
   CREATOR: { uses: [], requires: [] },
   // No committee = the record's committee (Q3); the role narrows its members.
   COMMITTEE: { uses: ['committeeId', 'committeeRoleValueId'], requires: [] },
+  // ACC-316 PR 1 — Meetings' kinds, no fields. FAIL CLOSED until the Meetings
+  // PR that resolves them: no record type offers them (STAGE_ASSIGNEE_KINDS),
+  // so a save refuses them, and StagePoolService resolves them to nobody.
+  MEETING_SCHEDULERS: { uses: [], requires: [] },
+  MEETING_RECORDERS: { uses: [], requires: [] },
+  MEETING_APPROVERS: { uses: [], requires: [] },
 };
 
 /**
@@ -223,6 +229,14 @@ export function entryPhrase(e: WhoEntryForSentence): { en: string; ar: string } 
       const roleAr = ar(e.roleLabelAr, e.roleLabelEn) ?? 'دور أُزيل';
       return { en: `the members of ${committeeEn} in the role ${roleEn}`, ar: `أعضاء ${committeeAr} بدور ${roleAr}` };
     }
+    // ACC-316 PR 1 — no stage can hold these yet (KIND_FIELDS above); the
+    // phrases are here so the sentence stays total.
+    case 'MEETING_SCHEDULERS':
+      return { en: 'whoever may schedule the meeting', ar: 'من يجدول الاجتماع' };
+    case 'MEETING_RECORDERS':
+      return { en: 'whoever records the minutes', ar: 'من يسجّل المحضر' };
+    case 'MEETING_APPROVERS':
+      return { en: 'whoever approves the minutes', ar: 'من يعتمد المحضر' };
   }
 }
 

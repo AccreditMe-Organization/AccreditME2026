@@ -17,6 +17,9 @@ export type WorkflowRefusalCode =
   | 'STAGE_TASK_DUE_AFTER_STAGE_DEADLINE'
   | 'STAGE_DEADLINE_BEFORE_TASKS'
   | 'TASK_SLA_EXCEEDS_STAGE_DEADLINES'
+  // ACC-313 — a priority's warning must be shorter than its limit, from both sides.
+  | 'TASK_SLA_WARNING_NOT_BEFORE_DUE'
+  | 'TASK_SLA_LIMIT_NOT_AFTER_WARNING'
   | 'STAGE_TASKS_OPEN'
   | 'ACTION_TYPE_RETIRED'
   | 'VALIDATOR_RETIRED'
@@ -80,6 +83,8 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_DUE_AFTER_STAGE_DEADLINE: HttpStatus.CONFLICT,
   STAGE_DEADLINE_BEFORE_TASKS: HttpStatus.CONFLICT,
   TASK_SLA_EXCEEDS_STAGE_DEADLINES: HttpStatus.CONFLICT,
+  TASK_SLA_WARNING_NOT_BEFORE_DUE: HttpStatus.BAD_REQUEST,
+  TASK_SLA_LIMIT_NOT_AFTER_WARNING: HttpStatus.BAD_REQUEST,
   STAGE_TASKS_OPEN: HttpStatus.CONFLICT,
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
@@ -133,6 +138,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_TASK_DUE_AFTER_STAGE_DEADLINE: "This task's due time is longer than the stage's deadline. Raise the stage deadline or choose a higher priority",
   STAGE_DEADLINE_BEFORE_TASKS: "The stage's deadline can't be shorter than the longest task defined on it",
   TASK_SLA_EXCEEDS_STAGE_DEADLINES: 'This would make some workflow stages end before the tasks defined on them are due',
+  TASK_SLA_WARNING_NOT_BEFORE_DUE: "A priority's warning must be shorter than its time limit",
+  TASK_SLA_LIMIT_NOT_AFTER_WARNING: "A priority's time limit must be longer than its warning",
   STAGE_TASKS_OPEN: 'Finish the required tasks of this stage before moving the record forward',
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",

@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { TaskSlaPolicyService } from './task-sla-policy.service';
-import { DEFAULT_TASK_SLA_SETTINGS } from './task-sla-settings';
+import { DEFAULT_TASK_SLA_NOTICES, DEFAULT_TASK_SLA_SETTINGS } from './task-sla-settings';
 import { ITaskSlaSettings } from './interfaces/tenant.interface';
 
 const url = process.env['DATABASE_URL'];
@@ -126,6 +126,63 @@ describe('Task SLA policy against a real database (ACC-313)', () => {
 
     const second = await policy.history(org, 2, 2);
     expect(second.rows.map((r) => r.kind)).toEqual(['legacy']);
+  });
+
+  // ACC-313 PR 3 — the due-date switch and Reset.
+  it('the switch writes settings.taskSlaNotices and nothing else, and a limits save at once loses neither (ten rounds)', async () => {
+    const { org, actor } = await organisation({ taskSla: DEFAULT_TASK_SLA_SETTINGS, ai: { enabled: false } });
+
+    for (let round = 1; round <= 10; round++) {
+      const on = round % 2 === 0;
+      await Promise.all([policy.saveLimits(org, limits(100 + round), actor), policy.saveNotices(org, { notifyOnDueChange: on }, actor)]);
+      const settings = await settingsOf(org);
+      expect(settings.taskSla.LOW.dueAfterHours).toBe(100 + round);
+      expect(settings['taskSlaNotices']).toEqual({ ...DEFAULT_TASK_SLA_NOTICES, notifyOnDueChange: on });
+      expect(settings['ai']).toEqual({ enabled: false });
+    }
+    expect((await policy.policy(org)).notices.notifyOnDueChange).toBe(true);
+  });
+
+  it('Reset writes the defaults, keeps every other key, and changes no open task', async () => {
+    const { org, actor } = await organisation({ taskSla: DEFAULT_TASK_SLA_SETTINGS, modules: { documents: true } });
+    await policy.saveLimits(org, limits(60), actor);
+    await policy.saveNotices(org, { notifyOnDueChange: false }, actor);
+    const dueAt = new Date('2026-12-01T09:00:00.000Z');
+    const slaLimitAt = new Date('2026-12-03T09:00:00.000Z');
+    const task = await prisma.task.create({
+      data: { organizationId: org, title: 'Collect the audit sample', sourceType: 'COMMITTEE', sourceId: randomUUID(), createdById: actor, priority: 'LOW', dueAt, slaLimitAt },
+    });
+
+    await policy.reset(org, actor);
+
+    const settings = await settingsOf(org);
+    expect(settings.taskSla).toEqual(DEFAULT_TASK_SLA_SETTINGS);
+    expect(settings['taskSlaNotices']).toEqual(DEFAULT_TASK_SLA_NOTICES);
+    expect(settings['modules']).toEqual({ documents: true });
+    const after = await prisma.task.findFirstOrThrow({ where: { id: task.id, organizationId: org } });
+    expect([after.dueAt, after.slaLimitAt, after.updatedAt]).toEqual([dueAt, slaLimitAt, task.updatedAt]);
+
+    const page = await policy.history(org);
+    expect(page.rows.map((r) => r.kind)).toEqual(['reset', 'notices', 'limits']);
+    expect(page.rows[0]?.after).toEqual({ tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES });
+
+    // A second reset finds the defaults already there: no write, no row.
+    await policy.reset(org, actor);
+    expect((await policy.history(org)).total).toBe(3);
+  });
+
+  it('should NOT return records belonging to a different tenant — the task SLA switch and Reset', async () => {
+    const a = await organisation({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
+    const b = await organisation({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
+    await policy.saveLimits(b.org, limits(33), b.actor);
+
+    await policy.saveNotices(a.org, { notifyOnDueChange: false }, a.actor);
+    await policy.saveLimits(a.org, limits(44), a.actor);
+    await policy.reset(a.org, a.actor);
+
+    expect((await settingsOf(b.org)).taskSla.LOW.dueAfterHours).toBe(33);
+    expect((await settingsOf(b.org))['taskSlaNotices']).toBeUndefined();
+    expect((await policy.history(b.org)).rows.map((r) => r.kind)).toEqual(['limits']);
   });
 
   it('should NOT return records belonging to a different tenant — the task SLA history and writes', async () => {
