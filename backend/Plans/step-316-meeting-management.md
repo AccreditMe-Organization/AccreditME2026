@@ -1,13 +1,29 @@
 # ACC-316 — Meeting Management
 
-Plan only, 17 Nov 2026, branch `docs/ACC-316-meetings-plan` from dev
-`1e47283`. No code, no schema change, no migration, no database write.
+Plan only. Rewritten on 18 Nov 2026 against the decided design, on branch
+`docs/ACC-316-meetings-plan`. No code, no schema change, no migration, no
+database write.
 
-Read for this plan: `module-designs.md` (Meeting Module, lines 755–867);
-CLAUDE.md's Sequence to Meeting Management (item 7), and the ACC-101, ACC-190,
-ACC-244, ACC-255, ACC-271, ACC-281, ACC-282, ACC-283 and ACC-284 entries;
-SYSTEM-REFERENCE §1.9, §2.19, §2.19.1, §3.13, §3.21 and §11; the schema, the
-workflow seed, every registry named in §4, and `frontend/design-reference/`.
+**The authority is the design thread, not this plan.** Where they disagree, the
+design thread wins. Its files:
+
+- **Ahmad's summary of every answer** (6 Oct – 10 Nov):
+  `lane-b-bus/meetings-design/meetings-questions-and-answers.md`. Below it is
+  called **Answers**.
+- **The final design**, round 5, version `1794312240-6d54`:
+  `frontend/design-reference/AccreditMe Meeting Screens.dc.html`, copied
+  unchanged in `86cc3f3`. Below it is called **Design**.
+- **The brief and the rounds**, all in `lane-b-bus/meetings-design/`:
+  - the brief (6 Oct);
+  - review 1 (6 Oct);
+  - the decisions check (9 Nov);
+  - rounds 3, 4 and 5;
+  - the round 3 review (10 Nov).
+
+**Lane B's decision on the one point the files don't cover (Prompt 124):**
+
+- an attendee who joins online counts as **present**, including for quorum;
+- attendance has **no separate online kind**.
 
 **Measured on the shared database (17 Nov, read only):**
 
@@ -17,8 +33,171 @@ workflow seed, every registry named in §4, and `frontend/design-reference/`.
 | al-nakheel | 0 | 0 | 0 | 0 | 1 | 1 |
 | platform | 0 | 0 | 0 | 0 | 0 | 0 |
 
-So no backfill in this plan touches a meeting. Each backfill touches
-configuration only: the Meeting workflow template, seat defaults and roles.
+No backfill below touches a meeting. Each touches configuration only: the
+Meeting workflow template, seat defaults and roles.
+
+---
+
+## 0. What is decided (from the design thread)
+
+A short index. Each line names its source.
+
+**Owner and visibility**
+
+- **A meeting belongs to one committee OR one org unit**, never both and never
+  neither (Answers, lane B Q1; brief 1.1).
+  - A unit meeting's invitees default to the unit's people.
+  - It has a quorum only if the organiser sets one.
+- **Who sees a meeting:** its committee's or unit's people, its guests, and
+  anyone allowed to see all meetings (brief 1.12).
+  - Nobody else sees it, in the list, on the record or by link.
+  - The committee or unit panel shows a restricted line (Design, Meetings panel
+    "Denied").
+
+**Stages and moves (Answers, agenda naming)**
+
+- **The flow:** Planned → Issue Agenda → Agenda Issued → Record Minutes →
+  Minutes Draft → Distribute Minutes → Minutes Review → Approve Minutes →
+  Minutes Approved.
+- **The other moves:**
+  - Return for Correction: Minutes Review → Minutes Draft;
+  - Cancel Meeting: from Planned and from Agenda Issued.
+- **The draft-to-draft loop is dropped.**
+- **The stage IS the status** (brief 1.3).
+- **Who works each stage** (Design, "Who works this stage"):
+  - Planned, Agenda Issued and Minutes Draft: the Secretary;
+  - Minutes Review: the Chair.
+  - Present members review, but don't move the meeting.
+- **What is editable when:** Design's "What is editable when · and by whom" table,
+  copied in §3.8.
+
+**Agenda**
+
+- **Ordered items:** title, description, a presenter chosen from people,
+  duration (with a running total), and papers (brief 1.4; Design).
+- **Editable after issue**, and members are told again with what changed
+  (Answers, round 1 Q1).
+- **A presenter who is neither a member nor a guest** is added as a guest
+  automatically (round 1 Q12). **Outside guests may present** (10 Nov).
+- **Fixed sections:**
+  - standing items a series copies in (brief 1.10; Design);
+  - a fixed first section, "Open actions from the last meeting", read from
+    their tasks, with a Secretary's note on each in Minutes Draft (round 3 B5).
+
+**Attendance and quorum**
+
+- **Present / Apologies / Absent per invitee**, saved on each tap. Online counts
+  as present (lane B).
+- **Quorum** is the committee's AS AT attendance, or the unit meeting's own
+  (brief 1.5; Design).
+- **Quorum not met:** the minutes are recorded as normal, the quorum line is
+  printed, and every decision is marked "Taken without quorum" (Answers Q6, lane
+  B Q8).
+
+**Guests (Answers, round 4)**
+
+- **A person in the organisation:**
+  - told in the app and by email;
+  - may own an action item (R3-7);
+  - sees the minutes only after approval (round 1 Q9);
+  - not counted toward quorum.
+- **An outside guest:**
+  - name and email required, organisation and role optional; the email's
+    format is checked with the existing `storage.request.contactEmailInvalid`
+    (R4-2);
+  - emailed three times:
+    - the invitation, when the agenda is issued, or at once if added in Agenda
+      Issued ("Add and send invitation");
+    - the reschedule (new time and reason);
+    - the cancellation (reason).
+    - The last two go only to those already invited.
+  - No papers, no minutes, no link into AccreditMe. Not counted toward quorum;
+    never owns an action item; may present.
+  - "Told" counts list them on their own ("1 outside guest by email").
+- **Emails are the product's plain subject plus one paragraph** (R4-3).
+
+**Minutes and votes**
+
+- **Minutes per agenda item:** discussion and decisions (lane B Q3).
+- **A decision may record a vote as counts only:** For, Against, Abstain, which
+  can't add up to more than the members present (lane B Q4; round 3 A5).
+
+**Review (Answers, lane B Q5 and Q6; round 3 A2)**
+
+- **Distribute Minutes asks for "Review by"**, defaulting to 5 working days
+  ahead.
+- **Present members answer** "No corrections" or "Suggest a correction…":
+  - a suggestion is about one agenda item, or the minutes as a whole;
+  - a member may suggest until the date, replacing their "No corrections"
+    (R3-2);
+  - the Chair answers as a present member too (R3-5).
+- **Silence counts as no corrections.** One reminder goes one working day
+  before the date.
+- **The Secretary applies or declines each suggestion**, a decline with a
+  reply. Applied changes are listed for reviewers. The date doesn't restart.
+- **Return for Correction** (Secretary or Chair, optional reason, R3-4) sends
+  the minutes back to Minutes Draft:
+  - answers reset;
+  - suggestions stay as history, marked with the earlier review's date (R3-3);
+  - distributing again starts a new review with a new date.
+- **Approve Minutes is the Chair's alone.** It is ready once:
+  - the date has passed or every present member has answered; and
+  - no suggestion is open; and
+  - no draft action item is past due.
+
+  Until then it is disabled, with its reason.
+
+**Action items (Answers, lane B Q7; round 3 A3)**
+
+- **Drafts in Minutes Draft:** what, owner (a person), due date, inside an
+  agenda item.
+  - No task exists yet, and the owner isn't told.
+  - Reviewers may suggest corrections to them.
+- **At Approve Minutes, each becomes a task about the meeting**, keeping "From
+  item n", and the owners are told.
+- **A draft whose due date has passed blocks approval**, naming the item.
+- **After approval**, the meeting's Action items is the record's tasks panel.
+
+**Series (Answers, Ahmad's own; round 3 A8–A9; round 4 point 5)**
+
+- **Every** 1 or 2 weeks, or 1, 3, 6 or 12 months.
+- **On:**
+  - a weekday;
+  - a day 1–31 (a missing day falls on the month's last day); or
+  - "the first … fourth / last [weekday]".
+- **Weekend and holiday moves** go to the next free working day.
+- **The committee's frequency sets the starting pattern.**
+- **Ends** on a date or after a number of meetings (Design step 2).
+- **Titles:**
+  - the subject plus the month ("· October 2026") or, for a weekly series, the
+    date ("· 22 Oct 2026");
+  - "5 of 12" is its own line;
+  - each title is editable on its own, and rescheduling doesn't rename it;
+  - a moved date keeps the pattern's month (R4-1).
+- **Reschedule and cancel**, for one meeting or "this and all later":
+  - a reason is required for reschedule, which then shows "Rescheduled from …";
+  - a later meeting edited on its own keeps its own edit (round 1 Q10);
+  - past meetings never change.
+- **Clashes are a warning, never a block** (Answers; round 5; R5-1 to R5-7):
+  - another non-cancelled AccreditMe meeting the invitee is invited to
+    overlaps;
+  - back-to-back is not a clash;
+  - the same series counts;
+  - outside guests aren't checked;
+  - a meeting the scheduler can't open reads "another meeting".
+  - Outlook rows only when Calendar availability is on (ACC-293, not here).
+
+**Out of v1** (Answers):
+
+- a meeting number (titles cover it);
+- `.ics` invites;
+- a PDF (a browser print page now, A4, English and Arabic);
+- confidential agenda items;
+- publishing to Document Management;
+- e-signatures;
+- a Hijri picker.
+
+**Attachments** are plain: they open in the in-app file viewer (lane B Q12).
 
 ---
 
@@ -27,107 +206,100 @@ configuration only: the Meeting workflow template, seat defaults and roles.
 ### 1.1 Schema
 
 - **`Meeting`** (`schema.prisma:2137-2161`) has these columns:
-  - `committeeId` is **nullable**.
-  - `organizerId` and `title`.
-  - `typeValueId` is a plain `String`, with **no relation** to `LookupValue`.
-  - `scheduledAt`. There is **no end time and no duration**.
-  - `location` and `meetingUrl`.
-  - **`status String @default("DRAFT")`**.
+  - `committeeId` is **nullable**, and there is **no `orgUnitId`**;
+  - `organizerId` and `title`;
+  - `typeValueId` is a plain `String`, with **no relation**;
+  - `scheduledAt`, with **no duration**;
+  - `location` and `meetingUrl`;
+  - **`status String @default("DRAFT")`**;
   - `minutesText` and `minutesApprovedAt`.
-  - Indexes on organisation, committee and `scheduledAt` (`:2158-2160`).
-- **`AgendaItem`** (`schema.prisma:2163-2175`):
-  - It has `title`, `description`, `order`, `duration` and **`presenter String?`**. The presenter is text, not a user.
-  - It has **no `organizationId`**. That breaks the multi-tenancy rule ("every table holding tenant data MUST have an organizationId").
-- **`Task.meetingId`** (`:1521`, indexed `:1633`) has **no relation**, and nothing writes it. A task reaches its record through `sourceType`/`sourceId`.
-- **Missing models:** there is **no attendee, attendance, decision, vote, action item or reschedule model**.
-- **Files:** `StoredFileOwnerType` has `TASK` only (`:1795-1797`, comment `:1792`). A meeting can hold no file.
+- **`AgendaItem`** (`:2163-2175`):
+  - It has `title`, `description`, `order`, `duration` and **`presenter String?`**
+    (text).
+  - It has **no `organizationId`**, against the multi-tenancy rule.
+- **`Task.meetingId`** (`:1521`, index `:1633`) has no relation, and nothing
+  writes it.
+- **Missing models:** there is **no series, invitee, attendance, decision,
+  action item, review, suggestion or reschedule model**.
+- **Files:** `StoredFileOwnerType` has `TASK` only (`:1795-1797`).
 - **What committees give a meeting:**
   - `Committee.quorumCount` (`:1960`);
-  - `Committee.meetingFrequency` (`:1961`, enum `:2009-2016`);
+  - `Committee.meetingFrequency` (`:1961`; enum `:2009-2016` includes
+    `BIANNUAL`);
   - `WorkflowObjectType.MEETING` (`:77`);
   - `TaskSourceType.MEETING` (`:189`).
-- **Workflow voting today:**
-  - `WorkflowApproval` (`:1445-1469`, decisions `:111-117`);
-  - `WorkflowInstanceStage.quorumCount` (`:1408-1412`).
+- **`Notification`** (`:1852-1872`): `titleAr` and `bodyAr` are nullable, and
+  `objectType`/`objectId` are free text.
 
-### 1.2 The seeded MEETING workflow (`workflow.seed.ts:235-258`)
+### 1.2 The seeded MEETING workflow (`workflow.seed.ts:235-258`) against the decided flow
 
-| Stage (key) | Line | Final | Who |
-|---|---|---|---|
-| Planned (`planned`, initial) | `:241` | no | ANY_ONE, CREATOR |
-| Agenda Ready (`agenda_ready`) | `:242` | no | ANY_ONE, CREATOR |
-| Minutes Draft (`minutes_draft`, 16h) | `:243` | no | ANY_ONE, CREATOR |
-| Minutes Review (`minutes_review`, 16h) | `:244` | no | **ALL, starting assignment** |
-| Minutes Approved (`minutes_approved`, 8h) | `:245` | yes | ANY_ONE, starting assignment |
-| Cancelled (`cancelled`) | `:246` | yes | ANY_ONE, starting assignment |
+| Seed (key, line) | Decided |
+|---|---|
+| Planned (`planned`, `:241`), who CREATOR | Planned, the Secretary |
+| Agenda Ready (`agenda_ready`, `:242`), CREATOR | **Agenda Issued** («الأجندة مُصدَرة»), the Secretary |
+| Minutes Draft (`:243`), CREATOR | Minutes Draft, the Secretary |
+| Minutes Review (`:244`), ALL, starting assignment | Minutes Review, **the Chair** |
+| Minutes Approved (`:245`, final) | same |
+| Cancelled (`:246`, final) | same |
+| Move "Prepare Agenda" (`:249`) | **"Issue Agenda"** («إصدار الأجندة») |
+| Cancel Meeting from Planned and Agenda Ready (`:250`, `:252`) | same, from Planned and Agenda Issued |
+| Record Minutes (`:251`), Distribute Minutes (`:253`) | same |
+| Approve Minutes (`:254`, `isApprovalPath: true`) | the Chair's; `isApprovalPath` dead since ACC-284 |
+| Return for Correction, Review → Draft (`:255`) | same; Secretary or Chair |
+| **Return for Correction, Draft → Draft (`:256`)** | **dropped** (the seed bug, live in both tenants) |
 
-The transitions (`:249-256`) are all `mover: 'PERSON'`:
-
-- Prepare Agenda; Cancel Meeting (EXIT) from Planned and from Agenda Ready; Record Minutes; Distribute Minutes.
-- Approve Minutes (`:254`, `isApprovalPath: true`) and Return for Correction (`:255`, RETURN to Minutes Draft).
-- **`:256`: Minutes Draft → Minutes Draft, "Return for Correction", RETURN.** This is a **seed bug**:
-  - a stage sends itself back;
-  - it is a duplicate label of `:255`;
-  - it exists once in each tenant (table above).
-
-Other facts about the seed:
-
-- **No stage carries a record action or a flag.**
-- `isApprovalPath` on `:254-255` has been dead since ACC-284.
-- Minutes Review **used to be** ROLE `BASE_USER`, PARALLEL, ALL (`task.controller.ts:456`): every user in the tenant. Since ACC-271 PR 2 it is the first admin's starting assignment.
+**No stage carries a record action or a flag.**
 
 ### 1.3 Permission keys
 
-- `meetings:view`, `meetings:manage`, `meetings:record_minutes` and `meetings:approve_minutes` (`permissions.ts:124-129`).
-- **Only `meetings:view` is in use**: `object-visibility.service.ts:15`. The other three are in `PERMISSIONS_NOT_YET_CHECKED` (`permissions.ts:247-249`), so no role can gain them.
+- `meetings:view`, `meetings:manage`, `meetings:record_minutes` and
+  `meetings:approve_minutes` (`permissions.ts:124-129`).
+- **Only `meetings:view` is in use** (`object-visibility.service.ts:15`). The
+  other three are in `PERMISSIONS_NOT_YET_CHECKED` (`:247-249`).
 - Role seed holders: `role.seed.ts:68, 76, 89, 123-124, 176, 194`.
 
 ### 1.4 The registries
 
 | Registry | File:line | MEETING today |
 |---|---|---|
-| Visibility (`ObjectVisibilityService`) | `object-visibility.service.ts:93-100` | `meetings:view` + exists. **No member clause, no attendee clause.** COMMITTEE's has one (`:61-91`). |
-| `TASK_RECORD_TYPES` | `task-record-types.ts:61` | **absent**. Only relationships reach a meeting's tasks. |
-| `RECORD_ROUTES` | `stage-task-record-routes.ts:39`, MEETING `:60` | **present**: the meeting's committee, and the committee's unit. |
-| `RECORD_ACTIONS` | `record-registry.ts:90` | **absent** (COMMITTEE only) |
-| `STAGE_FLAGS` | `record-registry.ts:102` | **absent** |
-| `RECORD_FIELDS` | `record-registry.ts:108` | **absent** |
-| `TRANSITION_PRECONDITIONS` | `transition-preconditions.ts:44` | **absent** (COMMITTEE quorum `:54`, `:58-71`) |
-| `PROTECTED_TEMPLATES` | `workflow-stage-keys.ts:63` | **absent** (change requests only) |
+| Visibility | `object-visibility.service.ts:93-100` | `meetings:view` + exists. **No member, unit or guest clause.** |
+| `TASK_RECORD_TYPES` | `task-record-types.ts:61` | **absent** |
+| `RECORD_ROUTES` | `stage-task-record-routes.ts:58-62` | the committee, and **the committee's unit** |
+| `RECORD_ACTIONS` / `STAGE_FLAGS` / `RECORD_FIELDS` | `record-registry.ts:90`, `:102`, `:108` | **absent**. Flags are strings (`schema.prisma:1272`), so a new flag needs no migration. |
+| `TRANSITION_PRECONDITIONS` | `transition-preconditions.ts:44` | **absent** |
+| `PROTECTED_TEMPLATES` | `workflow-stage-keys.ts:63` | absent |
 | `STAGE_ASSIGNEE_KINDS` | `stage-who.ts:28` | all five kinds |
-| `SEAT_ACTIONS` | `seat-actions.ts:24-30` | **absent**. `:8-11` reserves `schedule_meeting` and `record_minutes` for this ticket (Ahmad, 10 Nov). |
-| `MEMBER_ACTIONS` | `member-actions.ts:25-52`, assert `:159` | **absent** |
-| Nav model | `nav-items.ts` (quality group `:186`, committees `:209`, `moduleKey` `:108`, `:475`) | **no Meetings item** |
-| Home | `home.service.ts:40-54` | **no meetings part** |
-| Module keys | `plan.service.ts:55-57` | `'meetings'` known. `ModuleGuard` has no consumers (`module-entitlements.ts:5-9`). |
+| `SEAT_ACTIONS` | `seat-actions.ts:24-30` | **absent**; `:8-11` reserves `schedule_meeting` and `record_minutes` |
+| `MEMBER_ACTIONS` | `member-actions.ts:25-52` | absent |
+| Nav model | `nav-items.ts` (`:186`, `:209`) | **no Meetings item** |
+| Home | `home.service.ts:40-54` | no meetings part |
+| Links | `record-link.util.ts:9-15`; `notification-links.ts:8-13` | no MEETING |
 
-### 1.5 Other code that already names a meeting
+### 1.5 Other code that names a meeting
 
 - `mapObjectTypeToTaskSourceType` (`workflow.service.ts:1513`).
-- Task record names and search (`task-record-names.ts:51-62`).
-- `record-link.util.ts:3`: "a meeting, today" is named without a link, because it has no page.
+- `task-record-names.ts:51-62`.
 - The committee page's empty Meetings panel (`committee-detail.component.ts:366-370`).
 - The `meeting_type` lookup (`lookup.seed.ts:229-243`).
-- The AI draft context (`draft-record-context.ts:28-30`).
-- The awaiting-me list (`workflow-awaiting.service.ts:46`).
+- `draft-record-context.ts:28-30`.
+- `workflow-awaiting.service.ts:46`.
+- **Seats:** `committee_member_role` has `chairman` and `secretary` with their
+  attributes (`lookup.seed.ts:69-71`).
 
-### 1.6 Where schema and spec disagree
+### 1.6 Where today's code disagrees with the decisions
 
-| Spec (`module-designs.md`) | Today |
+| Decided | Today |
 |---|---|
-| State is PLANNED … CANCELLED (`:764-810`) | `Meeting.status` text **and** a workflow stage: two places for one fact |
-| Rescheduling keeps `rescheduleHistory` (`:764-769`, `:812-817`) | nothing |
-| Attendance: present / absent / excused, quorum (`:779-788`) | nothing |
-| Decisions with vote records (`:835-839`) | nothing |
-| Action items become tasks at approval (`:797-804`) | nothing; `Task.meetingId` unused |
-| Minutes reviewed by all attendees, PARALLEL ALL (`:790-795`) | seed: ALL on a starting assignment (one admin) |
-| The chair approves (`:797-804`) | seed: Approve Minutes is a press on the review stage; the final stage has nobody |
-| The secretary drafts the minutes (`:779-788`) | seed: CREATOR on the first three stages |
-| Previous open tasks loaded into the agenda (`:771-777`, `:819-833`) | nothing |
-| The presenter is a person | `AgendaItem.presenter` is text |
-| — | no end time, no `organizationId` on `AgendaItem`, no FK on `typeValueId` |
-
-The spec has **no recurring meetings and no calendar**.
+| Committee OR unit | only `committeeId` |
+| The stage is the status | `Meeting.status` text too |
+| Duration; series; titles per series | `scheduledAt` only; no series |
+| Presenter is a person, or a guest | `presenter` text |
+| Invitees, guests (in the organisation and outside), attendance | nothing |
+| Minutes per item; decisions; votes as counts | one `minutesText` |
+| Review by a date, answers, suggestions | nothing |
+| Action items as drafts, tasks at approval | nothing; `Task.meetingId` unused |
+| Attachments on the meeting and its items | `StoredFileOwnerType` TASK only |
+| Stage names and moves (§1.2) | old names, a self-loop, CREATOR pools |
 
 ---
 
@@ -137,138 +309,434 @@ The spec has **no recurring meetings and no calendar**.
 
 | Item | Line | Needed? | Why |
 |---|---|---|---|
-| Lookup category UI | 13215 | no | `meeting_type` values are edited on the Lookups page |
-| Task detail / INTERNAL_REFERENCE UI | 13218 | no | stale (the task page exists, ACC-228); action items need no record reference |
+| Lookup category UI | 13215 | no | `meeting_type` is edited on the Lookups page |
+| Task detail / INTERNAL_REFERENCE UI | 13218 | no | stale; action items need no record reference |
 | (mostly fixed by ACC-302) | 13242 | no | — |
-| Deactivation doesn't replace committee seats | 13266 | **no, but it shows here** | a departed Secretary empties the Minutes Draft pool: `STAGE_HAS_NO_ONE`, the stage is flagged unassigned, and Setup health already lists `COMMITTEE_MISSING_REQUIRED_SEAT` |
-| AI provider selection | 13274 | no | Meetings AI is out of these slices |
-| **SEQUENTIAL ordering** | 13326 | **no, obsolete** | dropped with the old who fields (ACC-278, SYSTEM-REFERENCE 3917–3919). Minutes review is one pool, Any one or All. |
-| Validators | 13329 | no | `TRANSITION_PRECONDITIONS` does the record checks |
-| `isCodeLocked` | 13334 | no | — |
-| INTERNAL_REFERENCE raw id | 13336 | no | — |
-| SMS / digest | 13339 | no | in-app and email only |
-| Polling vs WebSocket | 13341 | no | votes are recorded by the secretary (Q4); a page reloads after each action |
-| **ROUND_ROBIN** | 13344 | **no, obsolete** | dropped, as for SEQUENTIAL |
-| Cycle detection | 13347 | no | — |
-| SUSPENDED never set | 13351 | no | — |
+| Deactivation doesn't replace committee seats | 13266 | **no, but it shows here** | a departed Secretary or Chair empties a stage's pool (`STAGE_HAS_NO_ONE`); Setup health already lists `COMMITTEE_MISSING_REQUIRED_SEAT` |
+| AI provider selection | 13274 | no | Meetings AI is out |
+| SEQUENTIAL ordering | 13326 | **no, obsolete** | dropped in ACC-278 |
+| Validators | 13329 | no | preconditions do the record checks |
+| `isCodeLocked`, INTERNAL_REFERENCE raw id | 13334, 13336 | no | — |
+| SMS / digest | 13339 | no | in-app and email |
+| Polling vs WebSocket | 13341 | no | attendance saves on each tap; nothing live |
+| ROUND_ROBIN | 13344 | **no, obsolete** | dropped |
+| Cycle detection, SUSPENDED | 13347, 13351 | no | — |
 
-### 2.2 The engine and the committee pieces
+### 2.2 The engine, committees and the rest
 
-- **Stage-assignee RELATIVE mode: needed, and already built.** "The record's committee" (COMMITTEE with no fixed committee) and "the record's unit" (ORG_UNIT_HEAD with no fixed unit) resolve through `RECORD_ROUTES` (SYSTEM-REFERENCE 3379, 3381, 3499–3509; `stage-pool.service.ts:357`). MEETING has its entry (`stage-task-record-routes.ts:60`). So a meeting stage can say "the meeting's committee, Secretary seat" with no new code.
-- **The vote path (ACC-284): not used for meeting decisions.**
-  - A workflow committee vote decides **a move of the record**, by members' presses, against a quorum saved at stage entry (`workflow.service.ts:1043-1066`, `:1307-1320`; `workflow-vote.ts:21-25`, `:58-62`).
-  - A meeting decision is **a topic voted on in the room**, recorded by the secretary.
-  - The two are kept apart (§3.4). The engine is used only if Ahmad picks "Vote" for minutes approval (Q2).
-- **Reference codes: not built and not needed** (CLAUDE.md 5432–5440, SYSTEM-REFERENCE 11809–11811). Q7 asks only about a per-committee meeting number, which is not the cross-module code.
-- **What the committee seat rule (ACC-283) gives:**
-  - the shape: `SEAT_ACTIONS` + lookup defaults + `writeSeatActions()` as the one writer;
-  - `MEMBER_ACTIONS` + `assertMemberAction()` (`member-actions.ts:159`), "either the seat or the role grants" (step-283 §0);
-  - the reserved keys `schedule_meeting` and `record_minutes` (`seat-actions.ts:8-11`).
-- **What the committee seat rule lacks:**
-  - the two meeting keys, their seat defaults and their backfill;
-  - any rule for **who votes**: nothing says an Observer seat does not vote. §3.3 adds a seat attribute.
-  - `assertMemberAction` takes a committee, so a meeting action resolves the meeting's committee first.
-- **Task creation (ACC-280):** `acceptsTasksSql` and `create.types` need a MEETING line in `TASK_RECORD_TYPES` (§4.3).
-- **Files and PDF:**
-  - a signed minutes file needs `StoredFileOwnerType.MEETING`;
-  - a minutes PDF needs `GENERATE_PDF`, which is a stub.
-  - Both are left for later (§6).
+- **The vote path (ACC-284) is not needed.**
+  - Minutes Review is worked by the Chair, Any one. Nobody votes on the minutes
+    in the engine.
+  - Lane B noted on 9 Nov that ACC-284 no longer blocks Meetings (decisions
+    check, line 38).
+  - Decision votes are counts typed by the Secretary, not engine votes.
+- **Stage-assignee RELATIVE route: present.** "The record's committee" with a
+  seat resolves through `RECORD_ROUTES` (`stage-task-record-routes.ts:58-62`).
+  - For unit meetings, MEETING's `unit()` must return the meeting's own
+    `orgUnitId`, and `committee()` null.
+  - Today it returns the committee's unit; that changes in PR 1 (§3.8).
+- **The seat rule (ACC-283)** gives:
+  - `SEAT_ACTIONS` with lookup defaults and `writeSeatActions()`;
+  - `MEMBER_ACTIONS` and `assertMemberAction()` (`member-actions.ts:159`);
+  - "either the seat or the role grants".
+
+  It lacks the two meeting keys, their defaults and their backfill.
+- **Working calendar:** `WorkingCalendarService` has `calculateDeadline()` and
+  `workingHoursBetween()` (`working-calendar.service.ts:284`, `:333`). It has
+  **no public "next working day" or "add N working days"** (the day test is
+  private, `:357`).
+  - The series' holiday moves and the review date (5 working days) need both.
+  - They are added there, never computed in the module.
+- **Email to a person with no account is new work** (round 3 review):
+  - `TransactionalEmailService.send({ to, subject, body, direction })`
+    (`transactional-email.service.ts:10-45`) is the one Resend sender, and it
+    takes any address;
+  - the `email-delivery` worker today sends only to users
+    (`notification-email.processor.ts:58`, `:96`) and to security notices.
+  - Outside guests get a named job on that queue, carrying the attendee id,
+    never the address.
+- **Files:** two new `StoredFileOwnerType` values (the meeting, and an agenda
+  item). The file viewer, quota, recycle bin and evidence states are reused.
+  - Virus scanning is still ACC-178. The design's "Checking…" state is the
+    content check the upload already does.
+- **Reference codes: not needed** (Answers: no meeting number).
+- **Calendar availability (ACC-293)** draws the Outlook rows. Not here.
 
 ---
 
-## 3. Design (proposal)
+## 3. Design
 
 ### 3.1 The meeting record
 
-- **A meeting belongs to one committee** (Q1, recommended). `committeeId` stays nullable in the schema, and the service requires it.
-- **Its state is its workflow stage**, as for change requests (ACC-239):
-  - the instance is created in the same transaction as the meeting (`startInstance()` prepare/insert/finish);
-  - `Meeting.status` is no longer read, and is dropped in the contract PR.
-- **New columns:**
-  - `endsAt` (DateTime, required by the service after it is added);
-  - `quorumRequired` (Int?: the committee's quorum, saved when attendance is first recorded);
-  - `sequenceNo` (Int?, only if Q7 is Yes).
-- **`typeValueId` gains its relation** to `LookupValue`. That is safe because 0 rows exist.
-- **Times** are stored as UTC and shown in the organisation's zone (ACC-97) through `amDateTime`.
-- **A committee may be given a meeting only where its stage allows it.** That is a new committee record action, `schedule_meeting`, seeded on the In force stages only, so a committee in Formation or Dissolved gets none.
-- **Rescheduling** writes a `MeetingReschedule` row (`organizationId`, `meetingId`, from, to, reason, who, when) and tells the invitees after commit. Rescheduling is allowed only in Planned and Agenda Ready.
-- **Cancel** is the seeded EXIT, a person's press. Its reason is the press's own `comment`, made REQUIRED for a move into a stage flagged `MEETING_CANCELLED` (§9.2). The invitees read it.
-- **Every new table carries `organizationId`**, and every query scopes by it with the id in the same `where` (CLAUDE.md, Multi-Tenancy).
+- **Owner:** `committeeId` OR `orgUnitId`, exactly one, checked in the service.
+  A Prisma migration can't express a CHECK, and migration files aren't edited by
+  hand.
+- **New columns on `Meeting`:**
+  - `orgUnitId` (FK `OrgUnit`, nullable);
+  - `durationMinutes`;
+  - `unitQuorum` (Int?, unit meetings only, set when scheduling);
+  - `quorumAtAttendance` (Int?, saved when attendance is first recorded, so a
+    later quorum change doesn't rewrite history);
+  - `seriesId?`, `seriesIndex?`;
+  - `ownEdits String[]` (the fields this meeting changed "this meeting only",
+    so "this and all later" keeps them);
+  - `rescheduledFromAt?`, `rescheduleReason?`;
+  - `reviewBy` (Date?), `reviewRound` (Int, default 0);
+  - `approvedById?`.
+- **`typeValueId` gains its relation.** It is safe: there are 0 rows.
+- **The state is the workflow stage.** The instance is created with the meeting
+  in one transaction (`startInstance()` prepare/insert/finish, ACC-239).
+  `status` is not read, and is dropped in the contract PR.
+- **Location or link: at least one** (Design, step 1). The link stays LTR.
+- **Times** are stored as UTC and shown in the organisation's zone (ACC-97),
+  with Hijri beside them through the formatting layer.
+- **A committee may be given a meeting only where its stage allows it:** a new
+  COMMITTEE record action `schedule_meeting`, seeded on the In force stages.
+- **Every new table carries `organizationId`**, and every query names it with
+  the id in one `where`.
 
-### 3.2 Agenda
+### 3.2 Series
 
-- `AgendaItem` gains:
-  - `organizationId` (NOT NULL is safe: 0 rows, and no code writes the table);
-  - `presenterUserId` (FK User, nullable);
-  - `presenter` stays, for a guest by name.
-- `order` stays. The screen moves an item up or down; there is no drag.
-- **Follow-up of earlier meetings (spec `:771-777`, `:819-833`)** is a READ, not a copy: open tasks whose record is an earlier meeting of the same committee, listed on the agenda. Nothing is written into the agenda.
-- The agenda may be edited in Planned and Agenda Ready only (record action `manage_agenda`).
+- **`MeetingSeries` has these columns:**
+  - `organizationId` and the owner (committee or unit, as on the meeting);
+  - `subject`, `typeValueId`;
+  - the time of day, `durationMinutes`, location and link;
+  - `every`: WEEK_1, WEEK_2, MONTH_1, MONTH_3, MONTH_6 or MONTH_12;
+  - `on`: a weekday, a day 1–31, or an ordinal (FIRST…FOURTH, LAST) plus a
+    weekday;
+  - `firstDate`;
+  - the end: `endsOn` or `count`;
+  - `standingAgenda` (JSON: title, presenter, duration);
+  - `createdById` and `endedAt`.
+- **Creation:** every meeting the series makes is created at once, in one
+  transaction, each with its instance (§7, Q4 for the horizon).
+- **Dates:**
+  - the pattern runs in Gregorian, in the organisation's zone;
+  - a missing day falls on the month's last day;
+  - a weekend or holiday moves to the next free working day, from the working
+    calendar. If that day already has a meeting of the same owner, it moves on
+    (Design, step 2).
+- **Titles:** `subject · October 2026` for monthly and longer, or
+  `subject · 22 Oct 2026` for weekly. A move keeps the pattern's month (R4-1).
+  The title is stored per meeting and edited on its own.
+- **Editing "this and all later":**
+  - only meetings still in Planned or Agenda Issued, and only those after this
+    one, change;
+  - a field in a meeting's `ownEdits` is kept, and the scope confirm says what
+    it kept;
+  - past and held meetings never change.
+- **Cancel one** is that meeting's Cancel Meeting.
+- **End series:**
+  - cancels every later meeting still in Planned or Agenda Issued, each with
+    the reason;
+  - sets `endedAt`.
+- **The standing agenda** is copied into each meeting it creates, as items
+  marked `standing`.
 
-### 3.3 Attendance and quorum
+### 3.3 Agenda and papers
 
-- **`MeetingAttendee`** has these columns:
+- **`AgendaItem` gains:**
+  - `organizationId` (NOT NULL: 0 rows, and no writer);
+  - `presenterAttendeeId` (the presenter is an invitee: a member, an
+    organisation guest, or an outside guest; `presenter` text stops being
+    read);
+  - `standing`;
+  - `discussion` (the minutes for the item).
+- **A presenter who is not yet an invitee is added as a guest in the same
+  write.** An organisation person becomes an organisation guest. An outside
+  guest is added through Add a guest first.
+- **Papers** are files owned by the agenda item. General attachments are files
+  owned by the meeting. Both open in the file viewer.
+- **Open actions from the last meeting:**
+  - a READ: the not-done tasks of the owner's previous meeting that reached
+    Minutes Approved, with status from each task;
+  - the Secretary's note on each is a `MeetingOpenActionNote` (`organizationId`,
+    `meetingId`, `taskId`, `note`), writable in Minutes Draft.
+
+### 3.4 Invitees, guests, attendance and quorum
+
+- **`MeetingAttendee` has these columns:**
   - `organizationId` and `meetingId`;
-  - `userId?` or `guestName?`, exactly one of the two;
-  - `kind`: MEMBER or GUEST;
-  - `seatValueId?`: the seat when invited, a snapshot;
-  - `votes` (Boolean);
-  - `attendance`: PRESENT, ONLINE, ABSENT, EXCUSED, or null for not recorded yet.
-- It is unique on `(meetingId, userId)`.
-- **Invitees are filled in at scheduling** from the committee's active members. Guests are added by hand (Q6).
-- **Who votes** is a new seat attribute on `committee_member_role`, "votes in meetings". It defaults to true, and to false for Observer. Guests never vote.
-- **Quorum met** means voting attendees PRESENT or ONLINE (Q3) ≥ `quorumRequired`. It is computed when read and saved on each decision when the decision is recorded.
-- **Leaving Minutes Draft requires attendance recorded for every invitee.** This is a `TRANSITION_PRECONDITIONS` MEETING entry (`MEETING_ATTENDANCE_INCOMPLETE`), run early and inside the stage-change transaction like the committee quorum rule.
+  - `kind`: MEMBER, ORG_GUEST or OUTSIDE_GUEST;
+  - `userId?`;
+  - for an outside guest: `outsideName`, `outsideEmail`, and optional
+    `outsideOrganisation` and `outsideRole`;
+  - `seatValueId?` (a member's seat, a snapshot);
+  - `attendance`: PRESENT, APOLOGIES or ABSENT, or null;
+  - `invitedAt?` (when the invitation went out: the notice for a user, the email
+    for an outside guest);
+  - `addedAsPresenter` (Boolean).
+- **Unique** on `(meetingId, userId)` where `userId` is set.
+- **Invitees are filled in at scheduling:**
+  - a committee's active members;
+  - a unit's people (§7, Q2).
 
-### 3.4 Decisions and vote records
+  Members joining or leaving later change the invitees of meetings still in
+  Planned or Agenda Issued only.
+- **Online counts as present** (lane B). There is no fourth kind.
+- **Quorum met** means MEMBER attendees PRESENT ≥ the quorum.
+  - The quorum is `quorumAtAttendance` for a committee, or `unitQuorum` for a
+    unit.
+  - A unit meeting with no quorum shows "11 of 14 present" with no quorum
+    words.
+- **Attendance** opens at the start time in Agenda Issued, and stays open in
+  Minutes Draft (Design table). It is saved on each tap.
+- **Distribute Minutes needs attendance for every member and organisation
+  guest.** It is disabled with its reason before that.
 
-- **`MeetingDecision`** has these columns:
-  - `organizationId`, `meetingId` and `agendaItemId?`;
-  - `order`, `topic` and `text`;
-  - `voteType`: NONE (noted or consensus), OPEN or SECRET;
-  - `votesFor`, `votesAgainst` and `abstentions` (Int?);
-  - `quorumMet` (Boolean, a snapshot);
-  - `outcome`: APPROVED, REJECTED, DEFERRED or NOTED.
-- **`MeetingVote`** (`organizationId`, `decisionId`, `attendeeId`, `choice` FOR, AGAINST or ABSTAIN; unique per decision and attendee) holds **who voted**, for OPEN votes only.
-  - The counts on the decision are written from these rows in the same transaction.
-  - A SECRET vote stores counts only, and no names.
-- **The secretary records the votes** (Q4, recommended). Members do not vote in the app in these slices.
-- **Votes are checked on save:**
-  - the counts add up to at most the voting attendees present;
-  - only voting attendees who are present may have a vote row.
-- **Kept apart from the workflow's committee vote.** A meeting decision writes no `WorkflowApproval`, and a workflow vote writes no `MeetingDecision`. They answer different questions: "do we move this record?" and "what did the meeting decide on this topic?". The engine's threshold code (`workflow.service.ts:1043-1066`) is not reused for topics.
+### 3.5 Minutes, decisions and votes
 
-### 3.5 Minutes
+- **Per item:** `AgendaItem.discussion` and `MeetingDecision` rows. A decision
+  has these columns:
+  - `organizationId`, `meetingId`, `agendaItemId`;
+  - `order` and `text`;
+  - `votesFor`, `votesAgainst`, `votesAbstain`: Int?, all three or none.
+- **The vote check:** the sum ≤ MEMBER attendees PRESENT, said under the fields
+  in words. It is refused on save as `MEETING_VOTES_EXCEED_PRESENT`.
+- **"Taken without quorum"** is computed from the meeting's quorum line, and
+  frozen at approval with the rest.
+- **The minutes are not a separate document** (brief 1.6). They are the items,
+  the decisions, the attendance and the action items.
 
-- **Draft (Minutes Draft):**
-  - attendance, decisions, action items and the narrative (`minutesText`) are edited;
-  - this needs the record action `record_minutes`, plus the seat action `record_minutes` or the role key `meetings:record_minutes`.
-- **Review (Minutes Review):**
-  - the seeded stage changes to Q2's answer;
-  - recommended: **the meeting's committee, Chair seat, Any one**, with Approve Minutes (ADVANCE) and Return for Correction (RETURN to Minutes Draft);
-  - attendees **read the draft only**. No comment feature exists, and none is built in these slices (§9.5).
-- **Approved (Minutes Approved, final):**
-  - no record action is allowed, so everything is read-only;
-  - `minutesApprovedAt` is stamped, and the action items become tasks (§3.6), **in the press's own stage-change transaction**, through a per-record-type registry of entry effects keyed by the `MINUTES_FINAL` flag (§9.1).
-- **What the seeded workflow becomes** (seed + `backfill:acc316-meeting-workflow`):
-  - **remove the self-loop at `:256`.** No approval refers to it, because there are 0 instances.
-  - Planned and Agenda Ready: the meeting's committee, Chair and Secretary seats, Any one.
-  - Minutes Draft: the meeting's committee, Secretary seat, Any one.
-  - Minutes Review: per Q2.
-  - `isApprovalPath` is no longer sent.
-  - Record actions and flags as in §4.2.
-  - The backfill changes a stage's who **only while it is still the seed's**: CREATOR, or a starting assignment. A tenant's own edit is left alone and reported.
+### 3.6 Review
 
-### 3.6 Decisions and action items as tasks
+- **Distribute Minutes takes `reviewBy`:**
+  - default: 5 working days ahead, from the working calendar;
+  - `reviewRound` goes up by 1;
+  - the present members are told.
+- **`MeetingReviewAnswer`** (`organizationId`, `meetingId`, `round`, `userId`,
+  `answeredAt`): "No corrections".
+  - A suggestion from the same member in the same round replaces it (R3-2).
+- **`MeetingSuggestion`** has these columns:
+  - `organizationId`, `meetingId`, `round`;
+  - `agendaItemId?` (null for the minutes as a whole);
+  - `authorId`, `text`;
+  - `status`: OPEN, APPLIED or DECLINED;
+  - `reply?`, `decidedById?`, `decidedAt?`.
 
-- **`MeetingActionItem`** (`organizationId`, `meetingId`, `decisionId?`, `agendaItemId?`, title, description, the assignment target with the New task cascade, priority, `taskId?`) is the **draft** of a task.
-- **At approval (Q5, recommended)**, each item becomes one task inside the stage-change transaction of the move that enters `MINUTES_FINAL`, through the entry-effects registry (§9.1). It is NOT ACC-239's `inTx`, which only an APP move takes:
-  - `sourceType MEETING`, `sourceId` the meeting;
-  - the creator is whoever made the move happen: the approver, or on "Everyone present" or "Vote" the deciding voter;
-  - its due date comes from `TaskSlaService` (ACC-174), never computed in the module.
-- **Afterwards** the item shows its task's link and status. The task, not the item, is the work.
-- **Ordinary tasks on a meeting** (New task with the meeting as the record) are allowed while the meeting is not cancelled (§4.3).
-- `Task.meetingId` stays unused and is dropped in the contract PR.
+  A suggestion counts as the member's answer.
+- **Applied changes** are `MeetingReviewChange` rows (`organizationId`,
+  `meetingId`, `round`, `agendaItemId?`, `what`), written by the Secretary's
+  edits in Minutes Review. They feed "Changed during review: item 2, decision".
+- **Who reviews:** members whose attendance is PRESENT, the Chair included
+  (R3-5). Guests never review.
+- **The review's state is worked out when the page is read** (decisions check,
+  line 38), never by a job:
+  - who answered;
+  - who hasn't;
+  - open suggestions;
+  - whether the date has passed, in the organisation's zone.
+- **The reminder** is the one scheduled part: the SLA sweep (`sla-monitor`, 15
+  minutes) tells the members who haven't answered, once, on the working day
+  before the date. It is stamped per member and round, so it never repeats.
+- **Return for Correction:**
+  - closes the round;
+  - answers reset;
+  - suggestions stay, marked with that round's date (R3-3);
+  - the optional reason is shown to present members and in the draft (R3-4).
+
+### 3.7 Action items
+
+- **`MeetingActionItem`** has these columns:
+  - `organizationId`, `meetingId`, `agendaItemId`;
+  - `title`, `ownerUserId`, `dueAt`;
+  - `taskId?` (unique).
+
+  The owner is any person in the organisation, guests included, and never an
+  outside guest (R3-7).
+- **Edits:**
+  - drafts are edited in Minutes Draft;
+  - in Minutes Review, only their dates are edited, by the Secretary.
+- **At approval, each draft becomes a task** in the approve move's transaction
+  (§3.8):
+  - `sourceType MEETING`, `sourceId` the meeting, the owner as the only
+    assignee;
+  - built with `TaskService.prepareRecordTask()` (`task.service.ts:436`, which
+    takes user ids, matching "owner: a person");
+  - its due date is the draft's;
+  - the item's `taskId` is set.
+- **The approval check:** a draft whose due date has passed blocks approval
+  (`MEETING_ACTION_PAST_DUE`, naming the item). So does a due date past the
+  task's SLA limit (ACC-174), with the limit named (§8).
+- **"From item n"** comes from the item's `agendaItemId`, joined through
+  `taskId` on the tasks panel. No column is added to `Task`.
+- **Frozen at approval:** the locked minutes and print show the items as at
+  approval, with each task's live status (R3-8).
+
+### 3.8 Stages, moves and the engine
+
+**The seed and the PR 1 backfill:**
+
+| Stage (key unchanged) | Name | Who works it | Record actions allowed | Flags |
+|---|---|---|---|---|
+| `planned` | Planned | Secretary | `edit_details`, `manage_agenda`, `manage_guests`, `reschedule` | — |
+| `agenda_ready` | **Agenda Issued** | Secretary | the four above, plus `record_attendance` (from the start time) | `AGENDA_ISSUED` |
+| `minutes_draft` | Minutes Draft | Secretary | `record_attendance`, `record_minutes` | — |
+| `minutes_review` | Minutes Review | Chair | `apply_suggestions`, `change_action_dates`, `suggest_correction` | — |
+| `minutes_approved` | Minutes Approved | — | none | `MINUTES_FINAL` |
+| `cancelled` | Cancelled | — | none | `MEETING_CANCELLED` |
+
+- **"Secretary" and "Chair" mean:**
+  - for a committee meeting: the `COMMITTEE` entry with no fixed committee (the
+    meeting's committee) and the `secretary` or `chairman` seat;
+  - for a unit meeting: see §7, Q1.
+- **The stage keys stay.** They are never shown, and keeping them avoids a key
+  backfill.
+- **The backfill:**
+  - renames names and moves only where they are still the seed's;
+  - sets `who` only where it is still the seed's;
+  - deletes the self-loop.
+
+**The moves:**
+
+| Move | From → to | Mover | Why |
+|---|---|---|---|
+| Issue Agenda | Planned → Agenda Issued | PERSON | notices after commit, by entry effect (`AGENDA_ISSUED`) |
+| Record Minutes | Agenda Issued → Minutes Draft | PERSON | — |
+| Distribute Minutes | Minutes Draft → Minutes Review | **APP** | it takes `reviewBy` and opens a round: the meeting's endpoint, ACC-239's `inTx` |
+| Approve Minutes | Minutes Review → Minutes Approved | PERSON | the Chair's pool; preconditions; entry effect (`MINUTES_FINAL`) |
+| Return for Correction | Minutes Review → Minutes Draft | **APP** | Secretary OR Chair, and it resets the round: the meeting's endpoint, `inTx` |
+| Cancel Meeting | Planned, Agenda Issued → Cancelled | PERSON | reason required (§3.8.2); notices by entry effect (`MEETING_CANCELLED`) |
+
+- **An APP move's endpoint checks who may act:**
+  - Distribute: the Minutes Draft pool (`InstanceAccess.assertMayAct()`,
+    `instance-access.ts`), so the stage still owns who;
+  - Return: the Minutes Review pool, OR `record_minutes` (seat or role) for the
+    Secretary.
+- **An APP move shows read-only on the stages page,** with its `appMove` line
+  (ACC-271 PR 5b). Its button on the meeting page is the module's own.
+
+#### 3.8.1 Entry effects (`TRANSITION_EFFECTS`), kept from review round 1
+
+- **Why `inTx` won't do:** `inTx` belongs to `triggerSystemTransition()`
+  (`workflow.service.ts:928-937`), and `applyMove()` refuses it for a non-APP
+  move (`:1180-1186`).
+- **Every person's press lands in `performTransition()`** (`:1072-1092`):
+  - Any one: `:678`;
+  - RETURN or EXIT on a shared stage: `:699`;
+  - the deciding vote: `:709`;
+  - the vote screen: `:860`, `:866`.
+- **`performTransition()` runs three steps:**
+  - `prepareMove()` (`:1099`): reads;
+  - `applyMove()` (`:1152-1225`): the instance lock `:1158`, the preconditions
+    `:1177`, then the writes;
+  - `finishMove()` (`:1228-1250`): after commit.
+- **The registry:** `TRANSITION_EFFECTS`, beside `TRANSITION_PRECONDITIONS`.
+  - It is per record type, FAIL OPEN, keyed by the flag entered.
+  - `prepare` runs in `prepareMove()`, `apply` in `applyMove()` after the
+    preconditions, and `finish` in `finishMove()`.
+  - `ctx` is the precondition context (`transition-preconditions.ts:21-31`).
+- **MEETING's effects:**
+  - **`MINUTES_FINAL`:**
+    - `prepare` prepares a task per action item;
+    - `apply` locks the meeting row after the instance (ACC-255's order). It
+      refuses `MEETING_CHANGED` if the items moved since `prepare`. Then it
+      stamps `minutesApprovedAt` and `approvedById`, inserts the tasks
+      (`insertPrepared()`, `task.service.ts:332`) and sets `taskId`;
+    - `finish` announces the tasks (`announceCreated()`, `:342`) and writes the
+      Meeting audit row.
+  - **`AGENDA_ISSUED`:** `finish` tells the invitees and emails the outside
+    guests, setting `invitedAt` for each.
+  - **`MEETING_CANCELLED`:** `finish` tells the invited, quoting the move's
+    comment.
+- **It holds for every way of working a stage.** One press or a deciding vote,
+  it runs once, on the move that fires.
+- **ACC-190's rules hold:**
+  - reads before the transaction;
+  - lock order: instance, then the meeting row;
+  - notices after commit.
+
+#### 3.8.2 A move that needs a reason, kept from review round 1
+
+- **Today:**
+  - a press carries an optional `comment` (`trigger-transition.dto.ts:8-11`);
+  - it is stored on the entry left (`:1191`; `schema.prisma:1399`) and shown in
+    the stage history (`:509-511`);
+  - the move buttons never send one (`workflow-transition-actions.component.ts:127`);
+  - nothing makes one required.
+- **Added:**
+  - a per-record-type rule keyed by the flag entered. MEETING: into
+    `MEETING_CANCELLED`, a comment is required, else 400 `REASON_REQUIRED`;
+  - `needsReason` per move on `GET /workflows/instances/:id/moves`;
+  - a reason dialog in the move buttons, for every module.
+- **Reschedule is not a move.** Its required reason is the meeting endpoint's,
+  stored on `MeetingReschedule`.
+
+#### 3.8.3 Moves disabled with their reason
+
+- **The design draws two moves disabled with a "Why?":** Distribute Minutes and
+  Approve Minutes.
+  - **Distribute** is the module's own button, so the meeting read says whether
+    it is ready, and why not.
+  - **Approve** is a PERSON move: the moves list gains `blockedBy` (the
+    precondition's refusal code and its numbers) for an ADVANCE move.
+    - It is computed by running the record's precondition read-only, only for
+      the stage the viewer is in the pool of.
+    - "Why?" opens the existing `CantMoveDialogComponent`.
+- **MEETING's preconditions:**
+  - **out of Minutes Draft:** attendance recorded for every member and
+    organisation guest (`MEETING_ATTENDANCE_INCOMPLETE`);
+  - **out of Minutes Review into `MINUTES_FINAL`:**
+    - the review closed: the date passed, or every present member answered
+      (`MEETING_REVIEW_OPEN`, naming who hasn't answered, or the date);
+    - no OPEN suggestion (`MEETING_SUGGESTION_OPEN`);
+    - no past-due draft (`MEETING_ACTION_PAST_DUE`).
+  - Inside the transaction, the meeting row is read FOR SHARE, as for
+    committees.
+
+### 3.9 Notices and emails
+
+- **Every new notice is written in English and Arabic.** The specs check both.
+- **No count in a stored notice.** ACC-95's `counted()` helper doesn't exist
+  (no `counted` in `backend/src` or `frontend/src/app`; SYSTEM-REFERENCE
+  10356–10360). The design's "Told" counts are screen text, through `amCount`.
+
+| Event | Members and organisation guests (app + email) | Outside guests (email only) |
+|---|---|---|
+| Agenda issued | the invitation | the invitation |
+| Outside guest added in Agenda Issued | — | the invitation, at once |
+| Agenda edited after issue | told again, with what changed | — |
+| Rescheduled | new time and reason | new time and reason, if invited |
+| Cancelled | reason | reason, if invited |
+| Distributed | present members: "Review the minutes by 1 Oct" | — |
+| Reminder (day before) | present members who haven't answered | — |
+| Suggestion declined | its author, with the reply | — |
+| Returned for correction | present members, with the reason | — |
+| Approved | action item owners, through the task notices | — |
+
+- **An outside guest's email** is a named `email-delivery` job sent through
+  `TransactionalEmailService`.
+  - It carries no link into AccreditMe. The online meeting link is not ours,
+    and it is allowed.
+  - Its language is §7 Q3.
+- **Home's "Awaiting my action"** gains a meeting review row ("Review the
+  minutes by 1 Oct"). It comes from a self-scoped read: rounds open where the
+  viewer is a present member with no answer. It is one more part in
+  `MyWorkCountsService`, with no polling.
+- **The list row's "Review" next step** (R3-9) reads the same fact.
+
+### 3.10 Clash warning
+
+- **The rule:** for each invitee with a user (members and organisation guests),
+  other meetings they are invited to, not Cancelled, whose time strictly
+  overlaps. Back-to-back is not a clash, and the same series counts.
+- **`POST /meetings/clashes`** takes the owner or the invitee list, times (one,
+  or the series' dates) and an excluded meeting. It answers per date and per
+  person.
+  - The other meeting's title is given only if the asker may open it; otherwise
+    "another meeting".
+  - It is one batched query, with the date list capped at the series' cap.
+- **Where it shows:** Schedule step 1, step 2's "Clash" chips, Reschedule, the
+  scope confirm, and Add a guest (R5-5). Nowhere else (R5-7).
+
+### 3.11 Print page
+
+- **`/meetings/:id/print`**, Minutes Approved only:
+  - A4 portrait, 18 mm margins, no app chrome;
+  - English or Arabic, in the reader's language.
+- **"Page 1 of 3"** needs CSS page margin boxes with `counter(pages)`. Those are
+  in Chrome/Edge 131+ only, not Safari 16.4 or Firefox 115 ESR (the supported
+  floor). The footer degrades to no page number where unsupported (§8).
 
 ---
 
@@ -276,477 +744,306 @@ The spec has **no recurring meetings and no calendar**.
 
 ### 4.1 Seeing
 
-- **The parent rule (ACC-101, §1.9 869, 884–889)** gains a MEETING rule of the ACC-281 shape. A viewer may see a meeting with **any one** of:
-  - `meetings:view` (oversight: every meeting);
-  - an **active member of the meeting's committee** (`committee-membership.ts`, one indexed query, never for a `meetings:view` holder);
-  - an **invitee of that meeting** (an attendee row with their user id, Q6).
-- A refusal is 403 "Required permission: meetings:view" where the request names the meeting, and the identical 404 where it is known only from a row, as today.
-- **A meeting list under a committee** also needs the committee to be visible (clause a).
-- **The meeting's workflow** follows the record (`InstanceAccess`, `instance-access.ts:52-93`). Nothing new is needed beyond the visibility rule.
-- **No query is added to the per-request path.** Every check is in the service, after the guard.
-- **An invited guest who is not a member** has no Meetings rail item, and needs none. They reach the meeting by the bell, Home's "My next meetings" and the invitation email, each linking to `/meetings/:id`. That route carries its own `permissionGuard` and no route permission, as the task page does (`tasks.routes.ts:27-38`), so the server's rule decides (§9.7).
+- **The parent rule (ACC-101) gains MEETING, the ACC-281 shape.** A viewer may
+  see a meeting with any one of:
+  - `meetings:view` (see all);
+  - for a committee meeting: an active member of the committee
+    (`committee-membership.ts`);
+  - for a unit meeting: an active person of the unit (§7 Q2);
+  - an invitee with a user (an attendee row with their id).
+- **Batched** for lists. No query is run for a `meetings:view` holder. The
+  refusals are as today: the 403 naming `meetings:view` when the request names
+  the meeting, the identical 404 when only a row names it.
+- **Minutes visibility:**
+  - organisation guests see the minutes only after approval (round 1 Q9);
+  - outside guests have no access at all;
+  - members, §7 Q5.
+- **The committee or unit panel** shows the restricted line to someone who may
+  open the record but not its meetings (Design "Denied").
+- **The meeting's workflow** follows the record (`InstanceAccess`).
+- **Files** follow the meeting's rule. An organisation guest sees papers and
+  attachments.
+- **An organisation guest who isn't a member** reaches the meeting through:
+  - the bell (`notificationLink()` MEETING);
+  - Home;
+  - the email.
+
+  `/meetings/:id` has its own `permissionGuard` and no route permission, like
+  `tasks.routes.ts:27-38`.
+- **No query on the per-request path.**
 
 ### 4.2 Doing
 
-| Action | Who | Stage gate (`RECORD_ACTIONS` MEETING) |
-|---|---|---|
-| Schedule (create) | seat `schedule_meeting` on that committee, or `meetings:schedule` (new key) | the committee's stage allows `schedule_meeting` |
-| Edit details, reschedule | the same | `edit_details` (Planned, Agenda Ready) |
-| Edit agenda | the same | `manage_agenda` (Planned, Agenda Ready) |
-| Record minutes, attendance, decisions, action items | seat `record_minutes`, or `meetings:record_minutes` | `record_minutes` (Minutes Draft) |
-| Move the meeting | the stage's pool (ACC-271), never a key | — |
-| Approve minutes | Minutes Review's pool (Q2) | — |
+| Action | Who |
+|---|---|
+| Schedule (one or a series) | committee: seat `schedule_meeting` (default Chair and Secretary, Design panel note) or `meetings:schedule`; unit: §7 Q1 |
+| Edit, reschedule, agenda, guests, cancel | the stage's record action (§3.8), AND the same who as Schedule |
+| Attendance, minutes, decisions, action items, open-action notes | `record_minutes` (seat default Secretary) or `meetings:record_minutes` |
+| Apply or decline a suggestion, change action dates | the same as minutes |
+| No corrections / Suggest a correction | a present member, in the open round |
+| Issue Agenda, Record Minutes, Approve Minutes, Cancel Meeting | the stage's pool (ACC-271) |
+| Distribute Minutes, Return for Correction | §3.8's APP moves |
+| Print | anyone who may read the approved minutes |
 
-- **Two seat actions** (`seat-actions.ts`):
-  - `schedule_meeting`, by default Chair and Secretary;
-  - `record_minutes`, by default Secretary.
-  - Each has a `committee_member_role` default attribute and a backfill that copies the defaults onto existing committees, the ACC-283 way.
-- **`MEMBER_ACTIONS`** gains the same two (`member-actions.ts:25-52`), so `assertMemberAction()` stays the one check.
+- **Seat actions:** `schedule_meeting` and `record_minutes`, each with a
+  `committee_member_role` default attribute and a backfill (ACC-283's way).
+  `MEMBER_ACTIONS` gains both.
 - **Keys:**
   - `meetings:schedule` is added;
   - `meetings:record_minutes` comes out of `PERMISSIONS_NOT_YET_CHECKED`;
   - `meetings:manage` becomes a seed-time umbrella (ACC-44);
-  - **`meetings:approve_minutes` is retired** the ACC-244 way (catalogue, seed, then a backfill on roles that hold it). The stage pool decides approval, so the key would check nothing.
-- **Stage flags** (`STAGE_FLAGS` MEETING, strings, no enum migration):
-  - `MEETING_CANCELLED` on Cancelled;
-  - `MINUTES_FINAL` on Minutes Approved (exactly one).
-  - Screens and rules read the flags, never the key.
-- **`RECORD_FIELDS` MEETING:** `typeValueId`, for step 2's conditions. It is defined and not read.
+  - `meetings:approve_minutes` is retired the ACC-244 way, because the stage
+    pool approves.
 
-### 4.3 Registries, one line each
+### 4.3 Registries
 
-- **`ObjectVisibilityService`:** the MEETING rule above, with a batched form for lists.
-- **`TASK_RECORD_TYPES`** gains MEETING:
-  - the four keys `meetings:view_all_tasks`, `view_unit_tasks`, `create_tasks` and `manage_tasks`;
-  - the owning unit SQL is the committee's `orgUnitId`;
-  - record-exists SQL;
-  - `acceptsTasksSql`: not on a stage flagged `MEETING_CANCELLED`.
-- **`RECORD_ROUTES`:** already present (`:60`). No change.
-- **`RECORD_ACTIONS`:** MEETING `edit_details`, `manage_agenda` and `record_minutes`, each with its `permissionKey`. COMMITTEE gains `schedule_meeting`.
-- **`TRANSITION_PRECONDITIONS`:** MEETING, attendance recorded to leave Minutes Draft (§3.3).
-- **`PROTECTED_TEMPLATES`:** unchanged. The meeting workflow stays tenant-editable.
-- **`STAGE_ASSIGNEE_KINDS`:** unchanged.
-- **Nav model:** a Meetings rail item after Committees, with `moduleKey: 'meetings'`. It shows to `meetings:view` holders and to committee members (`MyWorkCountsService.isCommitteeMember`, as ACC-281).
-- **Home:** "My next meetings": self-scoped (invited, next 14 days, cap 5), one read added to Home's wave, no polling.
-- **Entry effects (new, §9.1):** `TRANSITION_EFFECTS`, beside `TRANSITION_PRECONDITIONS`, per record type and keyed by the flag entered. MEETING: entering `MINUTES_FINAL` stamps `minutesApprovedAt` and creates the action items' tasks.
-- **A move that needs a reason (new, §9.2):** a per-record-type rule keyed by the flag entered. MEETING: a move into `MEETING_CANCELLED` needs a `comment`. The moves list says so per move (`needsReason`).
-- **Links:** `recordPageLink()` (`record-link.util.ts:9-15`) and the bell's `notificationLink()` (`notification-links.ts:8-13`) each gain `MEETING → ['/meetings', id]`.
-- **Notices:** every new notification is written in English and Arabic (`Notification.titleAr`/`bodyAr` are nullable, so this is a rule, not a constraint). No count in a stored notice (§9.6).
+- **Visibility:** MEETING with its member, unit and invitee clauses.
+- **`TASK_RECORD_TYPES`:**
+  - MEETING's four task keys;
+  - the owning unit: the unit, or the committee's unit;
+  - `acceptsTasksSql`: not on a `MEETING_CANCELLED` stage.
+- **`RECORD_ROUTES`:** MEETING's `unit()` returns the meeting's `orgUnitId`
+  (null for a committee meeting), and `committee()` its committee. This changes
+  today's committee's-unit answer, which nothing reads yet: 0 meetings.
+- **`RECORD_ACTIONS`:** the nine MEETING actions in §3.8. COMMITTEE gains
+  `schedule_meeting`.
+- **`STAGE_FLAGS`:** `AGENDA_ISSUED` and `MEETING_CANCELLED` (any number),
+  `MINUTES_FINAL` (exactly one).
+- **`TRANSITION_PRECONDITIONS`:** MEETING (§3.8.3).
+- **`TRANSITION_EFFECTS`:** new, MEETING (§3.8.1).
+- **The move reason rule:** new, MEETING (§3.8.2).
+- **Nav:** Meetings after Committees, with `moduleKey: 'meetings'`. It shows to
+  `meetings:view` holders, committee members and unit people.
+- **Home:** the review row (§3.9). "My committees · 1 meeting this week" comes
+  from the App Shell drawing.
+- **Links:** `recordPageLink()` and `notificationLink()` gain MEETING.
 
 ---
 
 ## 5. Screens
 
-**There is no Meeting Screens design.** Five drawings cite one ("Meeting Screens round 5"):
+**The design is in the repo now** (`86cc3f3`). Each screen is built from it.
+These shared patterns are reused, none rebuilt:
 
-- AI for Users `:25`, `:595`, `:613`;
-- Administration `:25`;
-- File Viewer `:25`;
-- Record Tasks Panel `:24`;
-- Storage Settings `:24`.
-
-No such file is in `frontend/design-reference/` (Q8).
-
-**Drawings that already exist:**
-
-- Schedule meeting dialog: Design System `:786`, `:819`, `:1787`.
-- Action items on a record: Record Tasks Panel `:445-451`, `:470`.
-- The committee page's Meetings panel: Committee Record `:217`, `:224`, and Compact List Panel `:219`, `:227`, `:413`.
-- Hijri dates: Design System `:1412`, `:1753`, `:1808-1810`.
-- Meetings AI (AI for Users `:229-230`, `:473-613`) and calendar availability (Administration `:272-498`) are out of these slices.
-
-**Shared patterns reused, none rebuilt:**
-
-| Screen | Pattern |
+| Screen (Design section) | Pattern |
 |---|---|
-| `/meetings` list | `app-data-list` + `am-sort-header` (§10.20), filters for committee, stage and date |
-| Committee page Meetings panel | `am-capped-panel` (five, See all → `am-list-dialog`), replacing the empty panel `committee-detail.component.ts:366-370` |
-| Meeting page | `RecordPanel` (§10.8), the moves from `GET /workflows/instances/:id/moves`, the Tasks panel (§3.13), Stage history |
-| Schedule / Edit / Reschedule / Cancel | `EditDialogComponent`. **Measure against the 420 cap first, in both languages** (ACC-120); step only if over. |
-| Agenda editor | a panel on the page; up/down to reorder; presenter via `OverlaySelectComponent` |
-| Attendance | a panel, one row per invitee, a segmented choice per row |
-| Decision dialog | `EditDialogComponent`; with OPEN votes, likely over 420 → stepped on its seam (the decision, then the votes) |
-| Action item dialog | the New task cascade (ACC-280's `TaskNewDialogComponent` fields), saved as a draft item |
-| Minutes narrative | a text panel, read-only after Minutes Draft |
-| "Can't move yet" | `CantMoveDialogComponent` (ACC-208) for `MEETING_ATTENDANCE_INCOMPLETE` |
-| Home | a capped panel |
+| `/meetings` (1): saved views Mine (default), Past, Minutes I record, All meetings | `app-data-list`, `am-sort-header`, the row ⋯ menu (`am-row-menu`), grouped by week and month, paging past 50 |
+| Meetings panel on Committee and Org unit records (2) | the next-meeting block plus `am-capped-panel` rows (7), restricted state |
+| Schedule meeting (3): step 1, step 2 Repeat | `EditDialogComponent` stepped, New task's date-and-time control, `OverlaySelectComponent` |
+| Meeting page (4–11) | `RecordPanel`, the stage indicator with "Who works this stage", panels not tabs |
+| Attendance (tablet, coarse pointer) | a segmented radiogroup per row, saved on tap |
+| Review banner, Suggest a correction, suggestions on items (12) | the banner as drawn, its two answers full-width on a phone |
+| Approve Minutes and Distribute disabled + "Why?" | `CantMoveDialogComponent` |
+| Action items after approval | the record tasks panel (ACC-229) with "From item n" |
+| Add a guest, Reschedule, Cancel, scope confirm, End series | `EditDialogComponent`; the design measures each under 420 |
+| Print (13) | its own route, print stylesheet |
+| Phone (14, 16) | the phone layouts drawn; form dialogs as sheets (ACC-299) |
 
-Every date goes through the formatting layer. Every refusal is said from its code, in both languages.
+**Build notes from the thread, not questions:**
+
+- **The list's minutes column reasoning still reads "3 of 6 approved · 1
+  returned"** (Design, list reasoning). That is round 2's model. Build it with
+  the Review card's words ("4 answered · 1 suggestion open").
+- **R4-1, R4-2 and R4-3 still show as open in the file.** They were decided on
+  10 Nov (round 3 review). R5-1 to R5-7 are decided too (Answers).
+- **The invitation email is the product's plain email** (R4-3): subject plus one
+  paragraph through `renderEmailHtml`. The drawn styling is beyond what's built.
+- **Outlook rows and the failure line** wait for Calendar availability
+  (ACC-293).
 
 ---
 
 ## 6. Slices
 
-Each PR deploys before the next. Every migration is expand only.
+Each PR deploys before the next. Every migration is expand only. **Series is
+its own PR, after the single meeting** (lane B, 9 Nov).
 
-1. **PR 1: the seeded workflow and the meeting registries** (backend).
+1. **PR 1: the workflow and the registries** (backend).
    - Changes:
-     - seed fix (§3.5) and `backfill:acc316-meeting-workflow` (dry run, `-- --execute`, dry run 0);
+     - the seed and `backfill:acc316-meeting-workflow` (§3.8): names, who,
+       movers, flags, record actions, and the self-loop deleted;
      - `RECORD_ACTIONS`, `STAGE_FLAGS` and `RECORD_FIELDS` MEETING;
-     - COMMITTEE `schedule_meeting`.
+     - COMMITTEE `schedule_meeting`;
+     - the `RECORD_ROUTES` change.
    - **No migration.**
-   - **Live after:** the Workflow page shows the corrected Meeting workflow with its actions and flags; the self-loop is gone.
-2. **PR 2: the schema and the keys.**
-   - Migration `acc316_meeting_records`:
-     - `MeetingAttendee`, `MeetingDecision`, `MeetingVote`, `MeetingActionItem`, `MeetingReschedule`;
-     - `AgendaItem.organizationId` and `presenterUserId`;
-     - `Meeting.endsAt`, `quorumRequired` and `sequenceNo`;
+   - **Live after:** the Workflow page shows the decided Meeting workflow.
+2. **PR 2: schema and keys.**
+   - Migration `acc316_meetings`:
+     - every new table in §3;
+     - the new `Meeting` and `AgendaItem` columns;
      - the `typeValueId` FK;
-     - **only if Q2 is "Everyone present":** the `StageAssigneeKind` value `MEETING_ATTENDEES` (§9.3). No row may hold it before PR 4 deploys (ACC-173's enum rule).
-   - The seat actions `schedule_meeting` and `record_minutes` and the "votes in meetings" attribute, with lookup defaults and `backfill:acc316-seat-defaults`.
-   - `meetings:schedule` added; `approve_minutes` retired with `backfill:acc316-retire-approve-minutes`.
-   - **Live after:** the seat screens show the two new actions; nothing else is visible.
-3. **PR 3: meetings, backend.**
+     - `StoredFileOwnerType` MEETING and MEETING_AGENDA_ITEM. No row of either
+       before PR 3 deploys (ACC-173's rule).
+   - The seat actions and their defaults (`backfill:acc316-seat-defaults`).
+   - `meetings:schedule`, and `approve_minutes` retired
+     (`backfill:acc316-retire-approve-minutes`).
+   - **Live after:** the seat screens show the two actions.
+3. **PR 3: one meeting, backend.**
    - Changes:
-     - schedule (meeting + instance in one transaction), read, paged list, edit, reschedule, cancel;
-     - agenda;
-     - the visibility rule;
-     - `TASK_RECORD_TYPES` MEETING;
-     - the move-needs-a-reason rule (§9.2): `REASON_REQUIRED` on a cancel with no comment, and `needsReason` on the moves list;
-     - invitee notices after commit, in English and Arabic.
+     - schedule, read, paged list with the saved views, edit, reschedule,
+       cancel (with the reason rule and `needsReason`);
+     - owner committee or unit;
+     - visibility;
+     - invitees, guests (both kinds, presenter rule);
+     - agenda, standing items, papers and attachments;
+     - the clash check;
+     - the `AGENDA_ISSUED` and `MEETING_CANCELLED` effects;
+     - outside guest emails;
+     - `TASK_RECORD_TYPES`;
+     - the working calendar's next-working-day and add-working-days.
    - **No migration.**
-   - **Live after:** the API (no screen).
-4. **PR 4: minutes, backend.**
+   - **Live after:** the API.
+4. **PR 4: minutes and review, backend.**
    - Changes:
-     - attendance and quorum; decisions and votes; action items; the narrative;
-     - the attendance precondition;
-     - `TRANSITION_EFFECTS` (§9.1): entering `MINUTES_FINAL` stamps `minutesApprovedAt` and creates the action items' tasks, in the press's own transaction, for Any one, All of them and a committee vote alike;
-     - only if Q2 is "Everyone present": the `MEETING_ATTENDEES` pool resolver (§9.3);
-     - the earlier-meetings follow-up read.
+     - attendance and quorum;
+     - per-item minutes, decisions and votes;
+     - action item drafts;
+     - open actions from the last meeting;
+     - Distribute and Return (APP, `inTx`);
+     - answers, suggestions, apply and decline, review changes;
+     - the reminder in the sweep;
+     - the preconditions and `blockedBy`;
+     - `TRANSITION_EFFECTS` with `MINUTES_FINAL`;
+     - Home's review row.
    - **No migration.**
-   - **Live after:** the API (no screen).
-5. **PR 5: meeting screens, part 1** (after the design, Q8).
-   - The rail item, `/meetings`, the committee page panel, the Schedule/Edit/Reschedule/Cancel dialogs, and the meeting page with agenda, moves, Tasks panel and history.
-   - `/meetings/:id` with its own `permissionGuard` and no route permission (§9.7); the bell and `recordPageLink()` lines.
-   - The move buttons (`WorkflowTransitionActionsComponent`) ask for a reason when the server says `needsReason` (§9.2), for every module.
-   - **Live after:** a committee can schedule and run a meeting up to Minutes Draft.
-6. **PR 6: meeting screens, part 2.**
-   - Attendance, decisions and votes, action items, minutes, review and approve; Home's "My next meetings".
-   - Only if Q2 is "Everyone present" or "Vote": a vote progress line on the review stage (§9.3).
-   - **Live after:** the whole meeting, to approved minutes and tasks.
-7. **PR 7: contract.**
-   - Drop `Meeting.status` and `Task.meetingId`, after nothing reads them.
-   - **Live after:** no change a person sees.
+   - **Live after:** the API.
+5. **PR 5: series, backend.**
+   - Changes:
+     - patterns, holiday moves, titles;
+     - this-only and this-and-later edit and reschedule, keeping own edits;
+     - cancel one, end series, the standing agenda;
+     - series clashes.
+   - **No migration** (the series table is in PR 2).
+   - **Live after:** the API.
+6. **PR 6: screens, part 1.**
+   - The rail item, `/meetings`, the committee and unit panels, Schedule (one
+     meeting), the meeting page through Agenda Issued, Add a guest, Reschedule,
+     Cancel (with the reason dialog in the move buttons), the bell and record
+     links.
+   - **Live after:** a meeting can be scheduled, its agenda issued, and the
+     meeting cancelled.
+7. **PR 7: screens, part 2.**
+   - Attendance (tablet), minutes, votes, action item drafts, open actions, the
+     review banner and suggestions, the Review card, Approve and Return, Home's
+     review row, print, phone.
+   - **Live after:** the whole single meeting, to approved minutes and tasks.
+8. **PR 8: screens, part 3, series.**
+   - Step 2 Repeat with its preview, the series line and view, the scope
+     confirm, End series.
+   - **Live after:** series.
+9. **PR 9: contract.**
+   - Drop `Meeting.status`, `Meeting.minutesText`, `AgendaItem.presenter` and
+     `Task.meetingId`, after nothing reads them.
 
-**Not in these slices:** calendar availability (ACC-293), Meetings AI, recurring meetings, files on a meeting (`StoredFileOwnerType.MEETING`), a minutes PDF (`GENERATE_PDF`), members voting in the app, the cross-module reference code.
+**Not in these slices:**
+
+- Calendar availability and the Outlook rows (ACC-293);
+- Meetings AI;
+- `.ics` invites;
+- a minutes PDF;
+- confidential items;
+- publishing to documents;
+- e-signatures;
+- meeting numbers.
 
 ---
 
-## 7. Questions for Ahmad
+## 7. Open questions for Ahmad
 
-Each takes one word. **(recommended)** marks my suggestion.
+Only what the files leave open. Each says which files were checked. Each takes
+one word, and **(recommended)** marks the suggestion.
 
-**Q1. Must every meeting belong to a committee?**
-- Yes **(recommended)**
-- No
+**Q1. In a unit meeting, who schedules it, records the minutes and approves them?**
 
-*Every rule here (who schedules, who sees, quorum) comes from the committee. A meeting with no committee would need rules of its own.*
+- Head **(recommended)**: the unit's head or acting head schedules and approves,
+  and the organiser records.
+- Organiser: whoever scheduled it does all three.
 
-**Q2. Who approves the minutes?**
-- Chair **(recommended)**
-- Everyone present
-- Vote
+*Checked:*
+- brief 1.1 and 1.12: unit meetings exist, with an optional quorum;
+- Design: "Who works this stage" and the panel note name only the Secretary and
+  Chair seats of a committee;
+- Answers: lane B Q1 keeps unit meetings, with no rule for who.
 
-*What each answer costs to build is in §9.3. Chair needs nothing new.*
+**Q2. Who are "the unit's people", for invitees and for who may see a unit meeting?**
 
-*"Everyone present" means one person who never answers holds the minutes up. "Vote" makes it a committee vote in the app.*
+- Unit **(recommended)**: active people whose own unit is this unit.
+- Subunits: the unit and every unit under it.
 
-**Q3. Do members who join online count toward the quorum?**
-- Yes **(recommended)**
-- No
+*Checked:* brief 1.1 ("the people in that unit"); Design, panel "Denied"
+("this unit's people").
 
-**Q4. Who records the votes?**
-- Secretary **(recommended)**
-- Members
+**Q3. Which language is an outside guest's email in?**
 
-*With "Secretary", members vote in the room and the secretary writes down each vote. "Members" means each member votes in the app, which is a later slice.*
+- Organisation **(recommended)**: the organisation's language.
+- Both: English and Arabic in one email.
 
-**Q5. When do action items become tasks?**
-- Approval **(recommended)**
-- Recording
+*Checked:* round 4 point 2 and Design section 12 draw it in both languages, but
+say nothing about which one is sent. R4-3 fixes only the format.
 
-*At approval, a correction during review can't leave a wrong task behind. That is what the spec says.*
+**Q4. Can a series run more than 12 months ahead?**
 
-**Q6. May a meeting invite guests who are not committee members?**
-- Both **(recommended)**: app users, and outside people by name
-- Users: app users only
-- No
+- Cap **(recommended)**: the end is at most 12 months ahead, and every meeting
+  is created at once.
+- Roll: any end; meetings are created 12 months ahead, and a job adds more as
+  time passes.
 
-*Guests never vote. An app user who is a guest may open that meeting.*
+*Checked:* brief 1.10 ("created up to 12 months ahead"); Design step 2 ("Ends:
+On a date / After"). Neither says what happens beyond 12 months.
 
-**Q7. Show a meeting number per committee and year (for example "Meeting 3, 2026")?**
-- Yes **(recommended)**
-- No
+**Q5. Can members read the minutes while the Secretary is still drafting them?**
 
-*This is not the cross-module reference code, which stays a separate decision.*
+- Review **(recommended)**: members read them from Minutes Review on; until
+  then only whoever records minutes sees the draft.
+- Draft: members read the draft as it is written.
 
-**Q8. Is there a "Meeting Screens" design to add to the repo?** Five drawings cite one, but no such file is there.
-- Yes **(recommended)**: export it before PR 5
-- No: draw it first
+*Checked:* round 1 Q9 settles guests only (after approval); brief 1.6 and 3.7;
+Design's stage table lists who EDITS, not who reads.
 
 ---
 
 ## 8. Technical choices lane B decides (not asked)
 
-- The meeting's state is its stage; `Meeting.status` is dropped later (§3.1).
-- Meeting votes are their own tables, separate from `WorkflowApproval` (§3.4).
-- The "votes in meetings" seat attribute (§3.3).
-- `meetings:approve_minutes` is retired, and `meetings:schedule` added (§4.2).
-- The stage flags are `MEETING_CANCELLED` and `MINUTES_FINAL`, as strings with no enum migration (§4.2).
-- Follow-up of earlier meetings is a read, not a copy (§3.2).
-- The backfill leaves a tenant's own edits to the Meeting workflow alone (§3.5).
-- `AgendaItem.organizationId` is NOT NULL from the start (0 rows, no writer).
-- Seat defaults: `schedule_meeting` for Chair and Secretary, `record_minutes` for Secretary (§4.2).
-- Every list pages on the server or has a stated cap; no query on the per-request path; no polling.
-- Approval's writes go through an engine registry of entry effects, not `inTx` (§9.1).
-- A move into a cancelled stage needs a reason, and the move buttons ask for it (§9.2).
+- **The engine:**
+  - the stage is the status;
+  - entry effects keyed by flag (§3.8.1);
+  - the reason rule (§3.8.2);
+  - `blockedBy` on the moves list (§3.8.3);
+  - Distribute and Return as APP moves (§3.8).
+- **The stage keys stay;** names, who and movers are backfilled only where
+  still the seed's.
+- **The owner check is in the service, not a CHECK constraint.**
+- **`ownEdits`** keeps a meeting's own edits through "this and all later".
+- **"From item n"** comes through `MeetingActionItem.taskId`; no `Task` column.
+- **An action item's due date is checked against the task SLA limit** (ACC-174)
+  of the default priority, MEDIUM, counted from approval. It is checked when
+  the draft is saved, and again before approval. A date past the limit blocks
+  approval with the limit named.
+- **"Page n of N" on print** degrades where CSS margin boxes are unsupported.
+- **A series is created in one transaction** under the Q4 cap. With 12 months
+  weekly, that is 53 meetings at most, each with its instance and invitees,
+  batched.
+- **Every list pages on the server or states its cap.** No polling; nothing on
+  the per-request path.
 
 ---
 
-## 9. Review round 1 (Prompt 121, 17 Nov)
+## 9. Review rounds
 
-Lane B's eight points. §3, §4, §6 and Q2 are corrected to match. Ahmad's
-answers to Q1–Q8 are not in yet; nothing here waits for them.
+### Round 1 (Prompt 121, 17 Nov): what became of each point
 
-### 9.1 The approve hook
+| Point | Now |
+|---|---|
+| The approve hook | kept: §3.8.1. Approve stays PERSON for the Chair's pool. Distribute and Return became APP moves because they carry module writes. |
+| Cancel's reason | kept: §3.8.2 |
+| Q2's cost | settled by the design: the Chair approves. Neither "Everyone present" nor `MEETING_ATTENDEES` is needed, and nothing else in the design needs them. |
+| `organizationId` everywhere | kept: §3.1 |
+| No comments | replaced by the decided suggestions (§3.6) |
+| Notices in both languages, no counts | kept: §3.9 |
+| Guests' route | kept: §4.1 |
 
-**What the first draft got wrong.** It said the tasks are created through
-`triggerTransition`'s `inTx`. There is no such thing:
+### Round 2 (Prompt 124, 18 Nov)
 
-- `inTx` belongs to `triggerSystemTransition()` (`workflow.service.ts:928-937`).
-- `applyMove()` refuses it for anything but an APP move (`:1180-1186`).
-- Approve Minutes is a PERSON move, pressed by the stage's pool.
-
-**How a person's press reaches the database today:**
-
-- **Every way a press lands goes through one method, `performTransition()`**
-  (`:1072-1092`):
-  - Any one: `:678`;
-  - a RETURN or EXIT on a stage decided together: `:699`;
-  - the deciding vote of All of them, or of a committee vote: `:709`;
-  - the vote screen's path through `maybeAdvanceAfterApproval()`: `:860`, `:866`.
-- **`performTransition()` runs three steps:**
-  - `prepareMove()` (`:1099`): every read, before the transaction;
-  - `applyMove()` (`:1152-1225`), under `STAGE_CHANGE_TX`. It takes the
-    instance row lock (`:1158`), re-checks the entry, runs the gate and the
-    preconditions (`:1177`), then exits, cancels, enters and inserts the entry's
-    tasks (`:1191-1215`);
-  - `finishMove()` (`:1228-1250`): after commit, it audits, notices, announces
-    the tasks (`:1240`) and fires the transition actions (`:1246`).
-
-**(a) Entry effects, keyed by the flag entered. Recommended.**
-
-- **The registry:** `TRANSITION_EFFECTS` (`transition-effects.ts`, beside
-  `transition-preconditions.ts`), `Partial<Record<WorkflowObjectType, …>>`.
-  - It is FAIL OPEN: a type with no entry has no effect, as for preconditions.
-  - Each entry has three parts:
-    - `prepare(prisma, ctx)`: reads only, run in `prepareMove()`;
-    - `apply(tx, prepared, ctx)`: writes only, run in `applyMove()` after the
-      preconditions and before the exit;
-    - `finish(prepared, applied, ctx)`: audits and notices, run in
-      `finishMove()`.
-  - `ctx` carries the record id, the organisation, the actor, the move's kind,
-    and **both stages' flags**, the shape `TransitionPreconditionContext`
-    already has (`transition-preconditions.ts:21-31`).
-- **MEETING's entry:**
-  - it fires when `toStageFlags` includes `MINUTES_FINAL` and `fromStageFlags`
-    does not;
-  - `prepare` reads the action items and builds one prepared task each, with
-    `TaskService.prepareRecordTask()` (`task.service.ts:436`, ACC-239's
-    record-task path). That gives the SLA window and the assignees, all before
-    the transaction;
-  - `prepareRecordTask()` takes assignee user ids only. An action item that
-    targets a unit, a position or a committee seat (the New task cascade) needs
-    it to accept that target, and to make a pool task as `create()` does
-    (ACC-167). That is a PR 4 change;
-  - `apply` locks the meeting row FOR UPDATE and checks that the action items
-    did not change since `prepare`, by count and the newest `updatedAt`
-    (`MEETING_CHANGED`, 409, nothing written). It then stamps
-    `minutesApprovedAt`, inserts the tasks (`insertPrepared()`, `:332`) and
-    writes each item's `taskId`;
-  - `finish` announces the tasks (`announceCreated()`, `:342`) and writes one
-    Meeting audit row.
-- **It is the same for Any one, All of them and a committee vote**, because all
-  three land in `performTransition()`:
-  - the effect runs once, on the move that actually fires;
-  - a vote that does not reach its threshold never gets there (`:702-706`);
-  - the actor, and so the tasks' creator, is the presser, or the deciding voter.
-- **ACC-190's rules hold:**
-  - every read is in `prepare`, before the transaction;
-  - lock order is the instance (`:1158`), then the meeting row, then no task
-    lock (the tasks are new rows). That is ACC-255's order: instance, then the
-    record row;
-  - notices go out in `finish`, after the commit.
-- **Correctness does not depend on `prepare` being current:**
-  - Minutes Review allows no `record_minutes` action, so nobody can edit an
-    action item while the meeting sits there;
-  - a RETURN and a fresh edit between `prepare` and the lock are caught twice:
-    the entry re-check (`:1159-1167`) and the action-item check in `apply`.
-- **The `inTx` rule stays as it is:** a caller still cannot hand a PERSON move
-  a write of its own. The effect is declared per record type in the engine's
-  registry, like a precondition, and every caller's press runs it. That is not
-  a module's ad-hoc write.
-- **Costs:** three calls in the engine, behind a cheap `hasTransitionEffect()`
-  check (as `hasTransitionPrecondition()` does), so other record types pay
-  nothing.
-
-**(b) Approve as the module's own endpoint firing an APP move.**
-
-- It works only for **Any one**, for these reasons:
-  - `triggerSystemTransition()` records no vote and checks no threshold;
-  - with All of them or a committee vote, the module would have to rebuild the
-    vote path (`recordVote()`, `isApprovalThresholdMet()`, the quorum snapshot);
-  - an APP move is never offered to the pool (`getMovesForViewer()` lists
-    PERSON moves only, `:351`). So the review stage's buttons would come from
-    the module, not from the server's moves list, which breaks ACC-271's "the
-    buttons show what the server says".
-- It also makes Approve a move a tenant cannot reshape on the stages page,
-  because the app runs it.
-
-**Decision: (a).** It is the only one of the two that holds for all three
-answers to Q2.
-
-### 9.2 Cancel's reason
-
-**Today:**
-
-- A press carries an OPTIONAL `comment` (`trigger-transition.dto.ts:8-11`, at
-  most 2,000 characters; on a vote, `submit-approval.dto.ts:17`).
-- It is stored on the entry being left (`applyMove()` `:1191`, column
-  `WorkflowInstanceStage.comment`, `schema.prisma:1399`). A vote's comment is
-  stored on the vote (`:798`).
-- The stage history shows it as the reason for the move into the next visit
-  (`:509-511`).
-
-**What is missing:**
-
-- **The buttons never send one.** `WorkflowTransitionActionsComponent` posts
-  `{ transitionId }` only (`workflow-transition-actions.component.ts:127`).
-- **Nothing can make a reason required for a move.** No field, registry or
-  refusal exists for it (a grep for `requiresComment`, `needsReason` and
-  `REASON_REQUIRED` finds nothing).
-- **The seeded transition actions don't pass the comment** to the notified
-  people.
-
-**Proposed:**
-
-- **A per-record-type rule, keyed by the flag entered**, read in
-  `triggerTransition()` and `submitApproval()` before anything is recorded.
-  MEETING: a move into a stage flagged `MEETING_CANCELLED` needs a non-blank
-  comment. A press without one gets 400 `REASON_REQUIRED`, naming the move in
-  both languages.
-- **The moves list** (`GET /workflows/instances/:id/moves`) gains
-  `needsReason: boolean` per move.
-- **The move buttons** open a small reason dialog for such a move. That is one
-  change, for every module: a committee's Dissolve can use it later.
-- **The meeting reads the reason** from its stage history. The invitees'
-  cancellation notice quotes it, after commit.
-- **Not a new column:** `Meeting` gets no `cancelReason`. The entry's comment
-  is the one place it lives.
-
-### 9.3 What each answer to Q2 costs
-
-**Chair (recommended): nothing new.**
-
-- **The stage's who:** `{ mode: 'ANY_ONE', entries: [{ kind: 'COMMITTEE',
-  committeeRoleValueId: <the chairman seat> }] }`.
-  - No `committeeId` means the meeting's committee, through `RECORD_ROUTES`
-    (`stage-task-record-routes.ts:60`). The kinds are in `stage-who.ts:47-54`.
-  - The seed resolves the `chairman` value per organisation (`lookup.seed.ts:69`).
-- **The screen:** the chair sees Approve Minutes and Return for Correction.
-  Everyone else who may open the meeting reads the draft, with no buttons.
-
-**Everyone present: a new assignee kind.**
-
-- **The stage's who:** `{ mode: 'ALL', entries: [{ kind: 'MEETING_ATTENDEES' }] }`.
-- **New:**
-  - the `StageAssigneeKind` value `MEETING_ATTENDEES` (an enum migration, under
-    ACC-173's rule);
-  - its `KIND_FIELDS` entry (`stage-who.ts:47`), with no fields;
-  - `STAGE_ASSIGNEE_KINDS.MEETING` only (`stage-who.ts:28`), so no other record
-    type offers it;
-  - a batched `StagePoolService` resolver: present or online attendees with a
-    user, active only;
-  - its sentence on the stage panel, in both languages.
-- **The screen:**
-  - each present attendee sees Approve Minutes, which is a vote (ACC-284), and
-    Return for Correction;
-  - **new:** a progress line on the meeting page ("3 of 7 have approved").
-    Today the moves list says only which moves a viewer may press, not how far
-    a vote has got (`getMovesForViewer()` `:319-360`).
-- **The risk:** one present attendee who never answers holds the minutes up.
-  The stage's SLA escalates, and a leaver is already handled
-  (`POOL_MEMBER_LEFT`, ACC-271 PR 4).
-
-**Vote: no new kind.**
-
-- **The stage's who:** `{ mode: 'COMMITTEE_VOTE', entries: [{ kind: 'COMMITTEE' }] }`
-  (`MODE_ONLY_WITH_SINGLE`, `stage-who.ts:66`).
-  - The quorum is the committee's, saved when the stage is entered
-    (`quorumSnapshot()`, `:1307-1320`).
-  - **Every active member** votes, present at the meeting or not. Observers
-    vote too, because a committee vote takes no seat narrowing.
-- **The screen:** each member sees Approve Minutes (a vote) and Return for
-  Correction, and needs the same progress line as Everyone present.
-
-### 9.4 `organizationId` on every new table
-
-`MeetingVote` and `MeetingReschedule` now list it (§3.4, §3.1). §3.1 states the
-rule for every new table. All five new tables carry it:
-
-- `MeetingAttendee`;
-- `MeetingDecision`;
-- `MeetingVote`;
-- `MeetingActionItem`;
-- `MeetingReschedule`.
-
-### 9.5 No comments on the minutes
-
-No comment feature exists anywhere in the app. In these slices, attendees **read
-the draft only** (§3.5 corrected). Asking for a correction is the Minutes Review
-pool's Return for Correction, with its reason (§9.2).
-
-### 9.6 Notices
-
-- **Every new notification has English and Arabic** (`titleEn`/`titleAr`,
-  `bodyEn`/`bodyAr`). The Arabic columns are nullable (`schema.prisma:1852-1860`),
-  so this is a rule the meeting notices keep, checked by their specs.
-- **The new notices:**
-  - invited;
-  - rescheduled (with the new time);
-  - cancelled (with the reason);
-  - minutes ready for review;
-  - minutes approved.
-  - The action items' tasks use the existing task notices
-    (`announceCreated()`).
-- **`counted()` does not exist.** ACC-95 is not built: a search of `backend/src`
-  and `frontend/src/app` finds no `counted` helper. SYSTEM-REFERENCE
-  10356–10360 records server-built text as ACC-95's open gap.
-- The one backend plural is English-only (`briefing-answer.ts:69`).
-- **So no meeting notice carries a count.** Each is worded without a number
-  (for example "The minutes of {meeting} are ready for your review", not "3
-  decisions to review"). A count in a stored notice waits for ACC-95's helper,
-  and uses it then.
-
-### 9.7 An invited guest who is not a committee member
-
-- **No rail item, by design.** The Meetings item shows to `meetings:view`
-  holders and committee members (§4.3).
-- **They reach the meeting by:**
-  - **the bell:** the invitation notice carries `objectType MEETING`, and
-    `notificationLink()` gains `MEETING → ['/meetings', id]`
-    (`notification-links.ts:8-13`);
-  - **Home's "My next meetings":** self-scoped, so it lists meetings they are
-    invited to whatever their keys;
-  - **the invitation email's link.**
-- **The route:** `/meetings/:id` carries its own `permissionGuard` and no route
-  permission, as the task page does (`tasks.routes.ts:27-38`). The list path
-  `/meetings` keeps the rail item's gate. The server's visibility rule admits
-  the guest by their attendee row (§4.1), and anyone else gets the page's
-  not-found state.
-- **What a guest sees:** the meeting page read-only. They see no Tasks panel
-  unless they are on a task, because task visibility is unchanged.
-
-### 9.8 Prompt 117's counts
-
-These are in the outbox report, not the plan.
+The plan is rewritten against the design thread. The old Q1–Q8 are deleted:
+every one was answered between 6 Oct and 10 Nov (§0). The design file is in the
+repo (`86cc3f3`).
