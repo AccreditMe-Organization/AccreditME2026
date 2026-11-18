@@ -3510,6 +3510,7 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
     | CREATOR | nothing |
     | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
+    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **Not usable yet (ACC-316 PR 1):** no record type offers them, so a save is `WHO_KIND_NOT_ALLOWED`, and `StagePoolService` resolves them to nobody. The Meetings PR that adds their resolvers offers them for MEETING only (plan `backend/Plans/step-316-meeting-management.md` §3.8) |
   - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
     - `WHO_MODE_UNKNOWN`;
     - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
@@ -15465,7 +15466,7 @@ model StoredFile {
   mimeType       String                 // decided by the server from content
   sizeBytes      Int
   sha256         String @db.Char(64)
-  ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
+  ownerType      StoredFileOwnerType    // TASK; MEETING and MEETING_AGENDA_ITEM exist (ACC-316 PR 1) but nothing writes them yet
   ownerId        String
   uploadedById, uploadedAt
   deletedAt, deletedById                // the 30-day soft delete; bytes KEPT
