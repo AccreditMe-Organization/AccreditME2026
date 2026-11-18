@@ -14,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
@@ -219,14 +220,18 @@ export class AnswerMeetingDto {
   note?: string | null;
 }
 
-/** An agenda item's presenter: an invitee (attendeeId), or an organisation person (userId), added as a guest if not invited. */
+/**
+ * An agenda item's presenter: an invitee (attendeeId), or an organisation
+ * person (userId), added as a guest if not invited. One of the two is
+ * required: `{}` is a 400 (each is validated while the other is absent).
+ */
 export class AgendaPresenterDto {
-  @IsOptional()
+  @ValidateIf((o: AgendaPresenterDto) => !o.userId)
   @IsString()
   @IsNotEmpty()
   attendeeId?: string;
 
-  @IsOptional()
+  @ValidateIf((o: AgendaPresenterDto) => !o.attendeeId)
   @IsString()
   @IsNotEmpty()
   userId?: string;
@@ -338,7 +343,9 @@ export class CheckMeetingClashesDto {
   @IsString({ each: true })
   userIds?: string[];
 
+  /** A series' cap (CLASH_TIMES_CAP). */
   @IsArray()
+  @ArrayMaxSize(52)
   @ValidateNested({ each: true })
   @Type(() => ClashTimeDto)
   times!: ClashTimeDto[];
