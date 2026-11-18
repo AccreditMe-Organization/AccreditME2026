@@ -577,6 +577,53 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
 
+    // ACC-318 — the sweep asks the one working-moment rule, so a holiday is its
+    // calendar day west of UTC too: nothing fires in New York on 25 December.
+    describe('a holiday west of UTC (ACC-318)', () => {
+      const NEW_YORK = { timezone: 'America/New_York', workingDays: [0, 1, 2, 3, 4, 5, 6], workingHoursStart: '08:00', workingHoursEnd: '16:00' };
+      const CHRISTMAS = { id: 'h-1', date: new Date('2026-12-25T00:00:00.000Z'), isRecurring: false };
+      const breached = () =>
+        makeBreachedInstanceStage({
+          slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+          stage: { ...BASE_STAGE, escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }] },
+        });
+      beforeEach(() => {
+        mockWorkingCalendar.getOrCreate.mockResolvedValue(NEW_YORK);
+        mockWorkingCalendar.listHolidays.mockResolvedValue([CHRISTMAS]);
+      });
+      afterEach(() => jest.useRealTimers());
+
+      it('25 December 10:00 in New York is the holiday: nothing fires', async () => {
+        useFixedClock(new Date('2026-12-25T15:00:00.000Z'));
+        await runWithBreachedStage(breached());
+        expect(mockNotificationService.create).not.toHaveBeenCalled();
+      });
+
+      it('24 December 10:00 in New York is a working moment: it fires', async () => {
+        useFixedClock(new Date('2026-12-24T15:00:00.000Z'));
+        await runWithBreachedStage(breached());
+        expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-escalate-1' }), ORG_A);
+      });
+    });
+
+    it('ACC-95: the stage escalation uses the stage\'s Arabic name when it has one', async () => {
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        stage: {
+          ...BASE_STAGE,
+          nameAr: 'مراجعة الرئيس',
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }],
+        },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bodyAr: 'تجاوزت مرحلة «مراجعة الرئيس» مهلتها وتحتاج إلى متابعة.' }),
+        ORG_A,
+      );
+    });
+
     it('fires escalation to notifyUserId once its afterHours threshold has elapsed, during working hours', async () => {
       const instanceStage = makeBreachedInstanceStage({
         slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h ago
@@ -588,8 +635,16 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       await runWithBreachedStage(instanceStage);
 
+      // ACC-95 — names the stage, never the rule index; the stage has no Arabic
+      // name, so the English one, never blank.
       expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-escalate-1', titleEn: 'SLA breach escalation' }),
+        {
+          userId: 'user-escalate-1',
+          titleEn: 'SLA breach escalation',
+          titleAr: 'تصعيد لتجاوز المهلة',
+          bodyEn: 'The "Chairman Review" stage is past its SLA and needs attention.',
+          bodyAr: 'تجاوزت مرحلة «Chairman Review» مهلتها وتحتاج إلى متابعة.',
+        },
         ORG_A,
       );
       expect(mockAuditLog.log).toHaveBeenCalledWith(
@@ -695,6 +750,8 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // short of its cumulative Head threshold (2h + 4h = 6h).
     const makeOverdueTask = (overrides: Record<string, unknown> = {}) => ({
       id: 'task-1',
+      title: 'Collect the audit evidence',
+      titleAr: null as string | null,
       organizationId: ORG_A,
       status: 'PENDING' as const,
       priority: 'CRITICAL' as const,
@@ -810,11 +867,14 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         ['assignee-1'],
         ORG_A,
       );
+      // ACC-95 — names the task, in both languages; no Arabic title, so the English one.
       expect(mockNotificationService.create).toHaveBeenCalledWith(
         {
           userId: 'manager-1',
           titleEn: 'Task SLA breach escalation',
-          bodyEn: 'A task has breached its SLA and has been escalated to you.',
+          titleAr: 'تصعيد مهمة تجاوزت مهلتها',
+          bodyEn: '"Collect the audit evidence" is past its SLA and has been escalated to you.',
+          bodyAr: 'تجاوزت المهمة «Collect the audit evidence» مهلتها، وصُعِّدت إليك.',
           objectType: 'Task',
           objectId: 'task-1',
         },
@@ -837,6 +897,17 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // thresholds cumulatively, the Manager tier still takes priority (the
     // if/else-if structure) — the Head tier is never even considered in
     // the same sweep the Manager tier is unfired.
+    it('ACC-95: the Arabic text uses the task\'s Arabic title when it has one', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+
+      await runWithOverdueTask(makeOverdueTask({ titleAr: 'جمع أدلة التدقيق' }));
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bodyAr: 'تجاوزت المهمة «جمع أدلة التدقيق» مهلتها، وصُعِّدت إليك.' }),
+        ORG_A,
+      );
+    });
+
     it('does not fire the Head tier when the Manager tier has not fired yet, even once the cumulative Head threshold has already elapsed (no fall-through)', async () => {
       mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
       const task = makeOverdueTask({ dueAt: new Date(Date.now() - 20 * 60 * 60 * 1000) }); // 20h overdue — far past both thresholds
@@ -1067,13 +1138,19 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       });
     });
 
-    it('notifies the affected user that their acting assignment has ended', async () => {
+    it('notifies the affected user that their acting assignment has ended, in both languages', async () => {
       mockPrisma.user.findMany.mockResolvedValue([EXPIRED_USER]);
 
       await runProcess();
 
       expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-1' }),
+        {
+          userId: 'user-1',
+          titleEn: 'Acting-unit assignment ended',
+          titleAr: 'انتهى التكليف المؤقت بوحدة أخرى',
+          bodyEn: 'Your acting assignment to another org unit has ended.',
+          bodyAr: 'انتهى تكليفك المؤقت في وحدة تنظيمية أخرى.',
+        },
         ORG_A,
       );
     });

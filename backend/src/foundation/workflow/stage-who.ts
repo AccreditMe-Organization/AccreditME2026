@@ -9,6 +9,8 @@ import { WorkflowRefusalException } from './workflow-refusal';
 
 export const STAGE_ASSIGNEE_KINDS_ALL = ['SPECIFIC_USER', 'POSITION_IN_UNIT', 'ORG_UNIT_HEAD', 'CREATOR', 'COMMITTEE'] as const;
 export const STAGE_WHO_MODES = ['ANY_ONE', 'ALL', 'COMMITTEE_VOTE'] as const;
+/** ACC-316 — a meeting's stages may also be worked by its three own kinds (meeting-authority.ts). */
+export const STAGE_ASSIGNEE_KINDS_MEETING = [...STAGE_ASSIGNEE_KINDS_ALL, 'MEETING_SCHEDULERS', 'MEETING_RECORDERS', 'MEETING_APPROVERS'] as const;
 
 /**
  * The kinds a stage of each record type may be worked by: ONE server list, served
@@ -25,7 +27,7 @@ export const STAGE_ASSIGNEE_KINDS: Readonly<Record<WorkflowObjectType, readonly 
   INCIDENT: STAGE_ASSIGNEE_KINDS_ALL,
   AUDIT: STAGE_ASSIGNEE_KINDS_ALL,
   CORRECTIVE_ACTION: STAGE_ASSIGNEE_KINDS_ALL,
-  MEETING: STAGE_ASSIGNEE_KINDS_ALL,
+  MEETING: STAGE_ASSIGNEE_KINDS_MEETING,
   COMMITTEE: STAGE_ASSIGNEE_KINDS_ALL,
   COMMITTEE_CHANGE_REQUEST: STAGE_ASSIGNEE_KINDS_ALL,
 };
@@ -56,6 +58,12 @@ export const KIND_FIELDS: Readonly<Record<StageAssigneeKind, { uses: readonly Wh
   CREATOR: { uses: [], requires: [] },
   // No committee = the record's committee (Q3); the role narrows its members.
   COMMITTEE: { uses: ['committeeId', 'committeeRoleValueId'], requires: [] },
+  // ACC-316 — Meetings' kinds, no fields: offered for MEETING only
+  // (STAGE_ASSIGNEE_KINDS), so any other record type's save refuses them, and
+  // resolved by meeting-authority.ts (a non-meeting record resolves to nobody).
+  MEETING_SCHEDULERS: { uses: [], requires: [] },
+  MEETING_RECORDERS: { uses: [], requires: [] },
+  MEETING_APPROVERS: { uses: [], requires: [] },
 };
 
 /**
@@ -223,6 +231,13 @@ export function entryPhrase(e: WhoEntryForSentence): { en: string; ar: string } 
       const roleAr = ar(e.roleLabelAr, e.roleLabelEn) ?? 'دور أُزيل';
       return { en: `the members of ${committeeEn} in the role ${roleEn}`, ar: `أعضاء ${committeeAr} بدور ${roleAr}` };
     }
+    // ACC-316 — a meeting's own kinds (meeting-authority.ts).
+    case 'MEETING_SCHEDULERS':
+      return { en: 'whoever may schedule the meeting', ar: 'من يجدول الاجتماع' };
+    case 'MEETING_RECORDERS':
+      return { en: 'whoever records the minutes', ar: 'من يسجّل المحضر' };
+    case 'MEETING_APPROVERS':
+      return { en: 'whoever approves the minutes', ar: 'من يعتمد المحضر' };
   }
 }
 

@@ -675,7 +675,12 @@
         "positions:view": "عرض المسميات الوظيفية للمنشأة",
         "positions:manage": "إضافة المسميات الوظيفية وتعديلها",
         "setup:view": "عرض سلامة الإعداد",
-        "admin:access": "فتح قسم الإدارة"
+        "admin:access": "فتح قسم الإدارة",
+        "meetings:schedule": "جدولة اجتماعات وحدتك واللجان التابعة لها",
+        "meetings:schedule_subunits": "جدولة اجتماعات الوحدات التابعة للوحدة التي ترأسها",
+        "meetings:record_minutes": "تسجيل محاضر اجتماعات وحدتك",
+        "meetings:approve_minutes": "اعتماد محاضر اجتماعات وحدتك",
+        "meetings:approve_subunits": "اعتماد محاضر اجتماعات الوحدات التابعة للوحدة التي ترأسها"
       },
       "find": "ابحث عن صلاحية",
       "clearSearch": "مسح البحث",
@@ -872,16 +877,33 @@
         "add_member": "إضافة شخص إلى مقعد.",
         "remove_member": "إنهاء عضوية شخص؛ تبقى في سجل العضوية.",
         "change_member_role": "نقل عضو إلى مقعد آخر (الرئيس، أمين السر، عضو…).",
-        "request_change": "فتح طلب تغيير للجنة بموافقته الخاصة."
+        "request_change": "فتح طلب تغيير للجنة بموافقته الخاصة.",
+        "schedule_meeting": "جدولة اجتماع لهذه اللجنة."
+      },
+      "MEETING": {
+        "edit_details": "تغيير عنوان الاجتماع ونوعه ووقته ومكانه ورابطه.",
+        "manage_agenda": "إضافة بنود الأجندة وأوراقها وترتيبها وإزالتها.",
+        "manage_guests": "دعوة أشخاص من المنشأة وضيوف من الخارج.",
+        "reschedule": "نقل الاجتماع إلى تاريخ ووقت آخرين، مع ذكر السبب.",
+        "answer_invitation": "يُبيّن المدعوون حضورهم من عدمه.",
+        "record_attendance": "تسجيل كل مدعو حاضرًا أو معتذرًا أو غائبًا.",
+        "record_minutes": "كتابة النقاش والقرارات والتصويت وبنود العمل لكل بند.",
+        "apply_suggestions": "اعتماد تصحيحات المراجعين المقترحة أو رفضها.",
+        "change_action_dates": "تغيير موعد استحقاق بند عمل أثناء المراجعة.",
+        "suggest_correction": "يرد الأعضاء الحاضرون على المراجعة: لا تصحيحات، أو اقتراح."
       }
     },
     "stageFlagHint": {
       "DISSOLVING": "لا يمكن أن تكون اللجان في هذه المرحلة لجنةً أمًّا ولا جهةً يُرفع إليها.",
       "IN_FORCE": "تُحسب نشطة في القوائم. يمكن تقديم طلبات التغيير والبتّ فيها هنا.",
-      "APPLIES_APPROVED_CHANGE": "تُطبَّق قيم طلب التغيير على اللجنة عند وصوله إلى هذه المرحلة. مرحلة واحدة بالضبط."
+      "APPLIES_APPROVED_CHANGE": "تُطبَّق قيم طلب التغيير على اللجنة عند وصوله إلى هذه المرحلة. مرحلة واحدة بالضبط.",
+      "AGENDA_ISSUED": "يُبلَّغ المدعوون عند وصول الاجتماع إلى هذه المرحلة.",
+      "MEETING_CANCELLED": "الاجتماعات هنا ملغاة ولا تُنشأ عليها مهام جديدة.",
+      "MINUTES_FINAL": "الوصول إلى هذه المرحلة يعتمد المحضر ويحوّل بنود العمل فيه إلى مهام. مرحلة واحدة فقط."
     },
     "stageFlagNeed": {
-      "APPLIES_APPROVED_CHANGE": "تطبّق التغيير المعتمد"
+      "APPLIES_APPROVED_CHANGE": "تطبّق التغيير المعتمد",
+      "MINUTES_FINAL": "تعتمد المحضر"
     },
     "strip": {
       "label": "المراحل بالترتيب",
@@ -934,18 +956,37 @@
         "add_member": "إضافة عضو",
         "remove_member": "إزالة عضو",
         "change_member_role": "تغيير دور العضو",
-        "request_change": "طلب تغيير"
+        "request_change": "طلب تغيير",
+        "schedule_meeting": "جدولة اجتماع"
+      },
+      "MEETING": {
+        "edit_details": "تعديل التفاصيل",
+        "manage_agenda": "تعديل الأجندة",
+        "manage_guests": "إضافة الضيوف وإزالتهم",
+        "reschedule": "إعادة الجدولة",
+        "answer_invitation": "الرد على الدعوة",
+        "record_attendance": "تسجيل الحضور",
+        "record_minutes": "كتابة المحضر",
+        "apply_suggestions": "اعتماد المقترحات أو رفضها",
+        "change_action_dates": "تغيير مواعيد بنود العمل",
+        "suggest_correction": "اقتراح تصحيح"
       }
     },
     "stageFlag": {
       "DISSOLVING": "قيد الحل",
       "IN_FORCE": "السجل نافذ",
-      "APPLIES_APPROVED_CHANGE": "يطبّق التغيير المعتمد"
+      "APPLIES_APPROVED_CHANGE": "يطبّق التغيير المعتمد",
+      "AGENDA_ISSUED": "الأجندة مُصدَرة",
+      "MEETING_CANCELLED": "الاجتماع ملغى",
+      "MINUTES_FINAL": "المحضر معتمد"
     },
     "recordField": {
       "COMMITTEE": {
         "typeValueId": "نوع اللجنة",
         "orgUnitId": "الوحدة المالكة"
+      },
+      "MEETING": {
+        "typeValueId": "نوع الاجتماع"
       }
     },
     "actionCreateTask": "إنشاء مهمة",
@@ -1211,7 +1252,10 @@
         "POSITION_IN_UNIT": "منصب محدد",
         "ORG_UNIT_HEAD": "رئيس الوحدة",
         "CREATOR": "منشئ السجل",
-        "COMMITTEE": "لجنة"
+        "COMMITTEE": "لجنة",
+        "MEETING_SCHEDULERS": "من يجدول الاجتماع",
+        "MEETING_RECORDERS": "من يسجّل المحضر",
+        "MEETING_APPROVERS": "من يعتمد المحضر"
       },
       "mode": {
         "ANY_ONE": "أيٌّ منهم",

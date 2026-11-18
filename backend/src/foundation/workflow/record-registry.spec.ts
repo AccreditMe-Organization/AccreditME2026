@@ -12,6 +12,7 @@ import {
   newStageActionKeys,
   orderedActionKeys,
   recordActionsFor,
+  MEETING_ACTIONS,
 } from './record-registry';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import * as PermissionConstants from '../../common/constants/permissions';
@@ -56,13 +57,14 @@ describe('record registries (ACC-255)', () => {
     }
   });
 
-  it('committees have exactly the five actions the design names, in screen order', () => {
+  it('committees have exactly the six actions the design names, in screen order (ACC-316 added scheduling a meeting)', () => {
     expect(recordActionsFor('COMMITTEE').map((a) => a.key)).toEqual([
       'edit_details',
       'add_member',
       'remove_member',
       'change_member_role',
       'request_change',
+      'schedule_meeting',
     ]);
   });
 
@@ -167,11 +169,57 @@ describe('record registries (ACC-255)', () => {
       expect(rules).toEqual({
         formation: { actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...members].sort(), flags: [] },
         terms_review: { actions: members, flags: [] },
-        active: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
-        suspended: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
+        // ACC-316 — a meeting may be scheduled on the in-force stages.
+        active: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING].sort(), flags: [STAGE_FLAG.IN_FORCE] },
+        suspended: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING].sort(), flags: [STAGE_FLAG.IN_FORCE] },
         dissolution_pending: { actions: members, flags: [STAGE_FLAG.DISSOLVING] },
         dissolved: { actions: [], flags: [STAGE_FLAG.DISSOLVING] },
       });
+    });
+
+    it("gives the meeting stages plan step-316 §3.8's rules: actions, flags and who works each", () => {
+      const meeting = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'MEETING')!;
+      const rules = Object.fromEntries(
+        meeting.stages.map((s) => [
+          s.key,
+          {
+            name: s.nameEn,
+            actions: [...(s.actions ?? [])].sort(),
+            flags: [...(s.flags ?? [])],
+            who: 'entries' in s.who ? s.who.entries.map((e) => e.kind) : 'START',
+          },
+        ]),
+      );
+      const M = MEETING_ACTIONS;
+      const before = [M.EDIT_DETAILS, M.MANAGE_AGENDA, M.MANAGE_GUESTS, M.RESCHEDULE, M.ANSWER_INVITATION];
+      expect(rules).toEqual({
+        planned: { name: 'Planned', actions: [...before].sort(), flags: [], who: ['MEETING_SCHEDULERS'] },
+        agenda_ready: {
+          name: 'Agenda Issued',
+          actions: [...before, M.RECORD_ATTENDANCE].sort(),
+          flags: [STAGE_FLAG.AGENDA_ISSUED],
+          who: ['MEETING_SCHEDULERS', 'MEETING_RECORDERS'],
+        },
+        minutes_draft: { name: 'Minutes Draft', actions: [M.RECORD_ATTENDANCE, M.RECORD_MINUTES].sort(), flags: [], who: ['MEETING_RECORDERS'] },
+        minutes_review: {
+          name: 'Minutes Review',
+          actions: [M.APPLY_SUGGESTIONS, M.CHANGE_ACTION_DATES, M.SUGGEST_CORRECTION].sort(),
+          flags: [],
+          who: ['COMMITTEE', 'MEETING_APPROVERS'],
+        },
+        minutes_approved: { name: 'Minutes Approved', actions: [], flags: [STAGE_FLAG.MINUTES_FINAL], who: 'START' },
+        cancelled: { name: 'Cancelled', actions: [], flags: [STAGE_FLAG.MEETING_CANCELLED], who: 'START' },
+      });
+      // The Chair's seat on Minutes Review, by its lookup key.
+      const review = meeting.stages.find((s) => s.key === 'minutes_review')!;
+      expect('entries' in review.who && review.who.entries[0]).toEqual({ kind: 'COMMITTEE', seatKey: 'chairman' });
+      // The draft-to-draft Return is gone; Distribute and Return are the app's.
+      expect(meeting.transitions.filter((t) => t.fromStageKey === t.toStageKey)).toEqual([]);
+      expect(meeting.transitions.filter((t) => t.mover === 'APP').map((t) => `${t.fromStageKey}>${t.toStageKey}`).sort()).toEqual([
+        'minutes_draft>minutes_review',
+        'minutes_review>minutes_draft',
+      ]);
+      expect(meeting.transitions.find((t) => t.fromStageKey === 'planned' && t.toStageKey === 'agenda_ready')!.labelEn).toBe('Issue Agenda');
     });
 
     it('flags the change request template\'s Approved stage, and nothing else there', () => {

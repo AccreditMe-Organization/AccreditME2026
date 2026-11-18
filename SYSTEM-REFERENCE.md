@@ -3072,14 +3072,21 @@ and §16.6 for PR 3 as built).
 - **The registries** (`foundation/workflow/record-registry.ts`), per record type
   and in code, never copied in the frontend:
   - `RECORD_ACTIONS`: for COMMITTEE, `edit_details`, `add_member`,
-    `remove_member`, `change_member_role` and `request_change`. The three
+    `remove_member`, `change_member_role`, `request_change` and (ACC-316)
+    `schedule_meeting`, seeded on the in-force stages. The three
     member actions are `onNewStage`: a stage a tenant adds with no actions
     gets them, which is what such a stage allowed before stage rules.
+    For MEETING (ACC-316 PR 2): `edit_details`, `manage_agenda`,
+    `manage_guests`, `reschedule`, `answer_invitation`, `record_attendance`,
+    `record_minutes`, `apply_suggestions`, `change_action_dates`,
+    `suggest_correction`; nothing calls the engine about them until the
+    meeting endpoints (PR 3).
   - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
     stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
-    sit on exactly one stage.
-  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, for step 2's
-    conditions. Nothing reads them yet.
+    sit on exactly one stage. MEETING (ACC-316) has `AGENDA_ISSUED` and
+    `MEETING_CANCELLED` (any number) and `MINUTES_FINAL` (exactly one).
+  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, MEETING
+    `typeValueId`, for step 2's conditions. Nothing reads them yet.
   - **Fail closed:** a type with no entry has no actions to configure; a key not
     in the registry is refused on save and never allowed; a stage with no row
     for an action does not allow it. Labels are the frontend's (`labelKey`), and
@@ -3510,6 +3517,7 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
     | CREATOR | nothing |
     | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
+    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **MEETING only (ACC-316 PR 2):** any other record type's save is `WHO_KIND_NOT_ALLOWED`. Resolved by `meeting-authority.ts` (who may schedule, record and approve a meeting: committee seats, own-unit keys, heads above with the sub-units keys), batched; on a record that is not a meeting, nobody. Plan `backend/Plans/step-316-meeting-management.md` §3.8 |
   - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
     - `WHO_MODE_UNKNOWN`;
     - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
@@ -4710,9 +4718,19 @@ due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
   treats a before-opening time the same way.
 - **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
   Plan: `backend/Plans/step-175-deadline-before-opening.md`.
-- **Known, not built:** a holiday in a zone west of UTC lands a day early
-  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
-  saving. Every tenant is UTC+3 today.
+- **A holiday is its calendar day in every zone (ACC-318).** The API accepts
+  its date as `YYYY-MM-DD` only (a real date, no time, no offset: the pipe's
+  400 otherwise), the shape the screen sends, and stores that date at midnight
+  UTC (`holidayDateAt()`). `isWorkingDay()` (`working-time.ts`) reads its day
+  in UTC, never in the
+  organisation's zone. Before, a zone west of UTC read 25 December as the 24th.
+- **Each day counts its REAL working hours (ACC-319).** `deadlineWith()` spends
+  what is really left of each day's window, and `hoursBetweenWith()` sums the
+  same window (`windowOf()`), so the two agree on a day the clocks change inside
+  the window: London 00:00–08:00 has 7 hours on 29 March 2026 and 9 on
+  25 October, and a deadline never lands after the close. Before, every full day
+  counted a fixed end − start. Zones without clock changes (every Gulf zone) are
+  unchanged.
 
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
@@ -4984,12 +5002,13 @@ audit-logs (`{ escalatedTo, tier }` on a real fire, or
 an empty array — a skip, not a thrown error, matching Section 3.4's
 own framing of an unresolvable target as a real, unremarkable state).
 
-Working-hours gating is unchanged from the pre-ACC-46 mechanism:
-`isWithinWorkingHours()` (`:508`, re-implements the day/hour/holiday
-check inline since no dedicated method exists on
-`WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
-"Escalation triggers only fire during working hours," still genuinely
-enforced. Recording the breach (`slaBreachedAt`) is unconditional
+Working-hours gating wraps both tiers' firing — CLAUDE.md's "Escalation
+triggers only fire during working hours," still genuinely enforced. Since
+ACC-318 there is ONE rule, `isWorkingMomentWith()` (`working-time.ts`): the
+overdue pass asks it on the calendar it already loaded for the organisation,
+and `isWithinWorkingHours()` (the stage and pool escalations) asks it on
+`loadCalendar()`, read without creating a row. The hand copy is gone; its
+holiday check read the date in the organisation's zone. Recording the breach (`slaBreachedAt`) is unconditional
 regardless of working hours; only the escalation notify/stamp/audit-log
 steps are gated.
 
@@ -5773,12 +5792,22 @@ list.**
 |---|---|---|
 | On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
 | Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys. **ACC-120 slice 3:** My tasks (`mine`) and Created by me (`created`) need no key and are never a 403 | the view's tasks AND `taskVisibleSql()` |
+| **A person (`person`, ACC-216)** | yourself, or `users:view` — else a 403 naming it, BEFORE any read (the same for a real colleague and an invented id); then the person is read with `{ id, organizationId }`, so an invented id and another organisation's person are the identical 404 | the tasks the person is ON (`currentActiveAssigneeOfSql()`) AND `taskVisibleSql()`, in the `WHERE` before `LIMIT`; `view: 'person'`, `scope: 'all'` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
+**A person's tasks (ACC-216, plan `step-216-sessions-and-tasks.md` §5, Option A).**
+- **"On a task" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE` (`task-pool.ts`): a current assignee row (picked pool rows included) AND the person is ACTIVE. So a deactivated person has no tasks, even for a View all holder, whatever rows they left.
+  - `currentActiveAssigneeOf(userId)` is the Prisma form, built on `CURRENT_ACTIVE_ASSIGNEE`.
+  - `currentActiveAssigneeOfSql(userId)` is its SQL twin. `HAS_CURRENT_ACTIVE_ASSIGNEE_SQL` and it are built from the same two fragments, so they cannot drift.
+  - `task-pool.current-active.db-spec.ts` pins each SQL form to its Prisma form on a real Postgres.
+- **Nobody gains access:** the person is one condition beside the viewer's own rule, so every row is a task the viewer's task page already admits (`task-record-list.person.db-spec.ts` checks exactly that, per viewer).
+- **Never combined** with a record or a `view`: a 400, nothing read.
+- **The panel** (`record-panel?person=`) is the first five of the same scope, and never offers New task (`canCreate: false`): a person is not a record.
+
 | Endpoint | Returns |
 |---|---|
-| `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
+| `GET /tasks/record-panel?sourceType&sourceId`, or `?person` (ACC-216) | `{ total, scope, rows, canCreate }` — the first five of the order below; `total` is every task the viewer can see on the record, or that the person is on |
 | `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, the record types, the unit view's units and — ACC-120 slice 3 — `statusCounts`, all over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters. Each row carries `rejectedBy` (`{ id, name }` or null, ACC-120 slice 3) beside `rejectedReason` |
 
 Both are declared before `':id'`, with no `@Permissions` — the service
@@ -7652,9 +7681,11 @@ actions. The chain of authority (PR 2) reads `decide_reporting_changes`, and
 
 **The fixed list** (`foundation/committees/seat-actions.ts`, `SEAT_ACTIONS`):
 `add_member`, `remove_member`, `change_member_seat`, `request_change`,
-`decide_reporting_changes`. Stored as text (`CommitteeSeatAction.actionKey`),
-like a stage's record actions, so the Meetings ticket's two actions need no
-enum migration.
+`decide_reporting_changes`, and (ACC-316 PR 2) `schedule_meeting` and
+`record_minutes`, read by `meeting-authority.ts` for the meeting stage pools.
+Stored as text (`CommitteeSeatAction.actionKey`), like a stage's record
+actions, so the two meeting actions needed no enum migration. Existing
+committees get their defaults from `backfill:acc316-seat-defaults`.
 
 **Per committee: `CommitteeSeatAction`** (`organizationId`, `committeeId`,
 `roleValueId`, `actionKey`; unique on the three ids and key). A row means the
@@ -7662,14 +7693,17 @@ seat allows the action on that committee; a seat with no row allows nothing.
 
 **Defaults per organisation: one boolean attribute per action** on the
 `committee_member_role` lookup (`seatAddsMember`, `seatRemovesMember`,
-`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`), each
+`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`, and
+ACC-316's `seatSchedulesMeetings` (Chairman, Secretary) and
+`seatRecordsMinutes` (Secretary)), each
 named in both languages (`labelEn`, `labelAr`, ACC-310's shape). The value
 form reads `labelEn` / `labelAr`, else the key; the seed carries no `label`
 (dropped after ACC-310), and the shared system row loses its old `label` on the
 next deploy's `seedSystemData()`.
 - The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
   Chairman all five; Secretary the four member actions; every other seat none
-  (plan Q10, confirmed by Ahmad, 16 Nov).
+  (plan Q10, confirmed by Ahmad, 16 Nov). ACC-316 adds `schedule_meeting` for
+  Chairman and Secretary, and `record_minutes` for Secretary.
 - An organisation changes a default through its override row
   (`PATCH /lookups/values/:id/attributes`, `lookups:manage`), merged key by key.
 
@@ -10463,7 +10497,10 @@ days.
 ### 9.7 The Tenant's Time Zone — One Field (ACC-94 D3, ACC-97)
 
 **`WorkingCalendar.timezone` is the organisation's ONLY time zone.** It is
-edited on the Working Calendar screen (`PATCH /working-calendar`) and read by
+edited on the Working Calendar screen (`PATCH /working-calendar`), which saves
+only a real IANA zone (Luxon's `IANAZone.isValidZone`, the library the deadline
+maths uses) and refuses anything else with 400
+`WORKING_CALENDAR_TIMEZONE_INVALID`, nothing written (ACC-318). It is read by
 **`WorkingCalendarService.calculateDeadline()`** (every SLA due date),
 **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date
 display** (via `GET /auth/me`). Display uses the zone the SLA engine computes
@@ -10492,6 +10529,16 @@ creation never set it; every row holds the column default) and returned by
 A new organisation's calendar starts at the GCC default (`getOrCreate()` seeds
 `GCC_DEFAULT`); a tenant outside that zone sets it on the Working Calendar
 screen.
+
+**The row is created by its first read, once (ACC-317).** `getOrCreate()` reads
+the row; when there is none it inserts the default with `createMany({
+skipDuplicates: true })`, which Prisma sends as `INSERT … ON CONFLICT DO
+NOTHING`, then reads it back. First reads at the same moment all get the one
+row, and none fails on the unique key. An `upsert` with an empty `update` is
+NOT used: measured on Postgres, Prisma sends it as a read, an insert and a read
+(an emulated upsert, the same race). `working-calendar.db-spec.ts` proves the
+statement and eight simultaneous first reads. Nothing is created at tenant
+bootstrap.
 
 ---
 
@@ -15525,7 +15572,7 @@ model StoredFile {
   mimeType       String                 // decided by the server from content
   sizeBytes      Int
   sha256         String @db.Char(64)
-  ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
+  ownerType      StoredFileOwnerType    // TASK; MEETING and MEETING_AGENDA_ITEM exist (ACC-316 PR 1) but nothing writes them yet
   ownerId        String
   uploadedById, uploadedAt
   deletedAt, deletedById                // the 30-day soft delete; bytes KEPT
