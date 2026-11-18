@@ -198,6 +198,12 @@ export class StagePoolService {
             }
             break;
           }
+          // ACC-316 PR 1 — Meetings' kinds resolve to nobody (fail closed) until
+          // the Meetings PR adds their resolvers; no stage can hold one yet.
+          case 'MEETING_SCHEDULERS':
+          case 'MEETING_RECORDERS':
+          case 'MEETING_APPROVERS':
+            break;
         }
       }
       targetsByRequest.set(request.key, targets);
