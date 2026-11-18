@@ -2007,6 +2007,28 @@ model WorkflowActionLog {
 }
 ```
 
+**Stage SLA escalation (ACC-105).** A stage's `escalationConfig` is a list of
+`{ afterHours, notifyUserId?, notifyRoleId? }` rules (`stage-escalation.ts`).
+- **`afterHours` is WORKING hours** after the entry's `slaDueAt`, counted by
+  `hoursBetweenWith()` on the organisation's calendar, like the task sweep's
+  hours overdue (ACC-313). It used to be clock hours.
+- **Each rule fires once, across sweeps.** The SLA sweep reads an entry while it
+  is still in the stage and past its deadline, until its breach is recorded and
+  every rule index is claimed in `escalatedRuleIndexes`. `slaBreached` means the
+  breach is recorded, stamped once. Before, the first sweep marked every entry
+  breached, so no rule above about 0.25 h ever fired.
+- **Outside working hours nothing is marked;** the rule fires on the first sweep
+  inside them. Before, a deadline lapsing after hours never escalated.
+- **A rule is claimed by a conditional UPDATE before anyone is told,** so two
+  sweeps never fire it twice. A stored rule that is not valid is claimed unfired
+  and logged.
+- **Recipients are ACTIVE people of the organisation, each once per rule.** A
+  role with no active holder is logged and skipped. The reads are batched (the
+  entries, the people, the role holders, and one calendar per organisation).
+- **Every stage write checks the rules:** their shape, an ACTIVE user and an
+  active role of the organisation, refused with 400 `STAGE_ESCALATION_INVALID`
+  `{ reason: SHAPE | USER | ROLE, rule }`. No screen writes them yet.
+
 ### 2.2 Enums (Verbatim, `schema.prisma`, the workflow enums)
 
 ```
