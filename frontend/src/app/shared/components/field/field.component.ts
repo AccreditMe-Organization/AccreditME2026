@@ -76,11 +76,13 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       [class.am-field--trailing]="!!trailing()"
       [style.--am-field-trailing-size]="trailing()"
     >
+      <!-- The asterisk is held to the label's last word: no whitespace between
+           them, so there is no line-break opportunity before it (a letter or a
+           closing bracket, then "*": UAX #14 allows no break) and a narrow
+           column never leaves it on a line alone (ACC-313). The trailing
+           space it always had stays, after the asterisk, where it breaks nothing. -->
       <label class="am-field__label" [class.sr-only]="labelVisuallyHidden()" [attr.for]="controlId()">
-        {{ label() }}
-        @if (required()) {
-          <span class="am-field__required" aria-hidden="true">*</span>
-        }
+        {{ label() }}@if (required()) {<span class="am-field__required" aria-hidden="true">*</span>}{{ ' ' }}
       </label>
 
       @if (readonly()) {
@@ -208,8 +210,12 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
         border-color: var(--am-danger-ink);
       }
 
+      /* Invalid keeps its error border while focused (CC-332): the focus rule
+         above would otherwise turn it blue, and a refused field is usually the
+         one that just took focus. */
       .am-field__control ::ng-deep .p-invalid:focus,
       .am-field__control ::ng-deep [aria-invalid='true']:focus {
+        border-color: var(--am-danger-ink);
         box-shadow: 0 0 0 3px color-mix(in srgb, var(--am-danger-ink) 12%, transparent);
       }
 
@@ -269,9 +275,9 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       /* Reserved at all times — an appearing message must never move the form. */
       .am-field__message {
         margin: 0;
-        min-height: 17px;
+        min-height: var(--am-field-message-line);
         font-size: 11.5px;
-        line-height: 17px;
+        line-height: var(--am-field-message-line);
         color: var(--am-ink-500);
         text-wrap: pretty;
       }
@@ -395,6 +401,18 @@ export class FieldComponent {
 
   /** In flight — an async check the user should not be asked to wait on blindly. */
   readonly loading = input(false);
+
+  /**
+   * CC-332 — opt-in: mark the control invalid (the error border and
+   * aria-invalid) where the CALLER knows it is, such as a value the server
+   * refused, said in a message elsewhere. The hint stays: no error text
+   * replaces it, because the message is the caller's. Unset — the control's own
+   * validity decides, as always.
+   */
+  readonly invalid = input(false);
+
+  /** CC-332 — opt-in: the id of that message, added to the control's aria-describedby. */
+  readonly describedBy = input<string | null>(null);
 
   /**
    * Error key to message key. Merged over the defaults, so a field overrides
@@ -632,10 +650,11 @@ export class FieldComponent {
     effect(() => {
       const el = this.controlEl();
       if (!el) return;
-      const invalid = this.showError();
+      const invalid = this.showError() || (this.invalid() && !this.readonly());
       el.setAttribute('aria-invalid', String(invalid));
       el.classList.toggle('p-invalid', invalid);
-      el.setAttribute('aria-describedby', this.messageId);
+      const described = this.describedBy();
+      el.setAttribute('aria-describedby', described ? `${this.messageId} ${described}` : this.messageId);
       if (this.required()) el.setAttribute('aria-required', 'true');
       if (this.loading()) {
         el.setAttribute('aria-busy', 'true');

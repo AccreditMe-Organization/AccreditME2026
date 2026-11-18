@@ -6,6 +6,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
 import en from '../../../../../assets/i18n/en.json';
+import ar from '../../../../../assets/i18n/ar.json';
+import { expectPhraseInPageDirection } from '../../../../../testing/arabic-date';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
@@ -53,6 +56,8 @@ const successor = {
 };
 
 describe('HeadshipPanelComponent (ACC-133)', () => {
+  // First, so it runs last: the Arabic case below switches <html> to rtl (CC-326).
+  preserveDocumentLanguage();
   let fixture: ComponentFixture<HeadshipPanelComponent>;
   let http: HttpTestingController;
   let asked: AmConfirmOptions[];
@@ -124,6 +129,15 @@ describe('HeadshipPanelComponent (ACC-133)', () => {
       expect(actions(el)).toEqual(expected);
     });
   }
+
+  // CC-326 — the open cover bar's start («من …») takes the page's direction.
+  it('in Arabic, the cover bar’s start reads in the page direction', () => {
+    const el = render(status({ ...held(), ...covered('ABSENCE') }));
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use('ar');
+    fixture.detectChanges();
+    expectPhraseInPageDirection(el.querySelector('.am-hs__track-labels > span:first-child'), 'من 25 سبتمبر');
+  });
 
   it('state 5 has no primary button: nothing renders as the default', () => {
     const el = render(status(successor));
