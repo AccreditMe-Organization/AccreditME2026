@@ -8,6 +8,7 @@ import { IPublicHoliday } from './interfaces/public-holiday.interface';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
 import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
+import { holidayDateAt } from './dto/holiday-date';
 import {
   GCC_DEFAULT_CALENDAR,
   LoadedCalendar,
@@ -181,7 +182,7 @@ export class WorkingCalendarService {
         workingCalendarId: calendar.id,
         nameEn: dto.nameEn,
         nameAr: dto.nameAr ?? null,
-        date: new Date(dto.date),
+        date: holidayDateAt(dto.date),
         isRecurring: dto.isRecurring ?? false,
       },
     });
@@ -219,7 +220,7 @@ export class WorkingCalendarService {
       data: {
         ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
         ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.date !== undefined && { date: holidayDateAt(dto.date) }),
         ...(dto.isRecurring !== undefined && { isRecurring: dto.isRecurring }),
       },
     });

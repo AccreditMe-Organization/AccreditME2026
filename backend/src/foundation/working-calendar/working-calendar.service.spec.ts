@@ -196,8 +196,9 @@ describe('WorkingCalendarService', () => {
         'actor-1',
       );
 
+      // ACC-318 — the date at midnight UTC, the calendar day every zone reads.
       expect(mockPrisma.publicHoliday.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ workingCalendarId: CAL_A.id, nameEn: 'National Day' }),
+        data: expect.objectContaining({ workingCalendarId: CAL_A.id, nameEn: 'National Day', date: new Date('2026-09-23T00:00:00.000Z') }),
       });
       expect(result.id).toBe(HOLIDAY_A.id);
       expect(mockAuditLog.log).toHaveBeenCalledWith(
