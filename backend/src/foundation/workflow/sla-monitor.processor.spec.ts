@@ -577,6 +577,35 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
 
+    // ACC-318 — the sweep asks the one working-moment rule, so a holiday is its
+    // calendar day west of UTC too: nothing fires in New York on 25 December.
+    describe('a holiday west of UTC (ACC-318)', () => {
+      const NEW_YORK = { timezone: 'America/New_York', workingDays: [0, 1, 2, 3, 4, 5, 6], workingHoursStart: '08:00', workingHoursEnd: '16:00' };
+      const CHRISTMAS = { id: 'h-1', date: new Date('2026-12-25T00:00:00.000Z'), isRecurring: false };
+      const breached = () =>
+        makeBreachedInstanceStage({
+          slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+          stage: { ...BASE_STAGE, escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }] },
+        });
+      beforeEach(() => {
+        mockWorkingCalendar.getOrCreate.mockResolvedValue(NEW_YORK);
+        mockWorkingCalendar.listHolidays.mockResolvedValue([CHRISTMAS]);
+      });
+      afterEach(() => jest.useRealTimers());
+
+      it('25 December 10:00 in New York is the holiday: nothing fires', async () => {
+        useFixedClock(new Date('2026-12-25T15:00:00.000Z'));
+        await runWithBreachedStage(breached());
+        expect(mockNotificationService.create).not.toHaveBeenCalled();
+      });
+
+      it('24 December 10:00 in New York is a working moment: it fires', async () => {
+        useFixedClock(new Date('2026-12-24T15:00:00.000Z'));
+        await runWithBreachedStage(breached());
+        expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-escalate-1' }), ORG_A);
+      });
+    });
+
     it('fires escalation to notifyUserId once its afterHours threshold has elapsed, during working hours', async () => {
       const instanceStage = makeBreachedInstanceStage({
         slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h ago
