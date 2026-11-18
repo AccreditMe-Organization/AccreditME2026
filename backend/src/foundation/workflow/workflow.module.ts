@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
@@ -27,6 +28,9 @@ import { StagePoolModule } from './stage-pool.module';
   imports: [
     PrismaModule,
     QueueModule,
+    // ACC-316 PR 3b — SlaMonitorProcessor.sweepMeetingInvitees(). Imports only
+    // Prisma and the queues: no cycle.
+    MeetingInviteesModule,
     WorkingCalendarModule,
     forwardRef(() => TenantModule),
     // No forwardRef needed on this edge — NotificationModule is @Global(),

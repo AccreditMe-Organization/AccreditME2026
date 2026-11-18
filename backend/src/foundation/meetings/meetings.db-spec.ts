@@ -54,6 +54,8 @@ import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffec
 import { copyDefaultSeatActions } from '../committees/seat-actions';
 import { peopleDateIn } from '../task/task-sla.service';
 import { MeetingsService, type MeetingViewer } from './meetings.service';
+import { MeetingInviteeSyncService } from './invitees/meeting-invitee-sync.service';
+import { CommitteesService } from '../committees/committees.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -76,12 +78,17 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const calendar = new WorkingCalendarService(prisma, audit);
   const lookupService = new LookupService(prisma, audit);
   const notices: { userId: string; titleEn: string; bodyEn: string; bodyAr: string; organizationId: string }[] = [];
+  const emails: { organizationId: string; to: string; subjectEn: string; bodyEn: string; bodyAr: string }[] = [];
   const notifications = {
     create: async (dto: { userId: string; titleEn: string; bodyEn: string; bodyAr: string }, organizationId: string) => {
       notices.push({ userId: dto.userId, titleEn: dto.titleEn, bodyEn: dto.bodyEn, bodyAr: dto.bodyAr, organizationId });
       return { id: randomUUID() };
     },
     createInAppMany: async () => 0,
+    // ACC-316 PR 3b — an outside guest's email (no user, the organisation's language).
+    sendOutsideEmail: async (organizationId: string, to: string, text: { subjectEn: string; bodyEn: string; bodyAr: string }) => {
+      emails.push({ organizationId, to, subjectEn: text.subjectEn, bodyEn: text.bodyEn, bodyAr: text.bodyAr });
+    },
   } as unknown as NotificationService;
   const tenant = { getTaskSla: async () => null } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
@@ -94,6 +101,8 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const stageRules = new StageRulesService(prisma);
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
   const meetings = new MeetingsService(prisma, visibility, workflow, stageRules, notifications, calendar);
+  const sync = new MeetingInviteeSyncService(prisma, notifications, calendar, stageRules);
+  const committees = new CommitteesService(prisma, audit, workflow, stageRules, sync);
 
   let seat: Record<string, string> = {};
   let meetingType = '';
@@ -208,6 +217,14 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
     return m.id;
   }
 
+  /** An invitee's row (scheduling already made a member's), with its invitation state set. */
+  const attend = (w: World, meetingId: string, name: string, invitedAt: Date | null) =>
+    prisma.meetingAttendee.upsert({
+      where: { meetingId_userId: { meetingId, userId: w.people[name]! } },
+      update: { invitedAt },
+      create: { organizationId: w.orgId, meetingId, kind: 'MEMBER', userId: w.people[name]!, invitedAt },
+    });
+
   const instanceOf = async (meetingId: string) => {
     const instance = await prisma.workflowInstance.findFirstOrThrow({ where: { objectType: 'MEETING', objectId: meetingId } });
     const stage = await prisma.workflowStage.findFirst({ where: { id: instance.currentStageId ?? '' }, select: { key: true } });
@@ -243,6 +260,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
 
   beforeEach(() => {
     notices.length = 0;
+    emails.length = 0;
   });
 
   describe('schedule', () => {
@@ -254,6 +272,15 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(m.stage.nameEn).toBe('Planned');
       expect(m.may).toEqual({ edit: true, reschedule: true });
       expect(m.organizer).toEqual({ id: a.people['chair'], name: 'chair' });
+      // PR 3b — scheduling fills in the committee's active members, each with their seat, not yet invited.
+      const invitees = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, kind: true, seatValueId: true, invitedAt: true } });
+      expect(invitees.map((r) => [r.userId, r.kind, r.seatValueId, r.invitedAt]).sort()).toEqual(
+        [
+          [a.people['chair'], 'MEMBER', seat['chairman'], null],
+          [a.people['secretary'], 'MEMBER', seat['secretary'], null],
+          [a.people['member'], 'MEMBER', seat['member'], null],
+        ].sort(),
+      );
       const row = await prisma.meeting.findFirstOrThrow({ where: { id: m.id } });
       expect([row.committeeId, row.orgUnitId, row.unitQuorum]).toEqual([a.committeeId, null, null]);
       expect((await instanceOf(m.id)).currentStage?.key).toBe('planned');
@@ -425,10 +452,15 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
     it('a reschedule keeps the old time with its reason and tells the invited, never the actor', async () => {
       const now = new Date();
       const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
-      for (const name of ['member', 'chair']) {
-        await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people[name]!, invitedAt: now } });
-      }
-      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['secretary']! } });
+      await attend(a, m.id, 'member', now);
+      await attend(a, m.id, 'chair', now);
+      await attend(a, m.id, 'secretary', null);
+      await prisma.meetingAttendee.create({
+        data: { organizationId: a.orgId, meetingId: m.id, kind: 'OUTSIDE_GUEST', outsideName: 'Guest', outsideEmail: 'invited@example.test', invitedAt: now },
+      });
+      await prisma.meetingAttendee.create({
+        data: { organizationId: a.orgId, meetingId: m.id, kind: 'OUTSIDE_GUEST', outsideName: 'Later', outsideEmail: 'not-yet@example.test' },
+      });
       const toAt = later(10, now);
 
       const moved = await meetings.reschedule(m.id, { scheduledAt: toAt.toISOString(), reason: ' Chair travelling ' } as never, a.orgId, as(a, 'chair'), now);
@@ -438,6 +470,11 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect([row.fromAt, row.toAt, row.scope, row.actorId, row.organizationId]).toEqual([m.scheduledAt, toAt, 'THIS_ONLY', a.people['chair'], a.orgId]);
       // The invited member only: not the actor, not the secretary who was never invited.
       expect(notices.map((n) => [n.userId, n.titleEn])).toEqual([[a.people['member'], 'Meeting rescheduled']]);
+      // The outside guest already invited is emailed; one not yet invited is not.
+      expect(emails.map((e) => e.to)).toEqual(['invited@example.test']);
+      expect(emails[0]!.bodyEn).toContain(peopleDateIn(toAt, 'Europe/London').en);
+      expect(emails[0]!.bodyEn).toContain('Reason: Chair travelling');
+      expect(emails[0]!.bodyEn).not.toMatch(/https?:\/\/(?!example)/);
       expect(notices[0]!.bodyEn).toContain('Reason: Chair travelling');
       // The new time, in the organisation's zone, in both languages, with Latin digits.
       const when = peopleDateIn(toAt, 'Europe/London');
@@ -460,11 +497,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       const now = new Date();
       const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
       const earlier = later(-1, now);
-      const attendee = (name: string, invitedAt: Date | null) =>
-        prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people[name]!, invitedAt } });
-      await attendee('member', null);
-      await attendee('chair', null);
-      await attendee('secretary', earlier);
+      await attend(a, m.id, 'member', null);
+      await attend(a, m.id, 'chair', null);
+      await attend(a, m.id, 'secretary', earlier);
       await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'OUTSIDE_GUEST', outsideName: 'Guest', outsideEmail: 'guest@example.test' } });
       const instance = await instanceOf(m.id);
 
@@ -482,6 +517,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(at[a.people['chair']!]).not.toBeNull();
       expect(at[a.people['secretary']!]).toEqual(earlier);
       expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId)).toEqual([a.people['member']]);
+      // The outside guest is emailed the invitation, in the organisation's language (English here).
+      expect(emails.map((e) => [e.to, e.subjectEn])).toEqual([['guest@example.test', 'Invitation: Monthly review']]);
+      emails.length = 0;
       const invitation = notices.find((n) => n.titleEn === 'Meeting invitation')!;
       const starts = peopleDateIn(m.scheduledAt, 'Europe/London');
       expect(invitation.bodyEn).toContain(starts.en);
@@ -505,6 +543,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       const cancelled = notices.filter((n) => n.titleEn === 'Meeting cancelled');
       expect(cancelled.map((n) => n.userId).sort()).toEqual([a.people['member'], a.people['secretary']].sort());
       for (const n of cancelled) expect(n.bodyEn).toBe('Monthly review is cancelled. Reason: Quorum not available');
+      // The outside guest, invited at issue, is emailed the cancellation with the reason.
+      expect(emails.map((e) => [e.to, e.subjectEn])).toEqual([['guest@example.test', 'Cancelled: Monthly review']]);
+      expect(emails[0]!.bodyEn).toContain('Reason: Quorum not available');
 
       // Cancelled allows nothing, and takes no new tasks.
       expect(await outcome(meetings.update(m.id, { title: 'X' } as never, a.orgId, as(a, 'chair'), now))).toMatchObject({ code: 'STAGE_ACTION_NOT_ALLOWED', action: 'edit_details' });
@@ -542,7 +583,6 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
     it('Agenda Issued invites whoever is an attendee when the move commits, not when it was prepared', async () => {
       const now = new Date();
       const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
-      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['member']! } });
       const ctx = {
         objectType: 'MEETING' as const,
         objectId: m.id,
@@ -556,13 +596,112 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
 
       const prepared = await prepareTransitionEffects(prisma, ctx);
       // Added after the reads, before the move's transaction.
-      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['secretary']! } });
+      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'ORG_GUEST', userId: a.people['invitee']! } });
       await prisma.$transaction((tx) => applyTransitionEffects(tx as never, prepared));
       await finishTransitionEffects({ prisma, notifications, calendar }, prepared);
 
       const rows = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, invitedAt: true } });
       expect(rows.every((r) => r.invitedAt !== null)).toBe(true);
-      expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId).sort()).toEqual([a.people['member'], a.people['secretary']].sort());
+      // The members scheduling filled in, and the guest added in between; never the actor (the Chair).
+      expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId).sort()).toEqual(
+        [a.people['member'], a.people['secretary'], a.people['invitee']].sort(),
+      );
+    });
+  });
+
+  describe('the invitee sync (PR 3b)', () => {
+    const rowsOf = async (meetingId: string) =>
+      (await prisma.meetingAttendee.findMany({ where: { meetingId }, select: { userId: true, kind: true, seatValueId: true, invitedAt: true, answer: true } }))
+        .map((r) => ({ ...r, invited: r.invitedAt !== null }));
+    const kindOf = async (meetingId: string, userId: string) => (await rowsOf(meetingId)).find((r) => r.userId === userId)?.kind ?? null;
+
+    it("follows the committee: a seat added, changed, left — and a guest who joins becomes a MEMBER, keeping their answer", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      // An organisation guest who has answered, then joins the committee.
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: m.id, kind: 'ORG_GUEST', userId: w.people['invitee']!, answer: 'ATTENDING' } });
+      await prisma.committeeMember.create({ data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['invitee']!, roleValueId: seat['member']! } });
+      // The member moves to the Secretary's seat; the Secretary leaves.
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['member']! }, data: { roleValueId: seat['secretary']! } });
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['secretary']! }, data: { isActive: false } });
+
+      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 1, added: 0, removed: 1, converted: 1, reseated: 1 });
+      const rows = await rowsOf(m.id);
+      expect(rows.find((r) => r.userId === w.people['invitee'])).toMatchObject({ kind: 'MEMBER', seatValueId: seat['member'], answer: 'ATTENDING' });
+      expect(rows.find((r) => r.userId === w.people['member'])).toMatchObject({ kind: 'MEMBER', seatValueId: seat['secretary'] });
+      expect(rows.some((r) => r.userId === w.people['secretary'])).toBe(false);
+      // A second run changes nothing.
+      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0 });
+    });
+
+    it('follows the unit: a person who moves in becomes an invitee, one deactivated leaves', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { orgUnitId: w.units.clinical }), w.orgId, as(w, 'clinicalScheduler'), now);
+      expect(await kindOf(m.id, w.people['clinicalHead']!)).toBe('MEMBER');
+      expect(await kindOf(m.id, w.people['wardPerson']!)).toBeNull();
+
+      await prisma.user.update({ where: { id: w.people['wardPerson']! }, data: { primaryOrgUnitId: w.units.clinical } });
+      await prisma.user.update({ where: { id: w.people['clinicalHead']! }, data: { status: 'INACTIVE' } });
+      await sync.forUser(w.orgId, w.people['wardPerson']!, now);
+      await sync.forUser(w.orgId, w.people['clinicalHead']!, now);
+      expect(await kindOf(m.id, w.people['wardPerson']!)).toBe('MEMBER');
+      expect(await kindOf(m.id, w.people['clinicalHead']!)).toBeNull();
+    });
+
+    it("a member who joins after the agenda is issued is invited at once and told; a held or cancelled meeting never changes", async () => {
+      const w = await world();
+      const now = new Date();
+      const issued = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      await workflow.triggerTransition((await instanceOf(issued.id)).id, { transitionId: (await move(issued.id, 'agenda_ready')).id } as never, w.orgId, w.people['chair']!, []);
+      const cancelledMeeting = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Off' }), w.orgId, as(w, 'chair'), now);
+      await workflow.triggerTransition(
+        (await instanceOf(cancelledMeeting.id)).id,
+        { transitionId: (await move(cancelledMeeting.id, 'cancelled')).id, comment: 'Not needed' } as never,
+        w.orgId,
+        w.people['chair']!,
+        [],
+      );
+      const held = await meetingRow(w, { committeeId: w.committeeId }, later(-1, now), w.people['chair']!);
+      notices.length = 0;
+
+      await prisma.committeeMember.create({ data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['invitee']!, roleValueId: seat['member']! } });
+      await sync.forCommittee(w.orgId, w.committeeId, now);
+
+      expect((await rowsOf(issued.id)).find((r) => r.userId === w.people['invitee'])).toMatchObject({ kind: 'MEMBER', invited: true });
+      expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId)).toEqual([w.people['invitee']]);
+      expect(await kindOf(cancelledMeeting.id, w.people['invitee']!)).toBeNull();
+      expect(await kindOf(held, w.people['invitee']!)).toBeNull();
+    });
+
+    it("the committee writer refreshes its meetings after it commits (CommitteesService.addMember)", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      await committees.addMember(w.committeeId, { userId: w.people['invitee']!, roleValueId: seat['member']! } as never, w.orgId, w.people['rootHead']!, [
+        'committees:view',
+        'committees:add_member',
+      ]);
+      expect(await kindOf(m.id, w.people['invitee']!)).toBe('MEMBER');
+    });
+
+    it('the sweep repairs every organisation, and a sync for one never touches another', async () => {
+      const x = await world();
+      const y = await world();
+      const now = new Date();
+      const mx = await meetings.schedule(scheduleDto(now, { committeeId: x.committeeId }), x.orgId, as(x, 'chair'), now);
+      const my = await meetings.schedule(scheduleDto(now, { committeeId: y.committeeId }), y.orgId, as(y, 'chair'), now);
+      await prisma.committeeMember.create({ data: { organizationId: x.orgId, committeeId: x.committeeId, userId: x.people['invitee']!, roleValueId: seat['member']! } });
+      await prisma.committeeMember.create({ data: { organizationId: y.orgId, committeeId: y.committeeId, userId: y.people['invitee']!, roleValueId: seat['member']! } });
+
+      // x's committee asked in y's organisation: nothing found, nothing changed.
+      expect((await sync.forCommittee(y.orgId, x.committeeId, now)).meetings).toBe(0);
+      expect(await kindOf(mx.id, x.people['invitee']!)).toBeNull();
+
+      await sync.sweep(now);
+      expect(await kindOf(mx.id, x.people['invitee']!)).toBe('MEMBER');
+      expect(await kindOf(my.id, y.people['invitee']!)).toBe('MEMBER');
     });
   });
 

@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TaskModule } from '../task/task.module';
@@ -57,6 +58,9 @@ import { UserCommitteesService } from './committees/user-committees.service';
     // ACC-297 — the committee notice after a transfer. Its module imports only
     // Prisma and the queues, so this edge closes no cycle.
     CommitteeTransferNoticeModule,
+    // ACC-316 PR 3b — the meeting invitee sync. Its module imports only Prisma
+    // and the queues, so this edge closes no cycle.
+    MeetingInviteesModule,
     // ACC-283 PR 2b — the leaver's unfinished change requests. That module reaches
     // WorkflowModule and TaskModule, which reach back here through TenantModule,
     // so forwardRef(), as the TaskModule edge above.

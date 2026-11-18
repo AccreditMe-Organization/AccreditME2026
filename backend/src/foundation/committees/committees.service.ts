@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, Optional } from '@nestjs/common';
+import { MeetingInviteeSyncService, refreshMeetingInvitees } from '../meetings/invitees/meeting-invitee-sync.service';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCommitteeReferences, CommitteeTx, lockCommitteeHierarchy } from './committee-reference-checks';
@@ -78,6 +79,10 @@ export class CommitteesService {
     private readonly auditLog: AuditLogService,
     private readonly workflowService: WorkflowService,
     private readonly stageRules: StageRulesService,
+    // ACC-316 PR 3b — a meeting's MEMBER invitees follow this change (after the
+    // commit, never failing it; the SLA sweep is the backstop). Optional so a
+    // service built by hand in a spec needs no sync.
+    @Optional() private readonly meetingInvitees?: MeetingInviteeSyncService,
   ) {}
 
   // ── Committee CRUD ───────────────────────────────────────────────────────────
@@ -571,6 +576,7 @@ export class CommitteesService {
       ...(existing && { before: existing as unknown as Record<string, unknown> }),
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'adding a committee member', (s) => s.forCommittee(organizationId, committeeId));
 
     return member;
   }
@@ -631,6 +637,7 @@ export class CommitteesService {
       before: existing as unknown as Record<string, unknown>,
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a committee seat change', (s) => s.forCommittee(organizationId, committeeId));
 
     return member;
   }
@@ -692,6 +699,7 @@ export class CommitteesService {
       before: existing as unknown as Record<string, unknown>,
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'removing a committee member', (s) => s.forCommittee(organizationId, committeeId));
   }
 
   // ── Internal helpers ─────────────────────────────────────────────────────────

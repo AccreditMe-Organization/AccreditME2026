@@ -12,6 +12,9 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { peopleDateIn } from '../task/task-sla.service';
+import { expectedMembers } from './invitees/meeting-invitee-sync.service';
+import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
+import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
 import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
 import { COMMITTEE_ACTIONS, MEETING_ACTIONS } from '../workflow/record-registry';
@@ -19,15 +22,13 @@ import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-auth
 import { committeeTypeValues } from '../committees/committee-type-values';
 import { SEAT_ACTIONS } from '../committees/seat-actions';
 import { MeetingRefusal } from './meeting-refusal';
+import { MeetingAccess, MEETING_NOT_FOUND, type MeetingViewer } from './meeting-access';
 import type { ListMeetingsDto, RescheduleMeetingDto, ScheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
 import type { IMeeting, IMeetingList, IMeetingListItem, IMeetingOwner } from './interfaces/meeting.interface';
 
-export interface MeetingViewer {
-  id: string;
-  permissions: readonly string[];
-}
+export type { MeetingViewer } from './meeting-access';
 
-const NOT_FOUND = 'Meeting not found';
+const NOT_FOUND = MEETING_NOT_FOUND;
 const PAGE = 25;
 const MEETING_TYPE = 'meeting_type';
 
@@ -60,7 +61,12 @@ export class MeetingsService {
     private readonly stageRules: StageRulesService,
     private readonly notifications: NotificationService,
     private readonly calendar: WorkingCalendarService,
-  ) {}
+  ) {
+    this.access = new MeetingAccess(prisma, visibility);
+  }
+
+  /** Who may see and write a meeting: one rule, shared with every meeting route. */
+  private readonly access: MeetingAccess;
 
   // ── Schedule ────────────────────────────────────────────────────────────────
 
@@ -107,6 +113,18 @@ export class MeetingsService {
           unitQuorum: owner.committeeId ? null : (dto.unitQuorum ?? null),
         },
       });
+      // ACC-316 PR 3b — the MEMBER invitees, from the owner as it stands now:
+      // a committee's active members with their seats, or the unit's own
+      // people. The invitee sync keeps them current from here.
+      const expected = await expectedMembers(tx, organizationId, [
+        { id: meetingId, committeeId: owner.committeeId, orgUnitId: owner.committeeId ? null : owner.unitId },
+      ]);
+      const members = [...expected.get(meetingId)!];
+      if (members.length > 0) {
+        await tx.meetingAttendee.createMany({
+          data: members.map(([userId, seatValueId]) => ({ organizationId, meetingId, kind: 'MEMBER' as const, userId, seatValueId })),
+        });
+      }
       const instance = await this.workflow.insertInstanceStartInTx(tx, prepared, meetingId, organizationId, viewer.id);
       await tx.auditLog.create({
         data: {
@@ -360,7 +378,7 @@ export class MeetingsService {
   // ── Edit ────────────────────────────────────────────────────────────────────
 
   async update(id: string, dto: UpdateMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting> {
-    const owner = await this.writableOwner(id, organizationId, viewer, now);
+    const owner = await this.access.writing(id, organizationId, viewer, now);
     if (dto.title !== undefined && !dto.title.trim()) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
     if (dto.typeValueId !== undefined) await this.assertMeetingType(dto.typeValueId, organizationId);
     if (owner.committeeId && dto.unitQuorum != null) throw new MeetingRefusal('MEETING_QUORUM_UNIT_ONLY');
@@ -398,7 +416,7 @@ export class MeetingsService {
   // ── Reschedule ──────────────────────────────────────────────────────────────
 
   async reschedule(id: string, dto: RescheduleMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting> {
-    await this.writableOwner(id, organizationId, viewer, now);
+    await this.access.writing(id, organizationId, viewer, now);
     const toAt = new Date(dto.scheduledAt);
     if (toAt <= now) throw new MeetingRefusal('MEETING_TIME_IN_PAST');
     const reason = dto.reason.trim();
@@ -429,40 +447,14 @@ export class MeetingsService {
 
     // The new time, absolute, in the organisation's zone, with Latin digits.
     const when = peopleDateIn(toAt, await this.calendar.getEffectiveTimeZone(organizationId));
-    await this.tellInvited(id, organizationId, viewer.id, {
-      titleEn: 'Meeting rescheduled',
-      titleAr: 'إعادة جدولة اجتماع',
-      bodyEn: `${title} moves to ${when.en}. Reason: ${reason}`,
-      bodyAr: `تغيّر موعد ${title} إلى ${when.ar}. السبب: ${reason}`,
-    });
+    const invited = await this.invitedPeople(id, organizationId);
+    await notifyUsers(this.notifications, organizationId, id, viewer.id, invited.userIds, rescheduledNotice(title, when, reason));
+    // Outside guests only if they were invited (Answers, round 4).
+    await emailOutsideGuests(this.notifications, organizationId, id, invited.outsideEmails, outsideRescheduledEmail(title, invited.organisation, when, reason));
     return this.getForViewer(id, organizationId, viewer, now);
   }
 
   // ── Shared ──────────────────────────────────────────────────────────────────
-
-  /**
-   * A write's first checks: the viewer may see the meeting (the identical 404
-   * otherwise), and may schedule for its owner (MEETING_NOT_ALLOWED). A head
-   * above sees it by oversight, and writes only as a scheduler — holding
-   * meetings:schedule_subunits — exactly as they may schedule one; without the
-   * key, oversight stays read-only.
-   */
-  private async writableOwner(id: string, organizationId: string, viewer: MeetingViewer, now: Date): Promise<MeetingOwner> {
-    await this.visibility.assertCanViewOrNotFound('MEETING', id, organizationId, viewer.permissions, NOT_FOUND, viewer.id, {
-      oversight: true,
-      now,
-    });
-    const meeting = await this.prisma.meeting.findFirst({
-      where: { id, organizationId },
-      select: { committeeId: true, orgUnitId: true, committee: { select: { orgUnitId: true } } },
-    });
-    if (!meeting) throw new NotFoundException(NOT_FOUND);
-    const owner: MeetingOwner = { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
-    if (!(await isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now))) {
-      throw new MeetingRefusal('MEETING_NOT_ALLOWED');
-    }
-    return owner;
-  }
 
   /** The meeting row FOR UPDATE, after the instance; a stale `expectedUpdatedAt` is MEETING_CHANGED. */
   private async lockMeeting(
@@ -481,24 +473,22 @@ export class MeetingsService {
     return row;
   }
 
-  /** After a commit: everyone already invited with a user, but never the actor. */
-  private async tellInvited(
+  /** After a commit: everyone already invited — the users to tell, the outside guests to email. */
+  private async invitedPeople(
     meetingId: string,
     organizationId: string,
-    actorId: string,
-    text: { titleEn: string; titleAr: string; bodyEn: string; bodyAr: string },
-  ): Promise<void> {
-    const rows = await this.prisma.meetingAttendee.findMany({
-      where: { organizationId, meetingId, userId: { not: null }, invitedAt: { not: null } },
-      select: { userId: true },
-    });
-    for (const { userId } of rows) {
-      if (!userId || userId === actorId) continue;
-      try {
-        await this.notifications.create({ userId, ...text, channel: 'BOTH', objectType: 'MEETING', objectId: meetingId }, organizationId);
-      } catch (error) {
-        this.logger.warn(`A meeting notice failed for meeting ${meetingId} in org ${organizationId}: ${error instanceof Error ? error.name : 'unknown'}`);
-      }
-    }
+  ): Promise<{ userIds: string[]; outsideEmails: string[]; organisation: OrganisationNames }> {
+    const [rows, organization] = await Promise.all([
+      this.prisma.meetingAttendee.findMany({
+        where: { organizationId, meetingId, invitedAt: { not: null } },
+        select: { userId: true, kind: true, outsideEmail: true },
+      }),
+      this.prisma.organization.findFirst({ where: { id: organizationId }, select: { name: true, nameAr: true } }),
+    ]);
+    return {
+      userIds: rows.filter((r) => r.userId).map((r) => r.userId!),
+      outsideEmails: rows.filter((r) => r.kind === 'OUTSIDE_GUEST' && r.outsideEmail).map((r) => r.outsideEmail!),
+      organisation: organisationNames(organization),
+    };
   }
 }
