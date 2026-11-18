@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDefined, IsInt, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDefined, IsInt, IsOptional, Max, Min, ValidateNested } from 'class-validator';
 
 // ACC-313 — the Task SLA page saves by SECTION (its drawn design has two
 // Saves), so each route takes only its own fields, for all four priorities,
@@ -66,6 +66,16 @@ export class UpdateTaskSlaEscalationDto {
   @ValidateNested()
   @Type(() => TaskSlaEscalationDto)
   CRITICAL!: TaskSlaEscalationDto;
+}
+
+/**
+ * PATCH /tenant/task-sla/notices — whether an edit that moves a due date tells
+ * the assignees. The reminders (`warnBeforeDue`) are saved with escalation,
+ * from the reminder sweep's PR, so they are not part of this body.
+ */
+export class UpdateTaskSlaNoticesDto {
+  @IsBoolean()
+  notifyOnDueChange!: boolean;
 }
 
 /** The history page size: 20 by default, never more than 50. */

@@ -16,6 +16,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
+import { taskSlaNoticesFromSettings } from '../tenant/task-sla-settings';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { assertHoldsCreateKey, holdsTaskKey } from './task-record-types';
 import { assertMayCreateTasks, assertRecordAcceptsTasks } from './task-record-choices';
@@ -2386,7 +2387,10 @@ export class TaskService {
   ): Promise<void> {
     const en: string[] = [];
     const ar: string[] = [];
-    if (changed.dueChanged && after.dueAt) {
+    // ACC-313 — the organisation's switch governs the due-date clause only:
+    // a priority change is still announced, without the date (Q7). It is read
+    // only when the date moved, so other edits cost no read.
+    if (changed.dueChanged && after.dueAt && (await this.announcesDueChanges(organizationId))) {
       const due = await this.sla.forPeople(after.dueAt, organizationId);
       en.push(`it is now due ${due.en}`);
       ar.push(`أصبح موعد استحقاقها ${due.ar}`);
@@ -2396,6 +2400,7 @@ export class TaskService {
       en.push(`its priority is now ${words.en}`);
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
+    if (en.length === 0) return;
     for (const userId of activeAssigneeIds(before, actorId)) {
       await this.notificationService.create(
         {
@@ -2410,6 +2415,11 @@ export class TaskService {
         organizationId,
       );
     }
+  }
+
+  private async announcesDueChanges(organizationId: string): Promise<boolean> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
