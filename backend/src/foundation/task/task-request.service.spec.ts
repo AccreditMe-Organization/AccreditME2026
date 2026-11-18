@@ -379,6 +379,8 @@ describe('TaskRequestService (ACC-173)', () => {
           slaBreachedAt: null,
           managerEscalatedAt: null,
           headEscalatedAt: null,
+          // ACC-313 — the new due date re-arms the due-soon reminder.
+          dueWarnedAt: null,
         },
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith({
@@ -420,6 +422,8 @@ describe('TaskRequestService (ACC-173)', () => {
           heldFromStatus: returnTo,
           heldAt: expect.any(Date),
           onHoldUntil: until,
+          // ACC-313 — the window moves at approval, so the due-soon reminder re-arms.
+          dueWarnedAt: null,
         }),
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith(

@@ -1312,6 +1312,30 @@ describe('TaskService', () => {
       );
     });
 
+    // ACC-313 (Q5) — a new holder is reminded, but only while the due time is ahead.
+    describe('the due-soon reminder', () => {
+      const NOW = new Date('2026-11-17T07:00:00.000Z');
+      beforeEach(() => useFixedClock(NOW));
+      afterEach(() => jest.useRealTimers());
+      const written = () => (mockPrisma.task.update.mock.calls.at(-1)![0] as { data: Record<string, unknown> }).data;
+
+      it('is re-armed when the due time is still ahead', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, dueAt: new Date('2026-11-18T07:00:00.000Z'), dueWarnedAt: NOW });
+
+        await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+        expect(written()).toEqual(expect.objectContaining({ dueWarnedAt: null }));
+      });
+
+      it('is left alone once the due time has passed', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, dueAt: new Date('2026-11-16T07:00:00.000Z'), dueWarnedAt: NOW });
+
+        await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+        expect(written()).not.toHaveProperty('dueWarnedAt');
+      });
+    });
+
     it('removes the previous assignees', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
 
