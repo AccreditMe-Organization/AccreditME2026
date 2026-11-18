@@ -29,6 +29,8 @@ const ACTING_USER = { id: 'acting-user', organizationId: ORG_A, status: 'ACTIVE'
 const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
+  // ACC-154 — the acting cover's head role, read active before anything is written.
+  role: { findFirst: jest.fn() },
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
   orgUnitHeadAssignment: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
@@ -1117,6 +1119,29 @@ describe('OrgUnitHeadService', () => {
         expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
           ACTING_USER.id, 'role-head', HEAD_POSITION_ID, UNIT_1, ORG_A, 'admin-1',
         );
+      });
+
+      // ACC-154 — a deactivated head role is never given out again; refused
+      // before the cover is written, so nothing is left half-done.
+      it('refuses with ROLE_INACTIVE, writing nothing, when the covered head position role is inactive', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(ACTING_USER)
+          .mockResolvedValueOnce({ positionId: HEAD_POSITION_ID });
+        mockPrisma.orgPosition.findFirst
+          .mockResolvedValueOnce({ isUnitHeadPosition: true })
+          .mockResolvedValueOnce({ isUnitHeadPosition: true, roleId: 'role-head' });
+        mockPrisma.role.findFirst.mockResolvedValueOnce({ isActive: false });
+
+        await expect(
+          service.assignActingHead(UNIT_1, actingDto({ coveringForUserId: PREDECESSOR_ID }), ORG_A, 'admin-1'),
+        ).rejects.toMatchObject({ response: { statusCode: 409, code: 'ROLE_INACTIVE' } });
+
+        expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'role-head', organizationId: ORG_A } }));
+        expect(mockPrisma.orgUnitHeadAssignment.create).not.toHaveBeenCalled();
+        expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+        expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
       });
 
       it('case (b) — falls through to the predecessor\'s most recent OrgUnitHeadEvent for this unit when their current position no longer resolves (the departure case)', async () => {

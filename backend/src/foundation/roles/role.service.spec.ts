@@ -7,6 +7,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { ALL_PERMISSIONS } from './permission.seed';
 import { SYSTEM_ROLE_SEED } from './role.seed';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { answerRoleShareLock } from './role-active.testing';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -156,7 +157,8 @@ describe('RoleService', () => {
     // ACC-120 defaults: the tenant has an administrator before and after. A
     // test about the invariant overrides role.findFirst / userRole.count itself.
     mockPrisma.userRole.count.mockResolvedValue(1);
-    mockPrisma.$queryRaw.mockResolvedValue([]);
+    // ACC-154 — the role FOR SHARE lock finds every role active; any other raw read is [].
+    mockPrisma.$queryRaw.mockImplementation(answerRoleShareLock());
     mockPrisma.$transaction.mockImplementation(
       async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
     );
@@ -726,10 +728,10 @@ describe('RoleService', () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.$queryRaw
         .mockResolvedValueOnce([]) // the role row lock
-        .mockResolvedValueOnce([{ name: 'Huda', total: 1 }]); // USER_GRANTS
+        .mockResolvedValueOnce([{ nameEn: 'Huda', nameAr: null, total: 1 }]); // USER_GRANTS
 
       await expect(service.deactivateRole('role-1', ORG_A, ACTOR, ['users:view'])).rejects.toMatchObject({
-        response: { statusCode: 409, code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: ['Huda'] }] },
+        response: { statusCode: 409, code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: [{ nameEn: 'Huda', nameAr: null }] }] },
       });
       expect(mockPrisma.role.update).not.toHaveBeenCalled();
     });
@@ -739,7 +741,7 @@ describe('RoleService', () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.$queryRaw
         .mockResolvedValueOnce([]) // the role row lock
-        .mockResolvedValueOnce([{ name: 'Huda', total: 1 }]); // USER_GRANTS
+        .mockResolvedValueOnce([{ nameEn: 'Huda', nameAr: null, total: 1 }]); // USER_GRANTS
 
       await expect(service.deactivateRole('role-1', ORG_A, ACTOR, ['roles:manage'])).rejects.toMatchObject({
         response: { code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: [] }] },
