@@ -54,6 +54,7 @@ import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffec
 import { copyDefaultSeatActions } from '../committees/seat-actions';
 import { peopleDateIn } from '../task/task-sla.service';
 import { MeetingsService, type MeetingViewer } from './meetings.service';
+import type { EngineTx } from '../workflow/workflow.service';
 import { MeetingInviteeSyncService } from './invitees/meeting-invitee-sync.service';
 import { CommitteesService } from '../committees/committees.service';
 import { MeetingPeopleService } from './meeting-people.service';
@@ -938,6 +939,156 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         expect(prepare).not.toHaveBeenCalled();
       } finally {
         prepare.mockRestore();
+      }
+    });
+  });
+
+  describe('concurrent writes (review fixes 3, 6, 7)', () => {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    /** Holds a row lock in its own transaction until released; `after` runs inside it before it commits. */
+    const hold = (sql: (tx: EngineTx) => Promise<unknown>, after: (tx: EngineTx) => Promise<unknown> = async () => undefined) => {
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((r) => (locked = r));
+      const done = prisma.$transaction(
+        async (tx) => {
+          await sql(tx as never);
+          locked();
+          await released;
+          await after(tx as never);
+        },
+        { maxWait: 10_000, timeout: 30_000 },
+      );
+      return { isLocked, release, done };
+    };
+    /** Resolves to 'pending' if the promise has not settled within `ms`. */
+    const settledWithin = async (p: Promise<unknown>, ms: number) => Promise.race([p.then(() => 'settled', () => 'settled'), sleep(ms).then(() => 'pending')]);
+
+    it('the same guest added twice at once: one is added, the other is the coded refusal, never a 500', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const results = await Promise.all(
+        [0, 1, 2].map(() => code(people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now))),
+      );
+      expect(results.sort()).toEqual(['MEETING_ALREADY_INVITED', 'MEETING_ALREADY_INVITED', 'OK']);
+      // Agenda items created at once each get their own place.
+      await Promise.all([1, 2, 3, 4].map((i) => agenda.create(m.id, { title: `Item ${i}` } as never, w.orgId, as(w, 'chair'), now)));
+      const orders = (await agenda.list(m.id, w.orgId, as(w, 'chair'), now)).map((i) => i.order);
+      expect(orders).toEqual([1, 2, 3, 4]);
+    });
+
+    it('guest, agenda and answer writes wait for the meeting row (another write on the meeting finishes first)', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const lock = hold((tx) => tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${m.id} FOR UPDATE`);
+      await lock.isLocked;
+      const writes = [
+        people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now),
+        agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'chair'), now),
+        people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'member'), now),
+      ];
+      for (const write of writes) expect(await settledWithin(write, 800)).toBe('pending');
+      lock.release();
+      await lock.done;
+      await Promise.all(writes);
+    });
+
+    it('an answer is judged against the start time AFTER it gets the lock', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      // The meeting now starts 1.5 s from here; a write holds its row for 2.5 s.
+      await prisma.meeting.update({ where: { id: m.id }, data: { scheduledAt: new Date(Date.now() + 1500) } });
+      const lock = hold((tx) => tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${m.id} FOR UPDATE`);
+      await lock.isLocked;
+      const answering = code(people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'member')));
+      await sleep(2500);
+      lock.release();
+      await lock.done;
+      expect(await answering).toBe('MEETING_STARTED');
+    });
+
+    it("an agenda item's removal waits for a paper being recorded on it, and a paper is refused once its item is gone", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+
+      // 1. An upload holds the item (FOR SHARE): a removal waits for it.
+      const [first] = await agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'chair'), now);
+      const paperId = randomUUID();
+      const upload = hold(
+        (tx) => tx.$queryRaw`SELECT id FROM "AgendaItem" WHERE id = ${first!.id} FOR SHARE`,
+        // The upload records its paper, then commits.
+        (tx) =>
+          tx.storedFile.create({
+            data: {
+              id: paperId,
+              organizationId: w.orgId,
+              provider: 'S3',
+              bucket: 'test',
+              storageKey: `${w.orgId}/meetings/${first!.id}/${paperId}-budget.pdf`,
+              originalName: 'budget.pdf',
+              mimeType: 'application/pdf',
+              sizeBytes: 10,
+              sha256: 'a'.repeat(64),
+              ownerType: 'MEETING_AGENDA_ITEM',
+              ownerId: first!.id,
+              uploadedById: w.people['chair']!,
+            },
+          }),
+      );
+      await upload.isLocked;
+      const removing = agenda.remove(m.id, first!.id, w.orgId, as(w, 'chair'), now);
+      expect(await settledWithin(removing, 1500)).toBe('pending');
+      upload.release();
+      await upload.done;
+      await removing;
+      // The removal read the item's papers only after the upload committed: the new paper goes with it.
+      expect((await prisma.storedFile.findFirstOrThrow({ where: { id: paperId } })).deletedAt).not.toBeNull();
+
+      // 2. A removal holds the item (FOR UPDATE) and deletes it: the upload waits, then is refused, its bytes discarded.
+      const [second] = await agenda.create(m.id, { title: 'Risks' } as never, w.orgId, as(w, 'chair'), now);
+      const stub = {
+        prepare: jest.spyOn(storedFiles, 'prepare').mockResolvedValue({ originalName: 'risks.pdf', mimeType: 'application/pdf', sizeBytes: 10, sha256: 'a', location: { provider: 'S3' } } as never),
+        after: jest.spyOn(storedFiles, 'afterUpload').mockResolvedValue(undefined),
+        put: jest.spyOn(storedFiles, 'put').mockResolvedValue(undefined),
+        discard: jest.spyOn(storedFiles, 'discard').mockResolvedValue(undefined),
+        record: jest.spyOn(storedFiles, 'recordInTx').mockImplementation(async (tx) =>
+          (tx as unknown as typeof prisma).storedFile.create({
+            data: {
+              organizationId: w.orgId,
+              provider: 'S3',
+              bucket: 'test',
+              storageKey: `${w.orgId}/meetings/${second!.id}/${randomUUID()}-risks.pdf`,
+              originalName: 'risks.pdf',
+              mimeType: 'application/pdf',
+              sizeBytes: 10,
+              sha256: 'a'.repeat(64),
+              ownerType: 'MEETING_AGENDA_ITEM',
+              ownerId: second!.id,
+              uploadedById: w.people['chair']!,
+            },
+          }) as never,
+        ),
+      };
+      try {
+        const removal = hold(
+          (tx) => tx.$queryRaw`SELECT id FROM "AgendaItem" WHERE id = ${second!.id} FOR UPDATE`,
+          (tx) => tx.agendaItem.delete({ where: { id: second!.id } }),
+        );
+        await removal.isLocked;
+        const uploading = code(files.add(m.id, second!.id, { originalname: 'risks.pdf' } as never, w.orgId, as(w, 'chair'), now));
+        await sleep(1000);
+        removal.release();
+        await removal.done;
+        expect(await uploading).toBe('MEETING_AGENDA_ITEM_NOT_FOUND');
+        expect(stub.discard).toHaveBeenCalledTimes(1);
+        expect(await prisma.storedFile.count({ where: { ownerType: 'MEETING_AGENDA_ITEM', ownerId: second!.id } })).toBe(0);
+      } finally {
+        for (const spy of Object.values(stub)) spy.mockRestore();
       }
     });
   });

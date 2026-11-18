@@ -9,6 +9,7 @@ import type { EngineTx } from '../../workflow/workflow.service';
 import { peopleDateIn } from '../../task/task-sla.service';
 import { invitationNotice } from '../meeting-notices';
 import { notifyUsers } from '../meeting-send';
+import { lockMeetingRow } from '../meeting-access';
 
 type Client = Pick<PrismaService, '$queryRaw'>;
 
@@ -194,6 +195,8 @@ export class MeetingInviteeSyncService {
       // The instance FOR SHARE first: a move in flight (Issue Agenda, Cancel) finishes first.
       const rules = await this.stageRules.currentStageRules('MEETING', meeting.id, organizationId, tx, { lock: 'share' });
       if (rules.actions[MEETING_ACTIONS.MANAGE_GUESTS] !== true) return { result, invited: [] };
+      // Then the meeting row, as every invitee write (an answer, a guest) takes it.
+      await lockMeetingRow(tx, meeting.id, organizationId);
       const current = await tx.meeting.findFirst({ where: { id: meeting.id, organizationId }, select: { scheduledAt: true } });
       if (!current || current.scheduledAt <= now) return { result, invited: [] };
 

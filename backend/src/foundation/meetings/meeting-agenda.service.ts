@@ -8,7 +8,7 @@ import { StageRulesService } from '../workflow/stage-rules.service';
 import type { EngineTx } from '../workflow/workflow.service';
 import { MEETING_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
 import { peopleDateIn } from '../task/task-sla.service';
-import { MeetingAccess, type MeetingViewer } from './meeting-access';
+import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
 import { agendaChangedNotice, invitationNotice } from './meeting-notices';
 import { notifyUsers } from './meeting-send';
@@ -65,7 +65,8 @@ export class MeetingAgendaService {
     await this.access.writing(meetingId, organizationId, viewer, now);
     const title = dto.title.trim();
     if (!title) throw new MeetingRefusal('MEETING_AGENDA_TITLE_REQUIRED');
-    const done = await this.prisma.$transaction(async (tx) => {
+    const done = await this.prisma
+      .$transaction(async (tx) => {
       const issued = await this.lockAgenda(tx, meetingId, organizationId);
       const presenter = dto.presenter ? await this.resolvePresenter(tx, meetingId, organizationId, dto.presenter, issued, now, viewer.id) : null;
       const last = await tx.agendaItem.aggregate({ where: { organizationId, meetingId }, _max: { order: true } });
@@ -84,7 +85,8 @@ export class MeetingAgendaService {
       });
       await this.audit(tx, organizationId, viewer.id, 'CREATE', item.id, null, { meetingId, title, presenterAttendeeId: presenter?.attendeeId ?? null });
       return { issued, invitedPresenter: presenter?.invitedUserId ?? null };
-    });
+    })
+      .catch((error: unknown) => asMeetingConflict(error));
     await this.afterChange(meetingId, organizationId, viewer.id, done, { en: `"${title}" was added.`, ar: `أُضيف «${title}».` });
     return this.items(this.prisma, meetingId, organizationId);
   }
@@ -99,7 +101,8 @@ export class MeetingAgendaService {
   ): Promise<IMeetingAgendaItem[]> {
     await this.access.writing(meetingId, organizationId, viewer, now);
     if (dto.title !== undefined && !dto.title.trim()) throw new MeetingRefusal('MEETING_AGENDA_TITLE_REQUIRED');
-    const done = await this.prisma.$transaction(async (tx) => {
+    const done = await this.prisma
+      .$transaction(async (tx) => {
       const issued = await this.lockAgenda(tx, meetingId, organizationId);
       const current = await tx.agendaItem.findFirst({
         where: { id: itemId, organizationId, meetingId },
@@ -132,7 +135,8 @@ export class MeetingAgendaService {
         Object.fromEntries(changed.map((k) => [k, next[k]])),
       );
       return { issued, invitedPresenter: presenter?.invitedUserId ?? null, title: next.title, changed: true };
-    });
+    })
+      .catch((error: unknown) => asMeetingConflict(error));
     if (done.changed) await this.afterChange(meetingId, organizationId, viewer.id, done, { en: `"${done.title}" was changed.`, ar: `عُدّل «${done.title}».` });
     return this.items(this.prisma, meetingId, organizationId);
   }
@@ -140,8 +144,12 @@ export class MeetingAgendaService {
   /** Removes an item and soft-deletes its papers (the 30-day recycle bin). */
   async remove(meetingId: string, itemId: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingAgendaItem[]> {
     await this.access.writing(meetingId, organizationId, viewer, now);
-    const done = await this.prisma.$transaction(async (tx) => {
+    const done = await this.prisma
+      .$transaction(async (tx) => {
       const issued = await this.lockAgenda(tx, meetingId, organizationId);
+      // The item FOR UPDATE (fix 3): a paper being recorded on it holds it FOR
+      // SHARE, so the removal waits for it and then takes that paper too.
+      await tx.$queryRaw`SELECT id FROM "AgendaItem" WHERE id = ${itemId} AND "organizationId" = ${organizationId} AND "meetingId" = ${meetingId} FOR UPDATE`;
       const item = await tx.agendaItem.findFirst({ where: { id: itemId, organizationId, meetingId }, select: { id: true, title: true } });
       if (!item) throw new MeetingRefusal('MEETING_AGENDA_ITEM_NOT_FOUND');
       const papers = await tx.storedFile.findMany({
@@ -155,7 +163,8 @@ export class MeetingAgendaService {
       for (const [i, r] of rest.entries()) await tx.agendaItem.update({ where: { id: r.id }, data: { order: i + 1 } });
       await this.audit(tx, organizationId, viewer.id, 'DELETE', itemId, { meetingId, title: item.title, papers: papers.length }, null);
       return { issued, invitedPresenter: null, title: item.title };
-    });
+    })
+      .catch((error: unknown) => asMeetingConflict(error));
     await this.afterChange(meetingId, organizationId, viewer.id, done, { en: `"${done.title}" was removed.`, ar: `حُذف «${done.title}».` });
     return this.items(this.prisma, meetingId, organizationId);
   }
@@ -163,7 +172,8 @@ export class MeetingAgendaService {
   /** The new order: every item's id, once (MEETING_AGENDA_ORDER_MISMATCH otherwise). */
   async order(meetingId: string, dto: OrderAgendaDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingAgendaItem[]> {
     await this.access.writing(meetingId, organizationId, viewer, now);
-    const done = await this.prisma.$transaction(async (tx) => {
+    const done = await this.prisma
+      .$transaction(async (tx) => {
       const issued = await this.lockAgenda(tx, meetingId, organizationId);
       const items = await tx.agendaItem.findMany({ where: { organizationId, meetingId }, select: { id: true, order: true } });
       const known = new Set(items.map((i) => i.id));
@@ -175,16 +185,23 @@ export class MeetingAgendaService {
       for (const [i, id] of dto.itemIds.entries()) if (before.get(id) !== i + 1) await tx.agendaItem.update({ where: { id }, data: { order: i + 1 } });
       if (moved.length > 0) await this.audit(tx, organizationId, viewer.id, 'UPDATE', meetingId, { order: items.sort((a, b) => a.order - b.order).map((i) => i.id) }, { order: dto.itemIds });
       return { issued, invitedPresenter: null, changed: moved.length > 0 };
-    });
+    })
+      .catch((error: unknown) => asMeetingConflict(error));
     if (done.changed) await this.afterChange(meetingId, organizationId, viewer.id, done, { en: 'The items were reordered.', ar: 'تغيّر ترتيب البنود.' });
     return this.items(this.prisma, meetingId, organizationId);
   }
 
   // ── Shared ──────────────────────────────────────────────────────────────────
 
-  /** The instance FOR SHARE, the stage must allow manage_agenda; true when the agenda is already issued. */
+  /**
+   * The instance FOR SHARE (the stage must allow manage_agenda), then the
+   * meeting row FOR UPDATE (fix 6: `max(order) + 1` and the presenter's guest
+   * check read a state no other write on this meeting can change meanwhile).
+   * True when the agenda is already issued.
+   */
   private async lockAgenda(tx: EngineTx, meetingId: string, organizationId: string): Promise<boolean> {
     const rules = await this.stageRules.assertStageAllows('MEETING', meetingId, MEETING_ACTIONS.MANAGE_AGENDA, organizationId, tx, { lock: 'share' });
+    await lockMeetingRow(tx, meetingId, organizationId);
     return rules.flags.includes(STAGE_FLAG.AGENDA_ISSUED);
   }
 

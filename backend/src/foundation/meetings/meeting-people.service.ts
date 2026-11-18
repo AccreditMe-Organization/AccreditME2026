@@ -6,7 +6,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { StageRulesService } from '../workflow/stage-rules.service';
 import { MEETING_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
 import { peopleDateIn } from '../task/task-sla.service';
-import { MeetingAccess, type MeetingViewer } from './meeting-access';
+import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
 import { cantAttendNotice, invitationNotice, outsideInvitationEmail } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames } from './meeting-send';
@@ -79,8 +79,10 @@ export class MeetingPeopleService {
       if (!user) throw new MeetingRefusal('MEETING_PERSON_NOT_FOUND');
     }
 
-    const { attendeeId, issued } = await this.prisma.$transaction(async (tx) => {
+    const { attendeeId, issued } = await this.prisma
+      .$transaction(async (tx) => {
       const rules = await this.stageRules.assertStageAllows('MEETING', id, MEETING_ACTIONS.MANAGE_GUESTS, organizationId, tx, { lock: 'share' });
+      await lockMeetingRow(tx, id, organizationId);
       const issued = rules.flags.includes(STAGE_FLAG.AGENDA_ISSUED);
       const duplicate = person
         ? await tx.meetingAttendee.findFirst({ where: { organizationId, meetingId: id, userId: dto.userId! }, select: { id: true } })
@@ -117,7 +119,8 @@ export class MeetingPeopleService {
         },
       });
       return { attendeeId: row.id, issued };
-    });
+    })
+      .catch((error: unknown) => asMeetingConflict(error, 'MEETING_ALREADY_INVITED'));
 
     // Added once the agenda is issued: invited at once (Answers, round 4: "Add and send invitation").
     if (issued) await this.inviteNow(id, organizationId, viewer.id, person ? { userId: dto.userId! } : { email: dto.outsideEmail! });
@@ -128,6 +131,7 @@ export class MeetingPeopleService {
     await this.access.writing(id, organizationId, viewer, now);
     await this.prisma.$transaction(async (tx) => {
       await this.stageRules.assertStageAllows('MEETING', id, MEETING_ACTIONS.MANAGE_GUESTS, organizationId, tx, { lock: 'share' });
+      await lockMeetingRow(tx, id, organizationId);
       const row = await tx.meetingAttendee.findFirst({
         where: { id: attendeeId, organizationId, meetingId: id },
         select: { id: true, kind: true, userId: true },
@@ -147,7 +151,7 @@ export class MeetingPeopleService {
           before: { meetingId: id, kind: row.kind, userId: row.userId },
         },
       });
-    });
+    }).catch((error: unknown) => asMeetingConflict(error));
   }
 
   /** After the commit: one guest added to an issued meeting gets the invitation now. */
@@ -164,19 +168,26 @@ export class MeetingPeopleService {
 
   // ── Answers ─────────────────────────────────────────────────────────────────
 
-  async answer(id: string, dto: AnswerMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<void> {
-    await this.access.seeing(id, organizationId, viewer, now);
+  /**
+   * `now` is for specs; left out, the deadline's clock is read AFTER the locks
+   * (lane B's review, fix 7): an answer that waited for another write is judged
+   * against the time it actually happens.
+   */
+  async answer(id: string, dto: AnswerMeetingDto, organizationId: string, viewer: MeetingViewer, now?: Date): Promise<void> {
+    await this.access.seeing(id, organizationId, viewer, now ?? new Date());
     const changed = await this.prisma.$transaction(async (tx) => {
       await this.stageRules.assertStageAllows('MEETING', id, MEETING_ACTIONS.ANSWER_INVITATION, organizationId, tx, { lock: 'share' });
+      await lockMeetingRow(tx, id, organizationId);
+      const at = now ?? new Date();
       const meeting = await tx.meeting.findFirst({ where: { id, organizationId }, select: { scheduledAt: true } });
-      if (!meeting || meeting.scheduledAt <= now) throw new MeetingRefusal('MEETING_STARTED');
+      if (!meeting || meeting.scheduledAt <= at) throw new MeetingRefusal('MEETING_STARTED');
       const row = await tx.meetingAttendee.findFirst({
         where: { organizationId, meetingId: id, userId: viewer.id },
         select: { id: true, answer: true, answerNote: true },
       });
       if (!row) throw new MeetingRefusal('MEETING_NOT_INVITED');
       const note = dto.note ?? null;
-      await tx.meetingAttendee.update({ where: { id: row.id }, data: { answer: dto.answer, answerNote: note, answeredAt: now } });
+      await tx.meetingAttendee.update({ where: { id: row.id }, data: { answer: dto.answer, answerNote: note, answeredAt: at } });
       await tx.auditLog.create({
         data: {
           organizationId,
@@ -189,7 +200,7 @@ export class MeetingPeopleService {
         },
       });
       return { attendeeId: row.id, toCantAttend: dto.answer === 'CANT_ATTEND' && row.answer !== 'CANT_ATTEND', note };
-    });
+    }).catch((error: unknown) => asMeetingConflict(error));
     if (changed.toCantAttend) await this.tellScheduler(id, organizationId, viewer.id, changed.attendeeId, changed.note);
   }
 

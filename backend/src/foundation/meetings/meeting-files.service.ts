@@ -71,7 +71,10 @@ export class MeetingFilesService {
       storedId = await this.prisma.$transaction(async (tx) => {
         // Again under the instance's lock: the agenda may have closed while the bytes were uploading.
         await this.stageRules.assertStageAllows('MEETING', meetingId, MEETING_ACTIONS.MANAGE_AGENDA, organizationId, tx, { lock: 'share' });
-        if (itemId) await this.assertItem(tx, meetingId, itemId, organizationId);
+        // The item FOR SHARE, after the instance (fix 3): a removal holding it
+        // FOR UPDATE finishes first, and then the item is gone and the upload is
+        // refused — its bytes discarded below — rather than recorded as an orphan.
+        if (itemId) await this.assertItem(tx, meetingId, itemId, organizationId, 'share');
         return (await this.storedFiles.recordInTx(tx, prepared, viewer.id)).id;
       });
     } catch (error) {
@@ -173,8 +176,18 @@ export class MeetingFilesService {
     throw new NotFoundException(FILE_NOT_FOUND);
   }
 
-  private async assertItem(client: Pick<PrismaService, 'agendaItem'>, meetingId: string, itemId: string, organizationId: string): Promise<void> {
-    const item = await client.agendaItem.findFirst({ where: { id: itemId, organizationId, meetingId }, select: { id: true } });
-    if (!item) throw new MeetingRefusal('MEETING_AGENDA_ITEM_NOT_FOUND');
+  private async assertItem(
+    client: Pick<PrismaService, 'agendaItem' | '$queryRaw'>,
+    meetingId: string,
+    itemId: string,
+    organizationId: string,
+    lock: 'share' | 'none' = 'none',
+  ): Promise<void> {
+    const found =
+      lock === 'share'
+        ? (await client.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "AgendaItem" WHERE id = ${itemId} AND "organizationId" = ${organizationId} AND "meetingId" = ${meetingId} FOR SHARE`).length > 0
+        : !!(await client.agendaItem.findFirst({ where: { id: itemId, organizationId, meetingId }, select: { id: true } }));
+    if (!found) throw new MeetingRefusal('MEETING_AGENDA_ITEM_NOT_FOUND');
   }
 }

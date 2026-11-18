@@ -3,6 +3,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { MeetingRefusal } from './meeting-refusal';
+import type { EngineTx } from '../workflow/workflow.service';
 
 export const MEETING_NOT_FOUND = 'Meeting not found';
 
@@ -59,4 +60,29 @@ export class MeetingAccess {
   isScheduler(owner: MeetingOwner, organizationId: string, viewerId: string, now: Date): Promise<boolean> {
     return isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewerId, now);
   }
+}
+
+/**
+ * ACC-316 PR 3b — the meeting row FOR UPDATE, taken right AFTER the instance
+ * FOR SHARE (the stage's rules) in every invitee, guest, agenda and answer
+ * write, and in the invitee sync: the engine's order, then the record. It
+ * serialises the writes on one meeting — a duplicate-guest check, the next
+ * agenda `order`, an answer against the sync — so none of them reads a state
+ * another is about to change (lane B's review, fix 6).
+ */
+export async function lockMeetingRow(tx: Pick<EngineTx, '$queryRaw'>, meetingId: string, organizationId: string): Promise<void> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Meeting" WHERE id = ${meetingId} AND "organizationId" = ${organizationId} FOR UPDATE`;
+  if (rows.length === 0) throw new NotFoundException(MEETING_NOT_FOUND);
+}
+
+/**
+ * A unique-key or missing-row error that still slips past the checks (P2002,
+ * P2025) is a coded 409, never a 500: `unique` names what was duplicated.
+ */
+export function asMeetingConflict(error: unknown, unique: 'MEETING_ALREADY_INVITED' | 'MEETING_CHANGED' = 'MEETING_CHANGED'): never {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === 'P2002') throw new MeetingRefusal(unique);
+  if (code === 'P2025') throw new MeetingRefusal('MEETING_CHANGED');
+  throw error;
 }
