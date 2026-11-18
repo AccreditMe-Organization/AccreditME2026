@@ -110,6 +110,17 @@ export class RoleController {
     return this.roleService.assignPermissions(id, dto, tenantId, actorId);
   }
 
+  // ACC-154 — the Deactivate dialog's pre-flight: the blockers deactivate would
+  // refuse for (ROLE_IN_USE), by category, with counts and up to 10 names.
+  @Get('roles/:id/deactivation-check')
+  @Permissions(ROLES_PERMISSIONS.MANAGE)
+  deactivationCheck(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+  ): ReturnType<RoleService['deactivationCheck']> {
+    return this.roleService.deactivationCheck(id, tenantId);
+  }
+
   @Post('roles/:id/deactivate')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions(ROLES_PERMISSIONS.MANAGE)

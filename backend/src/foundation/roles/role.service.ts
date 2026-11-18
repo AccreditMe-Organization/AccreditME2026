@@ -41,6 +41,7 @@ import {
   RootRoleCannotBeDeactivatedException,
 } from './role-permission-refusal';
 import { assertNotAccountOwner } from './account-owner';
+import { RoleInUseException, RoleReferenceBlocker, roleReferences } from './role-references';
 import {
   assertGrantable,
   assertNotRootRoleOnly,
@@ -450,7 +451,13 @@ export class RoleService {
     // administrator had been deactivated passed it, and a tenant with a real
     // administrator was refused for the same reason — the two cases were
     // indistinguishable to it.
+    // ACC-154 — and nothing may still hold or name the role: refused with 409
+    // ROLE_IN_USE, naming each category. Checked under the role's row lock, in
+    // the same transaction as the write, so a grant made meanwhile is seen.
     await this.prisma.$transaction(async (tx) => {
+      await this.lockRoleRow(tx, id, organizationId);
+      const blockers = await roleReferences(tx, id, organizationId);
+      if (blockers.length > 0) throw new RoleInUseException(blockers);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.role.update({ where: { id }, data: { isActive: false } });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
@@ -465,6 +472,22 @@ export class RoleService {
       before: { isActive: true },
       after: { isActive: false },
     });
+  }
+
+  /**
+   * ACC-154 — the Deactivate dialog's pre-flight: what deactivateRole() would
+   * refuse for, from the same roleReferences(). The root role is never
+   * deactivated (ACC-221), whatever references it.
+   */
+  async deactivationCheck(
+    id: string,
+    organizationId: string,
+  ): Promise<{ canDeactivate: boolean; rootRole: boolean; blockers: RoleReferenceBlocker[] }> {
+    const role = await this.prisma.role.findFirst({ where: { id, organizationId }, select: { id: true, key: true } });
+    if (!role) throw new NotFoundException('Role not found');
+    const rootRole = role.key === TENANT_ADMIN_KEY;
+    const blockers = await roleReferences(this.prisma, role.id, organizationId);
+    return { canDeactivate: !rootRole && blockers.length === 0, rootRole, blockers };
   }
 
   async reactivateRole(id: string, organizationId: string, actorId: string): Promise<void> {
