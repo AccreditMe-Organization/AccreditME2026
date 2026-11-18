@@ -23,7 +23,7 @@ export interface TaskActionFacts {
   viewerIsActiveAssignee: boolean;
   /** …and that row came from a pick. */
   viewerPickedIt: boolean;
-  /** Anyone at all is an active assignee. */
+  /** Anyone is on the task: a current row held by an ACTIVE user (CURRENT_ACTIVE_ASSIGNEE, ACC-86; ACC-315). */
   anyActiveAssignee: boolean;
   /** The task remembers a pool target (ACC-167). */
   hasPoolTarget: boolean;

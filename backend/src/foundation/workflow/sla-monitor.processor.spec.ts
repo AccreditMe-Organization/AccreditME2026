@@ -14,6 +14,7 @@ import { TaskRequestService } from '../task/task-request.service';
 import { DateTime } from 'luxon';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { CURRENT_ACTIVE_ASSIGNEE } from '../task/task-pool';
 import { LoadedCalendar, hoursBetweenWith } from '../working-calendar/working-time';
 import { WorkflowService } from './workflow.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
@@ -787,13 +788,27 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
           status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED', 'ON_HOLD'] },
           // ACC-167 — not a task waiting in a pool: nobody holds it, so there
           // is no assignee to escalate for. sweepUnpickedPoolTasks() owns it.
+          // ACC-315 — "someone holds it" is ACC-86's one rule.
           OR: [
             { assignedPositionId: null, assignedCommitteeId: null },
-            { assignees: { some: { removedAt: null } } },
+            { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
           ],
         },
-        include: { assignees: { where: { removedAt: null } } },
+        include: { assignees: { where: CURRENT_ACTIVE_ASSIGNEE } },
       });
+    });
+
+    // ACC-315 — every current row held by someone no longer ACTIVE: the breach is
+    // recorded, but nobody's manager is resolved or told, and no skip row is written.
+    it('a task nobody is on is stamped breached, and escalates to no one', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+
+      await runWithOverdueTask(makeOverdueTask({ assignees: [] }));
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { slaBreachedAt: expect.any(Date) } });
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ escalationSkipped: true }) }));
     });
 
     // The direct behavioral regression test the structural test above
@@ -1668,7 +1683,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             dueAt: expect.anything(),
             OR: [
               { assignedPositionId: null, assignedCommitteeId: null },
-              { assignees: { some: { removedAt: null } } },
+              { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
             ],
           }),
         }),
