@@ -23,7 +23,8 @@ export type MeetingRefusalCode =
   /** The meeting changed since it was loaded (expectedUpdatedAt). */
   | 'MEETING_CHANGED'
   /** A reschedule moves the meeting to a different time. */
-  | 'MEETING_RESCHEDULE_SAME_TIME';
+  | 'MEETING_RESCHEDULE_SAME_TIME'
+  | 'MEETING_TITLE_REQUIRED';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -35,6 +36,7 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_QUORUM_UNIT_ONLY: HttpStatus.BAD_REQUEST,
   MEETING_CHANGED: HttpStatus.CONFLICT,
   MEETING_RESCHEDULE_SAME_TIME: HttpStatus.BAD_REQUEST,
+  MEETING_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -47,6 +49,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_QUORUM_UNIT_ONLY: "A committee meeting takes the committee's quorum.",
   MEETING_CHANGED: 'This meeting changed since you opened it. Reload it and try again.',
   MEETING_RESCHEDULE_SAME_TIME: 'Choose a different date or time.',
+  MEETING_TITLE_REQUIRED: 'Give the meeting a title.',
 };
 
 export class MeetingRefusal extends HttpException {

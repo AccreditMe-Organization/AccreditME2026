@@ -1358,7 +1358,7 @@ them together with their resolver.
        `MEETING_OWNER_NOT_FOUND`, `MEETING_NOT_ALLOWED`, `MEETING_TYPE_UNKNOWN`,
        `MEETING_TIME_IN_PAST`, `MEETING_PLACE_REQUIRED`,
        `MEETING_QUORUM_UNIT_ONLY`, `MEETING_CHANGED`,
-       `MEETING_RESCHEDULE_SAME_TIME`; and the stage's own
+       `MEETING_RESCHEDULE_SAME_TIME`, `MEETING_TITLE_REQUIRED`; and the stage's own
        `STAGE_ACTION_NOT_ALLOWED`.
      - **The list:** views `mine`, `past`, `minutes`, `all` (`meetings:view`
        only, else 403) and `subunits` (overseen and not otherwise theirs);

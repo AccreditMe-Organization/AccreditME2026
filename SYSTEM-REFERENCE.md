@@ -16748,6 +16748,7 @@ real meeting, a missing one and another organisation's.
   | `MEETING_QUORUM_UNIT_ONLY` | 400 | a quorum on a committee meeting |
   | `MEETING_CHANGED` | 409 | a stale save |
   | `MEETING_RESCHEDULE_SAME_TIME` | 400 | the new time equals the current one |
+  | `MEETING_TITLE_REQUIRED` | 400 | a title that trims to empty, on schedule or edit; `''` is never stored |
 
 ### 18.4 The list
 

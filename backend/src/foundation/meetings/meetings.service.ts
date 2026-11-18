@@ -69,6 +69,9 @@ export class MeetingsService {
     if (!(await isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now))) {
       throw new MeetingRefusal('MEETING_NOT_ALLOWED');
     }
+    // A title of spaces passes the DTO and would be stored as ''.
+    const title = dto.title.trim();
+    if (!title) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
     if (owner.committeeId && dto.unitQuorum != null) throw new MeetingRefusal('MEETING_QUORUM_UNIT_ONLY');
     if (!dto.location && !dto.meetingUrl) throw new MeetingRefusal('MEETING_PLACE_REQUIRED');
     const scheduledAt = new Date(dto.scheduledAt);
@@ -95,7 +98,7 @@ export class MeetingsService {
           committeeId: owner.committeeId,
           orgUnitId: owner.committeeId ? null : owner.unitId,
           organizerId: viewer.id,
-          title: dto.title.trim(),
+          title,
           typeValueId: dto.typeValueId,
           scheduledAt,
           durationMinutes: dto.durationMinutes,
@@ -358,6 +361,7 @@ export class MeetingsService {
 
   async update(id: string, dto: UpdateMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting> {
     const owner = await this.writableOwner(id, organizationId, viewer, now);
+    if (dto.title !== undefined && !dto.title.trim()) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
     if (dto.typeValueId !== undefined) await this.assertMeetingType(dto.typeValueId, organizationId);
     if (owner.committeeId && dto.unitQuorum != null) throw new MeetingRefusal('MEETING_QUORUM_UNIT_ONLY');
 

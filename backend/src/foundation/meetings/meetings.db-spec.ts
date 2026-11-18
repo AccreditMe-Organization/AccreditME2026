@@ -291,6 +291,8 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         ['MEETING_PLACE_REQUIRED', meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }, { location: null }), a.orgId, as(a, 'chair'), now)],
         ['MEETING_TIME_IN_PAST', meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }, { scheduledAt: later(-1, now).toISOString() }), a.orgId, as(a, 'chair'), now)],
         ['MEETING_TYPE_UNKNOWN', meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }, { typeValueId: 'no-such-type' }), a.orgId, as(a, 'chair'), now)],
+        // A title of spaces passes the DTO's IsNotEmpty and would store ''.
+        ['MEETING_TITLE_REQUIRED', meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }, { title: '   ' }), a.orgId, as(a, 'chair'), now)],
         // The Dissolved committee's stage does not allow scheduling.
         ['STAGE_ACTION_NOT_ALLOWED', meetings.schedule(scheduleDto(now, { committeeId: a.dissolvedCommitteeId }), a.orgId, as(a, 'chair'), now)],
       ];
@@ -412,6 +414,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(await code(meetings.update(m.id, { title: 'Again', expectedUpdatedAt: m.updatedAt.toISOString() } as never, a.orgId, as(a, 'chair'), now))).toBe('MEETING_CHANGED');
       expect(await code(meetings.update(m.id, { location: null } as never, a.orgId, as(a, 'chair'), now))).toBe('MEETING_PLACE_REQUIRED');
       expect(await code(meetings.update(m.id, { unitQuorum: 4 } as never, a.orgId, as(a, 'chair'), now))).toBe('MEETING_QUORUM_UNIT_ONLY');
+      expect(await code(meetings.update(m.id, { title: '  ' } as never, a.orgId, as(a, 'chair'), now))).toBe('MEETING_TITLE_REQUIRED');
       // A member sees it and may not write; Clinical's head oversees it and holds no key; an outsider gets the 404.
       expect(await code(meetings.update(m.id, { title: 'X' } as never, a.orgId, as(a, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
       expect(await code(meetings.update(m.id, { title: 'X' } as never, a.orgId, as(a, 'clinicalHead'), now))).toBe('MEETING_NOT_ALLOWED');
