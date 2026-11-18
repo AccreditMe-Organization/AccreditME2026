@@ -567,12 +567,21 @@ elsewhere.**
   system or custom (Ahmad, 30 Sep). `roleReferences()` (`role-references.ts`)
   is the one check:
   - **What it counts:**
-    - `USER_GRANTS`: direct grants, users of any status;
+    - `USER_GRANTS`: direct grants;
     - `POSITION_GRANTS`: grants through a head position;
     - `POSITIONS`: `OrgPosition.roleId`;
     - `STAGE_ESCALATIONS`: a stage's `escalationConfig[].notifyRoleId`, ACC-105.
   - **What no longer names a role:** a stage's people (no ROLE kind since
     ACC-271) and transitions.
+  - **Who counts (Ahmad, 18 Nov):** only ACTIVE and INVITED users, in both
+    grant categories. An INACTIVE or SUSPENDED user's leftover grant does not
+    block. If that user is reactivated, a deactivated role grants nothing
+    (`getUserPermissions()` reads `role.isActive`), so nothing is lost.
+  - **What is named follows the reader's own permissions** (ACC-101's rule):
+    user names need `users:view`, position names `positions:view`, and stage
+    names `workflows:view`. Without the permission, the category carries its
+    count and an empty `names`; counts are always given. This holds for the
+    pre-flight and for the refusal alike.
   - **The reads:** one query per category, each scoped by the role's id AND
     organisation, returning the total and up to 10 names.
   - **The refusal:** `deactivateRole()` runs the check inside its transaction,
@@ -583,7 +592,8 @@ elsewhere.**
   - **The screen:** Deactivate on the Roles row ⋯ reads the pre-flight first.
     - **Blockers:** `RoleInUseDialogComponent` lists them by category: a
       counted heading (`plural.role.inUse.*`), the names, and "Showing 10 of N"
-      when there are more. It has Close only.
+      when there are more. A category with no names (not the reader's to see)
+      is the count line alone. It has Close only.
     - **None:** the plain confirm ("Nobody holds it now…"), which never counts
       people.
     - **A `ROLE_IN_USE` after the confirm** (something arrived in between)
