@@ -75,6 +75,7 @@ audit's starting point, not be mistaken for having already done it.
 15. Deployment — Railway IaC and migrations (ACC-127) — ✅ built (15.3 = what survives an apply; 15.5 = the migration step)
 16. File storage — per organisation, and file evidence (ACC-177; SharePoint ACC-185; the screens ACC-260) — ✅ built (16.11 = the recycle bin; 16.14 = SharePoint)
 17. AI foundation — metering, credit periods, switches, platform key only (ACC-194) — ✅ built
+18. Meetings — one meeting's record (ACC-316 PR 3a) — 🟡 backend only; invitees, the agenda, minutes and screens are later PRs
 
 ---
 
@@ -3079,8 +3080,8 @@ and §16.6 for PR 3 as built).
     For MEETING (ACC-316 PR 2): `edit_details`, `manage_agenda`,
     `manage_guests`, `reschedule`, `answer_invitation`, `record_attendance`,
     `record_minutes`, `apply_suggestions`, `change_action_dates`,
-    `suggest_correction`; nothing calls the engine about them until the
-    meeting endpoints (PR 3).
+    `suggest_correction`. Since PR 3a the meeting endpoints ask the stage for
+    `edit_details` and `reschedule` (§18); the rest wait for PR 3b and PR 4.
   - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
     stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
     sit on exactly one stage. MEETING (ACC-316) has `AGENDA_ISSUED` and
@@ -16552,3 +16553,151 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
     invalid.
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
+
+---
+
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a)
+
+Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
+built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
+2's (§1, §2.18, §2.19, §3.16). PR 3b adds invitees, guests, answers, the agenda
+and the clash check; PR 4 the minutes.
+
+### 18.1 The routes
+
+`MeetingsController` (`foundation/meetings/`), all behind `TenantGuard` and
+`PermissionGuard`, with **no `@Permissions`**:
+
+| Route | Does |
+|---|---|
+| `GET /meetings?view=&committeeId=&orgUnitId=&skip=&take=` | the list (§18.4), `take` 1–50 |
+| `GET /meetings/:id` | one meeting: owner, stage, type, organiser, latest reschedule, and `may: { edit, reschedule }` |
+| `POST /meetings` | schedule: `committeeId` or `orgUnitId` (exactly one), title, `typeValueId` (a `meeting_type` value), `scheduledAt`, `durationMinutes` 5–1440, `location` and/or `meetingUrl`, `unitQuorum` (unit meetings only) |
+| `PATCH /meetings/:id` | edit those fields except the owner and the time; `expectedUpdatedAt` |
+| `POST /meetings/:id/reschedule` | a new time and a reason, both required |
+
+Cancel is the workflow's own move (`POST /workflows/instances/:id/transition`,
+with a comment), not a meetings route.
+
+### 18.2 Who sees a meeting
+
+The MEETING rule of `ObjectVisibilityService`, read through
+`common/services/meeting-membership.ts`. That file is the one place; never
+write a second copy.
+
+- `meetings:view`: every meeting.
+- A **member**: an active member of the meeting's active committee, an ACTIVE
+  person whose primary unit is the meeting's unit, or anyone on its attendee
+  list.
+- An **overseer** (reads, `{ oversight: true }`): a head, or an acting head in
+  force, of the owning unit (the meeting's own, or its committee's) or a unit
+  above it.
+
+Anyone else gets the identical 404 "Meeting not found". It is the same for a
+real meeting, a missing one and another organisation's.
+
+### 18.3 Who writes, and what the stage allows
+
+- **Who:** `meeting-authority.ts`'s SCHEDULERS for the meeting's owner:
+  - a committee seat with `schedule_meeting`;
+  - `meetings:schedule` held by a person of the owning unit;
+  - a head above holding `meetings:schedule_subunits`.
+
+  The Planned and Agenda Issued pools read the same predicate, so a button and
+  a pool cannot disagree. A viewer who sees the meeting but is not a scheduler
+  gets 403 `MEETING_NOT_ALLOWED`. Oversight alone never writes.
+- **What:** the meeting's stage must allow `edit_details` or `reschedule`
+  (`StageRulesService.assertStageAllows`, else 409 `STAGE_ACTION_NOT_ALLOWED`).
+  As seeded, Planned and Agenda Issued allow both, and nothing after them does.
+- **A committee's meeting** is scheduled only while the committee's stage
+  allows `schedule_meeting`. As seeded, that is Active and Suspended.
+- **Lock order:** the instance FOR SHARE, then the meeting row FOR UPDATE — the
+  engine's order (ACC-255). A stale `expectedUpdatedAt` is 409
+  `MEETING_CHANGED`, with nothing written.
+- **Schedule** writes three things in ONE transaction: the meeting, its
+  workflow instance at the initial stage, and one CREATE audit row
+  (`prepareInstanceStart`, `insertInstanceStartInTx`, `finishInstanceStart`).
+  The scheduler is not sent the generic assignment notice.
+- **Edit** writes only the changed fields, with one audit row naming each one
+  before and after. If nothing changed, nothing is written.
+- **Reschedule** writes a `MeetingReschedule` (`fromAt`, `toAt`, the reason,
+  `THIS_ONLY`), the new time and one audit row. After the commit, every
+  attendee already invited is told — never the actor.
+- **Refusals** (`meeting-refusal.ts`), each carrying a `code`:
+
+  | Code | Status | When |
+  |---|---|---|
+  | `MEETING_OWNER_REQUIRED` | 400 | neither or both of the committee and the unit |
+  | `MEETING_OWNER_NOT_FOUND` | 404 | the committee or unit is missing, inactive or another organisation's |
+  | `MEETING_NOT_ALLOWED` | 403 | not a scheduler for the owner |
+  | `MEETING_TYPE_UNKNOWN` | 400 | not an offered `meeting_type` value |
+  | `MEETING_TIME_IN_PAST` | 400 | the time is not in the future |
+  | `MEETING_PLACE_REQUIRED` | 400 | neither a location nor a link |
+  | `MEETING_QUORUM_UNIT_ONLY` | 400 | a quorum on a committee meeting |
+  | `MEETING_CHANGED` | 409 | a stale save |
+  | `MEETING_RESCHEDULE_SAME_TIME` | 400 | the new time equals the current one |
+
+### 18.4 The list
+
+Visibility is in the `WHERE`, before `LIMIT`, and every order ends in the id, so
+a page never repeats or skips. It runs two queries (the page and the count),
+then reads the page's meetings and their stages in one batch each.
+
+| `view` | Rows |
+|---|---|
+| `mine` (default) | meetings the viewer is a member of or organised; upcoming, soonest first |
+| `past` | every meeting the viewer sees that has started; latest first |
+| `minutes` | meetings whose minutes the viewer records: a seat with `record_minutes`, or `meetings:record_minutes` in the unit |
+| `all` | every meeting; `meetings:view` only, else 403 |
+| `subunits` | meetings the viewer oversees and is not otherwise part of |
+
+### 18.5 The engine's two new registries
+
+Both are keyed by record type, and both fail closed: a type with no entry has
+none.
+
+- **`TRANSITION_EFFECTS`** (`foundation/workflow/transition-effects.ts`). An
+  effect runs when a move ENTERS its flag from a stage without it, in three
+  parts:
+  - `prepare`, before the transaction;
+  - `apply`, inside the move's transaction, after the `inTx` write;
+  - `finish`, after the commit. A failure there is logged and never undoes the
+    move.
+
+  MEETING has two:
+  - `AGENDA_ISSUED`: every user attendee not yet invited is stamped
+    `invitedAt` and told ("Meeting invitation").
+  - `MEETING_CANCELLED`: every invited user is told, with the move's comment as
+    the reason ("Meeting cancelled").
+
+  The actor is never told.
+- **`MOVE_REASON_FLAGS`** (`foundation/workflow/move-reasons.ts`). A move into
+  a stage carrying a listed flag refuses an empty or blank comment: 400
+  `REASON_REQUIRED`, with the move's labels. This holds on a person's press
+  and on the deciding vote. `GET /workflows/instances/:id/moves` says
+  `needsReason` for each move. MEETING lists `MEETING_CANCELLED`.
+
+### 18.6 Tasks on a meeting
+
+`TASK_RECORD_TYPES` has a MEETING entry (§3.19):
+
+- **Keys:** `meetings:view_all_tasks`, `meetings:view_unit_tasks`,
+  `meetings:create_tasks` and `meetings:manage_tasks`.
+- **Owning unit:** the meeting's own, or its committee's.
+- **The picker** lists meetings by title. Without `meetings:view`, it lists only
+  the caller's own meetings.
+- **A cancelled meeting takes no new tasks.** A meeting whose current stage
+  carries `MEETING_CANCELLED` is refused with 409 `TASK_RECORD_CLOSED`, worded
+  for a meeting.
+
+### 18.7 The working calendar's day helpers
+
+`WorkingCalendarService` has two:
+
+- `nextWorkingDay(day, org)`: the day itself if it is a working day, else the
+  next one;
+- `addWorkingDays(day, n, org)`: `n` working days after the day.
+
+Both take `yyyy-MM-dd` days and read the organisation's calendar (working days
+and holidays). A calendar with no working day in a year is a 400. PR 4's review
+date reads them.

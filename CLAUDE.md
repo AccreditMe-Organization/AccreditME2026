@@ -1104,7 +1104,7 @@ Permission strings follow {module}:{action} pattern.
 
 **Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
 dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
-`permission.seed.ts` seeds (77 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys). A
+`permission.seed.ts` seeds (81 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys and four meeting task keys). A
 key marked `*` is in `PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with
 it yet, so a role cannot gain it (ACC-120 slice 5). That file is the source; this
 list is a copy.
@@ -1131,6 +1131,8 @@ committees:create_tasks      committees:manage_tasks
 meetings:view               meetings:manage *         meetings:record_minutes
 meetings:approve_minutes    meetings:schedule         meetings:schedule_subunits
 meetings:approve_subunits
+meetings:view_all_tasks      meetings:view_unit_tasks
+meetings:create_tasks        meetings:manage_tasks
 documents:view *            documents:create *        documents:submit *
 documents:review *          documents:approve *       documents:publish *
 documents:manage_templates * documents:manage_numbering *

@@ -1307,7 +1307,11 @@ them together with their resolver.
    - **No migration.**
    - **Live after:** the role screen shows the five keys; the seat screens show
      the two actions; the Workflow page shows the decided Meeting workflow.
-3. **PR 3: one meeting, backend.**
+3. **PR 3: one meeting, backend.** Split in two (lane B, Prompt 133, 18
+   Nov): **3a** is the record (below, to "the working calendar"), **3b** the
+   people and the agenda: invitees and `MeetingInviteeSync`, guests, answers,
+   the agenda and papers, the clash check, outside guest emails. 3a as built:
+   §6.1, below this slice.
    - Changes:
      - schedule, read, paged list with the saved views and "Sub-units'
        meetings";
@@ -1327,6 +1331,62 @@ them together with their resolver.
      - the working calendar's next-working-day and add-working-days.
    - **No migration.**
    - **Live after:** the API.
+   - **6.1 PR 3a as built (18 Nov):**
+     - `/meetings` (`foundation/meetings/`): `GET /`, `GET /:id`, `POST /`,
+       `PATCH /:id`, `POST /:id/reschedule`. No route carries `@Permissions`:
+       seeing is the parent rule, writing is `meeting-authority.ts`'s
+       SCHEDULERS and the stage's rules, in the service. Cancel is the
+       workflow's own move.
+     - **Who sees a meeting** (`ObjectVisibilityService` MEETING,
+       `common/services/meeting-membership.ts`): `meetings:view`, an active
+       member of its active committee, an ACTIVE person of its unit, an
+       attendee, or (oversight, reads) a head or acting head of the owning
+       unit or a unit above. Anyone else gets the identical 404.
+     - **Who writes:** SCHEDULERS, on a meeting the viewer sees. Oversight
+       counts for seeing it: a head above holding
+       `meetings:schedule_subunits` may schedule it, so may edit it; without
+       the key they read only (`MEETING_NOT_ALLOWED`).
+     - **Lock order:** the meeting's instance FOR SHARE (`assertStageAllows`),
+       then the meeting row FOR UPDATE. A committee's meeting is scheduled only
+       while the committee's stage allows `schedule_meeting` (its instance FOR
+       SHARE, in the transaction that writes the meeting, its instance and the
+       audit row).
+     - **Refusals by code** (`meeting-refusal.ts`): `MEETING_OWNER_REQUIRED`,
+       `MEETING_OWNER_NOT_FOUND`, `MEETING_NOT_ALLOWED`, `MEETING_TYPE_UNKNOWN`,
+       `MEETING_TIME_IN_PAST`, `MEETING_PLACE_REQUIRED`,
+       `MEETING_QUORUM_UNIT_ONLY`, `MEETING_CHANGED`,
+       `MEETING_RESCHEDULE_SAME_TIME`; and the stage's own
+       `STAGE_ACTION_NOT_ALLOWED`.
+     - **The list:** views `mine`, `past`, `minutes`, `all` (`meetings:view`
+       only, else 403) and `subunits` (overseen and not otherwise theirs);
+       visibility in the WHERE before LIMIT; ordered by time, id last.
+     - **Reschedule** writes a `MeetingReschedule` (THIS_ONLY) with its reason,
+       and tells the invited after the commit.
+     - **The engine gained two registries, keyed by record type:**
+       - `TRANSITION_EFFECTS` (`transition-effects.ts`): prepare before, apply
+         inside the move's transaction, finish after the commit; an effect
+         runs when a move ENTERS its flag.
+       - `MOVE_REASON_FLAGS` (`move-reasons.ts`): a move into a flagged stage
+         refuses an empty comment (400 `REASON_REQUIRED`), on the press and the
+         deciding vote; the moves list says `needsReason`.
+       - MEETING: `AGENDA_ISSUED` stamps `invitedAt` on the user attendees not
+         yet invited and tells them; `MEETING_CANCELLED` needs a reason and
+         tells the invited with it. Never the actor.
+     - **Tasks:** `TASK_RECORD_TYPES` MEETING, with four keys:
+       `meetings:view_all_tasks`, `view_unit_tasks`, `create_tasks` and
+       `manage_tasks`. QUALITY_MANAGER gets view_all, create and manage; the
+       read-only admin the two view keys. They are added to
+       `backfill:acc316-meeting-keys`, where the two view keys follow
+       `meetings:view` (the read-only admin never holds `meetings:manage`) and
+       the other two follow `meetings:manage`. A cancelled meeting takes no new tasks
+       (`TASK_RECORD_CLOSED`, worded for a meeting).
+     - **The working calendar:** `nextWorkingDay(day)` and
+       `addWorkingDays(day, n)`, on `yyyy-MM-dd` days in the organisation's
+       calendar.
+     - `PrismaService` gained the getters for PR 1's tables (they were
+       missing).
+     - **No migration.** Proved by `meetings.db-spec.ts` (real Postgres) and
+       `meetings.service.spec.ts` (the isolation gate).
 4. **PR 4: minutes and review, backend.**
    - Changes:
      - attendance (pre-filled from "Can't attend") and quorum;
