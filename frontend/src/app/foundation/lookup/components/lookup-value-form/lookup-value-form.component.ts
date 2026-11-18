@@ -36,8 +36,6 @@ export interface AttributeField {
   type: string;
   labelEn: string | null;
   labelAr: string | null;
-  /** The single-language name schemas carried before ACC-310. */
-  label: string | null;
 }
 
 @Component({
@@ -380,11 +378,12 @@ export class LookupValueFormComponent implements OnInit {
   /**
    * ACC-310 — an attribute's name in the reader's language, read at CALL time
    * (ACC-160): never a ternary, never fixed at load. The English name is labelEn,
-   * else the old single `label`, else the key; an empty Arabic name falls back to
-   * the English one, never blank.
+   * else the key; an empty Arabic name falls back to the English one, never
+   * blank. (The old single `label` is no longer read: no stored schema relies on
+   * it, and the seed no longer carries it.)
    */
   attributeName(field: AttributeField): string {
-    const en = nonEmpty(field.labelEn) ?? nonEmpty(field.label) ?? field.key;
+    const en = nonEmpty(field.labelEn) ?? field.key;
     return this.language.bilingual(en, field.labelAr);
   }
 
@@ -392,7 +391,7 @@ export class LookupValueFormComponent implements OnInit {
     const props =
       (
         schema as {
-          properties?: Record<string, { type?: string; label?: string; labelEn?: string; labelAr?: string }>;
+          properties?: Record<string, { type?: string; labelEn?: string; labelAr?: string }>;
         } | null
       )?.properties ?? {};
 
@@ -402,7 +401,6 @@ export class LookupValueFormComponent implements OnInit {
         type: def.type ?? 'string',
         labelEn: def.labelEn ?? null,
         labelAr: def.labelAr ?? null,
-        label: def.label ?? null,
       }),
     );
     this.attributeFields.set(fields);

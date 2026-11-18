@@ -14,13 +14,15 @@ import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
-import {
-  POOL_LABEL_INCLUDE,
-  PICKABLE_STATUSES,
-  poolLabel,
-  poolTargetOf,
-  toPoolView,
-} from '../task/task-pool';
+
+/**
+ * ACC-312 — the entries the unassigned-stage sweep looks at: open, at a stage
+ * that is NOT final. A record at its final stage waits on nobody, so it is never
+ * flagged, its pool is never resolved (no queries), and no task is recovered on
+ * it. One constant, so the sweep and its spec cannot disagree about the filter.
+ */
+export const SWEEP_OPEN_ENTRIES_WHERE = { exitedAt: null, stage: { isFinal: false } } as const;
+import { CURRENT_ACTIVE_ASSIGNEE, PICKABLE_STATUSES, POOL_LABEL_INCLUDE, poolLabel, poolTargetOf, toPoolView } from '../task/task-pool';
 import {
   Task as PrismaTask,
   TaskAssignee as PrismaTaskAssignee,
@@ -407,7 +409,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // queue — same precedent as sweepOverdueTasks() above.
   private async sweepUnassignedStages(): Promise<void> {
     const openStages = await this.prisma.workflowInstanceStage.findMany({
-      where: { exitedAt: null },
+      where: SWEEP_OPEN_ENTRIES_WHERE,
       include: { workflowInstance: true, stage: true },
     });
 
@@ -709,7 +711,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         poolEscalatedAt: null,
         status: { in: [...PICKABLE_STATUSES] },
         OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-        assignees: { none: { removedAt: null } },
+        // ACC-86 — nobody on it: no current row held by an ACTIVE user.
+        assignees: { none: CURRENT_ACTIVE_ASSIGNEE },
       },
       include: POOL_LABEL_INCLUDE,
     });

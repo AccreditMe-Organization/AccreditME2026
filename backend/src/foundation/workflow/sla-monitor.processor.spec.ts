@@ -206,6 +206,19 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   const runProcess = () => processor.process({} as never);
 
+  // ACC-312 — the sweep never reads a FINAL stage's entry: it is never flagged,
+  // its pool is never resolved (no queries), and nothing is recovered on it.
+  it('reads only open entries at a non-final stage (ACC-312)', async () => {
+    mockPrisma.workflowInstanceStage.findMany
+      .mockResolvedValueOnce([]) // breachedStages (top of process())
+      .mockResolvedValueOnce([]); // openStages (sweepUnassignedStages)
+
+    await runProcess();
+
+    const openStagesQuery = mockPrisma.workflowInstanceStage.findMany.mock.calls[1]![0] as { where: unknown };
+    expect(openStagesQuery.where).toEqual({ exitedAt: null, stage: { isFinal: false } });
+  });
+
   // ACC-82 — the flag is still written on the transition; the admin
   // notification that accompanied it is gone (SYSTEM-REFERENCE §13.7). The
   // processor still holds NotificationService for other steps, so asserting
@@ -1404,7 +1417,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             poolEscalatedAt: null,
             status: { in: ['PENDING', 'OVERDUE', 'UNASSIGNED'] },
             OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-            assignees: { none: { removedAt: null } },
+            assignees: { none: { removedAt: null, user: { status: 'ACTIVE' } } }, // ACC-86: nobody ACTIVE on it
           },
         }),
       );

@@ -95,3 +95,24 @@ export interface ITaskSlaSettings {
   HIGH: ITaskSlaTier;
   CRITICAL: ITaskSlaTier;
 }
+
+/**
+ * ACC-313 — one saved change to the task SLA policy, from the audit trail.
+ * `kind` names the section saved; `legacy` is a save made before ACC-313,
+ * whose audit row recorded no values, so `before` and `after` are null.
+ */
+export type TaskSlaChangeKind = 'limits' | 'escalation' | 'all' | 'legacy';
+
+export interface ITaskSlaChange {
+  id: string;
+  changedAt: Date;
+  actorName: string | null;
+  kind: TaskSlaChangeKind;
+  before: unknown;
+  after: unknown;
+}
+
+export interface ITaskSlaHistoryPage {
+  rows: ITaskSlaChange[];
+  total: number;
+}

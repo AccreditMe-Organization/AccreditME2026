@@ -54,11 +54,26 @@ export async function isActiveMember(
   userId: string,
   organizationId: string,
 ): Promise<boolean> {
+  return (await activeSeatOf(client, committeeId, userId, organizationId)) !== null;
+}
+
+/**
+ * ACC-283 PR 6 — `userId`'s seat (the committee_member_role value) on this ACTIVE
+ * committee, through their ACTIVE membership, in this organisation; or null. The
+ * one membership read: isActiveMember() is this, so asking for the seat costs no
+ * second query. One query.
+ */
+export async function activeSeatOf(
+  client: MembershipClient,
+  committeeId: string,
+  userId: string,
+  organizationId: string,
+): Promise<string | null> {
   const row = await client.committeeMember.findFirst({
     where: { committeeId, userId, organizationId, isActive: true, committee: { organizationId, isActive: true } },
-    select: { id: true },
+    select: { roleValueId: true },
   });
-  return row !== null;
+  return row ? row.roleValueId : null;
 }
 
 /**
@@ -248,14 +263,22 @@ export interface CommitteeAccess {
   read: boolean;
   /** assertMayWriteCommittee()'s precondition: committees:view or an active member. */
   write: boolean;
+  /**
+   * ACC-283 PR 6 — the viewer's active seat, as read for `write`: a string, or null
+   * when they hold none. UNDEFINED when it was not read (a committees:view holder
+   * pays no query), so memberActionsFor() reads it only if it needs it.
+   */
+  seat?: string | null;
 }
 
 /**
  * ACC-283 — READ and WRITE from one pass, so the committee read can say whether
  * the viewer may write (`mayWrite`, for the screens) at no extra cost. `write` is
- * maySeeCommittee(), the very function assertMayWriteCommittee() asks, so the
- * flag and the write cannot drift. A holder pays no query, a member one, anyone
- * else the membership query and then the oversight reads (only for `read`).
+ * maySeeCommittee()'s two clauses (committees:view, else activeSeatOf(), whose
+ * non-null is isActiveMember()), so the flag and assertMayWriteCommittee() cannot
+ * drift. ACC-283 PR 6: it keeps the seat it read, for memberActionsFor(). A holder
+ * pays no query, a member one, anyone else the membership query and then the
+ * oversight reads (only for `read`).
  */
 export async function committeeAccess(
   client: ReadClient,
@@ -264,9 +287,10 @@ export async function committeeAccess(
   viewer: CommitteeViewer,
   now: Date = new Date(),
 ): Promise<CommitteeAccess> {
-  if (await maySeeCommittee(client, committeeId, organizationId, viewer)) {
-    return { read: true, write: true };
-  }
+  if (seesEveryCommittee(viewer.permissions)) return { read: true, write: true };
+  // maySeeCommittee()'s member half, keeping the seat it read (ACC-283 PR 6).
+  const seat = await activeSeatOf(client, committeeId, viewer.id, organizationId);
+  if (seat !== null) return { read: true, write: true, seat };
   const read = await overseesCommittee(
     client,
     committeeId,
@@ -274,7 +298,7 @@ export async function committeeAccess(
     viewer.id,
     now,
   );
-  return { read, write: false };
+  return { read, write: false, seat: null };
 }
 
 /**

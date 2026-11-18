@@ -264,6 +264,10 @@ enum SetupConditionType {
   // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
   // reader; PR 2's detector is the first writer.
   COMMITTEE_MISSING_REQUIRED_SEAT
+  // ACC-261 — the organisation has not confirmed where its files go
+  // (storageConfirmedAt null), so every upload is refused. Written only by the
+  // detector that deploys with it, never before (ACC-173's rule).
+  STORAGE_NOT_CONFIRMED
 }
 
 // ACC-271 — who works a stage, one kind per entry; entries join with "or".
@@ -1545,6 +1549,8 @@ model Task {
   // anywhere" redesign (2.7.b/2.7.c) extends to the schema itself.
   managerEscalatedAt           DateTime?
   headEscalatedAt              DateTime?
+  // ACC-313: stamped once the due-soon reminder is sent; cleared when the due date, priority or holder changes.
+  dueWarnedAt                  DateTime?
   // ACC-167 — the POOL a task is assigned to, when it is assigned to a
   // position in a unit, or to a committee member role, rather than to named
   // people. Exactly one pair is set, or neither. Who is IN the pool is resolved

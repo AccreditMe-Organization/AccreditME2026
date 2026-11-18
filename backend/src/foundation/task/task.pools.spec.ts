@@ -85,7 +85,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     update: jest.fn(),
   },
-  taskAssignee: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+  taskAssignee: { count: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
   // ACC-173 — the request lifecycle. No pending request unless a test sets one.
   taskRequest: {
     findMany: jest.fn().mockResolvedValue([]),
@@ -112,6 +112,23 @@ const mockPrisma = {
   // ACC-199 — the "assigned on an AI suggestion" claim is checked against the AI log.
   aiInteractionLog: { findFirst: jest.fn() },
 };
+
+// ACC-86 — the writers ask "is anyone else on it?" (CURRENT_ACTIVE_ASSIGNEE) as a count
+// under the task lock. Answered from the task this test last read: a row is current
+// when removedAt is null, and its user is ACTIVE unless the row says otherwise.
+mockPrisma.taskAssignee.count.mockImplementation((args: { where: { userId?: { not?: string } } }) => {
+  const reads = mockPrisma.task.findFirst.mock.results;
+  type Read = { assignees?: { userId: string; removedAt: Date | null; user?: { status: string } }[] } | null;
+  return Promise.resolve((reads.length ? reads[reads.length - 1]!.value : null) as Read | Promise<Read>).then((
+    last,
+  ) =>
+    (last?.assignees ?? []).filter(
+      (r) => r.removedAt === null && (r.user?.status ?? 'ACTIVE') === 'ACTIVE' && r.userId !== args.where.userId?.not,
+    ).length,
+  );
+});
+// ACC-86 (Q-1) — ending stale rows answers how many it ended; none unless a test says so.
+mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
 const mockQueryRaw = jest.fn();
 (mockPrisma as unknown as Record<string, unknown>)['$queryRaw'] = mockQueryRaw;
 (mockPrisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn(
@@ -706,7 +723,7 @@ describe('TaskService — pools (ACC-167)', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             organizationId: ORG_A,
-            assignees: { none: { removedAt: null } },
+            assignees: { none: { removedAt: null, user: { status: 'ACTIVE' } } }, // ACC-86: nobody ACTIVE on it
             AND: [
               {
                 OR: [
@@ -798,6 +815,69 @@ describe('TaskService — pools (ACC-167)', () => {
   });
 
   // ── departure ────────────────────────────────────────────────────────────
+  // ACC-86 — a row still current but held by a user who is no longer ACTIVE puts
+  // nobody on the task (CURRENT_ACTIVE_ASSIGNEE); the writers end it (Q-1).
+  describe('ACC-86 — an INACTIVE holder is nobody', () => {
+    const INACTIVE = { user: { status: 'INACTIVE' } };
+    const STALE_WHERE = { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: { not: 'ACTIVE' } } };
+    /** Ending stale rows ends `n`; every other updateMany ends none. */
+    const staleEnds = (n: number) =>
+      mockPrisma.taskAssignee.updateMany.mockImplementation((args: { where: { user?: unknown } }) =>
+        Promise.resolve({ count: args.where.user ? n : 0 }),
+      );
+    afterEach(() => mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 }));
+
+    it('pick takes a task whose only current row is an INACTIVE user\'s, and ends that row', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(poolTask({ assignees: [row('gone', INACTIVE)] }));
+      staleEnds(1);
+
+      await service.pick('task-1', HOLDER_A, ORG_A);
+
+      expect(mockPrisma.taskAssignee.count).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: 'ACTIVE' } },
+      });
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
+      expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
+        data: { taskId: 'task-1', userId: HOLDER_A, assignedById: HOLDER_A, pickedAt: expect.any(Date) },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'picked', pickedBy: HOLDER_A, endedInactiveRows: 1 } }),
+      );
+    });
+
+    it('a departure with another current row held by an INACTIVE user returns the task to its pool, and ends that row', async () => {
+      const task = poolTask({ assignees: [row(HOLDER_A), row('gone', INACTIVE)] });
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([{ taskId: task.id }]);
+      mockPrisma.task.findFirst.mockResolvedValueOnce(task).mockResolvedValue(poolTask());
+      staleEnds(1);
+
+      const result = await service.reassignAllForUser(HOLDER_A, null, ORG_A, 'admin');
+
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 1 });
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'departure_returned_to_pool', fromUserId: HOLDER_A, endedInactiveRows: 1 } }),
+      );
+    });
+
+    it('release with an INACTIVE co-holder returns the task to its pool, ends that row and records it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(
+        poolTask({ status: 'IN_PROGRESS', assignees: [row(HOLDER_A, { pickedAt: new Date() }), row('gone', INACTIVE)] }),
+      );
+      staleEnds(1);
+
+      await service.release('task-1', { reason: 'Not mine after all' }, HOLDER_A, ORG_A);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1' }, data: expect.objectContaining({ status: 'PENDING' }) }),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'released', returnedToPool: true, endedInactiveRows: 1 }) }),
+      );
+    });
+  });
+
   describe('departure (reassignAllForUser)', () => {
     // ACC-165 — the departure's query finds the task, then reads it again under
     // its row lock: that locked read answers first, any later read (the pool

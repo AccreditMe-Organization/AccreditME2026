@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 // ACC-167 — plain functions over a Prisma client: importing them pulls in no
 // Nest module, so this module still imports only Prisma and the queue.
-import { findEmptyPoolTasks } from '../task/task-pool';
+import { OWNERLESS_SQL } from '../task/task-pool';
 // ACC-185 — a plain function too: reads the encrypted storage config.
 import { readStorageConfig } from '../file-storage/storage-config';
 import { STAGE_FLAG } from '../workflow/record-registry';
@@ -122,6 +122,8 @@ export class SetupConditionDetectors {
       this.openEndedActingHeads(organizationId),
     STORAGE_ALMOST_FULL: (organizationId) =>
       this.storageAlmostFull(organizationId),
+    STORAGE_NOT_CONFIRMED: (organizationId) =>
+      this.storageNotConfirmed(organizationId),
     STORAGE_ACCESS_WITHDRAWN: (organizationId) =>
       this.storageAccessWithdrawn(organizationId),
     STORAGE_SECRET_EXPIRING: (organizationId, now) =>
@@ -345,6 +347,10 @@ export class SetupConditionDetectors {
       where: {
         exitedAt: null,
         isUnassigned: true,
+        // ACC-312 — a final stage holds nothing up. An entry flagged before the
+        // engine stopped flagging them is not listed, so Setup health is right
+        // the moment this deploys, whether or not the old flags are cleared.
+        stage: { isFinal: false },
         workflowInstance: { organizationId },
       },
       select: {
@@ -405,29 +411,23 @@ export class SetupConditionDetectors {
   // and adding one would have to be set by every writer of task status (§13.3),
   // so openedAt is null and the age is "first detected".
   //
-  // ACC-167 — two kinds, one condition: an UNASSIGNED task, and an open pool
-  // task with nobody on it whose pool nobody is in right now (a position no one
-  // holds in that unit, a committee role no active member has). Both are work
-  // nobody can pick up. The pool rule is task-pool.ts's — the same one the
-  // picker, Pick and the Unassigned tasks screen use — so the three cannot
-  // disagree about who is in a pool. One extra query set per tenant per hour.
+  // ACC-167 — an UNASSIGNED task, and an open pool task with nobody on it whose
+  // pool nobody is in right now. ACC-86 — and any open task with nobody on it
+  // (no current row held by an ACTIVE user), whatever its status: a departure that
+  // stopped partway, or a co-assignee who left first, leaves one PENDING,
+  // IN_PROGRESS or ON_HOLD. All of it is OWNERLESS_SQL (task-pool.ts), the very
+  // definition the Unassigned view reads, so Setup health and that screen cannot
+  // disagree. Resolved live on every pass (ACC-82): no status is trusted. One
+  // query per tenant per hour, scoped by organisation.
   async tasksWithoutOwner(
     organizationId: string,
   ): Promise<DetectedCondition[]> {
-    const [unassigned, emptyPools] = await Promise.all([
-      this.prisma.task.findMany({
-        where: { organizationId, status: 'UNASSIGNED' },
-        select: {
-          id: true,
-          title: true,
-          sourceType: true,
-          sourceId: true,
-          dueAt: true,
-        },
-      }),
-      findEmptyPoolTasks(this.prisma, organizationId),
-    ]);
-    const tasks = [...unassigned, ...emptyPools];
+    const tasks = await this.prisma.$queryRaw<{ id: string; title: string; sourceType: string; sourceId: string; dueAt: Date | null }[]>`
+      SELECT t.id, t.title, t."sourceType"::text AS "sourceType", t."sourceId", t."dueAt"
+        FROM "Task" t
+       WHERE t."organizationId" = ${organizationId}
+         AND ${OWNERLESS_SQL}
+       ORDER BY t.id`;
 
     return tasks.map((task) => ({
       objectId: task.id,
@@ -508,6 +508,23 @@ export class SetupConditionDetectors {
         },
       },
     ];
+  }
+
+  /**
+   * ACC-261 — the organisation has not confirmed where its files go
+   * (`Organization.storageConfirmedAt` is null), so every upload is refused
+   * with STORAGE_NOT_CONFIRMED until a tenant admin confirms (ACC-177). One row
+   * per organisation (objectId is the organisation); it clears on the first pass
+   * after Confirm. BLOCKS_WORK: nobody can add a file. The platform organisation
+   * is exempt structurally: the reconciler iterates tenants only.
+   */
+  async storageNotConfirmed(organizationId: string): Promise<DetectedCondition[]> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageConfirmedAt: true },
+    });
+    if (!org || org.storageConfirmedAt) return [];
+    return [{ objectId: organizationId, severity: 'BLOCKS_WORK' as const, openedAt: null, subject: {} }];
   }
 
   /**

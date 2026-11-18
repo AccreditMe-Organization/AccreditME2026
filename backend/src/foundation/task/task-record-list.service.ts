@@ -87,11 +87,17 @@ export class TaskRecordListService {
     // (the record is visible: run() refused it otherwise). ACC-280: the same rule
     // POST /tasks applies, holdsCreateKey(), so a member who holds the key without
     // committees:view is offered New task exactly when create would accept it.
+    // ACC-283 — and POST /tasks' record check, canViewForWrite(): the panel
+    // admits an overseeing head (a read), create does not (Q6). Asked only with
+    // the key; a committees:view holder pays no query, anyone else one.
+    const canCreate =
+      holdsCreateKey(viewer.permissions, dto.sourceType) &&
+      (await this.objectVisibility.canViewForWrite(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id));
     return {
       total: list.total,
       scope: list.scope,
       rows: list.items,
-      canCreate: holdsCreateKey(viewer.permissions, dto.sourceType),
+      canCreate,
     };
   }
 

@@ -33,7 +33,6 @@ import { EmailSettingsIncompleteException } from './email-settings-refusal';
 import { changedFieldNames, mergeKeepingSecrets } from '../../common/config/write-only-secrets';
 import { resolvePlatformSender } from '../../common/config/email-sender.config';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
-import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
   ITenant,
   ITenantConfig,
@@ -43,8 +42,6 @@ import {
 } from './interfaces/tenant.interface';
 import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitlements';
 import { DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
-import { stageDeadlineConflicts } from '../workflow/stage-deadline-rule';
-import { WorkflowRefusalException } from '../workflow/workflow-refusal';
 
 // ACC-46 Section 2.7.d — replaces TaskService's own old
 // DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
@@ -380,33 +377,8 @@ export class TenantService {
     return taskSlaFromSettings(org.settings);
   }
 
-  async updateTaskSla(id: string, dto: UpdateTaskSlaDto, actorId: string): Promise<void> {
-    const org = await this.prisma.organization.findUnique({ where: { id } });
-    if (!org) throw new NotFoundException('Tenant not found');
-
-    const settings = (org.settings as Record<string, unknown> | null) ?? {};
-
-    // ACC-190 — raising a priority's hours must not make any workflow stage end
-    // before a task defined on it is due.
-    const conflicts = await stageDeadlineConflicts(this.prisma, id, (priority) => dto[priority].dueAfterHours);
-    if (conflicts.length > 0) {
-      throw new WorkflowRefusalException('TASK_SLA_EXCEEDS_STAGE_DEADLINES', { stages: conflicts });
-    }
-
-    await this.prisma.organization.update({
-      where: { id },
-      data: { settings: { ...settings, taskSla: dto } as unknown as Prisma.InputJsonValue },
-    });
-
-    await this.auditLog.log({
-      action: 'UPDATE',
-      objectType: 'Organization',
-      objectId: id,
-      actorId,
-      tenantId: id,
-      metadata: { event: 'task_sla_updated' },
-    });
-  }
+  // ACC-313 — task SLA writes moved to TaskSlaPolicyService: a row lock,
+  // a key-atomic write and a before/after audit, shared by every route.
 
   /**
    * The `organization` lookup value, for the root unit bootstrap() creates.
