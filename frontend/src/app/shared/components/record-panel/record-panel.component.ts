@@ -51,6 +51,14 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 // OPT-IN, so nothing changes for a caller that does not bind it: `loading`,
 // `isEmpty` and `error` still drive the Committee page exactly as before.
 //
+// ## EMPTY LINE (CC-342)
+//
+// `[emptyLine]="true"` says the empty state as the capped frame does: one plain
+// line at the top of the body (`emptyTitle`), like Sub-committees' "No
+// sub-committees report to this committee.", with no icon box. Opt-in: the
+// user page's panels use it; every other caller (the task page's History, the
+// list pages) keeps the centred empty state below.
+//
 // ## FILL (ACC-265)
 //
 // `[fill]="true"` makes the panel take its cell's height instead of setting
@@ -155,6 +163,10 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
     </section>
 
     <ng-template #emptyTpl>
+      @if (emptyLine()) {
+        <!-- CC-342 — the capped frame's empty line (am-cp__state's values). -->
+        <p class="m-0 p-4 text-[13px] text-[var(--am-ink-700)]" data-panel-empty-line>{{ emptyTitle() }}</p>
+      } @else {
       <!-- The reference's empty state: a muted placeholder mark, the fact,
            and a sentence saying what will live here. The sentence is what
            separates "this module has not shipped" from "this committee has
@@ -173,6 +185,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
           </span>
         }
       </div>
+      }
     </ng-template>
     <!-- ONE default slot, reached from either path. Two <ng-content /> without a
          selector would project the rows into only one of them. -->
@@ -187,6 +200,8 @@ export class RecordPanelComponent {
   readonly heading = input.required<string>();
   readonly emptyTitle = input<string>('');
   readonly emptyMessage = input<string>('');
+  /** CC-342 — the empty state as one plain line at the top (see EMPTY LINE). */
+  readonly emptyLine = input(false);
 
   // Null hides the chip entirely — distinct from 0, which is a real and
   // displayable answer ("Documents 0" is the point of the empty panel).

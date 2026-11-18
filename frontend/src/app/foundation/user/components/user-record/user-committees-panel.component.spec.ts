@@ -129,6 +129,9 @@ describe('UserCommitteesPanelComponent (ACC-216)', () => {
     expect(panel.getAttribute('data-outcome')).toBe('empty');
     expect(panel.textContent).toContain('Not on any committee');
     expect(el.querySelectorAll('[data-committee-row]').length).toBe(0);
+    // CC-342 — a plain line, as Sub-committees says it; no icon box.
+    expect(panel.querySelector('[data-panel-empty-line]')!.textContent!.trim()).toBe('Not on any committee');
+    expect(panel.querySelector('.border-dashed')).toBeNull();
   });
 
   it('error: its own message and Retry, which asks again', () => {

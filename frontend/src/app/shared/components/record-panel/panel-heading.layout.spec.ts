@@ -28,6 +28,17 @@ import { RecordPanelComponent } from './record-panel.component';
 })
 class Host {}
 
+@Component({
+  standalone: true,
+  imports: [RecordPanelComponent, CappedPanelComponent],
+  template: `<div class="grid grid-cols-3 gap-4 w-[1200px]">
+    <app-record-panel heading="Committees" [count]="0" emptyTitle="Not on any committee" [emptyLine]="true" [isEmpty]="true" />
+    <am-capped-panel heading="Sub-committees" state="ready" [total]="0" [shown]="0" emptyText="No sub-committees report to this committee." testIdPrefix="s" />
+    <app-record-panel heading="History" emptyTitle="" emptyMessage="Nothing yet" [isEmpty]="true" />
+  </div>`,
+})
+class EmptyHost {}
+
 const TITLE = ['fontSize', 'lineHeight', 'fontWeight', 'textTransform', 'letterSpacing', 'color', 'fontVariantCaps'] as const;
 const COUNT = [
   'fontSize',
@@ -77,6 +88,50 @@ describe('Record panel and capped panel share one heading (CC-340)', () => {
   }
 
   for (const lang of ['en', 'ar'] as const) {
+    it(`${lang}: an empty panel with emptyLine says one plain line at the top, as Sub-committees does (CC-342)`, async () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [EmptyHost],
+        providers: [
+          provideNoopAnimations(),
+          provideTranslateService({ lang: 'en' }),
+          provideFormatTesting(),
+          providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
+        ],
+      });
+      loadTranslationsForTest({ en, ar });
+      TestBed.inject(TranslateService).use(lang);
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      const fixture = TestBed.createComponent(EmptyHost);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      const el = fixture.nativeElement as HTMLElement;
+      const [lined, boxed] = Array.from(el.querySelectorAll<HTMLElement>('app-record-panel'));
+      const line = lined!.querySelector<HTMLElement>('[data-panel-empty-line]')!;
+      const capped = el.querySelector<HTMLElement>('[data-testid="s-empty"]')!;
+      // Non-vacuity: both lines are drawn, with their text.
+      expect(line).withContext('the record panel line').not.toBeNull();
+      expect(line.textContent!.trim()).toBe('Not on any committee');
+      expect(capped.textContent!.trim()).toBe('No sub-committees report to this committee.');
+      expect(line.getBoundingClientRect().height).toBeGreaterThan(0);
+      // No icon box on the lined panel.
+      expect(lined!.querySelector('.border-dashed')).withContext('an icon box').toBeNull();
+      // The same type, colour and padding as Sub-committees' line.
+      const look = ['fontSize', 'color', 'paddingTop', 'paddingInlineStart', 'textAlign'] as const;
+      expect(styleOf(line, look)).toEqual(styleOf(capped, look));
+      // At the top of the body: the same distance below the header as Sub-committees'.
+      const below = (e: HTMLElement, panel: HTMLElement) =>
+        Math.round(e.getBoundingClientRect().top - panel.querySelector('header')!.getBoundingClientRect().bottom);
+      expect(below(line, lined!)).toBe(below(capped, el.querySelector<HTMLElement>('am-capped-panel')!));
+      // Every other caller keeps the centred state with its icon box (the task page's History).
+      expect(boxed!.querySelector('[data-panel-empty-line]')).toBeNull();
+      expect(boxed!.querySelector('.border-dashed')).withContext('the default icon box').not.toBeNull();
+      fixture.nativeElement.remove();
+    });
+
     it(`${lang}: the two titles and the two counts compute the same style`, async () => {
       const { el } = await render(lang);
       const recordTitle = el.querySelector<HTMLElement>('app-record-panel [data-panel-title]')!;
