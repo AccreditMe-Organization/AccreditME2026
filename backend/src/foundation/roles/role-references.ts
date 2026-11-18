@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
+import { POSITIONS_PERMISSIONS, USERS_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
 import type { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -17,7 +18,17 @@ import type { PrismaService } from '../../prisma/prisma.service';
  *   - STAGE_ESCALATIONS a workflow stage escalation rule that tells the role's
  *                       holders (WorkflowStage.escalationConfig[].notifyRoleId, ACC-105)
  * A stage's people never name a role (no ROLE assignee kind since ACC-271), and
- * a transition names none. Users of any status count: a grant is a grant.
+ * a transition names none.
+ *
+ * WHO COUNTS (Ahmad, 18 Nov): only ACTIVE and INVITED users hold a grant that
+ * blocks. An INACTIVE or SUSPENDED user's leftover grant does not: if that user
+ * is reactivated, a deactivated role grants nothing (getUserPermissions() reads
+ * role.isActive), so nothing is lost by deactivating it.
+ *
+ * WHAT IS NAMED follows the reader's own permissions (ACC-101's rule): user
+ * names need users:view, position names positions:view, stage names
+ * workflows:view. Without it the category carries its count and no names.
+ * Counts are always given.
  *
  * ONE function, read by deactivateRole() (inside its transaction, under the role
  * row lock) and by GET /roles/:id/deactivation-check, so the two cannot differ.
@@ -29,7 +40,7 @@ export type RoleReferenceCategory = 'USER_GRANTS' | 'POSITION_GRANTS' | 'POSITIO
 export interface RoleReferenceBlocker {
   category: RoleReferenceCategory;
   count: number;
-  /** Up to NAMES_SHOWN of them, by name. */
+  /** Up to NAMES_SHOWN of them, by name; empty when the reader may not see these names. */
   names: string[];
 }
 
@@ -46,7 +57,8 @@ function grantsSql(roleId: string, organizationId: string, byPosition: boolean):
       FROM "UserRole" ur
       JOIN "Role" r ON r.id = ur."roleId" AND r."organizationId" = ${organizationId}
       JOIN "User" u ON u.id = ur."userId" AND u."organizationId" = ${organizationId}
-     WHERE ur."roleId" = ${roleId} AND ${byPosition ? GRANTED_BY_POSITION : Prisma.sql`NOT ${GRANTED_BY_POSITION}`}
+     WHERE ur."roleId" = ${roleId} AND u.status IN ('ACTIVE', 'INVITED')
+       AND ${byPosition ? GRANTED_BY_POSITION : Prisma.sql`NOT ${GRANTED_BY_POSITION}`}
      ORDER BY u.name, u.id
      LIMIT ${NAMES_SHOWN}`;
 }
@@ -71,13 +83,31 @@ const QUERIES: Record<RoleReferenceCategory, (roleId: string, organizationId: st
      LIMIT ${NAMES_SHOWN}`,
 };
 
-/** Everything that still holds or names the role, one entry per category that has any. */
-export async function roleReferences(client: Client, roleId: string, organizationId: string): Promise<RoleReferenceBlocker[]> {
+/** The permission a reader needs to see each category's names. */
+export const NAME_PERMISSION: Record<RoleReferenceCategory, string> = {
+  USER_GRANTS: USERS_PERMISSIONS.VIEW,
+  POSITION_GRANTS: USERS_PERMISSIONS.VIEW,
+  POSITIONS: POSITIONS_PERMISSIONS.VIEW,
+  STAGE_ESCALATIONS: WORKFLOWS_PERMISSIONS.VIEW,
+};
+
+/**
+ * Everything that still holds or names the role, one entry per category that
+ * has any, named only where `viewerPermissions` allows.
+ */
+export async function roleReferences(
+  client: Client,
+  roleId: string,
+  organizationId: string,
+  viewerPermissions: readonly string[],
+): Promise<RoleReferenceBlocker[]> {
   const categories = Object.keys(QUERIES) as RoleReferenceCategory[];
   const results: RoleReferenceBlocker[] = [];
   for (const category of categories) {
     const rows = await client.$queryRaw<Row[]>(QUERIES[category](roleId, organizationId));
-    if (rows.length > 0) results.push({ category, count: rows[0]!.total, names: rows.map((r) => r.name) });
+    if (rows.length === 0) continue;
+    const named = viewerPermissions.includes(NAME_PERMISSION[category]);
+    results.push({ category, count: rows[0]!.total, names: named ? rows.map((r) => r.name) : [] });
   }
   return results;
 }

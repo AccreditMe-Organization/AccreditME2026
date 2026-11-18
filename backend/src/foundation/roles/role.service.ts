@@ -437,7 +437,8 @@ export class RoleService {
     return this.attachPermissions(updated);
   }
 
-  async deactivateRole(id: string, organizationId: string, actorId: string): Promise<void> {
+  /** `viewerPermissions` decide which names a ROLE_IN_USE refusal carries (roleReferences()). */
+  async deactivateRole(id: string, organizationId: string, actorId: string, viewerPermissions: readonly string[]): Promise<void> {
     const role = await this.prisma.role.findFirst({ where: { id, organizationId } });
     if (!role) throw new NotFoundException('Role not found');
     // ACC-221 — Organization Administrator, the tenant's root role, is never
@@ -456,7 +457,7 @@ export class RoleService {
     // the same transaction as the write, so a grant made meanwhile is seen.
     await this.prisma.$transaction(async (tx) => {
       await this.lockRoleRow(tx, id, organizationId);
-      const blockers = await roleReferences(tx, id, organizationId);
+      const blockers = await roleReferences(tx, id, organizationId, viewerPermissions);
       if (blockers.length > 0) throw new RoleInUseException(blockers);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.role.update({ where: { id }, data: { isActive: false } });
@@ -482,11 +483,12 @@ export class RoleService {
   async deactivationCheck(
     id: string,
     organizationId: string,
+    viewerPermissions: readonly string[],
   ): Promise<{ canDeactivate: boolean; rootRole: boolean; blockers: RoleReferenceBlocker[] }> {
     const role = await this.prisma.role.findFirst({ where: { id, organizationId }, select: { id: true, key: true } });
     if (!role) throw new NotFoundException('Role not found');
     const rootRole = role.key === TENANT_ADMIN_KEY;
-    const blockers = await roleReferences(this.prisma, role.id, organizationId);
+    const blockers = await roleReferences(this.prisma, role.id, organizationId, viewerPermissions);
     return { canDeactivate: !rootRole && blockers.length === 0, rootRole, blockers };
   }
 
