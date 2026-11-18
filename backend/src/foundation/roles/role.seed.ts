@@ -129,6 +129,10 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       MEETINGS_PERMISSIONS.RECORD_MINUTES,
       // ACC-244 — no task keys: this role cannot see committees, so its old
       // tasks:view and tasks:manage reached no task (plan §5.2, Q6).
+      // ACC-77 — it holds no umbrella, so the umbrella rule gives it none either.
+      // Creating a task needs a type's Create tasks key and that type in view;
+      // meeting task keys go to the meeting managers (ACC-316), and whether a
+      // minute taker raises action items is a Meetings decision.
       KPI_PERMISSIONS.VIEW_DEPARTMENT,
       KPI_PERMISSIONS.ENTER_DATA,
       REPORTS_PERMISSIONS.VIEW,
