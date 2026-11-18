@@ -304,6 +304,30 @@ inherits this same flatness. **This is the exact fact ACC-28's revised
 plan treats as a hard constraint — not reworked, extended additively
 elsewhere.**
 
+**No key implies another, so an umbrella holds its specifics at seed time
+(ACC-44's rule, enforced since ACC-77).**
+- **The rule as data:** `MANAGE_UMBRELLAS` (`foundation/roles/manage-umbrellas.ts`).
+  - **An umbrella** is `{module}:manage`, or a record type's `{type}:manage_tasks`
+    (ACC-244's per-type task keys).
+  - **Its specifics** are the rest of its own `*_PERMISSIONS` group, less any key
+    no code checks yet (`PERMISSIONS_NOT_YET_CHECKED`), so a key that cannot be
+    granted is never seeded by the rule.
+- **The test:** `manage-umbrellas.spec.ts` fails if a seeded role holds an
+  umbrella without one of its specifics.
+- **The one gap the audit found:** `QUALITY_MANAGER` held both
+  `committees:manage_tasks` and `meetings:manage_tasks` without the
+  `view_unit_tasks` keys. The seed now gives it every task key of both types.
+  `backfill:acc77-manage-umbrellas` grants the missing specifics to existing
+  SYSTEM roles that still hold the umbrella; custom roles are the tenant's own.
+- **`QUALITY_OFFICER` creates no tasks, by design, and holds no umbrella.**
+  - Since ACC-244, creating a task needs a record type's Create tasks key, and
+    a type the role can see.
+  - It cannot see committees.
+  - Meeting task keys go to the meeting managers (ACC-316). Whether a minute
+    taker raises a meeting's action items is a Meetings decision, not an
+    umbrella one.
+  - Anyone may still act on a task they are on, by relationship.
+
 ### 1.4 Other `RoleService` Methods — Behavior and Limitations
 
 - **`createRole()`** — tenant admins can create entirely new,
