@@ -28,6 +28,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { revealAndFocusFirstInvalid } from '../../../../shared/components/field/reveal-errors';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 @Component({
   selector: 'app-position-form',
@@ -362,7 +363,10 @@ export class PositionFormComponent implements OnInit {
       grade: value.grade!,
       isSingleAssignee: value.isSingleAssignee ?? false,
       isUnitHeadPosition: value.isUnitHeadPosition ?? false,
-      roleId: value.roleId || undefined,
+      // ACC-154 — null when the field is emptied, so the server clears the
+      // position's role (undefined kept the old one, and a POSITIONS blocker
+      // could never be cleared in the app).
+      roleId: value.roleId || null,
     };
 
     const current = this.position();
@@ -377,7 +381,9 @@ export class PositionFormComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.saving.set(false);
-        this.saveError.set(rootUnitNeedsHeadMessage(err, this.translate, this.language));
+        this.saveError.set(
+          roleInactiveMessage(err, this.translate) ?? rootUnitNeedsHeadMessage(err, this.translate, this.language),
+        );
       },
     });
   }

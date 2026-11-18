@@ -23,7 +23,8 @@ export interface CreateOrgPositionDto {
   grade: number;
   isSingleAssignee?: boolean;
   isUnitHeadPosition?: boolean;
-  roleId?: string;
+  // ACC-154 — null clears the position's role.
+  roleId?: string | null;
 }
 
 export type UpdateOrgPositionDto = Partial<CreateOrgPositionDto>;
