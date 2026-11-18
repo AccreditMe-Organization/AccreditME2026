@@ -7067,6 +7067,10 @@ Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 1
 - **Where it runs (Q-C):** before the write's transaction, where ACC-281's precondition ran.
 - **The read:** `GET /committees/:id` returns `memberActions` (the four booleans), from the
   seat `committeeAccess()` just read.
+  - **ACC-320:** plus `change_own_seat`, may the viewer change their OWN seat: Q-A's rule,
+    `allowedOnOwnRow()`, which `assertMemberAction()` also asks, from the same pass
+    (`committeeMemberActionsFor()`; no extra query). True through a role, false when only
+    the seat allows changing seats. The page reads it instead of copying Q-A.
   - `canRaise` is `memberActions.request_change` AND the stage AND no open request.
   - A request's `actions.edit`, `submit` and `approveNow` use the same rule, once per
     committee among the viewer's own requests.
