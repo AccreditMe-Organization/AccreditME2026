@@ -13,6 +13,7 @@ import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { peopleDateIn } from '../task/task-sla.service';
 import { expectedMembers } from './invitees/meeting-invitee-sync.service';
+import { meetingAnswerSummary } from './meeting-people.service';
 import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
 import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
@@ -198,7 +199,7 @@ export class MeetingsService {
         updatedAt: true,
         committeeId: true,
         orgUnitId: true,
-        committee: { select: { id: true, nameEn: true, nameAr: true, orgUnitId: true } },
+        committee: { select: { id: true, nameEn: true, nameAr: true, orgUnitId: true, quorumCount: true } },
         orgUnit: { select: { id: true, nameEn: true, nameAr: true } },
         organizer: { select: { id: true, name: true } },
         reschedules: { orderBy: { createdAt: 'desc' }, take: 1, select: { fromAt: true, reason: true, createdAt: true } },
@@ -207,11 +208,15 @@ export class MeetingsService {
     if (!meeting) throw new NotFoundException(NOT_FOUND);
 
     const owner: MeetingOwner = { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
-    const [rules, types, scheduler] = await Promise.all([
+    const [rules, types, scheduler, mine] = await Promise.all([
       this.stageRules.currentStageRules('MEETING', id, organizationId),
       committeeTypeValues(this.prisma, organizationId, [meeting.typeValueId], MEETING_TYPE),
       isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
+      this.prisma.meetingAttendee.findFirst({ where: { organizationId, meetingId: id, userId: viewer.id }, select: { answer: true, answerNote: true } }),
     ]);
+    // ACC-316 PR 3b — the answers' summary, only for whoever may edit the meeting.
+    const answers = scheduler ? await meetingAnswerSummary(this.prisma, id, organizationId, meeting.committee?.quorumCount ?? meeting.unitQuorum ?? null) : null;
+    const started = meeting.scheduledAt <= now;
     const type = types.get(meeting.typeValueId);
     const latest = meeting.reschedules[0];
     return {
@@ -231,7 +236,12 @@ export class MeetingsService {
       may: {
         edit: scheduler && rules.actions[MEETING_ACTIONS.EDIT_DETAILS] === true,
         reschedule: scheduler && rules.actions[MEETING_ACTIONS.RESCHEDULE] === true,
+        manageGuests: scheduler && rules.actions[MEETING_ACTIONS.MANAGE_GUESTS] === true,
+        manageAgenda: scheduler && rules.actions[MEETING_ACTIONS.MANAGE_AGENDA] === true,
+        answer: !!mine && !started && rules.actions[MEETING_ACTIONS.ANSWER_INVITATION] === true,
       },
+      answers,
+      myAnswer: mine ? { answer: mine.answer, note: mine.answerNote } : null,
     };
   }
 

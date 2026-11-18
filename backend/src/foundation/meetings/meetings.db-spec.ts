@@ -56,6 +56,15 @@ import { peopleDateIn } from '../task/task-sla.service';
 import { MeetingsService, type MeetingViewer } from './meetings.service';
 import { MeetingInviteeSyncService } from './invitees/meeting-invitee-sync.service';
 import { CommitteesService } from '../committees/committees.service';
+import { MeetingPeopleService } from './meeting-people.service';
+import { MeetingAgendaService } from './meeting-agenda.service';
+import { MeetingFilesService } from './meeting-files.service';
+import { MeetingClashService } from './meeting-clash.service';
+import { StoredFileService } from '../file-storage/stored-file.service';
+import { RecycleBinService } from '../file-storage/recycle-bin.service';
+import { StorageResolverService } from '../file-storage/storage-resolver.service';
+import { StorageNoticesService } from '../file-storage/storage-notices.service';
+import { SharePointAccessService } from '../file-storage/sharepoint-access.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -103,6 +112,26 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const meetings = new MeetingsService(prisma, visibility, workflow, stageRules, notifications, calendar);
   const sync = new MeetingInviteeSyncService(prisma, notifications, calendar, stageRules);
   const committees = new CommitteesService(prisma, audit, workflow, stageRules, sync);
+  // PR 3b — files with their storage stubbed (no bucket on this database): the
+  // real soft delete, a link that names the file.
+  const storedFiles = new StoredFileService(
+    prisma,
+    null as unknown as StorageResolverService,
+    null as unknown as StorageNoticesService,
+    null as unknown as SharePointAccessService,
+  );
+  storedFiles.openView = async (f: { id: string }) => ({ url: `view/${f.id}`, viaApi: true, expiresAt: new Date().toISOString() });
+  storedFiles.openDownload = async (f: { id: string }) => ({ url: `download/${f.id}`, viaApi: true, expiresAt: new Date().toISOString() });
+  const people = new MeetingPeopleService(prisma, visibility, stageRules, notifications, calendar);
+  const agenda = new MeetingAgendaService(prisma, visibility, stageRules, notifications, calendar, storedFiles);
+  const files = new MeetingFilesService(prisma, visibility, stageRules, storedFiles, audit);
+  const clashes = new MeetingClashService(prisma, visibility);
+  const recycleBin = new RecycleBinService(
+    prisma,
+    { removeBytes: () => Promise.resolve(), reviewWarning: () => Promise.resolve() } as unknown as StoredFileService,
+    audit,
+    { assertReachable: () => Promise.resolve() } as unknown as SharePointAccessService,
+  );
 
   let seat: Record<string, string> = {};
   let meetingType = '';
@@ -270,7 +299,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
 
       expect(m.owner).toEqual({ kind: 'COMMITTEE', id: a.committeeId, nameEn: 'Committee active', nameAr: null });
       expect(m.stage.nameEn).toBe('Planned');
-      expect(m.may).toEqual({ edit: true, reschedule: true });
+      expect(m.may).toMatchObject({ edit: true, reschedule: true });
       expect(m.organizer).toEqual({ id: a.people['chair'], name: 'chair' });
       // PR 3b — scheduling fills in the committee's active members, each with their seat, not yet invited.
       const invitees = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, kind: true, seatValueId: true, invitedAt: true } });
@@ -355,9 +384,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(await sees(randomUUID(), as(a, 'outsider'))).toEqual(notFound);
 
       // What a viewer may do: the member and the head without the key read only.
-      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'member'), now)).may).toEqual({ edit: false, reschedule: false });
-      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'clinicalHead'), now)).may).toEqual({ edit: false, reschedule: false });
-      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'rootHead'), now)).may).toEqual({ edit: true, reschedule: true });
+      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'member'), now)).may).toMatchObject({ edit: false, reschedule: false });
+      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'clinicalHead'), now)).may).toMatchObject({ edit: false, reschedule: false });
+      expect((await meetings.getForViewer(committeeMeeting.id, a.orgId, as(a, 'rootHead'), now)).may).toMatchObject({ edit: true, reschedule: true });
     });
   });
 
@@ -703,6 +732,290 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(await kindOf(mx.id, x.people['invitee']!)).toBe('MEMBER');
       expect(await kindOf(my.id, y.people['invitee']!)).toBe('MEMBER');
     });
+  });
+
+  /** Issue the meeting's agenda, as its Chair. */
+  const issue = async (w: World, meetingId: string) =>
+    workflow.triggerTransition((await instanceOf(meetingId)).id, { transitionId: (await move(meetingId, 'agenda_ready')).id } as never, w.orgId, w.people['chair']!, []);
+
+  describe('guests (PR 3b)', () => {
+    it("a guest added while planned is invited only when the agenda is issued; one added after is invited at once — an outside guest by email", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const early = await people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now);
+      expect(early).toMatchObject({ kind: 'ORG_GUEST', invited: false });
+      expect(await code(meetings.getForViewer(m.id, w.orgId, as(w, 'invitee'), now))).toBe(404);
+      expect(notices).toEqual([]);
+
+      await issue(w, m.id);
+      expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId)).toContain(w.people['invitee']);
+      expect(await outcome(meetings.getForViewer(m.id, w.orgId, as(w, 'invitee'), now))).toBe('OK');
+
+      notices.length = 0;
+      const late = await people.addGuest(m.id, { userId: w.people['wardPerson'] } as never, w.orgId, as(w, 'chair'), now);
+      expect(late).toMatchObject({ kind: 'ORG_GUEST', invited: true });
+      expect(notices.map((n) => [n.userId, n.titleEn])).toEqual([[w.people['wardPerson'], 'Meeting invitation']]);
+      const outside = await people.addGuest(
+        m.id,
+        { outsideName: 'Dr Sara', outsideEmail: 'sara@example.test', outsideOrganisation: 'University' } as never,
+        w.orgId,
+        as(w, 'chair'),
+        now,
+      );
+      expect(outside).toMatchObject({ kind: 'OUTSIDE_GUEST', name: 'Dr Sara', outsideEmail: 'sara@example.test', invited: true });
+      expect(emails.map((e) => [e.to, e.subjectEn])).toEqual([['sara@example.test', 'Invitation: Monthly review']]);
+      // No link into AccreditMe, no papers: the place only.
+      expect(emails[0]!.bodyEn).toContain('Location: Room 4.');
+      expect(emails[0]!.bodyEn).not.toMatch(/meetings\/|files\//);
+    });
+
+    it('each refusal by its code, and the guest rules', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const guest = await people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now);
+      const outsideGuest = await people.addGuest(m.id, { outsideName: 'Dr Sara', outsideEmail: 'sara@example.test' } as never, w.orgId, as(w, 'chair'), now);
+      const memberRow = (await people.attendees(m.id, w.orgId, as(w, 'chair'), now)).find((a) => a.userId === w.people['member'])!;
+      await agenda.create(m.id, { title: 'Budget', presenter: { attendeeId: outsideGuest.id } } as never, w.orgId, as(w, 'chair'), now);
+
+      expect(await code(people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_ALREADY_INVITED');
+      expect(await code(people.addGuest(m.id, { outsideName: 'x', outsideEmail: 'SARA@example.test' } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_ALREADY_INVITED');
+      expect(await code(people.addGuest(m.id, {} as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_GUEST_REQUIRED');
+      expect(await code(people.addGuest(m.id, { userId: b.people['member'] } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_PERSON_NOT_FOUND');
+      expect(await code(people.addGuest(m.id, { userId: w.people['outsider'] } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(people.removeGuest(m.id, memberRow.id, w.orgId, as(w, 'chair'), now))).toBe('MEETING_MEMBER_NOT_REMOVABLE');
+      // An outside guest presents but cannot be removed while presenting.
+      expect(await code(people.removeGuest(m.id, outsideGuest.id, w.orgId, as(w, 'chair'), now))).toBe('MEETING_GUEST_PRESENTS');
+
+      expect(await outcome(people.removeGuest(m.id, guest.id, w.orgId, as(w, 'chair'), now))).toBe('OK');
+      expect(await prisma.auditLog.count({ where: { objectType: 'MeetingAttendee', objectId: guest.id, action: 'DELETE' } })).toBe(1);
+    });
+  });
+
+  describe('answers (PR 3b)', () => {
+    it("an invitee answers until the start; a change to Can't attend tells the organiser, flagged; the summary is the editor's", async () => {
+      const w = await world();
+      await prisma.committee.update({ where: { id: w.committeeId }, data: { quorumCount: 3 } });
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+
+      await people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'member'), now);
+      expect(notices).toEqual([]);
+      await people.answer(m.id, { answer: 'CANT_ATTEND', note: 'On leave' } as never, w.orgId, as(w, 'secretary'), now);
+      // The organiser (the Chair), in the app only: below the quorum (2 of 3), and the Secretary's seat.
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ userId: w.people['chair'], titleEn: "Can't attend — needs your attention" });
+      expect(notices[0]!.bodyEn).toContain('Note: On leave');
+      expect(notices[0]!.bodyEn).toContain('Attending is now below the quorum.');
+      expect(notices[0]!.bodyEn).toContain('They hold the Chair or Secretary seat.');
+      expect(notices[0]!.bodyAr).not.toMatch(/[٠-٩]/);
+      // Saying it again tells nobody again.
+      notices.length = 0;
+      await people.answer(m.id, { answer: 'CANT_ATTEND' } as never, w.orgId, as(w, 'secretary'), now);
+      expect(notices).toEqual([]);
+
+      const forChair = await meetings.getForViewer(m.id, w.orgId, as(w, 'chair'), now);
+      expect(forChair.answers).toEqual({ members: 3, attending: 1, cantAttend: 1, noAnswer: 1, quorum: 3, belowQuorum: true });
+      const forMember = await meetings.getForViewer(m.id, w.orgId, as(w, 'member'), now);
+      expect(forMember.answers).toBeNull();
+      expect(forMember.myAnswer).toEqual({ answer: 'ATTENDING', note: null });
+      expect(forMember.may.answer).toBe(true);
+
+      // The attendee list: the editor sees every answer; a member only their own.
+      const memberView = await people.attendees(m.id, w.orgId, as(w, 'member'), now);
+      expect(memberView.find((a) => a.userId === w.people['secretary'])!.answer).toBeNull();
+      expect(memberView.find((a) => a.userId === w.people['member'])!.answer).toBe('ATTENDING');
+
+      expect(await code(people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW]), now))).toBe('MEETING_NOT_INVITED');
+      expect(await code(people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'member'), later(8, now)))).toBe('MEETING_STARTED');
+    });
+  });
+
+  describe('agenda (PR 3b)', () => {
+    it("ordered items; a presenter who isn't invited is added as a guest; after issue the invited are told what changed", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      await agenda.create(m.id, { title: 'Minutes of the last meeting', durationMinutes: 10 } as never, w.orgId, as(w, 'secretary'), now);
+      const items = await agenda.create(m.id, { title: 'Budget', durationMinutes: 30, presenter: { userId: w.people['wardPerson'] } } as never, w.orgId, as(w, 'secretary'), now);
+      expect(items.map((i) => [i.order, i.title, i.presenter?.name ?? null])).toEqual([
+        [1, 'Minutes of the last meeting', null],
+        [2, 'Budget', 'wardPerson'],
+      ]);
+      const presenterRow = (await people.attendees(m.id, w.orgId, as(w, 'chair'), now)).find((a) => a.userId === w.people['wardPerson'])!;
+      expect(presenterRow).toMatchObject({ kind: 'ORG_GUEST', addedAsPresenter: true, invited: false });
+
+      const reordered = await agenda.order(m.id, { itemIds: [items[1]!.id, items[0]!.id] } as never, w.orgId, as(w, 'secretary'), now);
+      expect(reordered.map((i) => i.title)).toEqual(['Budget', 'Minutes of the last meeting']);
+      expect(await code(agenda.order(m.id, { itemIds: [items[0]!.id] } as never, w.orgId, as(w, 'secretary'), now))).toBe('MEETING_AGENDA_ORDER_MISMATCH');
+      expect(await code(agenda.create(m.id, { title: '  ' } as never, w.orgId, as(w, 'secretary'), now))).toBe('MEETING_AGENDA_TITLE_REQUIRED');
+      expect(await code(agenda.create(m.id, { title: 'X', presenter: { userId: b.people['member'] } } as never, w.orgId, as(w, 'secretary'), now))).toBe(
+        'MEETING_PRESENTER_NOT_FOUND',
+      );
+      expect(await code(agenda.update(m.id, 'no-such-item', { title: 'X' } as never, w.orgId, as(w, 'secretary'), now))).toBe('MEETING_AGENDA_ITEM_NOT_FOUND');
+      expect(await code(agenda.create(m.id, { title: 'X' } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      // A member reads the agenda.
+      expect((await agenda.list(m.id, w.orgId, as(w, 'member'), now)).length).toBe(2);
+
+      await issue(w, m.id);
+      notices.length = 0;
+      await agenda.update(m.id, items[0]!.id, { title: 'Approve the minutes' } as never, w.orgId, as(w, 'secretary'), now);
+      const changed = notices.filter((n) => n.titleEn === 'Agenda changed');
+      expect(changed.map((n) => n.userId).sort()).toEqual([w.people['chair'], w.people['member'], w.people['wardPerson']].sort());
+      expect(changed[0]!.bodyEn).toBe('The agenda for Monthly review changed: "Approve the minutes" was changed.');
+    });
+  });
+
+  describe('files (PR 3b)', () => {
+    const fileRow = (w: World, ownerType: 'MEETING' | 'MEETING_AGENDA_ITEM', ownerId: string, name: string) =>
+      prisma.storedFile.create({
+        data: {
+          organizationId: w.orgId,
+          provider: 'S3',
+          bucket: 'test',
+          storageKey: `${w.orgId}/meetings/${ownerId}/${randomUUID()}-${name}`,
+          originalName: name,
+          mimeType: 'application/pdf',
+          sizeBytes: 100,
+          sha256: 'a'.repeat(64),
+          ownerType,
+          ownerId,
+          uploadedById: w.people['chair']!,
+        },
+      });
+
+    it("attachments and papers open for whoever sees the meeting, and for nobody outside it; a removed paper's item takes it to the recycle bin", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const other = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Other' }), w.orgId, as(w, 'chair'), now);
+      const [item] = await agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'chair'), now);
+      const attachment = await fileRow(w, 'MEETING', m.id, 'terms.pdf');
+      const paper = await fileRow(w, 'MEETING_AGENDA_ITEM', item!.id, 'budget.pdf');
+      const otherFile = await fileRow(w, 'MEETING', other.id, 'other.pdf');
+
+      const listed = await files.list(m.id, w.orgId, as(w, 'member'), now);
+      expect(listed.attachments.map((f) => f.name)).toEqual(['terms.pdf']);
+      expect(listed.papers.map((f) => [f.name, f.agendaItemId])).toEqual([['budget.pdf', item!.id]]);
+      expect(await files.openView(m.id, paper.id, w.orgId, as(w, 'member'), now)).toMatchObject({ url: `view/${paper.id}` });
+      // Nobody outside the meeting: the identical 404.
+      expect(await outcome(files.openView(m.id, paper.id, w.orgId, as(w, 'outsider'), now))).toEqual({
+        statusCode: 404,
+        message: 'Meeting not found',
+        error: 'Not Found',
+      });
+      // Another meeting's file asked through this meeting: not found.
+      expect(await code(files.openDownload(m.id, otherFile.id, w.orgId, as(w, 'member'), now))).toBe(404);
+      // A member reads but does not delete.
+      expect(await code(files.remove(m.id, attachment.id, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+
+      // Removing the agenda item soft-deletes its paper; with the item gone, the bin cannot restore it.
+      await agenda.remove(m.id, item!.id, w.orgId, as(w, 'chair'), now);
+      expect((await prisma.storedFile.findFirstOrThrow({ where: { id: paper.id } })).deletedAt).not.toBeNull();
+      expect(await code(recycleBin.restore(w.orgId, paper.id, w.people['rootHead']!))).toBe('FILE_RECORD_GONE');
+      // The attachment, deleted and restored, goes back to its meeting.
+      await files.remove(m.id, attachment.id, w.orgId, as(w, 'chair'), now);
+      expect((await files.list(m.id, w.orgId, as(w, 'chair'), now)).attachments).toEqual([]);
+      await recycleBin.restore(w.orgId, attachment.id, w.people['rootHead']!);
+      expect((await files.list(m.id, w.orgId, as(w, 'chair'), now)).attachments.map((f) => f.name)).toEqual(['terms.pdf']);
+    });
+  });
+
+  describe('file uploads (PR 3b)', () => {
+    it('are refused before any byte is stored: a stage with no agenda changes, an agenda item of another meeting', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const other = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Other' }), w.orgId, as(w, 'chair'), now);
+      const [otherItem] = await agenda.create(other.id, { title: 'Elsewhere' } as never, w.orgId, as(w, 'chair'), now);
+      const prepare = jest.spyOn(storedFiles, 'prepare');
+      try {
+        const upload = { originalname: 'terms.pdf', mimetype: 'application/pdf', size: 10, buffer: Buffer.from('%PDF-1.4') } as never;
+        expect(await code(files.add(m.id, otherItem!.id, upload, w.orgId, as(w, 'chair'), now))).toBe('MEETING_AGENDA_ITEM_NOT_FOUND');
+        await workflow.triggerTransition((await instanceOf(m.id)).id, { transitionId: (await move(m.id, 'cancelled')).id, comment: 'No' } as never, w.orgId, w.people['chair']!, []);
+        expect(await code(files.add(m.id, null, upload, w.orgId, as(w, 'chair'), now))).toBe('STAGE_ACTION_NOT_ALLOWED');
+        expect(prepare).not.toHaveBeenCalled();
+      } finally {
+        prepare.mockRestore();
+      }
+    });
+  });
+
+  describe('the clash check (PR 3b)', () => {
+    it("strict overlap only, cancelled meetings left out, another meeting's title only for who may open it", async () => {
+      const w = await world();
+      const now = new Date();
+      const at = (days: number, hours: number) => new Date(later(days, now).setUTCHours(hours, 0, 0, 0));
+      // The member is in a 09:00–10:00 committee meeting and a cancelled one at 11:00.
+      const busy = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { scheduledAt: at(5, 9).toISOString(), durationMinutes: 60 }), w.orgId, as(w, 'chair'), now);
+      const off = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { scheduledAt: at(5, 11).toISOString(), title: 'Off' }), w.orgId, as(w, 'chair'), now);
+      await workflow.triggerTransition((await instanceOf(off.id)).id, { transitionId: (await move(off.id, 'cancelled')).id, comment: 'No' } as never, w.orgId, w.people['chair']!, []);
+
+      const times = [
+        { startsAt: at(5, 9).toISOString(), durationMinutes: 30 }, // overlaps
+        { startsAt: at(5, 10).toISOString(), durationMinutes: 30 }, // back to back
+        { startsAt: at(5, 11).toISOString(), durationMinutes: 30 }, // only the cancelled meeting
+        { startsAt: new Date(at(5, 9).getTime() - 30 * 60_000).toISOString(), durationMinutes: 30 }, // ends as it starts
+      ];
+      const asChair = await clashes.check({ committeeId: w.committeeId, times } as never, w.orgId, as(w, 'chair'), now);
+      expect(asChair[0]!.people.map((p) => p.userId).sort()).toEqual([w.people['chair'], w.people['member'], w.people['secretary']].sort());
+      expect(asChair[0]!.people[0]!.meetings).toEqual([{ id: busy.id, title: 'Monthly review', startsAt: at(5, 9), durationMinutes: 60 }]);
+      expect(asChair[1]!.people).toEqual([]);
+      expect(asChair[2]!.people).toEqual([]);
+      expect(asChair[3]!.people).toEqual([]);
+
+      // Root's head schedules a Ward meeting for wardPerson, who is also invited to the committee meeting:
+      // the committee meeting is above Ward, so its title is withheld from them.
+      await people.addGuest(busy.id, { userId: w.people['wardPerson'] } as never, w.orgId, as(w, 'chair'), now);
+      const asWard = await clashes.check(
+        { orgUnitId: w.units.ward, times: [times[0]!], userIds: [w.people['wardPerson']!] } as never,
+        w.orgId,
+        as(w, 'rootHead'),
+        now,
+      );
+      expect(asWard[0]!.people[0]!.meetings[0]!.title).toBe('Monthly review'); // Root's head oversees it
+      // Editing the meeting itself leaves its own time out.
+      expect((await clashes.check({ meetingId: busy.id, times: [times[0]!] } as never, w.orgId, as(w, 'chair'), now))[0]!.people).toEqual([]);
+
+      expect(await code(clashes.check({ committeeId: w.committeeId, times } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');
+      expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(53).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
+        'MEETING_CLASH_TOO_MANY_TIMES',
+      );
+    });
+
+    it('a title the asker may not open reads as another meeting', async () => {
+      const w = await world();
+      const now = new Date();
+      const start = later(6, now);
+      // A Ward meeting with the member as a guest; Clinical's scheduler cannot open it.
+      const ward = await meetings.schedule(scheduleDto(now, { orgUnitId: w.units.ward }, { scheduledAt: start.toISOString() }), w.orgId, as(w, 'rootHead'), now);
+      await people.addGuest(ward.id, { userId: w.people['clinicalHead'] } as never, w.orgId, as(w, 'rootHead'), now);
+      const asked = await clashes.check(
+        { orgUnitId: w.units.clinical, times: [{ startsAt: start.toISOString(), durationMinutes: 30 }] } as never,
+        w.orgId,
+        as(w, 'clinicalScheduler'),
+        now,
+      );
+      const head = asked[0]!.people.find((p) => p.userId === w.people['clinicalHead'])!;
+      expect(head.meetings.map((x) => [x.id, x.title])).toEqual([[ward.id, null]]);
+    });
+  });
+
+  itEnforcesTenantIsolation("meeting people, agenda, files and clashes — another organisation's meeting is the same 404, and its people never count", async () => {
+    const now = new Date();
+    const theirs = await meetings.schedule(scheduleDto(now, { committeeId: b.committeeId }), b.orgId, as(b, 'chair'), now);
+    const viewer = as(a, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
+    const notFound = { statusCode: 404, message: 'Meeting not found', error: 'Not Found' };
+    expect(await outcome(people.attendees(theirs.id, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await outcome(people.addGuest(theirs.id, { userId: a.people['invitee'] } as never, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await outcome(people.answer(theirs.id, { answer: 'ATTENDING' } as never, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await outcome(agenda.list(theirs.id, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await outcome(files.list(theirs.id, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await outcome(clashes.check({ meetingId: theirs.id, times: [] } as never, a.orgId, viewer, now))).toEqual(notFound);
+    expect(await code(clashes.check({ committeeId: b.committeeId, times: [] } as never, a.orgId, viewer, now))).toBe('MEETING_OWNER_NOT_FOUND');
+    expect(await prisma.meetingAttendee.count({ where: { meetingId: theirs.id, userId: a.people['invitee']! } })).toBe(0);
   });
 
   itEnforcesTenantIsolation("meetings — another organisation's meeting is the same 404 as a missing one, and never listed", async () => {

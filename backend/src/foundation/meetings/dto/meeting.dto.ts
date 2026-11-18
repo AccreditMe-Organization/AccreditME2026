@@ -1,5 +1,9 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsISO8601,
@@ -10,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
@@ -162,4 +167,179 @@ export class ListMeetingsDto {
   @Min(1)
   @Max(50)
   take?: number;
+}
+
+/**
+ * ACC-316 PR 3b — add a guest: an organisation person (userId), OR an outside
+ * guest (name and email required; organisation and role optional). Exactly one
+ * of the two shapes (MEETING_GUEST_REQUIRED).
+ */
+export class AddMeetingGuestDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  userId?: string;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(200)
+  outsideName?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsEmail()
+  @MaxLength(320)
+  outsideEmail?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(200)
+  outsideOrganisation?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(200)
+  outsideRole?: string | null;
+}
+
+export const MEETING_ANSWERS = ['ATTENDING', 'CANT_ATTEND'] as const;
+
+/** Answer the invitation (a user invitee, until the start). */
+export class AnswerMeetingDto {
+  @IsIn(MEETING_ANSWERS)
+  answer!: (typeof MEETING_ANSWERS)[number];
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+}
+
+/** An agenda item's presenter: an invitee (attendeeId), or an organisation person (userId), added as a guest if not invited. */
+export class AgendaPresenterDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  attendeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  userId?: string;
+}
+
+export class CreateAgendaItemDto {
+  @IsString()
+  @MaxLength(300)
+  title!: string;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  description?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(600)
+  durationMinutes?: number | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgendaPresenterDto)
+  presenter?: AgendaPresenterDto | null;
+
+  @IsOptional()
+  @IsBoolean()
+  standing?: boolean;
+}
+
+/** Every field optional; `presenter: null` clears the presenter. */
+export class UpdateAgendaItemDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  title?: string;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  description?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(600)
+  durationMinutes?: number | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgendaPresenterDto)
+  presenter?: AgendaPresenterDto | null;
+
+  @IsOptional()
+  @IsBoolean()
+  standing?: boolean;
+}
+
+/** The agenda's new order: every item's id, once. */
+export class OrderAgendaDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  itemIds!: string[];
+}
+
+/** One time to check: a start (an instant) and how long. */
+export class ClashTimeDto {
+  @IsISO8601({ strict: true })
+  startsAt!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  durationMinutes!: number;
+}
+
+/**
+ * ACC-316 PR 3b — the clash check (plan §3.10): the owner (a committee or a
+ * unit, for a new meeting) or the meeting (whose own time is left out), an
+ * optional list of people (else the owner's invitees), and up to 52 times (a
+ * series' cap).
+ */
+export class CheckMeetingClashesDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  meetingId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  committeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  orgUnitId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  userIds?: string[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ClashTimeDto)
+  times!: ClashTimeDto[];
 }

@@ -24,7 +24,21 @@ export type MeetingRefusalCode =
   | 'MEETING_CHANGED'
   /** A reschedule moves the meeting to a different time. */
   | 'MEETING_RESCHEDULE_SAME_TIME'
-  | 'MEETING_TITLE_REQUIRED';
+  | 'MEETING_TITLE_REQUIRED'
+  | 'MEETING_GUEST_REQUIRED'
+  | 'MEETING_PERSON_NOT_FOUND'
+  | 'MEETING_ALREADY_INVITED'
+  | 'MEETING_ATTENDEE_NOT_FOUND'
+  | 'MEETING_MEMBER_NOT_REMOVABLE'
+  | 'MEETING_GUEST_PRESENTS'
+  | 'MEETING_NOT_INVITED'
+  | 'MEETING_STARTED'
+  | 'MEETING_AGENDA_ITEM_NOT_FOUND'
+  | 'MEETING_AGENDA_ORDER_MISMATCH'
+  | 'MEETING_PRESENTER_NOT_FOUND'
+  | 'MEETING_CLASH_OWNER_REQUIRED'
+  | 'MEETING_CLASH_TOO_MANY_TIMES'
+  | 'MEETING_AGENDA_TITLE_REQUIRED';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -37,6 +51,20 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_CHANGED: HttpStatus.CONFLICT,
   MEETING_RESCHEDULE_SAME_TIME: HttpStatus.BAD_REQUEST,
   MEETING_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_GUEST_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_PERSON_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_ALREADY_INVITED: HttpStatus.CONFLICT,
+  MEETING_ATTENDEE_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_MEMBER_NOT_REMOVABLE: HttpStatus.CONFLICT,
+  MEETING_GUEST_PRESENTS: HttpStatus.CONFLICT,
+  MEETING_NOT_INVITED: HttpStatus.FORBIDDEN,
+  MEETING_STARTED: HttpStatus.CONFLICT,
+  MEETING_AGENDA_ITEM_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_AGENDA_ORDER_MISMATCH: HttpStatus.BAD_REQUEST,
+  MEETING_PRESENTER_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_CLASH_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_CLASH_TOO_MANY_TIMES: HttpStatus.BAD_REQUEST,
+  MEETING_AGENDA_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -50,6 +78,20 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_CHANGED: 'This meeting changed since you opened it. Reload it and try again.',
   MEETING_RESCHEDULE_SAME_TIME: 'Choose a different date or time.',
   MEETING_TITLE_REQUIRED: 'Give the meeting a title.',
+  MEETING_GUEST_REQUIRED: "Choose a person, or give an outside guest's name and email.",
+  MEETING_PERSON_NOT_FOUND: 'Person not found.',
+  MEETING_ALREADY_INVITED: 'This person is already invited.',
+  MEETING_ATTENDEE_NOT_FOUND: 'Invitee not found.',
+  MEETING_MEMBER_NOT_REMOVABLE: "A member is invited by their committee or unit and can't be removed here.",
+  MEETING_GUEST_PRESENTS: 'This guest presents an agenda item. Choose another presenter first.',
+  MEETING_NOT_INVITED: "You aren't invited to this meeting.",
+  MEETING_STARTED: 'This meeting has started.',
+  MEETING_AGENDA_ITEM_NOT_FOUND: 'Agenda item not found.',
+  MEETING_AGENDA_ORDER_MISMATCH: 'The order must list every agenda item once. Reload the agenda and try again.',
+  MEETING_PRESENTER_NOT_FOUND: 'Presenter not found.',
+  MEETING_CLASH_OWNER_REQUIRED: 'Name the committee, the unit or the meeting to check.',
+  MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 52 times at once.',
+  MEETING_AGENDA_TITLE_REQUIRED: 'Give the agenda item a title.',
 };
 
 export class MeetingRefusal extends HttpException {
