@@ -4710,9 +4710,17 @@ due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
   treats a before-opening time the same way.
 - **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
   Plan: `backend/Plans/step-175-deadline-before-opening.md`.
-- **Known, not built:** a holiday in a zone west of UTC lands a day early
-  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
-  saving. Every tenant is UTC+3 today.
+- **A holiday is its calendar day in every zone (ACC-318).** It is stored as
+  that date at midnight UTC (the screen sends `YYYY-MM-DD`), and
+  `isWorkingDay()` (`working-time.ts`) reads its day in UTC, never in the
+  organisation's zone. Before, a zone west of UTC read 25 December as the 24th.
+- **Each day counts its REAL working hours (ACC-319).** `deadlineWith()` spends
+  what is really left of each day's window, and `hoursBetweenWith()` sums the
+  same window (`windowOf()`), so the two agree on a day the clocks change inside
+  the window: London 00:00–08:00 has 7 hours on 29 March 2026 and 9 on
+  25 October, and a deadline never lands after the close. Before, every full day
+  counted a fixed end − start. Zones without clock changes (every Gulf zone) are
+  unchanged.
 
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
@@ -4984,12 +4992,13 @@ audit-logs (`{ escalatedTo, tier }` on a real fire, or
 an empty array — a skip, not a thrown error, matching Section 3.4's
 own framing of an unresolvable target as a real, unremarkable state).
 
-Working-hours gating is unchanged from the pre-ACC-46 mechanism:
-`isWithinWorkingHours()` (`:508`, re-implements the day/hour/holiday
-check inline since no dedicated method exists on
-`WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
-"Escalation triggers only fire during working hours," still genuinely
-enforced. Recording the breach (`slaBreachedAt`) is unconditional
+Working-hours gating wraps both tiers' firing — CLAUDE.md's "Escalation
+triggers only fire during working hours," still genuinely enforced. Since
+ACC-318 there is ONE rule, `isWorkingMomentWith()` (`working-time.ts`): the
+overdue pass asks it on the calendar it already loaded for the organisation,
+and `isWithinWorkingHours()` (the stage and pool escalations) asks it on
+`loadCalendar()`, read without creating a row. The hand copy is gone; its
+holiday check read the date in the organisation's zone. Recording the breach (`slaBreachedAt`) is unconditional
 regardless of working hours; only the escalation notify/stamp/audit-log
 steps are gated.
 
@@ -10463,7 +10472,10 @@ days.
 ### 9.7 The Tenant's Time Zone — One Field (ACC-94 D3, ACC-97)
 
 **`WorkingCalendar.timezone` is the organisation's ONLY time zone.** It is
-edited on the Working Calendar screen (`PATCH /working-calendar`) and read by
+edited on the Working Calendar screen (`PATCH /working-calendar`), which saves
+only a real IANA zone (Luxon's `IANAZone.isValidZone`, the library the deadline
+maths uses) and refuses anything else with 400
+`WORKING_CALENDAR_TIMEZONE_INVALID`, nothing written (ACC-318). It is read by
 **`WorkingCalendarService.calculateDeadline()`** (every SLA due date),
 **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date
 display** (via `GET /auth/me`). Display uses the zone the SLA engine computes
@@ -10492,6 +10504,16 @@ creation never set it; every row holds the column default) and returned by
 A new organisation's calendar starts at the GCC default (`getOrCreate()` seeds
 `GCC_DEFAULT`); a tenant outside that zone sets it on the Working Calendar
 screen.
+
+**The row is created by its first read, once (ACC-317).** `getOrCreate()` reads
+the row; when there is none it inserts the default with `createMany({
+skipDuplicates: true })`, which Prisma sends as `INSERT … ON CONFLICT DO
+NOTHING`, then reads it back. First reads at the same moment all get the one
+row, and none fails on the unique key. An `upsert` with an empty `update` is
+NOT used: measured on Postgres, Prisma sends it as a read, an insert and a read
+(an emulated upsert, the same race). `working-calendar.db-spec.ts` proves the
+statement and eight simultaneous first reads. Nothing is created at tenant
+bootstrap.
 
 ---
 
