@@ -5774,12 +5774,22 @@ list.**
 |---|---|---|
 | On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
 | Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys. **ACC-120 slice 3:** My tasks (`mine`) and Created by me (`created`) need no key and are never a 403 | the view's tasks AND `taskVisibleSql()` |
+| **A person (`person`, ACC-216)** | yourself, or `users:view` — else a 403 naming it, BEFORE any read (the same for a real colleague and an invented id); then the person is read with `{ id, organizationId }`, so an invented id and another organisation's person are the identical 404 | the tasks the person is ON (`currentActiveAssigneeOfSql()`) AND `taskVisibleSql()`, in the `WHERE` before `LIMIT`; `view: 'person'`, `scope: 'all'` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
+**A person's tasks (ACC-216, plan `step-216-sessions-and-tasks.md` §5, Option A).**
+- **"On a task" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE` (`task-pool.ts`): a current assignee row (picked pool rows included) AND the person is ACTIVE. So a deactivated person has no tasks, even for a View all holder, whatever rows they left.
+  - `currentActiveAssigneeOf(userId)` is the Prisma form, built on `CURRENT_ACTIVE_ASSIGNEE`.
+  - `currentActiveAssigneeOfSql(userId)` is its SQL twin. `HAS_CURRENT_ACTIVE_ASSIGNEE_SQL` and it are built from the same two fragments, so they cannot drift.
+  - `task-pool.current-active.db-spec.ts` pins each SQL form to its Prisma form on a real Postgres.
+- **Nobody gains access:** the person is one condition beside the viewer's own rule, so every row is a task the viewer's task page already admits (`task-record-list.person.db-spec.ts` checks exactly that, per viewer).
+- **Never combined** with a record or a `view`: a 400, nothing read.
+- **The panel** (`record-panel?person=`) is the first five of the same scope, and never offers New task (`canCreate: false`): a person is not a record.
+
 | Endpoint | Returns |
 |---|---|
-| `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
+| `GET /tasks/record-panel?sourceType&sourceId`, or `?person` (ACC-216) | `{ total, scope, rows, canCreate }` — the first five of the order below; `total` is every task the viewer can see on the record, or that the person is on |
 | `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, the record types, the unit view's units and — ACC-120 slice 3 — `statusCounts`, all over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters. Each row carries `rejectedBy` (`{ id, name }` or null, ACC-120 slice 3) beside `rejectedReason` |
 
 Both are declared before `':id'`, with no `@Permissions` — the service
