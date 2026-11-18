@@ -228,6 +228,10 @@ export class MeetingsService {
    * owners, types and stages in batches.
    *
    *   mine      meetings the viewer is a member of, or organised; upcoming, soonest first
+   *
+   * Every view keeps the visibility rule in its WHERE, so a listed row always
+   * opens: an organiser who has since left the unit or committee no longer
+   * lists the meeting they could not open.
    *   past      every meeting the viewer may see that has started; latest first
    *   minutes   meetings whose minutes the viewer records (meeting-authority's RECORDERS, as SQL)
    *   all       every meeting: meetings:view only
@@ -247,7 +251,7 @@ export class MeetingsService {
     let order: Prisma.Sql;
     switch (view) {
       case 'mine':
-        where = Prisma.sql`(${member} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
+        where = Prisma.sql`${visible} AND (${member} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
         order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
         break;
       case 'past':

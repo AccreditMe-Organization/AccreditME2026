@@ -360,6 +360,29 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(first.stage.nameEn).toBe('Planned');
       expect(first.owner).toEqual({ kind: 'COMMITTEE', id: w.committeeId, nameEn: 'Committee active', nameAr: null });
     });
+
+    it('a listed row always opens, in every view — an organiser who has left the unit no longer lists the meeting', async () => {
+      const w = await world();
+      const now = new Date();
+      const upcomingClinical = await meetingRow(w, { orgUnitId: w.units.clinical }, later(2, now), w.people['clinicalScheduler']!);
+      await meetingRow(w, { committeeId: w.committeeId }, later(3, now), w.people['chair']!);
+      await meetingRow(w, { orgUnitId: w.units.ward }, later(-4, now), w.people['rootHead']!);
+      // The organiser moves out of Clinical: no longer a person of the meeting's unit.
+      await prisma.user.update({ where: { id: w.people['clinicalScheduler']! }, data: { primaryOrgUnitId: null } });
+
+      const ids = async (view: string, viewer: MeetingViewer) =>
+        (await meetings.list({ view } as never, w.orgId, viewer, now)).items.map((i) => i.id);
+      expect(await ids('mine', as(w, 'clinicalScheduler'))).not.toContain(upcomingClinical);
+
+      for (const name of Object.keys(w.people)) {
+        for (const view of ['mine', 'past', 'minutes', 'subunits']) {
+          const viewer = as(w, name);
+          for (const id of await ids(view, viewer)) {
+            expect([name, view, await outcome(meetings.getForViewer(id, w.orgId, viewer, now))]).toEqual([name, view, 'OK']);
+          }
+        }
+      }
+    });
   });
 
   describe('edit and reschedule', () => {
