@@ -438,7 +438,8 @@ A short index. Each line names its source.
   - `seriesId?`, `seriesIndex?`;
   - `ownEdits String[]` (the fields this meeting changed "this meeting only",
     so "this and all later" keeps them);
-  - `rescheduledFromAt?`, `rescheduleReason?`;
+  - (no reschedule columns: every reschedule is a `MeetingReschedule` row, and
+    "Rescheduled from …" reads the newest one, §3.8.2);
   - `reviewBy` (Date?), `reviewRound` (Int, default 0);
   - `approvedById?`.
 - **`typeValueId` gains its relation.** It is safe: there are 0 rows.
@@ -532,9 +533,35 @@ A short index. Each line names its source.
   - a unit's own active people (`primaryOrgUnitId`), with no sub-units (lane
     B, 18 Nov).
 
-  The scheduler can add more, as organisation guests. Members joining or
-  leaving later change the invitees of meetings still in Planned or Agenda
-  Issued only.
+  The scheduler can add more, as organisation guests.
+- **Keeping MEMBER invitees current (PR 3).**
+  - **What changes:** members joining or leaving change the MEMBER invitees of
+    meetings still in Planned or Agenda Issued, and not yet started. Held and
+    cancelled meetings never change. Guests are never touched.
+  - **One place does it:** `MeetingInviteeSync`, which recomputes the expected
+    MEMBER rows for a committee, a unit or a user:
+    - it adds the missing rows;
+    - it removes the rows no longer expected (with their answers);
+    - it refreshes a member's seat snapshot.
+  - **Entry-time refreshes, after each writer commits:**
+    - committee member add, and reactivate in place (`committees.service.ts:492`,
+      the reuse branch at `:526`);
+    - change of seat (`:577`);
+    - removal (`:637`);
+    - user transfer (`user.service.ts:487`);
+    - a change of primary unit on the profile (`updateProfile()`, `:1149`, the
+      write at `:1198`);
+    - deactivation (`:1502`);
+    - reactivation (`:1642`);
+    - invitation accepted, a new ACTIVE person in a unit
+      (`auth.service.ts:950`).
+  - **The scheduled recomputer (ACC-82's rule):**
+    `SlaMonitorProcessor.sweepMeetingInvitees()`, a new step in `process()`
+    (`sla-monitor.processor.ts:133`), runs every 15 minutes.
+    - It recomputes every open meeting, per organisation, in batches.
+    - It is fault-isolated like the other steps.
+    - Correctness rests on the sweep; the writer calls only make a change show
+      sooner.
 - **Answering the invitation (Ahmad, 18 Nov):**
   - **The columns** on `MeetingAttendee`: `answer` (ATTENDING or CANT_ATTEND,
     null = no answer yet), `answerNote?` and `answeredAt?`.
@@ -609,7 +636,11 @@ A short index. Each line names its source.
   - whether the date has passed, in the organisation's zone.
 - **The reminder** is the one scheduled part: the SLA sweep (`sla-monitor`, 15
   minutes) tells the members who haven't answered, once, on the working day
-  before the date. It is stamped per member and round, so it never repeats.
+  before the date.
+  - **The stamp is `MeetingAttendee.reviewRemindedRound` (Int?).** The sweep
+    sends a reminder only through one conditional `UPDATE … SET
+    reviewRemindedRound = round WHERE reviewRemindedRound IS DISTINCT FROM
+    round RETURNING`, so a second sweep or worker sends nothing.
 - **Return for Correction:**
   - closes the round;
   - answers reset;
@@ -646,7 +677,7 @@ A short index. Each line names its source.
 
 ### 3.8 Stages, moves and the engine
 
-**The seed and the PR 1 backfill:**
+**The seed and the PR 2 backfill:**
 
 | Stage (key unchanged) | Name | Who works it | Record actions allowed | Flags |
 |---|---|---|---|---|
@@ -663,20 +694,26 @@ A short index. Each line names its source.
 
   | Stage | Entries (Any one) |
   |---|---|
-  | Planned | `COMMITTEE` + `secretary` seat · `MEETING_SCHEDULERS` |
-  | Agenda Issued | `COMMITTEE` + `secretary` seat · `MEETING_SCHEDULERS` · `MEETING_RECORDERS` |
-  | Minutes Draft | `COMMITTEE` + `secretary` seat · `MEETING_RECORDERS` |
+  | Planned | `MEETING_SCHEDULERS` |
+  | Agenda Issued | `MEETING_SCHEDULERS` · `MEETING_RECORDERS` |
+  | Minutes Draft | `MEETING_RECORDERS` |
   | Minutes Review | `COMMITTEE` + `chairman` seat · `MEETING_APPROVERS` |
 
-  `COMMITTEE` with no fixed committee is the meeting's committee, and nobody
-  for a unit meeting.
+  - **The pools read the same predicates as the buttons (round 4).** Scheduling
+    is the configurable seat action `schedule_meeting`, so Planned's pool can't
+    be the fixed `secretary` seat. A Chair who may schedule must also be able
+    to press Issue Agenda.
+  - `COMMITTEE` with no fixed committee is the meeting's committee, and nobody
+    for a unit meeting. The Chair seat on Minutes Review stays fixed: approving
+    a committee's minutes is the Chair's alone (Ahmad, 18 Nov), not a seat
+    action.
 - **The three new kinds (Ahmad's item 6).** Each is MEETING-only, has no field,
   and is read through `meeting-authority.ts` (§4.2):
 
   | Kind | Committee meeting | Unit meeting |
   |---|---|---|
-  | `MEETING_SCHEDULERS` | `meetings:schedule` holders of the committee's owning unit · heads above holding `meetings:schedule_subunits` | `meetings:schedule` holders of the unit · heads above holding `schedule_subunits` |
-  | `MEETING_RECORDERS` | nobody (the Secretary seat records) | `meetings:record_minutes` holders of the unit |
+  | `MEETING_SCHEDULERS` | the committee's active members whose seat has `schedule_meeting` · `meetings:schedule` holders of the committee's owning unit · heads above holding `meetings:schedule_subunits` | `meetings:schedule` holders of the unit · heads above holding `schedule_subunits` |
+  | `MEETING_RECORDERS` | the committee's active members whose seat has `record_minutes` | `meetings:record_minutes` holders of the unit |
   | `MEETING_APPROVERS` | **nobody**: a committee's minutes are the Chair's alone (Ahmad, 18 Nov) | `meetings:approve_minutes` holders of the unit · heads above holding `meetings:approve_subunits` |
 
 - **Why not an existing or generic kind:**
@@ -687,6 +724,8 @@ A short index. Each line names its source.
   - So: three enum values in PR 1's migration, with no new column. Their batched
     resolvers ship in PR 2, and only then does any row use them.
 - **Each resolver is a batched read:**
+  - the committee's active members whose seat allows the action (the seat
+    action rows, `seat-actions.ts`'s one reader);
   - the active people of the owning units who hold the key through an active
     role;
   - the heads and acting heads of those units' ancestors who hold the
@@ -715,8 +754,8 @@ A short index. Each line names its source.
 - **An APP move's endpoint checks who may act:**
   - Distribute: the Minutes Draft pool (`InstanceAccess.assertMayAct()`,
     `instance-access.ts`), so the stage still owns who;
-  - Return: the Minutes Review pool, OR whoever records the minutes (the
-    Secretary seat, or `MEETING_RECORDERS`).
+  - Return: the Minutes Review pool, OR `MEETING_RECORDERS` (whoever records
+    the minutes).
 - **An APP move shows read-only on the stages page,** with its `appMove` line
   (ACC-271 PR 5b). Its button on the meeting page is the module's own.
 
@@ -794,7 +833,10 @@ A short index. Each line names its source.
     - the review closed: the date passed, or every present member answered
       (`MEETING_REVIEW_OPEN`, naming who hasn't answered, or the date);
     - no OPEN suggestion (`MEETING_SUGGESTION_OPEN`);
-    - no past-due draft (`MEETING_ACTION_PAST_DUE`).
+    - no past-due draft (`MEETING_ACTION_PAST_DUE`);
+    - no draft due after its task's SLA limit, MEDIUM counted from now (§3.7,
+      ACC-174) (`MEETING_ACTION_PAST_SLA_LIMIT`, naming the item and the
+      limit).
   - Inside the transaction, the meeting row is read FOR SHARE, as for
     committees.
 
@@ -841,6 +883,10 @@ A short index. Each line names its source.
   - The other meeting's title is given only if the asker may open it; otherwise
     "another meeting".
   - It is one batched query, with the date list capped at the series' cap.
+  - **Who may ask:** the caller must be able to schedule for the owner (a new
+    meeting or a series), or to edit the meeting (`meeting-authority.ts`).
+    Anyone else gets the refusal the schedule or edit endpoint gives. The
+    answer names who is busy and when, so it is not open to every viewer.
 - **Where it shows:** Schedule step 1, step 2's "Clash" chips, Reschedule, the
   scope confirm, and Add a guest (R5-5). Nowhere else (R5-7).
 
@@ -919,9 +965,10 @@ the owning unit.
 
 | Action | Committee meeting | Unit meeting |
 |---|---|---|
-| **Schedule; edit, reschedule, agenda, guests, cancel; Issue Agenda** | seat `schedule_meeting` (default Chair, Secretary), OR `meetings:schedule` held by a person of the committee's owning unit, OR `meetings:schedule_subunits` + head above | `meetings:schedule` held by a person of the unit, OR `meetings:schedule_subunits` + head above |
-| **Attendance, minutes, decisions, votes, action items, open-action notes; apply or decline suggestions; change action dates** | seat `record_minutes` (default Secretary) | `meetings:record_minutes` held by a person of the unit |
-| **Approve Minutes, Return for Correction** | the Chair (seat); Return also the Secretary (design) | `meetings:approve_minutes` held by a person of the unit, OR `meetings:approve_subunits` + head above; Return also whoever records |
+| **Schedule; edit, reschedule, agenda, guests, cancel; Issue Agenda** | `MEETING_SCHEDULERS`' predicate: a seat with `schedule_meeting` (default Chair, Secretary), OR `meetings:schedule` held by a person of the committee's owning unit, OR `meetings:schedule_subunits` + head above | the same predicate: `meetings:schedule` held by a person of the unit, OR `meetings:schedule_subunits` + head above |
+| **Attendance, minutes, decisions, votes, action items, open-action notes; apply or decline suggestions; change action dates** | `MEETING_RECORDERS`' predicate: a seat with `record_minutes` (default Secretary) | the same predicate: `meetings:record_minutes` held by a person of the unit |
+| **Approve Minutes** | the Chair (seat) | `MEETING_APPROVERS`' predicate: `meetings:approve_minutes` held by a person of the unit, OR `meetings:approve_subunits` + head above |
+| **Return for Correction** | the Chair (seat) OR `MEETING_RECORDERS` | `MEETING_APPROVERS` OR `MEETING_RECORDERS` |
 | **Answer the invitation** | the invitee (a user) | the same |
 | **No corrections / Suggest a correction** | a present member, in the open round | the same |
 | **Print** | anyone who may read the approved minutes | the same |
@@ -948,8 +995,9 @@ stage's pool (ACC-271).
 - **One place decides:** `meeting-authority.ts` decides "may this viewer do X to
   this meeting", the ACC-283 `assertMemberAction()` shape. It joins the seat
   path, the own-unit key path and the head-above key path, read in one batch.
-  The stage pools (§3.8) use the same predicates, so a pool and a button can't
-  disagree.
+  - **Its three predicates ARE the three kinds' resolvers** (round 4): Planned
+    is pressed by exactly who may schedule, Minutes Draft by exactly who may
+    record. A pool and a button can't disagree.
 
 ### 4.3 Registries
 
@@ -1056,36 +1104,206 @@ Under ACC-173's rule, no row may hold an enum value before the code that reads
 it is deployed. So the values come first, unused, and the workflow PR writes
 them together with their resolver.
 
-1. **PR 1: schema, keys and seats.**
-   - Migration `acc316_meetings`:
-     - every new table in §3;
-     - the new `Meeting` and `AgendaItem` columns, including the invitation
-       answer columns on `MeetingAttendee`;
-     - the `typeValueId` FK;
-     - `StoredFileOwnerType` MEETING and MEETING_AGENDA_ITEM;
-     - `StageAssigneeKind` MEETING_SCHEDULERS, MEETING_RECORDERS and
-       MEETING_APPROVERS.
-     - No row of any new enum value before the PR that reads it.
-   - **Keys:**
+1. **PR 1: the migration only** (round 4).
+   - **No keys, seat actions, seed or backfill.** No code writes or reads any
+     new enum value. Every new column is nullable or has a default, except
+     `AgendaItem.organizationId` (0 rows, no writer).
+   - **Dates:** a date-only value is a `DateTime` holding the day's UTC
+     midnight, as `PublicHoliday.date` does (`schema.prisma:867`).
+   - Migration `acc316_meetings_schema`. Every table and column, one per line:
+
+   **New enums (new types):**
+   - `MeetingSeriesEvery`: WEEK_1, WEEK_2, MONTH_1, MONTH_3, MONTH_6, MONTH_12
+   - `MeetingSeriesOn`: WEEKDAY, DAY_OF_MONTH, ORDINAL_WEEKDAY
+   - `MeetingSeriesOrdinal`: FIRST, SECOND, THIRD, FOURTH, LAST
+   - `MeetingAttendeeKind`: MEMBER, ORG_GUEST, OUTSIDE_GUEST
+   - `MeetingAttendance`: PRESENT, APOLOGIES, ABSENT
+   - `MeetingInvitationAnswer`: ATTENDING, CANT_ATTEND
+   - `MeetingSuggestionStatus`: OPEN, APPLIED, DECLINED
+   - `MeetingEditScope`: THIS_ONLY, THIS_AND_LATER
+
+   **New values in existing enums:**
+   - `StoredFileOwnerType`: MEETING
+   - `StoredFileOwnerType`: MEETING_AGENDA_ITEM
+   - `StageAssigneeKind`: MEETING_SCHEDULERS
+   - `StageAssigneeKind`: MEETING_RECORDERS
+   - `StageAssigneeKind`: MEETING_APPROVERS
+
+   **`Meeting`, new columns:**
+   - `orgUnitId` String? → OrgUnit (index)
+   - `durationMinutes` Int?
+   - `unitQuorum` Int?
+   - `quorumAtAttendance` Int?
+   - `seriesId` String? → MeetingSeries (index)
+   - `seriesIndex` Int?
+   - `ownEdits` String[] default `[]`
+   - `reviewBy` DateTime?
+   - `reviewRound` Int default 0
+   - `approvedById` String? → User
+   - and a new FK: `typeValueId` → LookupValue (the column exists)
+
+   **`AgendaItem`, new columns:**
+   - `organizationId` String NOT NULL → Organization (index)
+   - `presenterAttendeeId` String? → MeetingAttendee (on delete SET NULL)
+   - `standing` Boolean default false
+   - `discussion` String?
+
+   **`MeetingSeries` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `committeeId` String? → Committee (index)
+   - `orgUnitId` String? → OrgUnit (index)
+   - `subject` String
+   - `typeValueId` String → LookupValue
+   - `startMinute` Int (minutes after midnight, the organisation's zone)
+   - `durationMinutes` Int
+   - `location` String?
+   - `meetingUrl` String?
+   - `every` MeetingSeriesEvery
+   - `onKind` MeetingSeriesOn
+   - `weekday` Int? (1–7, Monday first, as Luxon)
+   - `dayOfMonth` Int? (1–31)
+   - `ordinal` MeetingSeriesOrdinal?
+   - `firstDate` DateTime
+   - `endsOn` DateTime?
+   - `count` Int?
+   - `standingAgenda` Json default `[]`
+   - `createdById` String → User
+   - `createdAt` DateTime default now
+   - `updatedAt` DateTime updatedAt
+   - `endedAt` DateTime?
+   - `endReason` String?
+
+   **`MeetingAttendee` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; on delete CASCADE)
+   - `kind` MeetingAttendeeKind
+   - `userId` String? → User (index)
+   - `outsideName` String?
+   - `outsideEmail` String?
+   - `outsideOrganisation` String?
+   - `outsideRole` String?
+   - `seatValueId` String? → LookupValue
+   - `attendance` MeetingAttendance?
+   - `attendanceRecordedAt` DateTime?
+   - `attendanceRecordedById` String? → User
+   - `answer` MeetingInvitationAnswer?
+   - `answerNote` String?
+   - `answeredAt` DateTime?
+   - `invitedAt` DateTime?
+   - `addedAsPresenter` Boolean default false
+   - `reviewRemindedRound` Int?
+   - `createdAt` DateTime default now
+   - `createdById` String? → User
+   - unique (`meetingId`, `userId`)
+
+   **`MeetingDecision` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; CASCADE)
+   - `agendaItemId` String → AgendaItem (index; CASCADE)
+   - `order` Int
+   - `text` String
+   - `votesFor` Int?
+   - `votesAgainst` Int?
+   - `votesAbstain` Int?
+   - `createdAt` DateTime default now
+   - `updatedAt` DateTime updatedAt
+
+   **`MeetingActionItem` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; CASCADE)
+   - `agendaItemId` String → AgendaItem (index)
+   - `title` String
+   - `ownerUserId` String → User (index)
+   - `dueAt` DateTime
+   - `taskId` String? unique → Task (on delete SET NULL)
+   - `createdById` String? → User
+   - `createdAt` DateTime default now
+   - `updatedAt` DateTime updatedAt
+
+   **`MeetingOpenActionNote` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (CASCADE)
+   - `taskId` String → Task
+   - `note` String
+   - `updatedById` String? → User
+   - `createdAt` DateTime default now
+   - `updatedAt` DateTime updatedAt
+   - unique (`meetingId`, `taskId`)
+
+   **`MeetingReviewAnswer` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (CASCADE)
+   - `round` Int
+   - `userId` String → User (index)
+   - `answeredAt` DateTime default now
+   - unique (`meetingId`, `round`, `userId`)
+
+   **`MeetingSuggestion` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; CASCADE)
+   - `round` Int
+   - `agendaItemId` String? → AgendaItem
+   - `authorId` String → User (index)
+   - `text` String
+   - `status` MeetingSuggestionStatus default OPEN
+   - `reply` String?
+   - `decidedById` String? → User
+   - `decidedAt` DateTime?
+   - `createdAt` DateTime default now
+
+   **`MeetingReviewChange` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; CASCADE)
+   - `round` Int
+   - `agendaItemId` String? → AgendaItem
+   - `what` String
+   - `actorId` String → User
+   - `createdAt` DateTime default now
+
+   **`MeetingReschedule` (new table):**
+   - `id` String cuid
+   - `organizationId` String → Organization (index)
+   - `meetingId` String → Meeting (index; CASCADE)
+   - `fromAt` DateTime
+   - `toAt` DateTime
+   - `reason` String
+   - `scope` MeetingEditScope
+   - `actorId` String → User
+   - `createdAt` DateTime default now
+
+   - **Live after:** nothing a person sees. 0 rows anywhere.
+2. **PR 2: keys, seats, the workflow, the registries and the pool kinds.**
+   - **Keys (round 4: here, where they are first checked):**
      - `meetings:schedule`, `schedule_subunits` and `approve_subunits` added;
-     - `record_minutes` and `approve_minutes` out of
-       `PERMISSIONS_NOT_YET_CHECKED`;
-     - the role seed, with `backfill:acc316-meeting-keys` (grants only).
-   - **Seats:** `schedule_meeting` and `record_minutes`, with
-     `backfill:acc316-seat-defaults`.
-   - **Live after:** the seat screens show the two actions, and the role screen
-     shows the five keys.
-2. **PR 2: the workflow, the registries and the pool kinds.**
-   - Changes:
-     - the seed and `backfill:acc316-meeting-workflow` (§3.8): names, the
-       pools, movers, flags, record actions, and the self-loop deleted;
+     - `record_minutes` and `approve_minutes` leave
+       `PERMISSIONS_NOT_YET_CHECKED`, in this PR and not before, so a role
+       screen never grants a key nothing checks;
+     - the role seed.
+   - **Seats:** `schedule_meeting` and `record_minutes`, with lookup defaults.
+   - **The workflow:**
+     - the seed (§3.8): names, the pools, movers, flags, record actions, and
+       the self-loop deleted;
      - `RECORD_ACTIONS`, `STAGE_FLAGS` and `RECORD_FIELDS` MEETING;
      - COMMITTEE `schedule_meeting`;
      - the `RECORD_ROUTES` change;
      - `meeting-authority.ts`, and the three kinds' batched resolvers in
-       `StagePoolService`.
+       `StagePoolService`, which first read the keys and seat actions.
+   - **Backfills, AFTER the deploy** (dry run, `-- --execute`, dry run 0). Each
+     writes ONE audit row per organisation it changes (ACC-101):
+     - `backfill:acc316-meeting-keys` (grants only);
+     - `backfill:acc316-seat-defaults`;
+     - `backfill:acc316-meeting-workflow`.
    - **No migration.**
-   - **Live after:** the Workflow page shows the decided Meeting workflow.
+   - **Live after:** the role screen shows the five keys; the seat screens show
+     the two actions; the Workflow page shows the decided Meeting workflow.
 3. **PR 3: one meeting, backend.**
    - Changes:
      - schedule, read, paged list with the saved views and "Sub-units'
@@ -1093,7 +1311,8 @@ them together with their resolver.
      - edit, reschedule, cancel (with the reason rule and `needsReason`);
      - owner committee or unit;
      - visibility, with the head-above clause;
-     - invitees (unit people, scheduler additions);
+     - invitees (unit people, scheduler additions), `MeetingInviteeSync` with its
+       writer calls and `sweepMeetingInvitees()` (§3.4);
      - guests of both kinds, the presenter rule;
      - **invitation answers:** answer and change until the start, the
        scheduler's notice with its flags, the summary line;
@@ -1239,3 +1458,29 @@ repo (`86cc3f3`).
   - §6: re-sliced, with the migration first;
   - §7: no questions.
 - **`meetings:approve_minutes` is kept.** The round 2 plan had retired it.
+
+### Round 4 (Prompt 129, 18 Nov)
+
+1. **The pools read the same predicates as the buttons.**
+   - Planned is `MEETING_SCHEDULERS`; Agenda Issued is `MEETING_SCHEDULERS` ·
+     `MEETING_RECORDERS`; Minutes Draft is `MEETING_RECORDERS`.
+   - Those kinds now include, for a committee meeting, the members whose seat
+     has `schedule_meeting` or `record_minutes`.
+   - Minutes Review keeps the fixed Chair seat (§3.8, §4.2).
+2. **PR 1 is the migration only.**
+   - Keys, seat actions and every backfill move to PR 2, where the pool
+     resolvers first read them.
+   - The keys leave `PERMISSIONS_NOT_YET_CHECKED` there.
+   - Each backfill writes one audit row per organisation it changes (§6).
+3. **Reschedules are rows of `MeetingReschedule` only.** No columns on
+   `Meeting` (§3.1, §3.8.2).
+4. **The reminder stamp is `MeetingAttendee.reviewRemindedRound`**, set by one
+   conditional UPDATE (§3.6).
+5. **§6 PR 1 lists every new table and column, one per line.**
+6. **Invitee upkeep:** every writer is named, and
+   `SlaMonitorProcessor.sweepMeetingInvitees()` is the scheduled recomputer
+   (§3.4, PR 3).
+7. **Approve's preconditions include the SLA limit,**
+   `MEETING_ACTION_PAST_SLA_LIMIT` (§3.8.3).
+8. **`POST /meetings/clashes`** is open only to whoever may schedule for the
+   owner or edit the meeting (§3.10).
