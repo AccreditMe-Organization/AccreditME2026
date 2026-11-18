@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TaskSlaService } from './task-sla.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import { TaskService } from './task.service';
+import { DEPARTURE_REASSIGNED_BODY, DEPARTURE_REASSIGNED_TITLE, TaskService } from './task.service';
+import { counted } from '../../common/i18n/plural';
 import { TaskClosedNoticeService } from './task-closed-notice.service';
 // ACC-271 PR 4 — the closed-task notices, told after a completion.
 const mockClosedNotices = { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) };
@@ -275,6 +276,26 @@ describe('TaskService', () => {
         expect.objectContaining({ where: { id: ORG_A } }),
       );
       expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 8, ORG_A);
+    });
+
+    it('ACC-95: tells each assignee in both languages, the Arabic text using the task\'s Arabic title', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
+      mockPrisma.task.create.mockResolvedValue({ ...BASE_TASK, titleAr: 'مراجعة الوثيقة' });
+
+      await service.create({ title: 'Review document', sourceType: 'DOCUMENT', sourceId: 'doc-1', assigneeUserIds: [USER_A] }, ORG_A, ACTOR);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_A,
+          titleEn: 'New task assigned',
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: 'You have been assigned: "Review document"',
+          bodyAr: 'أُسندت إليك المهمة «مراجعة الوثيقة»',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
     });
 
     it("indexes the resolved settings by the task's own priority, not a fixed tier", async () => {
@@ -1245,6 +1266,25 @@ describe('TaskService', () => {
 
     // ACC-163 (Q4) — a rejected task comes back to its creator, who reassigns
     // it without holding Manage tasks.
+    it('ACC-95: tells the new assignee in both languages; with no Arabic title, the English one', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_B,
+          titleEn: 'Task reassigned to you',
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: '"Review document" has been reassigned to you. Reason: Ahmad is on leave',
+          bodyAr: 'أُعيد إسناد المهمة «Review document» إليك. السبب: Ahmad is on leave',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
+    });
+
     it("lets the task's creator reassign without Manage tasks", async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK); // createdById: ACTOR
 
@@ -1587,6 +1627,28 @@ describe('TaskService', () => {
         data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR },
       });
       expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
+      // ACC-95 — counted, in both languages; never "task(s)".
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_B,
+          titleEn: 'Task reassigned to you',
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: '1 task has been reassigned to you because a colleague left.',
+          bodyAr: 'أُعيد إسناد مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+          channel: 'IN_APP',
+        },
+        ORG_A,
+      );
+    });
+
+    it.each([
+      [1, 'Task reassigned to you', '1 task has been reassigned to you because a colleague left.', 'أُعيد إسناد مهمة إليك'],
+      [2, 'Tasks reassigned to you', '2 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد مهمتين إليك'],
+      [3, 'Tasks reassigned to you', '3 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد 3 مهام إليك'],
+      [11, 'Tasks reassigned to you', '11 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد 11 مهمة إليك'],
+    ])('ACC-95: the acting user\'s notice for %i task(s) is counted in both languages', (n, titleEn, bodyEn, titleAr) => {
+      expect(counted(n, DEPARTURE_REASSIGNED_TITLE)).toEqual({ en: titleEn, ar: titleAr });
+      expect(counted(n, DEPARTURE_REASSIGNED_BODY)).toEqual({ en: bodyEn, ar: `${titleAr} بعد مغادرة أحد أعضاء المنشأة.` });
     });
 
     // ACC-165 — asks only for OPEN tasks; a closed one is never even read.
@@ -1914,12 +1976,15 @@ describe('TaskService', () => {
 
       expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
       expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           userId: USER_A,
           titleEn: 'New task assigned',
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: 'You have been assigned: "Review document"',
+          bodyAr: 'أُسندت إليك المهمة «Review document»',
           objectType: 'Task',
           objectId: 'task-unassigned',
-        }),
+        },
         ORG_A,
       );
     });

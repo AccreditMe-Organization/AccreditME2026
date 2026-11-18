@@ -99,7 +99,7 @@ describe('A new task for someone out of office goes to their cover, against a re
       select: { userId: true, delegationReason: true, delegationContextId: true },
       orderBy: { userId: 'asc' },
     });
-  const inbox = (userId: string) => prisma.notification.findMany({ where: { userId }, select: { titleEn: true, bodyEn: true } });
+  const inbox = (userId: string) => prisma.notification.findMany({ where: { userId }, select: { titleEn: true, titleAr: true, bodyEn: true, bodyAr: true } });
   const auditMeta = async (taskId: string, action: 'CREATE' | 'DELEGATE') =>
     (await prisma.auditLog.findFirstOrThrow({ where: { objectType: 'Task', objectId: taskId, action }, orderBy: { createdAt: 'desc' } })).metadata as Record<string, unknown> | null;
 
@@ -119,7 +119,12 @@ describe('A new task for someone out of office goes to their cover, against a re
       expect(await assigneesOf(task.id)).toEqual([{ userId: o.cover, delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: o.away }]);
       expect(await auditMeta(task.id, 'CREATE')).toEqual({ outOfOfficeCover: [{ forUserId: o.away, coverUserId: o.cover }] });
       expect(await inbox(o.cover)).toEqual([
-        { titleEn: 'New task assigned', bodyEn: 'You have been assigned: "Collect the audit evidence" (covering for Away Person)' },
+        {
+          titleEn: 'New task assigned',
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: 'You have been assigned: "Collect the audit evidence" (covering for Away Person)',
+          bodyAr: 'أُسندت إليك المهمة «Collect the audit evidence» (نيابةً عن «Away Person»)',
+        },
       ]);
       expect(await inbox(o.away)).toEqual([]);
     });
@@ -187,7 +192,9 @@ describe('A new task for someone out of office goes to their cover, against a re
     expect(await inbox(o.cover)).toEqual([
       {
         titleEn: 'Task reassigned to you',
+        titleAr: 'أُعيد إسناد مهمة إليك',
         bodyEn: '"Collect the audit evidence" has been reassigned to you (covering for Away Person). Reason: Needs the director',
+        bodyAr: 'أُعيد إسناد المهمة «Collect the audit evidence» إليك (نيابةً عن «Away Person»). السبب: Needs the director',
       },
     ]);
     expect(await inbox(o.away)).toEqual([]);
