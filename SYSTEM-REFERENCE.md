@@ -18034,11 +18034,21 @@ and offers no Distribute.
 
 - **Answers in order:** every minutes write answers with the whole minutes, so
   the page keeps one `MinutesWriteOrder` (provided by the page) and shows an
-  answer only when it answers the newest write begun.
+  answer only when it answers the newest write begun. **A dropped answer never
+  leaves the page stale (P211):** once one was dropped, the page reads the
+  minutes again when the newest write settles, answered or failed, or at once
+  if it already had. Chosen over serialising the writes, so taps stay
+  immediate.
 - **Attendance taps are queued per row** while a save runs, never dropped, and
-  sent when it ends; focus moves only once a tap is accepted. At the start time
-  a timer (cleared on destroy) removes "opens at" and the page reads the
+  sent when it ends; focus moves only once a tap is accepted. A value stays
+  shown while its save is in flight, and after a failure, marked by its row's
+  error; a save clears only its own rows' errors. At the start time a timer
+  (cleared on destroy; re-armed if it fires early, and chained past
+  setTimeout's 24.8-day limit) removes "opens at" and the page reads the
   minutes again, so attendance opens without a reload.
+- **Distribute's blocking refusals** (`MEETING_ATTENDANCE_INCOMPLETE`,
+  `MEETING_VOTES_EXCEED_PRESENT`) make the page read the minutes again; the
+  dialog then draws `blockedBy`'s list, never a sentence missing its numbers.
 - **Typed discussion is kept:** the box follows the STORED discussion only when
   that string changes and the box is clean. A change while the person has typed
   keeps their text, with a line saying it changed elsewhere and Reload.
