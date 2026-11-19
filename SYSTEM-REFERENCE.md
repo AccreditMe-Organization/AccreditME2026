@@ -7624,6 +7624,33 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
 - **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
+- **The reason in Membership history (ACC-301):**
+  - The committee page's Membership history panel shows the reason on a LEFT
+    row with no `cause` (a person's removal). See all shows it too.
+  - It is read from the history response (`reason`); there is no second read.
+  - Who sees it: everyone who may see the history, as the read returns it. That
+    is `committees:view` holders and active members (ACC-281), the ticket's
+    default.
+  - **Where it goes:**
+    - **Panel:** on line 2, after the change and a separator, labelled
+      "Reason:" / «السبب:». The change keeps up to 55% of the line and the
+      reason takes the rest; each is cut with an ellipsis and keeps its whole
+      text in a tooltip.
+    - **Why not a third line:** the panel's rows are a fixed two lines
+      (`am-capped-panel`), and a third line would push the fifth row out of the
+      body.
+    - **See all:** under the change, in the same cell.
+  - **When nothing extra shows:**
+    - a removal from before ACC-298 (no reason): no separator, no "—";
+    - a seat the app ended (any `cause`, ACC-306): said from its cause, never
+      from a stored reason;
+    - a JOINED row.
+  - **Search:** See all's search matches the reason.
+  - **Measured** at 1280 (the page's 988px content column, one of three panel
+    columns, 321px wide) in both languages, with a long reason beside a long
+    seat: body 294 / 328, rows 52 / 58, and the reason on one cut line 122px
+    wide (`committee-membership-history-panel.layout.spec.ts`).
+  - Mutation-checked.
 
 ### 3.21.3 Telling a committee after a member is transferred (ACC-297)
 
