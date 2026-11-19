@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "SetupConditionType" ADD VALUE 'COMMITTEE_BELOW_QUORUM';
