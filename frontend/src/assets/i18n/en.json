@@ -3675,6 +3675,18 @@
         "one": "{{count}} person",
         "other": "{{count}} people"
       },
+      "moreNeeded": {
+        "one": "{{count}} more needed",
+        "other": "{{count}} more needed"
+      },
+      "presentMembers": {
+        "one": "{{count}} present member",
+        "other": "{{count}} present members"
+      },
+      "openActionsNotDone": {
+        "one": "{{count}} not done · status read from each task",
+        "other": "{{count}} not done · status read from each task"
+      },
       "minutesPlanned": {
         "one": "{{planned}} of {{count}} min planned",
         "other": "{{planned}} of {{count}} min planned"
@@ -4922,6 +4934,80 @@
       "orderError": "The agenda couldn't be reordered.",
       "reload": "Reload the meeting"
     },
+    "attendance": {
+      "title": "Attendance",
+      "markAll": "Mark all present",
+      "present": "Present",
+      "apologies": "Apologies",
+      "absent": "Absent",
+      "notRecorded": "Not recorded",
+      "saidCant": "Answered: can't attend",
+      "saved": "Saved",
+      "of": "Attendance of {{name}}",
+      "opensAt": "Attendance opens at the meeting's start, {{at}}.",
+      "presentOf": "{{present}} of {{members}} members present",
+      "quorumMet": "✓ Quorum met · {{present}} of {{members}} present, quorum {{quorum}}",
+      "quorumShort": "✗ Quorum not met · {{present}} of {{members}} present, quorum {{quorum}} · {{more}}",
+      "error": "Attendance couldn't be saved."
+    },
+    "openActions": {
+      "title": "Open actions from the last meeting",
+      "notePlaceholder": "Note · optional",
+      "noteFor": "Note on {{title}}",
+      "note": "Note: {{note}}",
+      "fixed": "A fixed first section: it can't be moved or removed. Status comes from each task and can't be changed here.",
+      "due": "Due {{at}}",
+      "noteError": "The note couldn't be saved.",
+      "loadFailed": "Couldn't load the open actions from the last meeting."
+    },
+    "minutes": {
+      "discussion": "Discussion",
+      "discussionFor": "Discussion of {{title}}",
+      "noDiscussion": "No discussion recorded.",
+      "decisions": "Decisions",
+      "decision": "Decision",
+      "noDecisions": "No decisions.",
+      "addDecision": "Add decision",
+      "votes": "Votes · optional, all three or none",
+      "votesFor": "For",
+      "votesAgainst": "Against",
+      "votesAbstain": "Abstain",
+      "votesLine": "For {{for}} · Against {{against}} · Abstain {{abstain}}",
+      "withoutQuorum": "Taken without quorum",
+      "due": "Due {{at}}",
+      "draft": "Draft · a task when approved",
+      "raiseAction": "Raise action item",
+      "removeDecisionTitle": "Remove this decision?",
+      "removeDecisionLead": "The decision leaves the minutes.",
+      "removeActionTitle": "Remove this action item?",
+      "removeActionLead": "\"{{title}}\" leaves the minutes. No task was made from it.",
+      "error": "The minutes couldn't be saved.",
+      "loadFailed": "Couldn't load the minutes."
+    },
+    "action": {
+      "title": "Raise action item",
+      "from": "From item {{n}} · {{title}}",
+      "what": "What",
+      "whatRequired": "Say what needs doing.",
+      "owner": "Owner",
+      "ownerRequired": "Choose who owns it.",
+      "due": "Due",
+      "becomesTask": "Becomes a task when the minutes are approved. The owner isn't told before then.",
+      "submit": "Add action item",
+      "error": "The action item couldn't be added."
+    },
+    "distribute": {
+      "open": "Distribute Minutes",
+      "title": "Distribute Minutes?",
+      "lead": "Present members review by the date. No answer by then counts as no corrections.",
+      "reviewBy": "Review by",
+      "chooseDate": "Choose the review date",
+      "asked": "Asked to review: {{members}}",
+      "notYet": "Not yet",
+      "submit": "Distribute Minutes",
+      "recordFirst": "Record attendance for everyone first. Still missing:",
+      "error": "The minutes couldn't be distributed."
+    },
     "invitees": {
       "title": "Invitees",
       "addGuest": "Guest",
@@ -5053,6 +5139,19 @@
       "agendaItemNotFound": "This item is no longer on the agenda. Reload the meeting.",
       "agendaOrderMismatch": "The agenda changed since you opened it. Reload the meeting and try again.",
       "agendaChanged": "The agenda changed since you opened it. Reload the meeting and try again.",
+      "minutesNotOpen": "These minutes aren't open to you yet.",
+      "notRecorder": "Only whoever records this meeting's minutes can do that.",
+      "notStarted": "Attendance opens when the meeting starts.",
+      "votesPartial": "Give all three vote counts, or none.",
+      "votesExceedPresent": "The votes add up to more than the members present.",
+      "decisionNotFound": "This decision is no longer in the minutes. Reload the meeting.",
+      "decisionTextRequired": "Write the decision.",
+      "actionNotFound": "This action item is no longer in the minutes. Reload the meeting.",
+      "actionTitleRequired": "Say what needs doing.",
+      "actionDueInPast": "Choose a due date and time in the future.",
+      "openActionNotFound": "That action is no longer open from the last meeting.",
+      "attendanceIncomplete": "Record attendance for everyone first.",
+      "reviewDateInvalid": "Choose a review date after today.",
       "presenterNotFound": "That person is no longer available to present."
     },
     "agendaItem": {
