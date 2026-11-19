@@ -15,7 +15,9 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { SimpleListComponent, type SimpleListPage, type SimpleListQuery } from '../../../../shared/components/simple-list/simple-list.component';
 import {
   MeetingService,
+  type AgendaItemExpected,
   type AgendaItemRequest,
+  type AgendaItemUpdate,
   type MeetingAgendaItemDto,
   type MeetingAttendeeDto,
   type MeetingDto,
@@ -257,18 +259,33 @@ export class MeetingAgendaItemDialogComponent {
       return;
     }
     // An edit sends only what this person changed, so it never writes back
-    // someone else's newer value for a field they did not touch (P198).
-    const changes: Partial<AgendaItemRequest> = {};
-    if (body.title !== item.title) changes.title = body.title;
-    if (body.description !== (item.description ?? null)) changes.description = body.description;
-    if (body.durationMinutes !== (item.durationMinutes ?? null)) changes.durationMinutes = body.durationMinutes;
-    if ((v.presenter ?? 'none') !== (item.presenter ? `attendee:${item.presenter.attendeeId}` : 'none')) changes.presenter = body.presenter;
+    // someone else's newer value for a field they did not touch (P198), and
+    // (ACC-323) what it saw of each: a field someone else saved meanwhile is
+    // refused MEETING_AGENDA_CHANGED, with Reload.
+    const changes: AgendaItemUpdate = {};
+    const expected: AgendaItemExpected = {};
+    if (body.title !== item.title) {
+      changes.title = body.title;
+      expected.title = item.title;
+    }
+    if (body.description !== (item.description ?? null)) {
+      changes.description = body.description;
+      expected.description = item.description ?? null;
+    }
+    if (body.durationMinutes !== (item.durationMinutes ?? null)) {
+      changes.durationMinutes = body.durationMinutes;
+      expected.durationMinutes = item.durationMinutes ?? null;
+    }
+    if ((v.presenter ?? 'none') !== (item.presenter ? `attendee:${item.presenter.attendeeId}` : 'none')) {
+      changes.presenter = body.presenter;
+      expected.presenterAttendeeId = item.presenter?.attendeeId ?? null;
+    }
     if (Object.keys(changes).length === 0) {
       this.form.markAsPristine();
       this.visibleChange.emit(false);
       return;
     }
-    this.run(this.meetings.updateAgendaItem(this.meeting().id, item.id, changes));
+    this.run(this.meetings.updateAgendaItem(this.meeting().id, item.id, { ...changes, expected }));
   }
 
   /** Close, and let the page read the meeting again. */
