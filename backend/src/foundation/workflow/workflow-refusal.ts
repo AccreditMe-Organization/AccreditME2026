@@ -66,6 +66,7 @@ export type WorkflowRefusalCode =
   | 'REVIEW_STAGE_LIMIT'
   | 'REVIEW_STAGE_POSITION'
   | 'REVIEW_STAGE_ANY_ONE'
+  | 'REVIEW_STAGE_NO_CREATOR'
   | 'TRANSITION_ACTION_IN_USE'
   | 'TRANSITION_IN_USE'
   // ACC-303 — exactly one default template per record type (workflow-default.ts).
@@ -131,6 +132,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   REVIEW_STAGE_LIMIT: HttpStatus.CONFLICT,
   REVIEW_STAGE_POSITION: HttpStatus.BAD_REQUEST,
   REVIEW_STAGE_ANY_ONE: HttpStatus.BAD_REQUEST,
+  REVIEW_STAGE_NO_CREATOR: HttpStatus.BAD_REQUEST,
   TRANSITION_ACTION_IN_USE: HttpStatus.CONFLICT,
   TRANSITION_IN_USE: HttpStatus.CONFLICT,
   DEFAULT_NEEDS_STAGES: HttpStatus.CONFLICT,
@@ -194,6 +196,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   REVIEW_STAGE_LIMIT: 'A committee change request can have at most 9 review stages',
   REVIEW_STAGE_POSITION: 'A review stage goes after Draft or after another review stage',
   REVIEW_STAGE_ANY_ONE: 'A review stage is decided by any one of its people',
+  REVIEW_STAGE_NO_CREATOR: "A review stage can't be given to whoever raised the request: nobody decides their own change request",
   TRANSITION_ACTION_IN_USE: "This action has run, so it can't be removed. You can turn it off",
   TRANSITION_IN_USE: "This transition has been used, so it can't be removed. You can rename it",
   DEFAULT_NEEDS_STAGES: 'Add a starting stage, then set this template as the default.',

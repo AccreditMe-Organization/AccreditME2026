@@ -74,6 +74,17 @@ const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr
 
 // ACC-245 — adding or removing a review stage locks the template, the records standing
 // where a move is re-pointed, and the moves: more than Prisma's 5 seconds on a busy tenant.
+/**
+ * ACC-245 — who decides an added review stage, in this version: "any one of
+ * them" (REVIEW_STAGE_ANY_ONE), and never the CREATOR kind
+ * (REVIEW_STAGE_NO_CREATOR), which names whoever raised the request: the
+ * requester is taken out of every pool, so such an entry would name nobody.
+ */
+function assertReviewWho(who: { mode: string; entries: readonly { kind: string }[] }): void {
+  if (who.mode !== 'ANY_ONE') throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
+  if (who.entries.some((e) => e.kind === 'CREATOR')) throw new WorkflowRefusalException('REVIEW_STAGE_NO_CREATOR', {});
+}
+
 const STAGE_EDIT_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 
 /**
@@ -870,7 +881,7 @@ export class WorkflowTemplateService {
       // ACC-245 — an added review stage's people may change; any other stage's may not.
       const review = isReviewStage(stage);
       if (changed.length > 0 || (whoChanged && !review)) refuseProtected('STAGE_FIELD');
-      if (whoChanged && review && sentWho?.mode !== 'ANY_ONE') throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
+      if (whoChanged && review && sentWho) assertReviewWho(sentWho);
     }
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
@@ -1066,7 +1077,7 @@ export class WorkflowTemplateService {
       unit: typeof recordRoute?.unit === 'function',
       committee: typeof recordRoute?.committee === 'function',
     });
-    if (sentWho.mode !== 'ANY_ONE') throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
+    assertReviewWho(sentWho);
     const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
 
     const added = await this.prisma.$transaction(async (tx) => {
@@ -1132,12 +1143,21 @@ export class WorkflowTemplateService {
     actorId: string,
   ): Promise<void> {
     const removed = await this.prisma.$transaction(async (tx) => {
-      // Template, then stage: the order every stage save takes.
+      // LOCK ORDER: the template, then the records (in removeReviewStageInTx), then
+      // the stage row. NOT template-stage-records: a request moving INTO this stage
+      // holds its instance lock and needs a key-share lock on the stage row to write
+      // its entry, so locking the stage first deadlocks with it (proved by spec).
       await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
-      await tx.$queryRaw`SELECT id FROM "WorkflowStage" WHERE id = ${stage.id} FOR UPDATE`;
-      const recordCount = await this.recordsThatEntered(tx, stage.id, organizationId);
-      if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
-      return removeReviewStageInTx(tx, stage.workflowTemplateId, organizationId, stage.id);
+      const assertUnused = async () => {
+        const recordCount = await this.recordsThatEntered(tx, stage.id, organizationId);
+        if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
+      };
+      // A quick refusal now, read only; the authoritative one once the records are locked.
+      await assertUnused();
+      return removeReviewStageInTx(tx, stage.workflowTemplateId, organizationId, stage.id, async () => {
+        await tx.$queryRaw`SELECT id FROM "WorkflowStage" WHERE id = ${stage.id} FOR UPDATE`;
+        await assertUnused();
+      });
     }, STAGE_EDIT_TX);
     await this.auditLog.log({
       tenantId: organizationId,

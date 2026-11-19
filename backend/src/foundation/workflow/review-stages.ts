@@ -52,12 +52,19 @@ interface Shape {
   review: StageRow[];
 }
 
-/** Is this stage an added review stage? (On the protected template, only those have no key.) */
+/**
+ * Is this stage an added review stage? On the protected change request template,
+ * the seed keys every stage (ACC-239) and only an added review stage has no key,
+ * so "unkeyed, not first, not final" identifies one. That is what lets the
+ * request's policy treat an unkeyed stage as a review stage, and what keeps a
+ * seeded stage from being removed or re-shaped as one. Ask it only of a stage of
+ * a PROTECTED template: on a tenant's own template an unkeyed stage is ordinary.
+ */
 export function isReviewStage(stage: Pick<WorkflowStage, 'key' | 'isInitial' | 'isFinal'>): boolean {
   return stage.key === null && !stage.isInitial && !stage.isFinal;
 }
 
-async function readShape(tx: EngineTx, templateId: string): Promise<Shape> {
+async function readShape(tx: EngineTx, templateId: string, refusal: 'ADD_STAGE' | 'REMOVE_STAGE'): Promise<Shape> {
   const stages = await tx.workflowStage.findMany({
     where: { workflowTemplateId: templateId },
     select: { id: true, key: true, order: true, isInitial: true, isFinal: true, nameEn: true, nameAr: true },
@@ -66,7 +73,7 @@ async function readShape(tx: EngineTx, templateId: string): Promise<Shape> {
   const keyed = (key: string): StageRow => {
     const stage = stages.find((s) => s.key === key);
     // The seeded shape is not there: no reshaping is safe.
-    if (!stage) refuseProtected('ADD_STAGE');
+    if (!stage) refuseProtected(refusal);
     return stage;
   };
   return {
@@ -137,7 +144,7 @@ export async function addReviewStageInTx(
   },
   afterStageId: string | undefined,
 ): Promise<AddedReviewStage> {
-  const shape = await readShape(tx, templateId);
+  const shape = await readShape(tx, templateId, 'ADD_STAGE');
   if (shape.review.length >= MAX_REVIEW_STAGES || shape.draft.order + shape.review.length + 1 >= shape.underReview.order) {
     throw new WorkflowRefusalException('REVIEW_STAGE_LIMIT', { max: MAX_REVIEW_STAGES });
   }
@@ -213,8 +220,15 @@ export async function removeReviewStageInTx(
   templateId: string,
   organizationId: string,
   stageId: string,
+  /**
+   * Run once the records are locked: the caller's "nobody entered it" check
+   * (STAGE_IN_USE), again. A request that was moving INTO the stage when the
+   * caller first counted has committed by now (its instance lock is what we
+   * waited on), so it is counted here, never met by the stage's RESTRICT key.
+   */
+  afterLocks: () => Promise<void>,
 ): Promise<RemovedReviewStage> {
-  const shape = await readShape(tx, templateId);
+  const shape = await readShape(tx, templateId, 'REMOVE_STAGE');
   const at = shape.review.findIndex((s) => s.id === stageId);
   if (at < 0) refuseProtected('REMOVE_STAGE');
   const previous = at === 0 ? shape.draft : shape.review[at - 1]!;
@@ -224,6 +238,7 @@ export async function removeReviewStageInTx(
   await lockRecordsIn(tx, templateId, organizationId, fromIds);
   const repointed = await lockAdvances(tx, fromIds);
   if (repointed.length !== fromIds.length || repointed.some((m) => m.toStageId !== stageId)) refuseProtected('REMOVE_STAGE');
+  await afterLocks();
   await tx.workflowTransition.updateMany({ where: { id: { in: repointed.map((m) => m.id) } }, data: { toStageId: next.id } });
 
   const own = await tx.workflowTransition.findMany({ where: { fromStageId: stageId }, select: { id: true } });
