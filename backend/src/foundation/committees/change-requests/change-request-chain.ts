@@ -292,12 +292,12 @@ export async function mayDecideAnyChangeRequest(
 /**
  * ACC-245 PR 2 — the awaiting list's gate, still ONE query: `chain` is
  * mayDecideAnyChangeRequest()'s answer (the three arms above); `review` is
- * whether any request in the organisation stands in an added review stage (an
- * instance not cancelled, its current stage unkeyed, neither first nor final:
- * isReviewStage(), in SQL). Both false: nothing can be waiting for this person,
- * and nothing else is read. `review` may say true for a request whose pool the
- * person is not in (or an older instance); it is only a pre-check, and the list's
- * own query and the pool decide.
+ * whether any submitted request in the organisation has its NEWEST instance, not
+ * cancelled, standing in an added review stage (the same three conditions as
+ * isReviewStage(): unkeyed, not first, not final). Both false: nothing can be
+ * waiting for this person, and nothing else is read. `review` may say true for a
+ * request whose pool the person is not in; it is only a pre-check, and the
+ * review arm's own scope and the pool decide.
  */
 export async function awaitingDecisionGate(
   client: Pick<PrismaService, '$queryRaw'>,
@@ -334,11 +334,20 @@ export async function awaitingDecisionGate(
       ) AS decides,
       EXISTS (
         SELECT 1
-        FROM "WorkflowInstance" wi
-        JOIN "WorkflowStage" s ON s.id = wi."currentStageId"
-        WHERE wi."organizationId" = ${organizationId}
-          AND wi."objectType"::text = ${'COMMITTEE_CHANGE_REQUEST'}
-          AND wi.status::text <> ${'CANCELLED'}
+        FROM "CommitteeChangeRequest" r
+        JOIN LATERAL (
+          SELECT wi."currentStageId", wi.status
+          FROM "WorkflowInstance" wi
+          WHERE wi."organizationId" = ${organizationId}
+            AND wi."objectType"::text = ${'COMMITTEE_CHANGE_REQUEST'}
+            AND wi."objectId" = r.id
+          ORDER BY wi."createdAt" DESC
+          LIMIT 1
+        ) li ON TRUE
+        JOIN "WorkflowStage" s ON s.id = li."currentStageId"
+        WHERE r."organizationId" = ${organizationId}
+          AND r."submittedAt" IS NOT NULL
+          AND li.status::text <> ${'CANCELLED'}
           AND s.key IS NULL AND NOT s."isInitial" AND NOT s."isFinal"
       ) AS review`;
   return { chain: row?.decides === true, review: row?.review === true };
