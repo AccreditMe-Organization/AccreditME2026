@@ -42,6 +42,16 @@ export function runningActingCoverWhere(now: Date): Prisma.OrgUnitHeadAssignment
 }
 
 /**
+ * ACC-245 — a cover gives REACH (what a person may see or decide as a cover)
+ * only while its person is ACTIVE, as a head holder must be (headHolderWhere()).
+ * The two readers that answer "what does this person cover" and "who among these
+ * people leads" apply it; the readers that SHOW a unit's cover in force
+ * (findRunningActingCoversForUnits()) do not, because a deactivated cover is still
+ * the cover on record until someone ends it, and the headship panel says so.
+ */
+const ACTIVE_COVER_PERSON = { user: { status: 'ACTIVE' } } as const satisfies Prisma.OrgUnitHeadAssignmentWhereInput;
+
+/**
  * One id is an equality, several are `in`. Prisma treats the two alike; the
  * equality keeps a single-unit read sending exactly the query it always sent.
  */
@@ -244,7 +254,7 @@ export async function findUnitsCoveredBy(
   reason?: 'VACANCY' | 'ABSENCE',
 ): Promise<string[]> {
   const rows = await prisma.orgUnitHeadAssignment.findMany({
-    where: { organizationId, userId, ...runningActingCoverWhere(now), ...(reason ? { reason } : {}) },
+    where: { organizationId, userId, ...ACTIVE_COVER_PERSON, ...runningActingCoverWhere(now), ...(reason ? { reason } : {}) },
     select: { orgUnitId: true },
   });
   return [...new Set(rows.map((r) => r.orgUnitId))];
@@ -332,7 +342,7 @@ export async function findUnitLeadersAmong(
       select: { id: true },
     }),
     prisma.orgUnitHeadAssignment.findMany({
-      where: { organizationId, userId: { in: people }, orgUnitId: unitIdFilter(units), ...runningActingCoverWhere(now) },
+      where: { organizationId, userId: { in: people }, orgUnitId: unitIdFilter(units), ...ACTIVE_COVER_PERSON, ...runningActingCoverWhere(now) },
       select: { userId: true },
     }),
   ]);

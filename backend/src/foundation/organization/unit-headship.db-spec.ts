@@ -13,6 +13,7 @@ import {
   findCurrentHeadHolders,
   findRunningActingCover,
   findUnitHeadedBy,
+  findUnitLeadersAmong,
   findUnitsCoveredBy,
   findUnitSubtreeIds,
 } from './unit-headship';
@@ -81,6 +82,7 @@ describe('unit-headship on a real database (ACC-244)', () => {
     await person('outgoing', A, { positionId: head, primaryOrgUnitId: unit['SIB'] });
     await person('incoming', A, { positionId: head, primaryOrgUnitId: unit['SIB'] });
     for (const k of ['coverNow', 'coverFuture', 'coverLapsed', 'coverEnded', 'coverEdgeStart', 'coverEdgeEnd', 'coverVacancy']) await person(k, A);
+    await person('coverInactive', A, { status: 'INACTIVE' }); // ACC-245: a cover in force, its person deactivated
     await person('headInB', B, { positionId: headB, primaryOrgUnitId: unit['BUNIT'] });
     await person('coverInB', B);
 
@@ -95,6 +97,7 @@ describe('unit-headship on a real database (ACC-244)', () => {
     await period(unit['OLD']!, user['coverEdgeStart']!, { validFrom: NOW }); // starts exactly now: in force
     await period(unit['GONE']!, user['coverEdgeEnd']!, { validTo: NOW }); // ends exactly now: lapsed
     await period(unit['DEPT']!, user['coverVacancy']!, { reason: 'VACANCY' });
+    await period(unit['SIB']!, user['coverInactive']!, {});
     await prisma.orgUnitHeadAssignment.create({
       data: { organizationId: B, orgUnitId: unit['BUNIT']!, userId: user['coverInB']!, kind: 'ACTING', reason: 'ABSENCE', createdById: user['headInB']!, validFrom: at(-HOUR) } as never,
     });
@@ -149,6 +152,20 @@ describe('unit-headship on a real database (ACC-244)', () => {
       expect(await findUnitsCoveredBy(prisma, A, user['coverEdgeStart']!, at(-1))).toEqual([]);
       expect(await findUnitsCoveredBy(prisma, A, user['coverEdgeEnd']!, NOW)).toEqual([]);
       expect(await findUnitsCoveredBy(prisma, A, user['coverEdgeEnd']!, at(-1))).toEqual([unit['GONE']]);
+    });
+
+    // ACC-245 — reach needs an ACTIVE person, for a cover as for a head holder.
+    it('a cover in force whose person is deactivated gives no reach, in either reader', async () => {
+      expect(await findUnitsCoveredBy(prisma, A, user['coverInactive']!, NOW)).toEqual([]);
+      expect(await findUnitLeadersAmong(prisma, A, [unit['SIB']!], [user['coverInactive']!, user['outgoing']!], NOW)).toEqual(new Set([user['outgoing']]));
+      // Non-vacuity: the same period, its person active again, does give reach.
+      await prisma.user.update({ where: { id: user['coverInactive']! }, data: { status: 'ACTIVE' } });
+      try {
+        expect(await findUnitsCoveredBy(prisma, A, user['coverInactive']!, NOW)).toEqual([unit['SIB']]);
+        expect(await findUnitLeadersAmong(prisma, A, [unit['SIB']!], [user['coverInactive']!], NOW)).toEqual(new Set([user['coverInactive']]));
+      } finally {
+        await prisma.user.update({ where: { id: user['coverInactive']! }, data: { status: 'INACTIVE' } });
+      }
     });
 
     it('both reasons count, unless one is asked for', async () => {
