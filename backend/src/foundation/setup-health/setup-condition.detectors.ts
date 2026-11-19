@@ -6,7 +6,7 @@ import { OWNERLESS_SQL } from '../task/task-pool';
 // ACC-185 — a plain function too: reads the encrypted storage config.
 import { readStorageConfig } from '../file-storage/storage-config';
 import { STAGE_FLAG } from '../workflow/record-registry';
-import { requiredSeats, seatHoldersFor } from '../committees/committee-seat-rules';
+import { committeesInForceStanding, isBelowQuorum, requiredSeats, seatHoldersFor } from '../committees/committee-seat-rules';
 // Type-only: the generated client is replaced by a stub under Jest
 // (package.json moduleNameMapper), so its enum OBJECTS do not exist at test
 // runtime. String literals typed by the enum — the same convention as
@@ -93,12 +93,11 @@ export type SetupConditionDetector = (
 // added the value (and the frontend learned it) with nothing writing it; PR 2
 // adds its detector and removes it here.
 //
-// ACC-307 — COMMITTEE_BELOW_QUORUM is deferred the same way: PR 1 adds the value
-// (and the frontend learns it) with nothing writing it; PR 2 adds the detector,
-// reports it and removes it here.
+// ACC-307 — COMMITTEE_BELOW_QUORUM was deferred the same way: PR 1 added the
+// value (and the frontend learned it) with nothing writing it; PR 2 adds its
+// detector and removes it here.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
-  'COMMITTEE_BELOW_QUORUM',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<
@@ -137,7 +136,32 @@ export class SetupConditionDetectors {
       this.stagesOnStartingAssignment(organizationId),
     COMMITTEE_MISSING_REQUIRED_SEAT: (organizationId) =>
       this.committeesMissingRequiredSeat(organizationId),
+    COMMITTEE_BELOW_QUORUM: (organizationId) =>
+      this.committeesBelowQuorum(organizationId),
   };
+
+  /**
+   * ACC-307 PR 2 — a committee in force with fewer counted members than its
+   * quorum (above 0). Read through committeesInForceStanding()
+   * (committee-seat-rules.ts), the rule Home's count and going live read: in
+   * force is the committee active and its newest instance's stage IN_FORCE and
+   * not DISSOLVING (Suspended counts), and only an active membership of an
+   * ACTIVE user counts toward the quorum (ACC-286's rule).
+   *
+   * One condition per committee, AT_RISK, naming the quorum and the members.
+   * Nothing records when a committee fell below its quorum, so the age is
+   * "first detected" (openedAt null). ONE query per organisation, whatever the
+   * number of committees.
+   */
+  async committeesBelowQuorum(organizationId: string): Promise<DetectedCondition[]> {
+    const standing = await committeesInForceStanding(this.prisma, organizationId);
+    return standing.filter(isBelowQuorum).map((committee) => ({
+      objectId: committee.committeeId,
+      severity: 'AT_RISK' as const,
+      openedAt: null,
+      subject: { nameEn: committee.nameEn, nameAr: committee.nameAr, quorum: committee.quorum, members: committee.members },
+    }));
+  }
 
   /**
    * ACC-286 PR 2 — a committee IN FORCE with a required seat nobody fills.
