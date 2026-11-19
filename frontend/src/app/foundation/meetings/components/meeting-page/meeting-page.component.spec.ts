@@ -332,9 +332,31 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       // The newer answers first: the discussion saved.
       writes.discussion.next(aMinutes({ items: [aMinutesItem({ discussion: 'After.' })] }));
       expect(c.minutes()!.items[0]!.discussion).toBe('After.');
-      // Then the older one, read before the discussion was saved: dropped.
+      // Then the older one, read before the discussion was saved: dropped, and
+      // since the newest has settled, the minutes are read again (P211).
+      minutesRead = () => of(aMinutes({ items: [aMinutesItem({ discussion: 'After, read again.' })] }));
       writes.attendance.next(aMinutes({ items: [aMinutesItem({ discussion: 'Before.' })] }));
-      expect(c.minutes()!.items[0]!.discussion).toBe('After.');
+      expect(c.minutes()!.items[0]!.discussion).toBe('After, read again.');
+    });
+
+    it('an older answer dropped, then the newest write FAILS: the minutes are read again, so the saved tap shows (P211)', () => {
+      writes.attendance = new Subject<MeetingMinutesDto>();
+      writes.discussion = new Subject<MeetingMinutesDto>();
+      minutesRead = () => of(aMinutes({ items: [aMinutesItem({ discussion: 'Before.' })] }));
+      agendaRead = () => of([{ id: 'i-1', order: 1, title: 'Isolation room maintenance', description: null, durationMinutes: null, standing: false, presenter: null }]);
+      const { fixture, c } = create();
+      const attendance = fixture.debugElement.query(By.directive(MeetingAttendanceComponent)).componentInstance as MeetingAttendanceComponent;
+      const item = fixture.debugElement.query(By.directive(MeetingItemMinutesComponent)).componentInstance as MeetingItemMinutesComponent;
+      attendance.record(aMinutes().attendance[0]!, 'PRESENT');
+      item.discussion.set('After.');
+      item.saveDiscussion();
+      // The tap answers first, while the discussion save is newer: dropped.
+      writes.attendance.next(aMinutes({ attendance: [{ ...aMinutes().attendance[0]!, attendance: 'PRESENT' }] }));
+      expect(c.minutes()!.attendance[0]!.attendance).toBeNull();
+      // Then the discussion save fails: the minutes are read again, with the tap.
+      minutesRead = () => of(aMinutes({ attendance: [{ ...aMinutes().attendance[0]!, attendance: 'PRESENT' }] }));
+      writes.discussion.error(new HttpErrorResponse({ status: 500 }));
+      expect(c.minutes()!.attendance[0]!.attendance).toBe('PRESENT');
     });
   });
 });

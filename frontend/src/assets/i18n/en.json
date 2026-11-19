@@ -4991,7 +4991,8 @@
       "votesWhole": "Votes are whole numbers, 0 or more.",
       "votesAllOrNone": "Give all three vote counts, or none.",
       "changedElsewhere": "The saved discussion changed while you were typing. Your text is kept.",
-      "reloadDiscussion": "Reload"
+      "reloadDiscussion": "Reload",
+      "votesAbovePresent": "The votes add up to more than the members present."
     },
     "action": {
       "title": "Raise action item",
@@ -5017,7 +5018,8 @@
       "recordFirst": "Record attendance for everyone first. Still missing:",
       "error": "The minutes couldn't be distributed.",
       "votesAbove": "Some votes add up to more than the members now present. Correct them first:",
-      "votesAboveItem": "{{title}}: {{votes}}, {{members}}"
+      "votesAboveItem": "{{title}}: {{votes}}, {{members}}",
+      "blockedNow": "Something now holds the minutes back. It is listed above."
     },
     "invitees": {
       "title": "Invitees",

@@ -7,7 +7,11 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
 import { dayInstant, meetingToday } from '../../meeting-when';
+
+/** The refusals that mean something now holds Distribute: the minutes' blockedBy says what. */
+const BLOCKING: ReadonlySet<string> = new Set(['MEETING_ATTENDANCE_INCOMPLETE', 'MEETING_VOTES_EXCEED_PRESENT']);
 
 /** "2026-10-01" as the calendar's plain day. */
 function plainDay(iso: string): Date {
@@ -111,6 +115,8 @@ export class MeetingDistributeDialogComponent {
   readonly visibleChange = output<boolean>();
   /** Distributed: the page reads the meeting again (its stage moved). */
   readonly distributed = output<void>();
+  /** Something now holds Distribute that the dialog's read did not show: the page reads the minutes again. */
+  readonly refreshMinutes = output<void>();
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
@@ -168,6 +174,13 @@ export class MeetingDistributeDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
+        // What holds Distribute is said from the minutes (blockedBy), which the
+        // page reads again: never a sentence whose numbers the refusal lacks (P211).
+        if (BLOCKING.has(refusalCode(err) ?? '')) {
+          this.error.set('meeting.distribute.blockedNow');
+          this.refreshMinutes.emit();
+          return;
+        }
         this.error.set(meetingRefusalKey(err) ?? 'meeting.distribute.error');
       },
     });

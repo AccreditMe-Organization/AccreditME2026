@@ -351,9 +351,10 @@ export class MeetingItemMinutesComponent {
       next: (minutes) => {
         this.busy.set(null);
         done?.();
-        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
+        if (this.order.answered(seq)) this.minutesChange.emit(minutes);
       },
       error: (err: unknown) => {
+        this.order.failed(seq);
         this.busy.set(null);
         this.error.set(this.refusal(err));
       },
@@ -367,6 +368,8 @@ export class MeetingItemMinutesComponent {
       if (typeof body?.total === 'number' && typeof body.present === 'number') {
         return { key: 'meeting.refusal.votesExceedPresent', params: { votes: this.format.count('meeting.votes', body.total), members: this.format.count('meeting.presentMembers', body.present) } };
       }
+      // Without its numbers the sentence would show raw placeholders: a plain one instead.
+      return { key: 'meeting.minutes.votesAbovePresent' };
     }
     return { key: meetingRefusalKey(err) ?? 'meeting.minutes.error' };
   }

@@ -7,6 +7,15 @@ import { meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingAttendance, type MeetingAttendanceRowDto, type MeetingMinutesDto } from '../../services/meeting.service';
 import { MinutesWriteOrder } from '../../minutes-write-order';
 
+/** setTimeout's longest wait: 2^31 - 1 ms (about 24.8 days). */
+const MAX_TIMER_MS = 2_147_483_647;
+
+function omit<T>(record: Record<string, T>, keys: string[]): Record<string, T> {
+  const next = { ...record };
+  for (const k of keys) delete next[k];
+  return next;
+}
+
 const CHOICES: { value: MeetingAttendance; key: string }[] = [
   { value: 'PRESENT', key: 'meeting.attendance.present' },
   { value: 'APOLOGIES', key: 'meeting.attendance.apologies' },
@@ -58,8 +67,8 @@ const CHOICES: { value: MeetingAttendance; key: string }[] = [
               @if (!row.attendance && row.suggested) {
                 <span class="text-meta text-[var(--am-ink-500)]" data-attendance-suggested>{{ 'meeting.attendance.saidCant' | translate }}</span>
               }
-              @if (rowError()?.id === row.attendeeId) {
-                <span class="text-meta text-[var(--am-danger-ink)]" role="alert" data-attendance-error>{{ rowError()!.key | translate }}</span>
+              @if (rowErrors()[row.attendeeId]; as err) {
+                <span class="text-meta text-[var(--am-danger-ink)]" role="alert" data-attendance-error>{{ err | translate }}</span>
               }
             </span>
             @if (canRecord()) {
@@ -184,6 +193,12 @@ export class MeetingAttendanceComponent {
   private readonly order = inject(MinutesWriteOrder, { optional: true }) ?? new MinutesWriteOrder();
   /** Taps made while a save was running, by row: sent together when it ends. */
   readonly queued = signal<Record<string, MeetingAttendance>>({});
+  /**
+   * Values being saved (or whose save failed), by row: shown until the save
+   * settles, so a tap never flips back while it is in flight (P211). A failed
+   * one stays shown, marked by its row's error.
+   */
+  readonly pending = signal<Record<string, MeetingAttendance>>({});
   /** Now, moved forward by a timer to the meeting's start (opensAt reads it). */
   private readonly now = signal(Date.now());
 
@@ -191,7 +206,8 @@ export class MeetingAttendanceComponent {
   /** The row being saved, or 'all' for Mark all present. */
   readonly busy = signal<string | null>(null);
   readonly saved = signal<string | null>(null);
-  readonly rowError = signal<{ id: string; key: string } | null>(null);
+  /** A refused or failed save's message, by row: kept until that row is saved again. */
+  readonly rowErrors = signal<Record<string, string>>({});
 
   readonly canRecord = computed(() => this.minutes().may.recordAttendance);
   readonly members = computed(() => this.minutes().attendance.filter((r) => r.kind === 'MEMBER'));
@@ -207,30 +223,35 @@ export class MeetingAttendanceComponent {
 
   constructor() {
     // A timer to the start: the sentence goes, and the page reads the minutes
-    // again so the controls arrive, without a reload. Cleared on destroy.
+    // again so the controls arrive, without a reload. A timer that fires early
+    // re-arms for the remainder, and a start further away than setTimeout's
+    // maximum (2^31 - 1 ms) is reached by chained waits (P211). Cleared on destroy.
     let timer: ReturnType<typeof setTimeout> | null = null;
     const clear = () => {
       if (timer !== null) clearTimeout(timer);
       timer = null;
     };
+    const arm = (at: number) => {
+      const wait = at - Date.now();
+      if (wait <= 0) {
+        timer = null;
+        this.now.set(Date.now());
+        this.startReached.emit();
+        return;
+      }
+      timer = setTimeout(() => arm(at), Math.min(wait, MAX_TIMER_MS));
+    };
     effect(() => {
       clear();
       const at = new Date(this.scheduledAt()).getTime();
-      const wait = at - Date.now();
-      if (!(wait > 0)) return;
-      // setTimeout holds at most 2^31 - 1 ms; a later start re-arms on the next read.
-      timer = setTimeout(() => {
-        timer = null;
-        this.now.set(Date.now());
-        if (Date.now() >= at) this.startReached.emit();
-      }, Math.min(wait, 2_147_483_647));
+      if (at - Date.now() > 0) arm(at);
     });
     inject(DestroyRef).onDestroy(clear);
   }
 
-  /** The value a row shows: a queued tap, else what is recorded. */
+  /** The value a row shows: a queued tap, else one being saved (or that failed), else what is recorded. */
   shown(row: MeetingAttendanceRowDto): MeetingAttendance | null {
-    return this.queued()[row.attendeeId] ?? row.attendance;
+    return this.queued()[row.attendeeId] ?? this.pending()[row.attendeeId] ?? row.attendance;
   }
 
   readonly quorumLine = computed(() => {
@@ -288,25 +309,34 @@ export class MeetingAttendanceComponent {
 
   private save(rows: { attendeeId: string; attendance: MeetingAttendance }[], busy: string): void {
     const seq = this.order.begin();
+    const ids = rows.map((r) => r.attendeeId);
     this.busy.set(busy);
-    this.rowError.set(null);
     this.saved.set(null);
+    // In flight: shown until the answer. Only THESE rows' old errors are cleared.
+    this.pending.update((p) => ({ ...p, ...Object.fromEntries(rows.map((r) => [r.attendeeId, r.attendance])) }));
+    this.rowErrors.update((e) => omit(e, ids));
     this.meetings.recordAttendance(this.meetingId(), rows).subscribe({
       next: (minutes) => {
         this.busy.set(null);
         this.saved.set(busy === 'all' ? null : busy);
-        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
+        const shown = this.order.answered(seq);
+        if (shown) this.minutesChange.emit(minutes);
+        // Saved: the recorded value takes over (or the re-read brings it).
+        this.pending.update((p) => omit(p, ids));
         this.flush();
       },
       error: (err: unknown) => {
+        this.order.failed(seq);
         this.busy.set(null);
-        this.rowError.set({ id: busy === 'all' ? rows[0]!.attendeeId : busy, key: meetingRefusalKey(err) ?? 'meeting.attendance.error' });
+        // The value stays shown, marked by its row's error.
+        const key = meetingRefusalKey(err) ?? 'meeting.attendance.error';
+        this.rowErrors.update((e) => ({ ...e, ...Object.fromEntries(ids.map((id) => [id, key])) }));
         this.flush();
       },
     });
   }
 
-  /** The taps queued during a save, sent together once it ends. */
+  /** The taps queued during a save, sent together once it ends: they stay shown, now in flight. */
   private flush(): void {
     const q = this.queued();
     const rows = Object.entries(q).map(([attendeeId, attendance]) => ({ attendeeId, attendance }));

@@ -157,9 +157,10 @@ export class MeetingOpenActionsComponent {
           delete next[row.taskId];
           return next;
         });
-        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
+        if (this.order.answered(seq)) this.minutesChange.emit(minutes);
       },
       error: (err: unknown) => {
+        this.order.failed(seq);
         this.saving.set(null);
         this.error.set({ id: row.taskId, key: meetingRefusalKey(err) ?? 'meeting.openActions.noteError' });
       },

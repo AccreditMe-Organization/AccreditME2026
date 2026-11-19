@@ -179,10 +179,11 @@ export class MeetingActionDialogComponent {
       next: (minutes) => {
         this.saving.set(false);
         this.form.markAsPristine();
-        if (this.order.isNewest(seq)) this.saved.emit(minutes);
+        if (this.order.answered(seq)) this.saved.emit(minutes);
         this.visibleChange.emit(false);
       },
       error: (err: unknown) => {
+        this.order.failed(seq);
         this.saving.set(false);
         this.error.set(meetingRefusalKey(err) ?? 'meeting.action.error');
       },

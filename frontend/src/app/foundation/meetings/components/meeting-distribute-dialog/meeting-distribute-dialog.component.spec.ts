@@ -86,4 +86,16 @@ describe('MeetingDistributeDialogComponent (ACC-316 PR 7b)', () => {
     expect(document.querySelector('[data-testid="distribute-votes-above"]')?.textContent).toContain('Hand hygiene: 6 votes, 4 present members');
     expect(document.querySelector('[data-testid="distribute-submit"]')).toBeNull();
   });
+
+  it('MEETING_VOTES_EXCEED_PRESENT from the press shows no placeholder, and asks the page to read the minutes again (P211)', () => {
+    const { c, fixture } = create();
+    const refresh = jasmine.createSpy('refresh');
+    c.refreshMinutes.subscribe(refresh);
+    distribute.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_VOTES_EXCEED_PRESENT', items: [{ agendaItemId: 'i-1', title: 'Hand hygiene', total: 6, present: 4 }] } })));
+    c.submit();
+    fixture.detectChanges();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.p-dialog')?.textContent ?? '').not.toContain('{{');
+    expect(c.error()).toBe('meeting.distribute.blockedNow');
+  });
 });

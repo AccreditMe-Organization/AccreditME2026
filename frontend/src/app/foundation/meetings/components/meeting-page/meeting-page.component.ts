@@ -6,6 +6,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
 import { catchError, forkJoin, of, type Observable } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
@@ -290,6 +291,7 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
         [context]="m.title"
         [minutes]="minutes()"
         (distributed)="load()"
+        (refreshMinutes)="refreshMinutes()"
       />
     }
   `,
@@ -400,6 +402,11 @@ export class MeetingPageComponent {
 
   constructor() {
     registerPageName(() => this.meeting()?.title ?? null);
+    // P211 — an answer dropped as older than a newer write: once the newest
+    // settles, the minutes are read again, so a saved write is never left unseen.
+    inject(MinutesWriteOrder)
+      .reread.pipe(takeUntilDestroyed())
+      .subscribe(() => this.refreshMinutes());
     this.load();
   }
 

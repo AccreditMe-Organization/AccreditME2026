@@ -179,4 +179,71 @@ describe('MeetingAttendanceComponent (ACC-316 PR 7b)', () => {
       });
     });
   });
+
+  describe('P211', () => {
+    it('a queued tap stays shown while its own save is in flight, and a failure keeps it shown, marked by the row\'s error', () => {
+      const { el, fixture } = create();
+      const first = new Subject<MeetingMinutesDto>();
+      const second = new Subject<MeetingMinutesDto>();
+      record.and.returnValues(first, second);
+      segment(el, 'a-1', 'PRESENT').click();
+      segment(el, 'a-2', 'ABSENT').click();
+      fixture.detectChanges();
+      // The first save answers with minutes that don't yet have the queued tap: it is now in flight.
+      first.next(aMinutes());
+      first.complete();
+      fixture.detectChanges();
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(segment(el, 'a-2', 'ABSENT').getAttribute('aria-checked')).toBe('true');
+      // Its save fails: still shown, with the row's error.
+      second.error(new HttpErrorResponse({ status: 409, error: { code: 'MEETING_NOT_STARTED' } }));
+      fixture.detectChanges();
+      expect(segment(el, 'a-2', 'ABSENT').getAttribute('aria-checked')).toBe('true');
+      expect(el.querySelector('[data-attendance-row="a-2"] [data-attendance-error]')?.textContent?.trim()).toBe(en.meeting.refusal.notStarted);
+    });
+
+    it("a save never erases another row's error", () => {
+      const { el, fixture } = create();
+      record.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_NOT_STARTED' } })));
+      segment(el, 'a-2', 'ABSENT').click();
+      fixture.detectChanges();
+      record.and.returnValue(of(aMinutes()));
+      segment(el, 'a-1', 'PRESENT').click();
+      fixture.detectChanges();
+      expect(el.querySelector('[data-attendance-row="a-2"] [data-attendance-error]')).not.toBeNull();
+    });
+
+    describe('the start timer', () => {
+      beforeEach(() => {
+        jasmine.clock().install();
+        jasmine.clock().mockDate(new Date('2027-03-18T07:00:00.000Z'));
+      });
+      afterEach(() => jasmine.clock().uninstall());
+
+      it('fired early (the clock behind), it waits for the remainder before opening', () => {
+        const minutes = aMinutes({ may: { ...aMinutes().may, recordAttendance: false } });
+        const { fixture } = create(minutes, '2027-03-18T07:01:00.000Z');
+        const reached = jasmine.createSpy('reached');
+        fixture.componentInstance.startReached.subscribe(reached);
+        // The wall clock steps back 5 s: the timer fires at its 60 s, 5 s early.
+        jasmine.clock().mockDate(new Date('2027-03-18T06:59:55.000Z'));
+        jasmine.clock().tick(60_000);
+        expect(reached).not.toHaveBeenCalled();
+        jasmine.clock().tick(5_000);
+        expect(reached).toHaveBeenCalledTimes(1);
+      });
+
+      it('a start further away than one timer can wait is reached by chained waits', () => {
+        const minutes = aMinutes({ may: { ...aMinutes().may, recordAttendance: false } });
+        // 30 days ahead: past setTimeout's 24.8-day limit.
+        const { fixture } = create(minutes, '2027-04-17T07:00:00.000Z');
+        const reached = jasmine.createSpy('reached');
+        fixture.componentInstance.startReached.subscribe(reached);
+        jasmine.clock().tick(2_147_483_647);
+        expect(reached).not.toHaveBeenCalled();
+        jasmine.clock().tick(30 * 86_400_000 - 2_147_483_647);
+        expect(reached).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
 });
