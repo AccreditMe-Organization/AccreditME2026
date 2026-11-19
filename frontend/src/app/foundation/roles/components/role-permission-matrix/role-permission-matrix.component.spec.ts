@@ -191,8 +191,9 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     expect(groupLines('committees')).toEqual(['Committee records · 2 of 3', 'Members · 2 of 3', 'Tasks on committees · 2 of 4']);
     expect(counts('committees')[0]).toBe('6 of 10');
     // ACC-164 — users:reset_mfa took Users to seven: two labelled groups.
-    expect(groupLines('users')).toEqual(['People and profiles · 1 of 4', 'Account access · 0 of 3']);
-    expect(counts('users')[0]).toBe('1 of 7');
+    // ACC-216 — users:manage_sessions joins Account access: eight.
+    expect(groupLines('users')).toEqual(['People and profiles · 1 of 4', 'Account access · 0 of 4']);
+    expect(counts('users')[0]).toBe('1 of 8');
     // Roles has two: no groups.
     expect(all('[data-pm-group]', mod('roles')).length).toBe(0);
   });

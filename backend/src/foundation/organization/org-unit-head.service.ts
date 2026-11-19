@@ -17,6 +17,7 @@ import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline, reportRootUnitHeadBreach } from './root-unit-head.invariant';
+import { RoleInactiveException } from '../roles/role-active';
 
 /** ACC-133 — how far back an ended cover still earns the "new 90-day period" warning. */
 const RECENT_COVER_DAYS = 7;
@@ -776,6 +777,15 @@ export class OrgUnitHeadService {
       throw new NotFoundException('User not found or not active in this tenant');
     }
 
+    // ACC-154 — the role this cover grants (below) is resolved BEFORE anything is
+    // written, so a deactivated role is refused (ROLE_INACTIVE) with nothing
+    // half-done. The grant re-checks under the role's lock.
+    const headGrant = await this.resolveActingHeadGrant(dto.coveringForUserId ?? null, orgUnitId, organizationId);
+    if (headGrant) {
+      const role = await this.prisma.role.findFirst({ where: { id: headGrant.roleId, organizationId }, select: { isActive: true } });
+      if (role && !role.isActive) throw new RoleInactiveException();
+    }
+
     // ACC-120 slice 2 — THE PERIOD ROW IS THE RECORD; the column below is a
     // cache kept for compatibility and dropped in the contract step (ACC-131).
     // Both are written here so nothing that still reads the column breaks
@@ -832,25 +842,32 @@ export class OrgUnitHeadService {
     // grants workflow-eligibility only, per resolveActingHeadForOrgUnit()'s
     // own pool-inclusion behavior — no role grant, since nothing
     // identifies which position would even be relevant.
-    if (dto.coveringForUserId) {
-      const resolvedPositionId = await this.resolveCoveringPositionId(dto.coveringForUserId, orgUnitId, organizationId);
-      if (resolvedPositionId) {
-        const position = await this.prisma.orgPosition.findFirst({
-          where: { id: resolvedPositionId, organizationId },
-          select: { isUnitHeadPosition: true, roleId: true },
-        });
-        if (position?.isUnitHeadPosition && position.roleId) {
-          // Acting Head is always unit-scoped (orgUnitId is a required
-          // method parameter, never null) — the grant always uses the
-          // orgUnitId-based revoke key. resolvedPositionId is still
-          // passed for audit value on the row, even though it's never
-          // the key used to revoke this specific grant.
-          await this.roleService.grantRoleViaHeadAuthority(
-            actingUser.id, position.roleId, resolvedPositionId, orgUnitId, organizationId, actorId,
-          );
-        }
-      }
+    if (headGrant) {
+      // Acting Head is always unit-scoped (orgUnitId is a required
+      // method parameter, never null) — the grant always uses the
+      // orgUnitId-based revoke key. The position id is still passed for
+      // audit value on the row, even though it's never the key used to
+      // revoke this specific grant.
+      await this.roleService.grantRoleViaHeadAuthority(
+        actingUser.id, headGrant.roleId, headGrant.positionId, orgUnitId, organizationId, actorId,
+      );
     }
+  }
+
+  /** The head position, and its role, an acting cover for `coveringForUserId` grants; null when none. */
+  private async resolveActingHeadGrant(
+    coveringForUserId: string | null,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<{ positionId: string; roleId: string } | null> {
+    if (!coveringForUserId) return null;
+    const resolvedPositionId = await this.resolveCoveringPositionId(coveringForUserId, orgUnitId, organizationId);
+    if (!resolvedPositionId) return null;
+    const position = await this.prisma.orgPosition.findFirst({
+      where: { id: resolvedPositionId, organizationId },
+      select: { isUnitHeadPosition: true, roleId: true },
+    });
+    return position?.isUnitHeadPosition && position.roleId ? { positionId: resolvedPositionId, roleId: position.roleId } : null;
   }
 
   // ACC-40 Section 2.6.4 — resolves which head-conferring position

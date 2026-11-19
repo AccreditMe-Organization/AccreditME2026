@@ -130,7 +130,9 @@ export async function planOrg(db: Db, organizationId: string): Promise<Pick<OrgP
               whoMode: true,
               flags: true,
               recordActions: { select: { actionKey: true } },
-              assignees: { select: { kind: true, isStartingAssignment: true } },
+              // By `order`: the "already the seed's" check compares entries by position,
+              // and with no order Postgres returns them as they sit on disk.
+              assignees: { orderBy: { order: 'asc' }, select: { kind: true, isStartingAssignment: true } },
               transitionsFrom: { select: { id: true, toStageId: true, labelEn: true, labelAr: true, mover: true, kind: true } },
             },
           },

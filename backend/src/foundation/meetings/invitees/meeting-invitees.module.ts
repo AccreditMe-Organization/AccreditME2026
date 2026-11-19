@@ -4,6 +4,7 @@ import { NotificationModule } from '../../notification/notification.module';
 import { WorkingCalendarModule } from '../../working-calendar/working-calendar.module';
 import { StageRulesModule } from '../../workflow/stage-rules.module';
 import { MeetingInviteeSyncService } from './meeting-invitee-sync.service';
+import { MeetingReviewReminderService } from '../meeting-review-reminder.service';
 
 /**
  * ACC-316 PR 3b — the invitee sync, on its own, importing the modules that own
@@ -15,7 +16,8 @@ import { MeetingInviteeSyncService } from './meeting-invitee-sync.service';
  */
 @Module({
   imports: [PrismaModule, forwardRef(() => NotificationModule), WorkingCalendarModule, StageRulesModule],
-  providers: [MeetingInviteeSyncService],
-  exports: [MeetingInviteeSyncService],
+  // ACC-316 PR 4 — the review reminder: the same edges, run by the same sweep.
+  providers: [MeetingInviteeSyncService, MeetingReviewReminderService],
+  exports: [MeetingInviteeSyncService, MeetingReviewReminderService],
 })
 export class MeetingInviteesModule {}

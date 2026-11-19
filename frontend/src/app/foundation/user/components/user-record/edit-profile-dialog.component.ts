@@ -19,6 +19,7 @@ import { DueDateService } from '../../../tasks/services/due-date.service';
 import { IBilingualNameDto, IUserDto, UpdateUserProfileDto, UserService } from '../../services/user.service';
 import { CoverOption } from './out-of-office-dialog.component';
 import { DateView } from './date-view';
+import { ROLE_INACTIVE } from '../../../roles/role-inactive-refusal';
 
 const PLACEMENT_STEPS: readonly StepStripItem[] = [
   { n: 1, key: 'userRecord.editProfileDialog.stepProfile' },
@@ -561,7 +562,9 @@ export class EditProfileDialogComponent {
         this.error.set(
           refusalCode(err) === 'USE_TRANSFER'
             ? 'userRecord.editProfileDialog.useTransferRefused'
-            : extractErrorMessage(err, 'user.errorSave'),
+            : refusalCode(err) === ROLE_INACTIVE
+              ? 'roles.refusal.roleInactive'
+              : extractErrorMessage(err, 'user.errorSave'),
         );
       },
     });

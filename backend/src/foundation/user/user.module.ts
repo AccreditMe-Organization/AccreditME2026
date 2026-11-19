@@ -18,6 +18,10 @@ import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { LookupModule } from '../lookup/lookup.module';
 import { UserCommitteesController } from './committees/user-committees.controller';
 import { UserCommitteesService } from './committees/user-committees.service';
+import { UserAccessHistoryController } from './access-history/user-access-history.controller';
+import { UserAccessHistoryService } from './access-history/user-access-history.service';
+import { OwnSessionsController, UserSessionsController } from './sessions/user-sessions.controller';
+import { UserSessionsService } from './sessions/user-sessions.service';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
 // TaskModule -> forwardRef TenantModule edge (UserModule -> forwardRef
@@ -71,8 +75,16 @@ import { UserCommitteesService } from './committees/user-committees.service';
     // names them. LookupModule forwardRef()s TenantModule, as this module does.
     forwardRef(() => LookupModule),
   ],
-  controllers: [UserController, UserCommitteesController],
-  providers: [UserService, UserHomeCountsService, UserMfaResetService, SecurityNoticeService, UserCommitteesService],
+  controllers: [UserController, UserCommitteesController, UserAccessHistoryController, UserSessionsController, OwnSessionsController],
+  providers: [
+    UserService,
+    UserHomeCountsService,
+    UserMfaResetService,
+    SecurityNoticeService,
+    UserCommitteesService,
+    UserAccessHistoryService,
+    UserSessionsService,
+  ],
   exports: [UserService, UserHomeCountsService],
 })
 export class UserModule {}

@@ -15,7 +15,7 @@ import { Queue } from 'bullmq';
  * picks the language, renders from this table and sends. Nothing secret is ever
  * in the job, the template or the email. ACC-164 adds its two notices here.
  */
-export type SecurityNotice = 'password_changed' | 'mfa_disabled' | 'mfa_reset';
+export type SecurityNotice = 'password_changed' | 'mfa_disabled' | 'mfa_reset' | 'sessions_ended';
 
 export const SECURITY_NOTICE_JOB = 'security-notice';
 
@@ -81,6 +81,23 @@ export const SECURITY_NOTICES: Readonly<
         'أعاد مسؤول في منشأة {organisation} ضبط التحقق بخطوتين لحسابك، وتم تسجيل خروجك من كل الأجهزة. ' +
         'سجّل الدخول بكلمة المرور، ثم أعد إعداد التحقق بخطوتين من ملفك الشخصي. ' +
         'إذا لم يكن الطلب منك، فتواصل مع مسؤول النظام في منشأتك الآن.',
+    },
+  },
+  // ACC-216 — an administrator signed the person out everywhere. As with
+  // mfa_reset, the administrator is not named (the audit row names them).
+  // Ending your own devices sends nothing: you did it.
+  sessions_ended: {
+    en: {
+      subject: 'You were signed out of AccreditMe everywhere',
+      body:
+        'An administrator at {organisation} signed you out of every device. Sign in again with your password to continue. ' +
+        "If you didn't expect this, contact your organisation's administrator now.",
+    },
+    ar: {
+      subject: 'تم تسجيل خروجك من AccreditMe على كل الأجهزة',
+      body:
+        'سجّل مسؤول في منشأة {organisation} خروجك من كل الأجهزة. سجّل الدخول مجددًا بكلمة المرور للمتابعة. ' +
+        'إذا لم يكن ذلك متوقعًا، فتواصل مع مسؤول النظام في منشأتك الآن.',
     },
   },
 });

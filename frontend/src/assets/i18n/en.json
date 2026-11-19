@@ -543,7 +543,6 @@
     "addRole": "New Role",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
-    "confirmDeactivateRole": "{{holders}} The role stays assigned, so reactivating it gives those permissions back.",
     "confirmRemoveAssignment": "Remove this role assignment?",
     "customBadge": "Custom",
     "deactivateRole": "Deactivate Role",
@@ -654,6 +653,7 @@
         "users:deactivate": "Deactivate a user",
         "users:reactivate": "Reactivate a deactivated user",
         "users:reset_mfa": "Reset another person's two-step sign-in",
+        "users:manage_sessions": "See another person's sign-ins and sign them out everywhere",
         "roles:view": "See roles and what they allow",
         "roles:manage": "Create, change and assign roles",
         "lookups:view": "See lookup lists and their values",
@@ -733,7 +733,18 @@
     },
     "refusal": {
       "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
-      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
+      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first.",
+      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first.",
+      "roleInactive": "This role has been deactivated, so it can't be given out. Reactivate it on Roles, or choose another role."
+    },
+    "inUse": {
+      "title": "“{{name}}” can't be deactivated yet",
+      "lead": "It's still in use. Remove each of these first, then deactivate it.",
+      "stageName": "{{workflow}} — {{stage}}",
+      "hint": {
+        "POSITION_GRANTS": "Removed by ending that headship.",
+        "POSITIONS": "Removed by changing the position's role."
+      }
     },
     "form": {
       "nameRequired": "Enter the role's name in English.",
@@ -742,7 +753,6 @@
     },
     "deactivateHeader": "Deactivate the role “{{name}}”?",
     "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
-    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back.",
     "userPermissions": {
       "title": "A user's permissions",
       "lookUp": "Look up a user's permissions",
@@ -2967,9 +2977,23 @@
         "one": "Your {{count}} change is still here.",
         "other": "Your {{count}} changes are still here."
       },
-      "deactivateHolders": {
-        "one": "{{count}} person holds it and loses its permissions now.",
-        "other": "{{count}} people hold it and lose its permissions now."
+      "inUse": {
+        "USER_GRANTS": {
+          "one": "Given directly to {{count}} user",
+          "other": "Given directly to {{count}} users"
+        },
+        "POSITION_GRANTS": {
+          "one": "Given to {{count}} user through a head position",
+          "other": "Given to {{count}} users through a head position"
+        },
+        "POSITIONS": {
+          "one": "Set on {{count}} position",
+          "other": "Set on {{count}} positions"
+        },
+        "STAGE_ESCALATIONS": {
+          "one": "Named in the escalation of {{count}} workflow stage",
+          "other": "Named in the escalation of {{count}} workflow stages"
+        }
       },
       "filterActs": {
         "one": "Acts only on the {{count}} row shown by the current filter.",
@@ -3918,6 +3942,59 @@
       "since": "Since {{date}}",
       "range": "{{from}} – {{to}}",
       "inactiveCommittee": "Committee inactive"
+    },
+    "accessHistory": {
+      "heading": "Access history",
+      "loading": "Loading access history",
+      "loadError": "Access history couldn't be loaded.",
+      "empty": "No changes recorded",
+      "popupTitle": "Access history of {{name}}",
+      "close": "Close",
+      "by": "{{when}} · by {{name}}",
+      "byYou": "{{when}} · by you",
+      "listSeparator": ", ",
+      "unknownUnit": "a unit no longer in the organisation",
+      "headDone": "appointed head of the unit",
+      "headFailed": "head appointment didn't complete",
+      "field": {
+        "name": "name",
+        "language": "language",
+        "calendar": "calendar",
+        "position": "position",
+        "unit": "unit",
+        "manager": "manager",
+        "actingUnit": "acting unit",
+        "outOfOffice": "out of office",
+        "cover": "cover person"
+      },
+      "kind": {
+        "invited": "Invited",
+        "invitationAccepted": "Invitation accepted",
+        "invitationRevoked": "Invitation withdrawn",
+        "profileEdited": "Profile saved",
+        "profileEditedFields": "Profile edited: {{fields}}",
+        "outOfOfficeChanged": "Out of office changed",
+        "transferred": "Transferred",
+        "transferredFromTo": "Transferred from {{from}} to {{to}}",
+        "headAppointmentFailed": "Head appointment after a transfer didn't complete",
+        "deactivated": "Account deactivated",
+        "reactivated": "Account reactivated",
+        "roleGranted": "A role granted",
+        "roleGrantedNamed": "Role granted: {{role}}",
+        "roleGrantedHeadship": "A role granted with a head position",
+        "roleGrantedHeadshipNamed": "Role granted with a head position: {{role}}",
+        "roleRemoved": "A role removed",
+        "roleRemovedNamed": "Role removed: {{role}}",
+        "roleRemovedHeadship": "A role removed with a head position",
+        "roleRemovedHeadshipNamed": "Role removed with a head position: {{role}}",
+        "twoStepOn": "Two-step sign-in turned on",
+        "twoStepOff": "Two-step sign-in turned off",
+        "twoStepReset": "Two-step sign-in reset",
+        "passwordResetRequested": "Password reset link sent",
+        "passwordReset": "Password reset",
+        "signedInAs": "AccreditMe support signed in as this person",
+        "changed": "Changed"
+      }
     },
     "twoStep": {
       "heading": "Two-step sign-in",

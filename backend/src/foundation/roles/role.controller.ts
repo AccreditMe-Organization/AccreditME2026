@@ -16,6 +16,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ROLES_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -110,6 +111,19 @@ export class RoleController {
     return this.roleService.assignPermissions(id, dto, tenantId, actorId);
   }
 
+  // ACC-154 — the Deactivate dialog's pre-flight: the blockers deactivate would
+  // refuse for (ROLE_IN_USE), by category, with counts and up to 10 names —
+  // named only where the caller's own permissions allow (roleReferences()).
+  @Get('roles/:id/deactivation-check')
+  @Permissions(ROLES_PERMISSIONS.MANAGE)
+  deactivationCheck(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): ReturnType<RoleService['deactivationCheck']> {
+    return this.roleService.deactivationCheck(id, tenantId, permissions);
+  }
+
   @Post('roles/:id/deactivate')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions(ROLES_PERMISSIONS.MANAGE)
@@ -117,8 +131,9 @@ export class RoleController {
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<void> {
-    return this.roleService.deactivateRole(id, tenantId, actorId);
+    return this.roleService.deactivateRole(id, tenantId, actorId, permissions);
   }
 
   @Post('roles/:id/activate')

@@ -1104,7 +1104,7 @@ Permission strings follow {module}:{action} pattern.
 
 **Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
 dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
-`permission.seed.ts` seeds (81 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys and four meeting task keys). A
+`permission.seed.ts` seeds (82 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys and four meeting task keys, ACC-216 added `users:manage_sessions`). A
 key marked `*` is in `PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with
 it yet, so a role cannot gain it (ACC-120 slice 5). That file is the source; this
 list is a copy.
@@ -1117,7 +1117,7 @@ org:view                    org:manage
 positions:view              positions:manage
 users:view                  users:manage              users:invite
 users:deactivate            users:reactivate          users:transfer
-users:reset_mfa
+users:reset_mfa             users:manage_sessions
 roles:view                  roles:manage
 lookups:view                lookups:manage
 workflows:view              workflows:manage
@@ -1649,7 +1649,9 @@ email-delivery      All outbound emails via Resend (an outside meeting guest's
                     too: the outside-email job, ACC-316 PR 3b)
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
                     recompute cached org-unit vacancy and stage-reachability flags,
-                    and every open meeting's MEMBER invitees (ACC-316 PR 3b)
+                    every open meeting's MEMBER invitees (ACC-316 PR 3b), and the
+                    minutes review reminder, the working day before the date
+                    (ACC-316 PR 4)
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
 storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177),
                     and the 30-day SharePoint secret warning (ACC-185);

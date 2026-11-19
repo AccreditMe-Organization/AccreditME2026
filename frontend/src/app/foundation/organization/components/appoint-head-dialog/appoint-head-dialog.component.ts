@@ -12,6 +12,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitHeadService } from '../../services/org-unit-head.service';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 /** Someone this unit's dialogs can choose: an active person whose primary unit it is. */
 export interface HeadshipPerson {
@@ -268,7 +269,7 @@ export class AppointHeadDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
-        this.saveError.set(extractErrorMessage(err, this.translate.instant('headship.saveFailed')));
+        this.saveError.set(roleInactiveMessage(err, this.translate) ?? extractErrorMessage(err, this.translate.instant('headship.saveFailed')));
       },
     });
   }
