@@ -54,12 +54,17 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
             <span class="am-cmh__date">{{ format.date(e.effectiveDate) }}</span>
           </span>
           <span class="am-cp-l2">
-            <span class="am-cp-cut am-cmh__detail" [class.am-cmh__detail--shared]="!!reason(e)" [title]="detail(e)" data-history-detail>{{ detail(e) }}</span>
+            <span class="am-cp-cut am-cmh__detail" [title]="detail(e)" data-history-detail>{{ detail(e) }}</span>
             @if (reason(e); as r) {
               <span class="am-cmh__sep" aria-hidden="true">&nbsp;·&nbsp;</span>
               <span class="am-cp-cut am-cmh__reason" [title]="r" data-history-reason
-                >{{ 'committee.historyReason' | translate }} <bdi>{{ r }}</bdi></span
+                >{{ 'committee.historyReason' | translate }} <bdi dir="auto">{{ r }}</bdi></span
               >
+            } @else if (withheld(e)) {
+              <span class="am-cmh__sep" aria-hidden="true">&nbsp;·&nbsp;</span>
+              <span class="am-cp-cut am-cmh__reason am-cmh__reason--withheld" data-history-reason-withheld>{{
+                'committee.historyReasonWithheld' | translate
+              }}</span>
             }
           </span>
         </li>
@@ -74,9 +79,14 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
       <span class="flex flex-col min-w-0">
         <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)" data-history-detail>{{ detail(e) }}</span>
         @if (reason(e); as r) {
-          <span class="am-cp-cut am-cmh__reason-line" [title]="r" data-history-reason
-            >{{ 'committee.historyReason' | translate }} <bdi>{{ r }}</bdi></span
+          <!-- Wrapped, never cut, so keyboard and touch readers get all of it. -->
+          <span class="am-cmh__reason-line" data-history-reason
+            >{{ 'committee.historyReason' | translate }} <bdi dir="auto">{{ r }}</bdi></span
           >
+        } @else if (withheld(e)) {
+          <span class="am-cmh__reason-line am-cmh__reason--withheld" data-history-reason-withheld>{{
+            'committee.historyReasonWithheld' | translate
+          }}</span>
         }
       </span>
       <span class="text-[var(--am-ink-700)] whitespace-nowrap" data-history-date>{{ format.date(e.effectiveDate) }}</span>
@@ -113,13 +123,15 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
       .am-cmh__date{flex:none;margin-inline-start:auto;padding-inline-start:var(--am-space-8);font-size:12px;color:var(--am-ink-700);white-space:nowrap;unicode-bidi:isolate}
       /* ACC-301 — the removal's reason shares line 2 with the change: the row's
          two lines are fixed (am-capped-panel), so a third line would push the
-         fifth row out of the body. The change keeps up to 55%, the reason takes
-         the rest; each is cut on its own, with its whole text in a tooltip. */
+         fifth row out of the body. The change takes its own width; the reason
+         takes the rest and never less than eight space steps, the change
+         shrinking for it. Each is cut on its own, with its whole text in a
+         tooltip. In See all the reason is a line of its own and wraps. */
       .am-cmh__detail{flex:0 1 auto}
-      .am-cmh__detail--shared{max-inline-size:55%}
       .am-cmh__sep{flex:none;white-space:pre}
-      .am-cmh__reason{flex:1 1 0}
-      .am-cmh__reason-line{font-size:12px;color:var(--am-ink-500)}
+      .am-cmh__reason{flex:1 1 0;min-inline-size:calc(8 * var(--am-space-16))}
+      .am-cmh__reason--withheld{font-style:italic;color:var(--am-ink-500)}
+      .am-cmh__reason-line{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);color:var(--am-ink-500);overflow-wrap:anywhere}
     `,
   ],
 })
@@ -208,6 +220,15 @@ export class CommitteeMembershipHistoryPanelComponent {
   reason(e: CommitteeMembershipEventDto): string | null {
     if (e.action !== 'LEFT' || e.cause) return null;
     return e.reason?.trim() || null;
+  }
+
+  /**
+   * ACC-301 (Ahmad, 19 Nov) — the server withheld this removal's reason from this
+   * viewer (only overseers and the committee's Chairman and Secretary read it):
+   * the row says "Reason not shown". The server decides; this only renders.
+   */
+  withheld(e: CommitteeMembershipEventDto): boolean {
+    return e.action === 'LEFT' && !e.cause && !e.reason && e.reasonWithheld === true;
   }
 
   // JOINED reads as gain, LEFT as loss, ROLE_CHANGED as neither — semantic
