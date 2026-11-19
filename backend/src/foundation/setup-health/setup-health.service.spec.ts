@@ -415,6 +415,7 @@ describe('SetupHealthService (ACC-82)', () => {
         'STAGE_ON_STARTING_ASSIGNMENT',
         'TASK_WITHOUT_OWNER',
         'COMMITTEE_MISSING_REQUIRED_SEAT',
+        'COMMITTEE_BELOW_QUORUM',
         'ACTING_HEAD_OPEN_ENDED',
         'STORAGE_NOT_CONFIRMED',
         'STORAGE_ALMOST_FULL',
