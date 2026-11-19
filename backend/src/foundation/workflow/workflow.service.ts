@@ -408,6 +408,7 @@ export class WorkflowService {
           fromStageFlags: fromStage.flags,
           toStageFlags: move.toStage.flags,
           kind: move.kind,
+          readOnly: true,
         },
         this.preconditionServices(),
       );

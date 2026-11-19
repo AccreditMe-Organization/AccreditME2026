@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { NotificationService } from '../notification/notification.service';
@@ -223,37 +224,43 @@ export class MeetingReviewService {
    * start. Bounded reads, stage rules in one batch.
    */
   async awaitingMe(organizationId: string, viewerId: string, now: Date = new Date()): Promise<IMeetingAwaitingMe> {
-    const [present, invited] = await Promise.all([
-      this.prisma.meetingAttendee.findMany({
-        where: { organizationId, userId: viewerId, kind: 'MEMBER', attendance: 'PRESENT', meeting: { organizationId, reviewRound: { gt: 0 } } },
-        select: { meeting: { select: { id: true, title: true, reviewRound: true, reviewBy: true } } },
-        orderBy: { meeting: { reviewBy: 'asc' } },
-        take: AWAITING_CAP,
-      }),
-      this.prisma.meetingAttendee.findMany({
-        where: { organizationId, userId: viewerId, invitedAt: { not: null }, answer: null, meeting: { organizationId, scheduledAt: { gt: now } } },
-        select: { meeting: { select: { id: true, title: true, scheduledAt: true } } },
-        orderBy: { meeting: { scheduledAt: 'asc' } },
-        take: AWAITING_CAP,
-      }),
+    // Every filter in SQL BEFORE the cap (the stage's action, the round not yet
+    // answered, the start not passed), so an old meeting can never push a
+    // current one off Home. Each meeting's stage is its newest instance's.
+    const current = (meetingAlias: Prisma.Sql) => Prisma.sql`(
+      SELECT wi."currentStageId" FROM "WorkflowInstance" wi
+      WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'MEETING'::"WorkflowObjectType" AND wi."objectId" = ${meetingAlias}
+      ORDER BY wi."createdAt" DESC LIMIT 1)`;
+    const allows = (action: string) => Prisma.sql`EXISTS (
+      SELECT 1 FROM "WorkflowStageRecordAction" ra
+      WHERE ra."organizationId" = ${organizationId} AND ra."actionKey" = ${action} AND ra."stageId" = ${current(Prisma.sql`m.id`)})`;
+    const [review, answer] = await Promise.all([
+      this.prisma.$queryRaw<{ meetingId: string; title: string; reviewBy: Date | null }[]>`
+        SELECT m.id AS "meetingId", m.title, m."reviewBy"
+        FROM "MeetingAttendee" a
+        JOIN "Meeting" m ON m.id = a."meetingId" AND m."organizationId" = ${organizationId}
+        WHERE a."organizationId" = ${organizationId} AND a."userId" = ${viewerId} AND a.kind = 'MEMBER' AND a.attendance = 'PRESENT'
+          AND m."reviewRound" > 0
+          AND ${allows(MEETING_ACTIONS.SUGGEST_CORRECTION)}
+          AND NOT EXISTS (SELECT 1 FROM "MeetingReviewAnswer" r
+                          WHERE r."organizationId" = ${organizationId} AND r."meetingId" = m.id AND r.round = m."reviewRound" AND r."userId" = ${viewerId})
+          AND NOT EXISTS (SELECT 1 FROM "MeetingSuggestion" s
+                          WHERE s."organizationId" = ${organizationId} AND s."meetingId" = m.id AND s.round = m."reviewRound" AND s."authorId" = ${viewerId})
+        ORDER BY m."reviewBy" ASC NULLS LAST, m.id
+        LIMIT ${AWAITING_CAP}`,
+      this.prisma.$queryRaw<{ meetingId: string; title: string; scheduledAt: Date }[]>`
+        SELECT m.id AS "meetingId", m.title, m."scheduledAt"
+        FROM "MeetingAttendee" a
+        JOIN "Meeting" m ON m.id = a."meetingId" AND m."organizationId" = ${organizationId}
+        WHERE a."organizationId" = ${organizationId} AND a."userId" = ${viewerId} AND a."invitedAt" IS NOT NULL AND a.answer IS NULL
+          AND m."scheduledAt" > ${now}
+          AND ${allows(MEETING_ACTIONS.ANSWER_INVITATION)}
+        ORDER BY m."scheduledAt" ASC, m.id
+        LIMIT ${AWAITING_CAP}`,
     ]);
-    const ids = [...new Set([...present.map((p) => p.meeting.id), ...invited.map((i) => i.meeting.id)])];
-    const [rules, answers, suggestions] = await Promise.all([
-      this.stageRules.stageRulesFor(organizationId, 'MEETING', ids),
-      this.prisma.meetingReviewAnswer.findMany({ where: { organizationId, userId: viewerId, meetingId: { in: present.map((p) => p.meeting.id) } }, select: { meetingId: true, round: true } }),
-      this.prisma.meetingSuggestion.findMany({ where: { organizationId, authorId: viewerId, meetingId: { in: present.map((p) => p.meeting.id) } }, select: { meetingId: true, round: true } }),
-    ]);
-    const answered = new Set([...answers, ...suggestions].map((a) => `${a.meetingId} ${a.round}`));
-    const allows = (meetingId: string, action: string) => rules.get(meetingId)?.actions[action] === true;
     return {
-      review: present
-        .map((p) => p.meeting)
-        .filter((m) => allows(m.id, MEETING_ACTIONS.SUGGEST_CORRECTION) && !answered.has(`${m.id} ${m.reviewRound}`))
-        .map((m) => ({ meetingId: m.id, title: m.title, reviewBy: m.reviewBy?.toISOString().slice(0, 10) ?? null })),
-      answer: invited
-        .map((i) => i.meeting)
-        .filter((m) => allows(m.id, MEETING_ACTIONS.ANSWER_INVITATION))
-        .map((m) => ({ meetingId: m.id, title: m.title, scheduledAt: m.scheduledAt })),
+      review: review.map((r) => ({ meetingId: r.meetingId, title: r.title, reviewBy: r.reviewBy?.toISOString().slice(0, 10) ?? null })),
+      answer,
     };
   }
 

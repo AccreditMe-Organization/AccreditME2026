@@ -67,9 +67,13 @@ export class MeetingReviewReminderService {
       this.stageRules.stageRulesFor(organizationId, 'MEETING', meetings.map((m) => m.id)),
     ]);
     const today = DateTime.fromJSDate(now).setZone(zone).toISODate()!;
+    const distributedOn = await this.distributionDays(organizationId, meetings.map((m) => m.id), zone);
     let reminded = 0;
     for (const m of meetings) {
       if (!m.reviewBy || rules.get(m.id)?.actions[MEETING_ACTIONS.SUGGEST_CORRECTION] !== true) continue;
+      // Never the day the minutes went out: the Distribute notice has just told them.
+      const sent = distributedOn.get(m.id);
+      if (!sent || sent >= today) continue;
       const day = m.reviewBy.toISOString().slice(0, 10);
       if (today > day || today < (await this.calendar.previousWorkingDay(day, organizationId))) continue;
       const waiting = (await reviewers(this.prisma, m.id, organizationId, m.reviewRound)).filter((p) => !p.answered).map((p) => p.userId);
@@ -81,9 +85,25 @@ export class MeetingReviewReminderService {
           AND "reviewRemindedRound" IS DISTINCT FROM ${m.reviewRound}
         RETURNING "userId"`;
       if (stamped.length === 0) continue;
-      await notifyUsers(this.notifications, organizationId, m.id, null, stamped.map((s) => s.userId), reviewReminderNotice(m.title, peopleDay(day)));
-      reminded += stamped.length;
+      try {
+        await notifyUsers(this.notifications, organizationId, m.id, null, stamped.map((s) => s.userId), reviewReminderNotice(m.title, peopleDay(day)));
+        reminded += stamped.length;
+      } catch (error) {
+        // Stamped: never sent twice, and the failure is in the log.
+        this.logger.error(`Review reminder failed for meeting ${m.id} in org ${organizationId}: ${error instanceof Error ? error.name : 'unknown error'}`);
+      }
     }
     return reminded;
+  }
+
+  /** The day (organisation's zone) each meeting entered its current stage: when the minutes went out for review. One query. */
+  private async distributionDays(organizationId: string, meetingIds: string[], zone: string): Promise<Map<string, string>> {
+    const rows = await this.prisma.$queryRaw<{ objectId: string; enteredAt: Date }[]>`
+      SELECT wi."objectId", MAX(wis."enteredAt") AS "enteredAt"
+      FROM "WorkflowInstance" wi
+      JOIN "WorkflowInstanceStage" wis ON wis."workflowInstanceId" = wi.id AND wis."exitedAt" IS NULL
+      WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'MEETING'::"WorkflowObjectType" AND wi."objectId" = ANY(${meetingIds}::text[])
+      GROUP BY wi."objectId"`;
+    return new Map(rows.map((r) => [r.objectId, DateTime.fromJSDate(r.enteredAt).setZone(zone).toISODate()!]));
   }
 }

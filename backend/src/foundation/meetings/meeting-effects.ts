@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { EngineTx } from '../workflow/workflow.service';
 import { peopleDateIn } from '../task/task-sla.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
@@ -149,12 +150,15 @@ const cancelled = transitionEffect<Invited | null>({
 
 /** What MINUTES_FINAL prepared: a task per draft action item, and (after apply) what was inserted. */
 interface Approval {
-  drafts: { id: string; ownerUserId: string; dueAt: Date; title: string; prepared: PreparedTask }[];
+  drafts: { id: string; ownerUserId: string; ownerStatus: string; dueAt: Date; title: string; prepared: PreparedTask }[];
   created: { task: ITask; prepared: PreparedTask }[];
 }
 
 /** The draft's fields a task is built from, as one comparable string. */
-const draftKey = (d: { id: string; ownerUserId: string; dueAt: Date; title: string }) => `${d.id} ${d.ownerUserId} ${d.dueAt.toISOString()} ${d.title}`;
+const draftKey = (d: { id: string; ownerUserId: string; ownerStatus: string; dueAt: Date; title: string }) =>
+  `${d.id} ${d.ownerUserId} ${d.ownerStatus} ${d.dueAt.toISOString()} ${d.title}`;
+
+const logger = new Logger('MeetingEffects');
 
 /**
  * ACC-316 PR 4 — the minutes are approved (plan §3.7, §3.8.1). prepare() builds
@@ -174,6 +178,7 @@ const minutesFinal = transitionEffect<Approval>({
       drafts.map(async (d) => ({
         id: d.id,
         ownerUserId: d.ownerUserId,
+        ownerStatus: d.ownerStatus,
         dueAt: d.dueAt,
         title: d.title,
         prepared: await deps.tasks.prepareRecordTask(
@@ -196,7 +201,9 @@ const minutesFinal = transitionEffect<Approval>({
   async apply(tx, ctx, prepared, deps) {
     await lockMeetingRow(tx, ctx.objectId, ctx.organizationId);
     const now = await draftActionItems(tx, ctx.objectId, ctx.organizationId);
+    // The drafts as they were prepared, each owner still ACTIVE: never a task with nobody on it.
     if (now.map(draftKey).sort().join('|') !== prepared.drafts.map(draftKey).sort().join('|')) throw new MeetingRefusal('MEETING_CHANGED');
+    if (now.some((d) => d.ownerStatus !== 'ACTIVE')) throw new MeetingRefusal('MEETING_CHANGED');
     const created: Approval['created'] = [];
     for (const d of prepared.drafts) {
       const task = await deps.tasks.insertPrepared(tx, d.prepared, ctx.organizationId, ctx.actorId);
@@ -204,22 +211,28 @@ const minutesFinal = transitionEffect<Approval>({
       created.push({ task, prepared: d.prepared });
     }
     await tx.meeting.update({ where: { id: ctx.objectId }, data: { minutesApprovedAt: new Date(), approvedById: ctx.actorId } });
-    return { ...prepared, created };
-  },
-  async finish(deps, ctx, prepared) {
-    for (const { task, prepared: p } of prepared.created) {
-      await deps.tasks.announceCreated(task, p, ctx.organizationId, ctx.actorId, { meetingActionItem: true });
-    }
-    await deps.prisma.auditLog.create({
+    // The approval's audit row commits with it, never after a notice that could fail.
+    await tx.auditLog.create({
       data: {
         organizationId: ctx.organizationId,
         actorId: ctx.actorId,
         action: 'UPDATE',
         objectType: 'Meeting',
         objectId: ctx.objectId,
-        after: { minutesApproved: true, tasksCreated: prepared.created.map((c) => c.task.id) },
+        after: { minutesApproved: true, tasksCreated: created.map((c) => c.task.id) },
       },
     });
+    return { ...prepared, created };
+  },
+  async finish(deps, ctx, prepared) {
+    // Each task announced on its own: one failure is logged and the others still go.
+    for (const { task, prepared: p } of prepared.created) {
+      try {
+        await deps.tasks.announceCreated(task, p, ctx.organizationId, ctx.actorId, { meetingActionItem: true });
+      } catch (error) {
+        logger.error(`Announcing task ${task.id} for meeting ${ctx.objectId} in org ${ctx.organizationId} failed: ${error instanceof Error ? error.name : 'unknown error'}`);
+      }
+    }
   },
 });
 

@@ -151,7 +151,7 @@ export class MeetingMinutesService {
       }),
       round > 0 ? reviewers(this.prisma, id, organizationId, round) : Promise.resolve([]),
       this.calendar.getEffectiveTimeZone(organizationId),
-      this.openActions(id, organizationId),
+      this.openActions(this.prisma, id, organizationId),
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
       writing ? unrecordedAttendance(this.prisma, id, organizationId) : Promise.resolve([]),
     ]);
@@ -274,13 +274,17 @@ export class MeetingMinutesService {
    * committee or unit whose minutes were approved, and its action items whose
    * task is still open, with this meeting's note on each.
    */
-  private async openActions(id: string, organizationId: string): Promise<IMeetingOpenAction[]> {
-    const meeting = await this.prisma.meeting.findFirst({
+  private async openActions(
+    client: Pick<PrismaService, 'meeting' | 'meetingActionItem' | 'meetingOpenActionNote'>,
+    id: string,
+    organizationId: string,
+  ): Promise<IMeetingOpenAction[]> {
+    const meeting = await client.meeting.findFirst({
       where: { id, organizationId },
       select: { scheduledAt: true, committeeId: true, orgUnitId: true },
     });
     if (!meeting) return [];
-    const last = await this.prisma.meeting.findFirst({
+    const last = await client.meeting.findFirst({
       where: {
         organizationId,
         id: { not: id },
@@ -293,12 +297,12 @@ export class MeetingMinutesService {
     });
     if (!last) return [];
     const [items, notes] = await Promise.all([
-      this.prisma.meetingActionItem.findMany({
+      client.meetingActionItem.findMany({
         where: { organizationId, meetingId: last.id, task: { organizationId, status: { notIn: ['COMPLETED', 'CANCELLED'] } } },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         select: { owner: { select: { id: true, name: true } }, task: { select: { id: true, title: true, status: true, dueAt: true } } },
       }),
-      this.prisma.meetingOpenActionNote.findMany({ where: { organizationId, meetingId: id }, select: { taskId: true, note: true } }),
+      client.meetingOpenActionNote.findMany({ where: { organizationId, meetingId: id }, select: { taskId: true, note: true } }),
     ]);
     const noteOf = new Map(notes.map((n) => [n.taskId, n.note]));
     return items
@@ -475,9 +479,10 @@ export class MeetingMinutesService {
 
   /** A note on one of the last meeting's open actions, while the minutes are written. Empty removes it. */
   async setOpenActionNote(id: string, taskId: string, dto: OpenActionNoteDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingMinutes> {
-    const open = await this.openActions(id, organizationId);
-    if (!open.some((a) => a.taskId === taskId)) throw new MeetingRefusal('MEETING_OPEN_ACTION_NOT_FOUND');
     await this.write(id, organizationId, viewer, now, 'actions', async (tx) => {
+      // Under the meeting row's lock: the list can't change between the check and the write.
+      const open = await this.openActions(tx, id, organizationId);
+      if (!open.some((a) => a.taskId === taskId)) throw new MeetingRefusal('MEETING_OPEN_ACTION_NOT_FOUND');
       if (dto.note === null) {
         await tx.meetingOpenActionNote.deleteMany({ where: { organizationId, meetingId: id, taskId } });
       } else {

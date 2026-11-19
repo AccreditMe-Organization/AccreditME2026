@@ -112,11 +112,12 @@ export async function draftActionItems(
   client: Reader,
   meetingId: string,
   organizationId: string,
-): Promise<{ id: string; title: string; ownerUserId: string; dueAt: Date; agendaItemOrder: number }[]> {
-  return client.$queryRaw<{ id: string; title: string; ownerUserId: string; dueAt: Date; agendaItemOrder: number }[]>`
-    SELECT ai.id, ai.title, ai."ownerUserId", ai."dueAt", i."order" AS "agendaItemOrder"
+): Promise<{ id: string; title: string; ownerUserId: string; ownerStatus: string; dueAt: Date; agendaItemOrder: number }[]> {
+  return client.$queryRaw<{ id: string; title: string; ownerUserId: string; ownerStatus: string; dueAt: Date; agendaItemOrder: number }[]>`
+    SELECT ai.id, ai.title, ai."ownerUserId", u.status::text AS "ownerStatus", ai."dueAt", i."order" AS "agendaItemOrder"
     FROM "MeetingActionItem" ai
     JOIN "AgendaItem" i ON i.id = ai."agendaItemId" AND i."organizationId" = ${organizationId}
+    JOIN "User" u ON u.id = ai."ownerUserId" AND u."organizationId" = ${organizationId}
     WHERE ai."organizationId" = ${organizationId} AND ai."meetingId" = ${meetingId} AND ai."taskId" IS NULL
     ORDER BY i."order", ai."createdAt", ai.id`;
 }
@@ -189,7 +190,7 @@ export async function meetingMinutesFinalPrecondition(
   const entersFinal = ctx.toStageFlags.includes(STAGE_FLAG.MINUTES_FINAL) && !ctx.fromStageFlags.includes(STAGE_FLAG.MINUTES_FINAL);
   if (!entersFinal) return;
   if (!services) throw new Error('The meeting precondition needs the engine services.');
-  const blocked = await minutesApprovalBlocks(client, ctx.objectId, ctx.organizationId, services, 'share');
+  const blocked = await minutesApprovalBlocks(client, ctx.objectId, ctx.organizationId, services, ctx.readOnly ? 'none' : 'share');
   if (blocked) throw new WorkflowRefusalException(blocked.code as MeetingApprovalRefusal, blocked.details);
 }
 

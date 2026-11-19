@@ -27,6 +27,11 @@ export interface TransitionPreconditionContext {
   fromStageFlags: readonly string[];
   toStageFlags: readonly string[];
   kind: WorkflowTransitionKind;
+  /**
+   * ACC-316 PR 4 — the moves list's read-only run ("Why?"): no row lock. Inside
+   * the engine's transaction it is absent, and a precondition locks as it must.
+   */
+  readOnly?: boolean;
 }
 
 /**
