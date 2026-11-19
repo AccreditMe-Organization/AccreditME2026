@@ -13,14 +13,15 @@ import { UserStatusActionsService } from './user-status-actions.service';
  * ACC-306 — the deactivation confirmation says the person's committee seats end.
  *
  * Since #358 a deactivation ends every committee seat the person holds, inside
- * its own transaction, and a seat never refuses it. The users list's row menu
+ * its own transaction, except on a Dissolved committee, whose roster is kept;
+ * a seat never refuses it. The users list's row menu
  * and the user record page both open this ONE confirmation
  * (UserStatusActionsService.confirmDeactivate), so it is tested here, in both
  * languages, from the real translation files.
  */
 describe('UserStatusActionsService — the deactivation confirmation names committee seats (ACC-306)', () => {
-  const EN_SEATS = 'Any committee seats this person holds end too.';
-  const AR_SEATS = 'تنتهي أيضًا أي مقاعد في اللجان لهذا الحساب.';
+  const EN_SEATS = 'Any committee seats this person holds end too, except on dissolved committees.';
+  const AR_SEATS = 'تنتهي أيضًا مقاعد هذا الحساب في اللجان، عدا اللجان المنحلّة.';
   const user = { id: 'u1', name: 'Huda Al-Harbi', status: 'ACTIVE' } as IUserDto;
 
   function ask(lang: 'en' | 'ar'): AmConfirmOptions {
