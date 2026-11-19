@@ -19,6 +19,7 @@ import {
 import { TaskAuthorityService } from './task-authority.service';
 import { PoolClient, PoolPlacement, PoolTarget, isPoolMember, resolvePoolMemberIds } from './task-pool';
 import { CoverDelegation, TaskCover, coversOf, routeToCovers } from '../../common/services/out-of-office-cover';
+import { isActiveMember, seesEveryCommittee } from '../../common/services/committee-membership';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 
@@ -49,8 +50,11 @@ export interface ResolvedPlacement extends PoolPlacement {
  * for them, or a holder of Manage tasks on its type. This replaces the
  * users:view dependency ACC-163 recorded: a creator who cannot list the
  * tenant's users can still choose who gets their task. The committee variants
- * also need committees:view, because the request names the committee and
- * lists its members (ACC-101 clause (a): refused before anything is read).
+ * also need the committee: committees:view, or (ACC-291) an active member of THE
+ * committee named, by the one membership rule (committee-membership.ts) — the
+ * rule create.types and POST /tasks already apply (ACC-280, ACC-281). The request
+ * names the committee and lists its members, so this is decided before anything
+ * else is read (ACC-101 clause (a)).
  *
  * Refusals follow ACC-101's two clauses. With no taskId the request names no
  * record, so a caller without Create tasks gets a 403 naming the keys. With a taskId
@@ -94,10 +98,26 @@ export class TaskAssignmentService {
     if (!entitled) throw new NotFoundException('Task not found');
   }
 
-  private assertMayViewCommittee(viewer: AssignmentViewer): void {
-    if (!viewer.permissions.includes(COMMITTEES_PERMISSIONS.VIEW)) {
-      throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
-    }
+  /**
+   * ACC-291 — may this viewer choose among THIS committee's seats? committees:view
+   * (every committee, and no query), or an active member of the active committee
+   * named: one indexed query, inside this read only, never on the per-request path
+   * (ACC-281). With no committee named (the whole seat catalogue, ACC-208's stage
+   * task definitions) only committees:view will do: a member sees only their own
+   * committee's seats.
+   *
+   * The refusal is today's, "Required permission: committees:view", and is
+   * existence-neutral: the membership query answers the same for another
+   * committee, another organisation's and an invented id (ACC-101 clause (a)).
+   */
+  private async assertMayChooseCommitteeSeat(
+    viewer: AssignmentViewer,
+    organizationId: string,
+    committeeId: string | undefined,
+  ): Promise<void> {
+    if (seesEveryCommittee(viewer.permissions)) return;
+    if (committeeId && (await isActiveMember(this.prisma, committeeId, viewer.id, organizationId))) return;
+    throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
   }
 
   async listUnits(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<IAssignableUnit[]> {
@@ -166,7 +186,7 @@ export class TaskAssignmentService {
     committeeId: string | undefined,
     taskId?: string,
   ): Promise<IAssignableCommitteeRole[]> {
-    this.assertMayViewCommittee(viewer);
+    await this.assertMayChooseCommitteeSeat(viewer, organizationId, committeeId);
     await this.assertMayAssign(viewer, organizationId, taskId);
     if (committeeId) await this.requireCommittee(committeeId, organizationId);
 
@@ -195,7 +215,7 @@ export class TaskAssignmentService {
     committeeId: string,
     taskId?: string,
   ): Promise<IAssignableCommitteeRole[]> {
-    this.assertMayViewCommittee(viewer);
+    await this.assertMayChooseCommitteeSeat(viewer, organizationId, committeeId);
     await this.assertMayAssign(viewer, organizationId, taskId);
     await this.requireCommittee(committeeId, organizationId);
 
@@ -226,7 +246,7 @@ export class TaskAssignmentService {
     roleValueId: string,
     taskId?: string,
   ): Promise<IAssignableHolder[]> {
-    this.assertMayViewCommittee(viewer);
+    await this.assertMayChooseCommitteeSeat(viewer, organizationId, committeeId);
     await this.assertMayAssign(viewer, organizationId, taskId);
     const members = await this.prisma.committeeMember.findMany({
       where: { organizationId, committeeId, roleValueId, isActive: true, user: { status: 'ACTIVE' } },
