@@ -1371,6 +1371,7 @@
     "addCommittee": "إضافة لجنة",
     "addMember": "إضافة عضو",
     "approvedBy": "بواسطة {{name}}",
+    "leftDeactivated": "مغادرة — إلغاء تفعيل الحساب",
     "changeRoleFor": "تغيير دور {{name}}",
     "confirmRemoveMember": "إزالة {{name}} من هذه اللجنة؟",
     "confirmRemoveMemberMessage": "تنتهي العضوية اليوم وتبقى في سجل اللجنة.",
