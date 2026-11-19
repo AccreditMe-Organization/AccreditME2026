@@ -7676,9 +7676,30 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
   - The committee page's Membership history panel shows the reason on a LEFT
     row with no `cause` (a person's removal). See all shows it too.
   - It is read from the history response (`reason`); there is no second read.
-  - Who sees it: everyone who may see the history, as the read returns it. That
-    is `committees:view` holders and active members (ACC-281), the ticket's
-    default.
+  - **Who reads it (Ahmad, 19 Nov):** overseers and the committee's officers
+    only, decided on the server in ONE place, `mayReadMembershipReasons()`
+    (`committees/membership-reason-readers.ts`):
+    - a `committees:view` holder (no query);
+    - this committee's ACTIVE Chairman or Secretary (their seats found by the
+      lookup KEYS, `OFFICER_SEAT_KEYS`, never a label), one indexed query;
+    - a head or acting cover in force whose oversight covers the committee (the
+      existing `overseesCommittee()` clause), asked only when the first two said
+      no.
+    - **Anyone else who may read the history** (its other members) gets each row
+      with `reason: null` and `reasonWithheld: true`, and the screen says
+      "Reason not shown" / «السبب غير معروض». The screen only renders what it
+      gets.
+    - Decided once per read, never per row.
+    - The Remove dialog says who will read it: "Only people who oversee
+      committees, and this committee's Chairman and Secretary, will see this
+      reason."
+    - Spec: `membership-reason-readers.db-spec.ts` (real Postgres):
+      - a member gets null;
+      - the Chairman, the Secretary, a `committees:view` holder and the unit
+        head with oversight read it;
+      - an inactive Chairman does not;
+      - another organisation's reason reaches nobody.
+      Mutation-checked.
   - **Where it goes:**
     - **Panel:** on line 2, after the change and a separator, labelled
       "Reason:" / «السبب:». The change keeps up to 55% of the line and the
@@ -7687,7 +7708,10 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
     - **Why not a third line:** the panel's rows are a fixed two lines
       (`am-capped-panel`), and a third line would push the fifth row out of the
       body.
-    - **See all:** under the change, in the same cell.
+    - **See all:** under the change, in the same cell, and it WRAPS (never cut),
+      so keyboard and touch readers get all of it.
+    - **Direction:** the reason is in a `bdi dir="auto"`, so an Arabic reason in
+      English (or the reverse, or mixed) keeps its own direction.
   - **When nothing extra shows:**
     - a removal from before ACC-298 (no reason): no separator, no "—";
     - a seat the app ended (any `cause`, ACC-306): said from its cause, never
