@@ -53,7 +53,8 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
   action: 'JOINED',
   effectiveDate: new Date('2026-01-01'),
   reason: null,
-  approvedBy: null,
+  approvedBy: null,
+  cause: null,
   createdAt: new Date('2026-01-01'),
 };
 
