@@ -49,7 +49,7 @@ export function runningActingCoverWhere(now: Date): Prisma.OrgUnitHeadAssignment
  * (findRunningActingCoversForUnits()) do not, because a deactivated cover is still
  * the cover on record until someone ends it, and the headship panel says so.
  */
-const ACTIVE_COVER_PERSON = { user: { status: 'ACTIVE' } } as const satisfies Prisma.OrgUnitHeadAssignmentWhereInput;
+export const ACTIVE_COVER_PERSON = { user: { status: 'ACTIVE' } } as const satisfies Prisma.OrgUnitHeadAssignmentWhereInput;
 
 /**
  * One id is an equality, several are `in`. Prisma treats the two alike; the
@@ -375,4 +375,34 @@ export async function findUnitsLedBy(
     }),
   ]);
   return [...new Set([...heads.flatMap((h) => (h.primaryOrgUnitId ? [h.primaryOrgUnitId] : [])), ...covers.map((c) => c.orgUnitId)])].sort();
+}
+
+/**
+ * ACC-324 — the cover that HEADS each unit now: an acting cover in force
+ * (runningActingCoverWhere(now)) whose person is ACTIVE (ACTIVE_COVER_PERSON),
+ * newest first, keyed by unit; a unit with none is absent. One query.
+ *
+ * The rule for "is this unit headed by a cover": the root-unit invariant
+ * (root-unit-head.invariant.ts), the vacancy flag's two recomputers and its
+ * escalation step read it, as the chain and oversight read ACTIVE_COVER_PERSON
+ * (ACC-245 PR 2). findRunningActingCover() / findRunningActingCoversForUnits()
+ * stay as they are on purpose: they SHOW the cover on record, which a
+ * deactivated person still is until someone ends it.
+ */
+export async function findActiveCoversForUnits(
+  prisma: Pick<PrismaService, 'orgUnitHeadAssignment'>,
+  organizationId: string,
+  orgUnitIds: readonly string[],
+  now: Date,
+): Promise<Map<string, string>> {
+  const byUnit = new Map<string, string>();
+  const units = [...new Set(orgUnitIds)];
+  if (units.length === 0) return byUnit;
+  const rows = await prisma.orgUnitHeadAssignment.findMany({
+    where: { organizationId, orgUnitId: unitIdFilter(units), ...ACTIVE_COVER_PERSON, ...runningActingCoverWhere(now) },
+    orderBy: { validFrom: 'desc' },
+    select: { orgUnitId: true, userId: true },
+  });
+  for (const row of rows) if (!byUnit.has(row.orgUnitId)) byUnit.set(row.orgUnitId, row.userId);
+  return byUnit;
 }
