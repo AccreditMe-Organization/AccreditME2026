@@ -43,6 +43,30 @@ export interface IMeeting extends IMeetingListItem {
   answers: IMeetingAnswerSummary | null;
   /** The viewer's own answer when they are an invitee; null otherwise. */
   myAnswer: { answer: 'ATTENDING' | 'CANT_ATTEND' | null; note: string | null } | null;
+  /** ACC-316 PR 5 — "Meeting 3 of 12" and the series it belongs to; null for a single meeting. */
+  series: { id: string; index: number; total: number; every: string; ended: boolean } | null;
+}
+
+/** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */
+export interface IMeetingSeriesDate {
+  index: number;
+  /** The pattern's day, and the day the meeting is held (moved off a weekend, holiday or a day the owner already meets). */
+  patternDay: string;
+  day: string;
+  startsAt: Date;
+  title: string;
+  moved: 'NOT_WORKING_DAY' | 'OWNER_MEETS' | null;
+}
+
+export interface IMeetingSeriesPreview {
+  dates: IMeetingSeriesDate[];
+  clashes: IMeetingClash[];
+}
+
+/** What "this and all later" changed, and what each meeting kept as its own. */
+export interface IMeetingScopeResult {
+  changed: string[];
+  kept: { meetingId: string; title: string; fields: string[] }[];
 }
 
 /** "6 attending · 2 can't · quorum 5": MEMBER answers only (plan §3.4). */

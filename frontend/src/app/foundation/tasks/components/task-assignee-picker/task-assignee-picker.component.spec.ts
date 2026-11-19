@@ -244,14 +244,78 @@ describe('TaskAssigneePickerComponent (ACC-167)', () => {
   });
 
   describe('the committee route', () => {
-    it('is offered first on a committee task, to someone who can see committees', () => {
+    it('is offered first on a committee task, to someone who can see committees, asking nothing extra', () => {
       const { picker } = setup({ committee: true, permissions: ['committees:view'] });
+      expect(picker().scopeOptions()[0]).toEqual({ label: "This task's committee", value: COMMITTEE_SCOPE });
+      // ACC-291 — a committees:view holder is offered it at once: no question for the server.
+      http.expectNone((r) => r.url === `${API}/assignment/committee-roles`);
+    });
+
+    // ACC-291 — without committees:view, the route follows the SERVER's answer for
+    // THIS committee (its one membership rule): asked once, offered only if it opens.
+    it('without committees:view, is offered once the server opens this committee’s seats (an active member)', () => {
+      const { fixture, picker } = setup({ committee: true, permissions: ['committees:create_tasks'] });
+      expect(picker().scopeOptions().map((o) => o.value)).not.toContain(COMMITTEE_SCOPE);
+      const probe = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(probe.request.params.get('committeeId')).toBe('committee-1');
+      probe.flush([{ id: 'role-sec', labelEn: 'Secretary', labelAr: null, memberCount: 1 }]);
+      fixture.detectChanges();
       expect(picker().scopeOptions()[0]).toEqual({ label: "This task's committee", value: COMMITTEE_SCOPE });
     });
 
-    it('is not offered without committees:view — the server would refuse its roles', () => {
-      const { picker } = setup({ committee: true });
+    it('without committees:view, is not offered when the server refuses this committee (not a member)', () => {
+      const { fixture, picker } = setup({ committee: true, permissions: ['committees:create_tasks'] });
+      http
+        .expectOne((r) => r.url === `${API}/assignment/committee-roles`)
+        .flush({ message: 'Required permission: committees:view' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
       expect(picker().scopeOptions().map((o) => o.value)).not.toContain(COMMITTEE_SCOPE);
+      expect(picker().unavailable()).toBeFalse();
+    });
+
+    it('without committees:view, asks again for a different committee, and forgets the first', () => {
+      const { fixture, picker } = setup({ committee: true, permissions: ['committees:create_tasks'] });
+      http.expectOne((r) => r.url === `${API}/assignment/committee-roles`).flush([]);
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).toBeTrue();
+      fixture.componentInstance.sourceId.set('committee-2');
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).toBeFalse();
+      const second = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(second.request.params.get('committeeId')).toBe('committee-2');
+      second.flush({ message: 'Required permission: committees:view' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).toBeFalse();
+    });
+
+    // P178 — committee A's answer never opens the route for committee B. Two guards:
+    // the request for A is cancelled the moment the source moves to B (switchMap),
+    // so a late answer for A cannot land; and an answer that did land for one
+    // committee is compared with the committee shown now.
+    it('without committees:view, an answer for committee A never opens the route for committee B', () => {
+      const { fixture, picker } = setup({ committee: true, permissions: ['committees:create_tasks'] });
+      const forA = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(forA.request.params.get('committeeId')).toBe('committee-1');
+
+      // A's question is still in flight when the source moves to B.
+      fixture.componentInstance.sourceId.set('committee-2');
+      fixture.detectChanges();
+      expect(forA.cancelled).withContext('A’s late answer cannot land').toBeTrue();
+      const forB = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(forB.request.params.get('committeeId')).toBe('committee-2');
+      expect(picker().offersCommittee()).withContext('B unanswered').toBeFalse();
+
+      // B opens; then the source moves to C, whose question is still in flight:
+      // B's answer must not open the route for C.
+      forB.flush([]);
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('B answered').toBeTrue();
+      fixture.componentInstance.sourceId.set('committee-3');
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('C in flight: B’s answer is not C’s').toBeFalse();
+      http.expectOne((r) => r.url === `${API}/assignment/committee-roles`).flush({ message: 'Required permission: committees:view' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('C refused').toBeFalse();
     });
 
     it('is not offered on a task from anywhere else', () => {
