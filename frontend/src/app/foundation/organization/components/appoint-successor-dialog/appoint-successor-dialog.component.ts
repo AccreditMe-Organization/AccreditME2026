@@ -18,6 +18,7 @@ import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { IOrgUnitHeadStatus, OrgUnitHeadService } from '../../services/org-unit-head.service';
 import { HeadshipPerson, personMeta } from '../appoint-head-dialog/appoint-head-dialog.component';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const SUCCESSOR_NOTE_MAX = 500;
@@ -533,7 +534,7 @@ export class AppointSuccessorDialogComponent {
         },
         error: (err: unknown) => {
           this.saving.set(false);
-          this.saveError.set(extractErrorMessage(err, this.translate.instant('headship.saveFailed')));
+          this.saveError.set(roleInactiveMessage(err, this.translate) ?? extractErrorMessage(err, this.translate.instant('headship.saveFailed')));
         },
       });
   }

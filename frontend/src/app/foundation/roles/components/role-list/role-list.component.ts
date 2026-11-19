@@ -5,11 +5,12 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { RoleService, RoleDto } from '../../services/role.service';
+import { RoleService, RoleDto, RoleReferenceBlockerDto } from '../../services/role.service';
+import { RoleInUseDialogComponent, isKnownRoleReferenceCategory } from '../role-in-use-dialog/role-in-use-dialog.component';
 import { RoleFormComponent } from '../role-form/role-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
-import { refusalCode } from '../../../../core/http/refusal';
+import { refusalBody, refusalCode } from '../../../../core/http/refusal';
 import {
   DataListColumn,
   DataListComponent,
@@ -18,7 +19,7 @@ import { SortHeaderComponent } from '../../../../shared/components/sort-header/s
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
-import { AmCountPipe, FormatService } from '../../../../core/formatting';
+import { AmCountPipe } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { USER_PERMISSIONS_LOOKUP } from '../../../../core/navigation/nav-items';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -36,6 +37,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
     EditDialogComponent,
     DataListComponent,
     StatusChipComponent,
+    RoleInUseDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -248,6 +250,15 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
         width="520px"
       />
 
+      <!-- ACC-154 — what still holds or names the role, from the pre-flight or
+           a ROLE_IN_USE refusal. Close only: nothing is cleared from here. -->
+      <app-role-in-use-dialog
+        [visible]="inUse() !== null"
+        [roleName]="inUse()?.name ?? ''"
+        [blockers]="inUse()?.blockers ?? []"
+        (closed)="inUse.set(null)"
+      />
+
     </div>
   `,
 })
@@ -258,7 +269,6 @@ export class RoleListComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly amConfirm = inject(AmConfirmService);
-  private readonly format = inject(FormatService);
 
   private readonly translate = inject(TranslateService);
   private readonly languageService = inject(LanguageService);
@@ -388,12 +398,53 @@ export class RoleListComponent {
     return this.languageService.bilingual(role.nameEn, role.nameAr);
   }
 
+  /** ACC-154 — the role still held or named, by category; null while the dialog is closed. */
+  readonly inUse = signal<{ name: string; blockers: RoleReferenceBlockerDto[] } | null>(null);
+
+  /**
+   * ACC-154 — Deactivate asks the server first (GET /roles/:id/deactivation-
+   * check, the same check the deactivate refusal runs). Anything still holding
+   * or naming the role is listed, with Close only; otherwise the plain confirm.
+   * With nothing holding it nobody loses anything, so the confirm says that and
+   * never counts people.
+   */
   onDeactivate(role: RoleDto): void {
-    const label = this.displayLabel(role);
+    // One check at a time: a second press — on this row or another — while a
+    // check is out runs nothing, so two answers can never race to open a dialog.
+    if (this.checking() !== null) return;
+    this.checking.set(role.id);
+    this.actionError.set(null);
+    this.roleService.deactivationCheck(role.id).subscribe({
+      next: (check) => {
+        this.checking.set(null);
+        const known = check.blockers.filter((b) => isKnownRoleReferenceCategory(b.category));
+        if (check.rootRole) {
+          this.actionError.set({ key: 'roles.refusal.rootRoleCannotBeDeactivated', retry: null });
+        } else if (known.length > 0) {
+          this.inUse.set({ name: this.displayLabel(role), blockers: known });
+        } else if (check.blockers.length > 0) {
+          // Blocked only by categories this screen cannot name (a newer
+          // server): never the confirm, the plain refusal.
+          this.actionError.set({ key: 'roles.refusal.roleInUse', retry: null });
+        } else {
+          this.confirmDeactivate(role);
+        }
+      },
+      error: (err: unknown) => {
+        this.checking.set(null);
+        this.failed(err, 'roles.actionError.deactivate', () => this.onDeactivate(role));
+      },
+    });
+  }
+
+  /** ACC-154 — the role whose deactivation check is out; null when none is. */
+  readonly checking = signal<string | null>(null);
+
+  private confirmDeactivate(role: RoleDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.deactivateMessage(role),
-      header: this.translate.instant('roles.deactivateHeader', { name: label }),
+      message: this.translate.instant('roles.confirmDeactivateRoleNoHolders'),
+      header: this.translate.instant('roles.deactivateHeader', { name: this.displayLabel(role) }),
       acceptLabel: this.translate.instant('roles.deactivateRole'),
       accept: () => {
         this.runDeactivate(role);
@@ -401,29 +452,17 @@ export class RoleListComponent {
     });
   }
 
-  /**
-   * What deactivating does to the people holding the role, from the list's own
-   * activeHolderCount (no extra read). role.service.ts deactivateRole() only
-   * sets isActive false: assignments stay, and permissions resolve through
-   * active roles only, so holders lose it on their next request. Nobody holding
-   * it is said plainly, never as "0 people".
-   */
-  private deactivateMessage(role: RoleDto): string {
-    const holders = role.activeHolderCount;
-    if (holders === undefined || holders === null) {
-      return this.translate.instant('roles.confirmDeactivateRoleUnknown');
-    }
-    if (holders === 0) return this.translate.instant('roles.confirmDeactivateRoleNoHolders');
-    return this.translate.instant('roles.confirmDeactivateRole', {
-      holders: this.format.count('role.deactivateHolders', holders),
-    });
-  }
-
   private runDeactivate(role: RoleDto): void {
     this.actionError.set(null);
     this.roleService.deactivateRole(role.id).subscribe({
       next: () => this.list().reload(),
-      error: (err: unknown) => this.failed(err, 'roles.actionError.deactivate', () => this.runDeactivate(role)),
+      error: (err: unknown) => {
+        // Something came to hold or name the role between the check and the
+        // press: the refusal carries the same blockers, so the same dialog.
+        const blockers = refusalCode(err) === 'ROLE_IN_USE' ? blockersOf(err) : null;
+        if (blockers) this.inUse.set({ name: this.displayLabel(role), blockers });
+        else this.failed(err, 'roles.actionError.deactivate', () => this.runDeactivate(role));
+      },
     });
   }
 
@@ -449,6 +488,8 @@ export class RoleListComponent {
       this.actionError.set({ key: 'roles.refusal.lastAdministrator', retry: null });
     } else if (refusalCode(err) === 'ROOT_ROLE_CANNOT_BE_DEACTIVATED') {
       this.actionError.set({ key: 'roles.refusal.rootRoleCannotBeDeactivated', retry: null });
+    } else if (refusalCode(err) === 'ROLE_IN_USE') {
+      this.actionError.set({ key: 'roles.refusal.roleInUse', retry: null });
     } else if (status === 404) {
       this.actionError.set({ key: 'roles.actionError.notFound', retry: null });
       this.list().reload();
@@ -459,4 +500,21 @@ export class RoleListComponent {
     }
   }
 
+}
+
+/** ROLE_IN_USE's blockers, when the body carries a usable list; null otherwise. */
+function blockersOf(err: unknown): RoleReferenceBlockerDto[] | null {
+  const blockers = refusalBody(err)?.['blockers'];
+  if (!Array.isArray(blockers)) return null;
+  // A category this screen does not know is left out, never said as a key; with
+  // none left, the caller says the plain refusal.
+  const known = blockers.filter(
+    (b: unknown): b is RoleReferenceBlockerDto =>
+      !!b &&
+      typeof b === 'object' &&
+      isKnownRoleReferenceCategory((b as RoleReferenceBlockerDto).category) &&
+      typeof (b as RoleReferenceBlockerDto).count === 'number' &&
+      Array.isArray((b as RoleReferenceBlockerDto).names),
+  );
+  return known.length > 0 ? known : null;
 }

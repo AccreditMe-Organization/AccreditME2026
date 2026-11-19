@@ -2084,6 +2084,27 @@ describe('UserService', () => {
   // through its two real callers (invite()/updateProfile()), same
   // convention already used elsewhere in this file (isInSameOrParentOrgUnit
   // via validateEscalationTarget in org-position.service.spec.ts).
+  // ACC-154 — a head position grants its role to its holder; a deactivated
+  // role is never given out again, so assigning the position is refused first.
+  describe('validatePositionAssignment — a head position whose role is inactive (ACC-154)', () => {
+    it('refuses with ROLE_INACTIVE, reading the role by id and organisation', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'pos-head', isActive: true, isUnitHeadPosition: true, isSingleAssignee: true, roleId: 'role-head' });
+      mockPrisma.role.findFirst.mockResolvedValue({ isActive: false });
+
+      await expect(service.validatePositionAssignment('pos-head', 'unit-1', ORG_A, null)).rejects.toMatchObject({
+        response: { statusCode: 409, code: 'ROLE_INACTIVE' },
+      });
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'role-head', organizationId: ORG_A } }));
+    });
+
+    it('reads no role for an ordinary position', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'pos-x', isActive: true, isUnitHeadPosition: false, isSingleAssignee: false, roleId: 'role-x' });
+      mockPrisma.role.findFirst.mockClear();
+      await service.validatePositionAssignment('pos-x', 'unit-1', ORG_A, null);
+      expect(mockPrisma.role.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
   describe('validatePositionAssignment — single-assignee enforcement (ACC-40 Section 2.1)', () => {
     const SINGLE_ASSIGNEE_POSITION = { id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: false, isActive: true };
     const ORDINARY_POSITION = { id: 'pos-ordinary', isSingleAssignee: false, isUnitHeadPosition: false, isActive: true };

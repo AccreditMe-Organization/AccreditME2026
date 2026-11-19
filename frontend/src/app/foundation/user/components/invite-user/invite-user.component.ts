@@ -29,6 +29,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 // note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 /**
  * Invite user — rebuilt to the drawing, ACC-120 slice 5.
@@ -452,7 +453,7 @@ export class InviteUserComponent implements OnInit {
             this.denied.set(true);
             return;
           }
-          this.error.set(extractErrorMessage(err, this.translate.instant('user.errorInvite')));
+          this.error.set(roleInactiveMessage(err, this.translate) ?? extractErrorMessage(err, this.translate.instant('user.errorInvite')));
         },
       });
   }

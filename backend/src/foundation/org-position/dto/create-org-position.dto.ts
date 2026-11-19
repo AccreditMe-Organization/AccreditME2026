@@ -33,5 +33,6 @@ export class CreateOrgPositionDto {
   // service-layer save time.
   @IsString()
   @IsOptional()
-  roleId?: string;
+  // ACC-154 — null clears it on update (IsOptional lets null through).
+  roleId?: string | null;
 }

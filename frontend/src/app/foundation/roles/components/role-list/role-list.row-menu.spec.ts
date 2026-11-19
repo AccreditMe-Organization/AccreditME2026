@@ -4,7 +4,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router, provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { Confirmation, ConfirmationService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
@@ -50,6 +50,7 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
   async function setup(): Promise<void> {
     service = jasmine.createSpyObj<RoleService>('RoleService', [
       'listRoles',
+      'deactivationCheck',
       'deactivateRole',
       'activateRole',
       'createRole',
@@ -57,6 +58,8 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     ]);
     service.listRoles.and.returnValue(of({ data: ROLES, total: ROLES.length, page: 1, pageSize: 25 }));
     service.activateRole.and.returnValue(of(void 0));
+    // ACC-154 — nothing holds or names the role unless a test says so.
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: true, rootRole: false, blockers: [] }));
     TestBed.configureTestingModule({
       imports: [RoleListComponent],
       providers: [
@@ -151,10 +154,152 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     service.deactivateRole.and.returnValue(of(void 0));
     await open(0);
     item('deactivate')!.click();
+    expect(service.deactivationCheck).toHaveBeenCalledWith('a');
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(service.deactivateRole).not.toHaveBeenCalled();
     confirm.calls.mostRecent().args[0].accept!();
     expect(service.deactivateRole).toHaveBeenCalledWith('a');
+  });
+
+  // ── ACC-154 — a role still held or named is listed, never confirmed ──────────
+  const BLOCKERS = [
+    { category: 'USER_GRANTS', count: 12, names: [{ nameEn: 'Nora Al-Otaibi', nameAr: null }, { nameEn: 'Omar Saleh', nameAr: null }] },
+    { category: 'POSITIONS', count: 1, names: [{ nameEn: 'Head of Quality', nameAr: null }] },
+    {
+      category: 'STAGE_ESCALATIONS',
+      count: 2,
+      names: [
+        { nameEn: 'Formation', nameAr: null, workflow: { nameEn: 'Committee lifecycle', nameAr: null } },
+        { nameEn: 'Terms Review', nameAr: null, workflow: { nameEn: 'Committee lifecycle', nameAr: null } },
+      ],
+    },
+  ] as const;
+  const categories = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-role-in-use-category]')).map((c) => c.getAttribute('data-role-in-use-category'));
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('Deactivate on a role still in use lists what holds it, by category, and asks nothing', async () => {
+    await setup();
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: false, rootRole: false, blockers: [...BLOCKERS] as never }));
+    await open(0);
+    item('deactivate')!.click();
+    await settle();
+    expect(service.deactivationCheck).toHaveBeenCalledWith('a');
+    expect(confirm).withContext('no confirm while the role is in use').not.toHaveBeenCalled();
+    expect(service.deactivateRole).not.toHaveBeenCalled();
+    const text = document.body.textContent!;
+    expect(text).toContain("“Auditor” can't be deactivated yet");
+    expect(text).toContain("It's still in use. Remove each of these first, then deactivate it.");
+    expect(categories()).withContext('the server’s order').toEqual(['USER_GRANTS', 'POSITIONS', 'STAGE_ESCALATIONS']);
+    expect(text).toContain('Given directly to 12 users');
+    expect(text).toContain('Nora Al-Otaibi, Omar Saleh');
+    expect(text).toContain('Showing 2 of 12');
+    expect(text).toContain('Set on 1 position');
+    expect(text).toContain('Head of Quality');
+    expect(text).toContain('Named in the escalation of 2 workflow stages');
+    // Every name was sent, so no "Showing" under the last two categories.
+    expect(document.querySelectorAll('[data-role-in-use-shown]').length).toBe(1);
+    document.querySelector<HTMLButtonElement>('[data-role-in-use-close] button')!.click();
+    await settle();
+    expect(fixture.componentInstance.inUse()).withContext('Close closes it').toBeNull();
+    expect(service.deactivateRole).not.toHaveBeenCalled();
+  });
+
+  it('one check at a time: a second press, on this row or another, runs nothing while a check is out', async () => {
+    await setup();
+    const answer = new Subject<{ canDeactivate: boolean; rootRole: boolean; blockers: never[] }>();
+    service.deactivationCheck.and.returnValue(answer);
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.componentInstance.pick(ROLES[1]!, 'deactivate');
+    expect(service.deactivationCheck).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.checking()).toBe('a');
+    answer.next({ canDeactivate: true, rootRole: false, blockers: [] });
+    answer.complete();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.checking()).withContext('free again once answered').toBeNull();
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: true, rootRole: false, blockers: [] }));
+    fixture.componentInstance.pick(ROLES[1]!, 'deactivate');
+    expect(service.deactivationCheck).toHaveBeenCalledWith('b');
+  });
+
+  it('a check blocked only by categories this screen does not know is refused plainly, never confirmed', async () => {
+    await setup();
+    service.deactivationCheck.and.returnValue(
+      of({ canDeactivate: false, rootRole: false, blockers: [{ category: 'SOMETHING_NEW', count: 2, names: [] }] as never }),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.detectChanges();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.inUse()).toBeNull();
+    expect(el.querySelector('[data-testid="role-action-error"]')!.textContent).toContain("This role can't be deactivated while it is still in use.");
+  });
+
+  it('a ROLE_IN_USE refusal’s unknown categories are left out of the list', async () => {
+    await setup();
+    service.deactivateRole.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { code: 'ROLE_IN_USE', blockers: [{ category: 'SOMETHING_NEW', count: 1, names: [] }, BLOCKERS[1]] },
+          }),
+      ),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    confirm.calls.mostRecent().args[0].accept!();
+    expect(fixture.componentInstance.inUse()?.blockers.map((b) => b.category)).toEqual(['POSITIONS']);
+  });
+
+  it('ROLE_IN_USE after the confirm opens the same list, from the refusal’s own blockers', async () => {
+    await setup();
+    service.deactivateRole.and.returnValue(
+      throwError(
+        () => new HttpErrorResponse({ status: 409, error: { code: 'ROLE_IN_USE', message: 'server text', blockers: [BLOCKERS[1]] } }),
+      ),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    confirm.calls.mostRecent().args[0].accept!();
+    await settle();
+    expect(categories()).toEqual(['POSITIONS']);
+    expect(document.body.textContent).toContain('Set on 1 position');
+    expect(document.body.textContent).not.toContain('server text');
+    expect(el.querySelector('[data-testid="role-action-error"]')).toBeNull();
+  });
+
+  it('ROLE_IN_USE with no usable list is said from its code, with no Try again', async () => {
+    await setup();
+    service.deactivateRole.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'ROLE_IN_USE', message: 'server text' } })),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    confirm.calls.mostRecent().args[0].accept!();
+    fixture.detectChanges();
+    const box = el.querySelector('[data-testid="role-action-error"]')!;
+    expect(box.textContent).toContain("This role can't be deactivated while it is still in use.");
+    expect(box.textContent).not.toContain('server text');
+    expect(box.querySelector('button')).withContext('no Try again').toBeNull();
+    expect(fixture.componentInstance.inUse()).toBeNull();
+  });
+
+  it('a failed check offers Try again, which asks the server again', async () => {
+    await setup();
+    service.deactivationCheck.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.detectChanges();
+    expect(confirm).not.toHaveBeenCalled();
+    const box = el.querySelector('[data-testid="role-action-error"]')!;
+    expect(box.textContent).toContain("The role couldn't be deactivated.");
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: true, rootRole: false, blockers: [] }));
+    box.querySelector<HTMLButtonElement>('button')!.click();
+    fixture.detectChanges();
+    expect(service.deactivationCheck).toHaveBeenCalledTimes(2);
+    expect(confirm).withContext('the plain confirm, once the check passes').toHaveBeenCalledTimes(1);
   });
 
   it('an inactive role offers Activate, which activates it', async () => {

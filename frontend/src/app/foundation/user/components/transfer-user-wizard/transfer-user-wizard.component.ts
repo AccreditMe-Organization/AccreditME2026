@@ -29,6 +29,7 @@ import {
   TransferCommitteesService,
 } from '../../services/transfer-committees.service';
 import { transferSeatReason } from './transfer-seat-reason';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 // ACC-46 Section 2.6.b — the transfer wizard. Pure content, no dialog
 // wrapper of its own. Both hosts — the Users list (ACC-79) and the user
@@ -1110,6 +1111,7 @@ export class TransferUserWizardComponent implements OnInit {
         // ACC-288 — moving the root unit's last head out is refused; said here, in the wizard.
         this.error.set(
           rootUnitNeedsHeadMessage(err, this.translate, this.language) ??
+            roleInactiveMessage(err, this.translate) ??
             extractErrorMessage(err, 'user.transfer.errorSubmit'),
         );
       },

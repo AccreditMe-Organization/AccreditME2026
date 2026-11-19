@@ -543,7 +543,6 @@
     "addRole": "New Role",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
-    "confirmDeactivateRole": "{{holders}} The role stays assigned, so reactivating it gives those permissions back.",
     "confirmRemoveAssignment": "Remove this role assignment?",
     "customBadge": "Custom",
     "deactivateRole": "Deactivate Role",
@@ -734,7 +733,18 @@
     },
     "refusal": {
       "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
-      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
+      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first.",
+      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first.",
+      "roleInactive": "This role has been deactivated, so it can't be given out. Reactivate it on Roles, or choose another role."
+    },
+    "inUse": {
+      "title": "“{{name}}” can't be deactivated yet",
+      "lead": "It's still in use. Remove each of these first, then deactivate it.",
+      "stageName": "{{workflow}} — {{stage}}",
+      "hint": {
+        "POSITION_GRANTS": "Removed by ending that headship.",
+        "POSITIONS": "Removed by changing the position's role."
+      }
     },
     "form": {
       "nameRequired": "Enter the role's name in English.",
@@ -743,7 +753,6 @@
     },
     "deactivateHeader": "Deactivate the role “{{name}}”?",
     "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
-    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back.",
     "userPermissions": {
       "title": "A user's permissions",
       "lookUp": "Look up a user's permissions",
@@ -2968,9 +2977,23 @@
         "one": "Your {{count}} change is still here.",
         "other": "Your {{count}} changes are still here."
       },
-      "deactivateHolders": {
-        "one": "{{count}} person holds it and loses its permissions now.",
-        "other": "{{count}} people hold it and lose its permissions now."
+      "inUse": {
+        "USER_GRANTS": {
+          "one": "Given directly to {{count}} user",
+          "other": "Given directly to {{count}} users"
+        },
+        "POSITION_GRANTS": {
+          "one": "Given to {{count}} user through a head position",
+          "other": "Given to {{count}} users through a head position"
+        },
+        "POSITIONS": {
+          "one": "Set on {{count}} position",
+          "other": "Set on {{count}} positions"
+        },
+        "STAGE_ESCALATIONS": {
+          "one": "Named in the escalation of {{count}} workflow stage",
+          "other": "Named in the escalation of {{count}} workflow stages"
+        }
       },
       "filterActs": {
         "one": "Acts only on the {{count}} row shown by the current filter.",
