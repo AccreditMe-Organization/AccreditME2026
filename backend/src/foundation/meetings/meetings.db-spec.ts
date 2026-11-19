@@ -62,6 +62,7 @@ import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingFormChoicesService } from './meeting-form-choices.service';
+import * as meetingMembership from '../../common/services/meeting-membership';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { RecycleBinService } from '../file-storage/recycle-bin.service';
 import { StorageResolverService } from '../file-storage/storage-resolver.service';
@@ -405,7 +406,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         (await meetings.list({ view, ...extra } as never, w.orgId, viewer, now)).items.map((i) => i.id);
 
       expect(await ids('mine', as(w, 'chair'))).toEqual([upcomingCommittee]);
-      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical]);
+      // Clinical's scheduler: their unit's meeting, and (Ahmad, 19 Nov) the meeting of
+      // the committee Clinical owns, which they may schedule though not a member.
+      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical, upcomingCommittee]);
       expect(await ids('mine', as(w, 'outsider'))).toEqual([]);
       expect(await ids('past', as(w, 'member'))).toEqual([pastCommittee]);
       // Root's head sees every past meeting below by oversight, latest first.
@@ -1254,11 +1257,86 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(await code(meetings.maySchedule({}, w.orgId, as(w, 'chair'), now))).toBe('MEETING_OWNER_REQUIRED');
       // A Dissolved committee schedules nothing, whoever asks (its stage).
       expect((await meetings.maySchedule({ committeeId: w.dissolvedCommitteeId }, w.orgId, as(w, 'chair'), now)).may).toBe(false);
-      // Clinical's scheduler is a scheduler for the committee Clinical owns, but
-      // not a member, so would not see the meeting (plan §4.1 against §4.2):
-      // Schedule is not offered. meetings:view lets them see it, so it is.
-      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'clinicalScheduler'), now)).may).toBe(false);
-      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'clinicalScheduler', [MEETINGS_PERMISSIONS.VIEW]), now)).may).toBe(true);
+      // Clinical's scheduler schedules for the committee Clinical owns, though not
+      // a member, and sees what they schedule (Ahmad, 19 Nov): Schedule is offered.
+      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'clinicalScheduler'), now)).may).toBe(true);
+    });
+
+    it("a scheduler who is not a member schedules, gets the meeting, opens it and lists it; a person of the unit without the key sees nothing", async () => {
+      const w = await world();
+      const now = new Date();
+      const scheduler = as(w, 'clinicalScheduler');
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Scheduled by the unit' }), w.orgId, scheduler, now);
+      expect(m.title).toBe('Scheduled by the unit');
+      expect(m.may).toMatchObject({ edit: true, reschedule: true, manageGuests: true });
+      expect(await outcome(meetings.getForViewer(m.id, w.orgId, scheduler, now))).toBe('OK');
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, scheduler, now)).items.map((i) => i.id)).toContain(m.id);
+      // The writes a scheduler passes, and no more: reschedule, guests.
+      expect(await outcome(meetings.reschedule(m.id, { scheduledAt: later(9, now).toISOString(), reason: 'Moved', expectedUpdatedAt: m.updatedAt } as never, w.orgId, scheduler, now))).toBe('OK');
+      expect(await outcome(people.addGuest(m.id, { userId: w.people['outsider'] } as never, w.orgId, scheduler, now))).toBe('OK');
+
+      // Non-vacuity: a person of Clinical WITHOUT meetings:schedule is not a member and sees nothing.
+      const plain = await prisma.user.create({ data: { organizationId: w.orgId, email: `plain-${randomUUID().slice(0, 6)}@example.test`, name: 'plain', status: 'ACTIVE', primaryOrgUnitId: w.units.clinical } });
+      expect(await code(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe(404);
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, { id: plain.id, permissions: [] }, now)).items).toEqual([]);
+      // ... and the key through an INACTIVE role counts for nothing.
+      await prisma.userRole.create({ data: { userId: plain.id, roleId: await role(w.orgId, [MEETINGS_PERMISSIONS.SCHEDULE]) } });
+      expect(await outcome(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe('OK');
+      await prisma.role.updateMany({ where: { organizationId: w.orgId, userRoles: { some: { userId: plain.id } } }, data: { isActive: false } });
+      expect(await code(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe(404);
+    });
+
+    itEnforcesTenantIsolation("a scheduler of another organisation gets the identical 404 for this organisation's meeting", async () => {
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'clinicalScheduler'), now);
+      // B's scheduler holds meetings:schedule in B: in A's organisation the meeting is the same 404 as a missing one.
+      const theirs = await code(meetings.getForViewer(m.id, a.orgId, as(b, 'clinicalScheduler'), now));
+      expect(theirs).toBe(404);
+      expect(theirs).toEqual(await code(meetings.getForViewer('no-such-meeting', a.orgId, as(b, 'clinicalScheduler'), now)));
+      expect(await code(meetings.getForViewer(m.id, b.orgId, as(b, 'clinicalScheduler'), now))).toBe(404);
+      expect((await meetings.list({ view: 'mine' } as never, b.orgId, as(b, 'clinicalScheduler'), now)).items.map((i) => i.id)).not.toContain(m.id);
+    });
+
+    it('schedule() refuses BEFORE writing when its scheduler would not see the meeting: no meeting, no instance', async () => {
+      const w = await world();
+      const now = new Date();
+      const before = [await prisma.meeting.count({ where: { organizationId: w.orgId } }), await prisma.workflowInstance.count({ where: { organizationId: w.orgId, objectType: 'MEETING' } })];
+      // Force the rules apart: the parent rule says no, as it did before 19 Nov.
+      const spy = jest.spyOn(meetingMembership, 'wouldSeeNewMeeting').mockResolvedValue(false);
+      try {
+        expect(await code(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now))).toBe('MEETING_NOT_ALLOWED');
+        expect(spy).toHaveBeenCalled();
+        // meetings:view sees everything, so it is never asked for them.
+        spy.mockClear();
+        expect(await outcome(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair', [MEETINGS_PERMISSIONS.VIEW]), now))).toBe('OK');
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+      const after = [await prisma.meeting.count({ where: { organizationId: w.orgId } }), await prisma.workflowInstance.count({ where: { organizationId: w.orgId, objectType: 'MEETING' } })];
+      // Only the meetings:view press wrote anything: one meeting, one instance.
+      expect(after).toEqual([before[0]! + 1, before[1]! + 1]);
+    });
+
+    it("upcoming lists every meeting the viewer may see that has not started, soonest first; a head and a meetings:view holder see a committee's next meetings", async () => {
+      const w = await world();
+      const now = new Date();
+      const soon = await meetingRow(w, { committeeId: w.committeeId }, later(2, now), w.people['chair']!);
+      const next = await meetingRow(w, { committeeId: w.committeeId }, later(5, now), w.people['chair']!);
+      await meetingRow(w, { committeeId: w.committeeId }, later(-2, now), w.people['chair']!);
+      const upcoming = async (viewer: MeetingViewer) => meetings.list({ view: 'upcoming', committeeId: w.committeeId } as never, w.orgId, viewer, now);
+      // Clinical's head oversees, is no member: nothing in Mine, both in upcoming.
+      expect((await meetings.list({ view: 'mine', committeeId: w.committeeId } as never, w.orgId, as(w, 'clinicalHead'), now)).items).toEqual([]);
+      expect((await upcoming(as(w, 'clinicalHead'))).items.map((i) => i.id)).toEqual([soon, next]);
+      expect((await upcoming(as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW]))).items.map((i) => i.id)).toEqual([soon, next]);
+      expect((await upcoming(as(w, 'member'))).total).toBe(2);
+      expect((await upcoming(as(w, 'outsider'))).items).toEqual([]);
+    });
+
+    it('the list says whether All meetings is offered, from meetings:view', async () => {
+      const now = new Date();
+      expect((await meetings.list({ view: 'mine' } as never, a.orgId, as(a, 'chair'), now)).canSeeAll).toBe(false);
+      expect((await meetings.list({ view: 'mine' } as never, a.orgId, as(a, 'chair', [MEETINGS_PERMISSIONS.VIEW]), now)).canSeeAll).toBe(true);
     });
 
     itEnforcesTenantIsolation("may-schedule — another organisation's committee or unit is MEETING_OWNER_NOT_FOUND, as schedule() answers", async () => {
