@@ -150,6 +150,21 @@ export interface AgendaItemRequest {
   standing?: boolean;
 }
 
+/**
+ * ACC-323 — an edit's view of the fields it changes, as the dialog loaded them:
+ * the server refuses the save (MEETING_AGENDA_CHANGED) when one of them holds
+ * something else now. The presenter by its attendee id, null for none.
+ */
+export interface AgendaItemExpected {
+  title?: string;
+  description?: string | null;
+  durationMinutes?: number | null;
+  presenterAttendeeId?: string | null;
+}
+
+/** An edit: only the changed fields, and what this person saw of them. */
+export type AgendaItemUpdate = Partial<AgendaItemRequest> & { expected?: AgendaItemExpected };
+
 export interface MeetingClashDto {
   startsAt: string;
   people: { userId: string; name: string; meetings: { id: string | null; title: string | null; startsAt: string; durationMinutes: number }[] }[];
@@ -346,7 +361,7 @@ export class MeetingService {
     return this.http.post<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda`, body);
   }
 
-  updateAgendaItem(id: string, itemId: string, body: Partial<AgendaItemRequest>): Observable<MeetingAgendaItemDto[]> {
+  updateAgendaItem(id: string, itemId: string, body: AgendaItemUpdate): Observable<MeetingAgendaItemDto[]> {
     return this.http.patch<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda/${itemId}`, body);
   }
 

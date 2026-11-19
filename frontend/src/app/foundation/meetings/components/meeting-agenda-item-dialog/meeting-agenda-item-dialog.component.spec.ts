@@ -95,7 +95,8 @@ describe('MeetingAgendaItemDialogComponent (ACC-316 PR 7)', () => {
     c.form.patchValue({ title: 'Isolation rooms, phase 2' });
     c.submit();
     // Not the duration, the description or the presenter: someone else may have changed them since.
-    expect(update).toHaveBeenCalledWith('m-1', 'i-4', { title: 'Isolation rooms, phase 2' });
+    // ACC-323 — and what it saw of that field, nothing else.
+    expect(update).toHaveBeenCalledWith('m-1', 'i-4', { title: 'Isolation rooms, phase 2', expected: { title: 'Isolation rooms' } });
     expect(add).not.toHaveBeenCalled();
   });
 
@@ -103,7 +104,24 @@ describe('MeetingAgendaItemDialogComponent (ACC-316 PR 7)', () => {
     const { c } = create(ITEM);
     c.form.patchValue({ presenter: 'none', durationMinutes: 20 });
     c.submit();
-    expect(update).toHaveBeenCalledWith('m-1', 'i-4', { durationMinutes: 20, presenter: null });
+    expect(update).toHaveBeenCalledWith('m-1', 'i-4', {
+      durationMinutes: 20,
+      presenter: null,
+      expected: { durationMinutes: 10, presenterAttendeeId: 'a-1' },
+    });
+  });
+
+  it('ACC-323: `expected` carries exactly the changed fields, as loaded (the description cleared, the presenter by attendee id)', () => {
+    const { c } = create(ITEM);
+    c.form.patchValue({ title: 'New', description: '', durationMinutes: 45, presenter: 'none' });
+    c.submit();
+    expect(update).toHaveBeenCalledWith('m-1', 'i-4', {
+      title: 'New',
+      description: null,
+      durationMinutes: 45,
+      presenter: null,
+      expected: { title: 'Isolation rooms', description: 'Status.', durationMinutes: 10, presenterAttendeeId: 'a-1' },
+    });
   });
 
   it('Save with nothing changed sends nothing and closes', () => {

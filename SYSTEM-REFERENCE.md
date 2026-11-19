@@ -17983,7 +17983,15 @@ routes of §18.10.
   only with `may.manageGuests`, since it adds a guest.
 - **An edit sends only the fields the person changed** (P198), so it never
   writes back someone else's newer value for a field left alone. Save with
-  nothing changed sends nothing. Two people changing the SAME field is ACC-323.
+  nothing changed sends nothing.
+- **Two people changing the SAME field: the stale save is refused (ACC-323).**
+  The edit also sends `expected`, each changed field's value as the dialog
+  loaded it (the presenter by attendee id, null for none). `update()` compares
+  them with the stored row under the agenda lock and refuses a difference with
+  `MEETING_AGENDA_CHANGED` (Reload), with nothing written and no audit row.
+  Compared by field, not by a timestamp: edits to different fields both land,
+  and a reorder never makes an edit stale. `expected` is optional, so either
+  side may deploy first. No migration.
 - **Duration** is 5 to 120 minutes, or Not set.
 - **Remove item** (editing only) asks first, and says the item's papers go to
   the recycle bin.
