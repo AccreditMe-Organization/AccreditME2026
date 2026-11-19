@@ -2024,7 +2024,6 @@ model WorkflowTransition {
   triggerUserId      String?
   triggerRoleId      String?
   validatorConfig    Json?
-  isApprovalPath     Boolean                    @default(false)
 }
 ```
 
@@ -3872,6 +3871,9 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     permission or validator, so the stored values are left as they are.
   - **`isApprovalPath` is accepted on create** (it was update-only), so Add
     can set it.
+    Superseded (ACC-294): the API no longer accepts `isApprovalPath` (a sent
+    value is the whitelist's 400), and PR B dropped the column. See "A press on
+    a stage decided together" in §2.19.
   - **A move the app runs (`mover` APP) is read-only:** "Done by the app" /
     «يُنفّذها النظام» in the list, with no Edit and no ⋯; its name opens the
     panel showing the server's `appMove` line, "The app runs this move itself,
@@ -4236,6 +4238,8 @@ has and keeps no copy.
   affected.
   **Fixed (ACC-284):** the engine decides by the move's kind, so the seeded Approve
   is a vote on a stage decided together (§2.19, "A press on a stage decided together").
+  Superseded (ACC-294): `isApprovalPath` itself is gone, out of the client and the
+  API in PR A and dropped from the database in PR B.
 - **Specs:** `instance-access.spec.ts`; `pool-member-moves.db-spec.ts` (a pool member,
   a member outside the pool, a former member named directly, a `workflows:view`
   holder, a vote on an ALL stage, a change request, and another organisation's
