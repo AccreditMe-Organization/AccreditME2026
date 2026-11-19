@@ -24,6 +24,8 @@ import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
 import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
+import { DEPARTURE_SUMMARY_COMMITTEE_SEATS } from '../committees/departure/committee-seat-departure-notice';
 import { OrganizationService } from '../organization/organization.service';
 // ACC-46 Section 2.4 — a genuine two-way provider cycle: OrgUnitHeadService
 // already @Inject(forwardRef(() => UserService)) (declareHandover()'s
@@ -196,6 +198,8 @@ export class UserService {
     private readonly committeeTransferNotice: CommitteeTransferNoticeService,
     // ACC-283 PR 2b — the leaver's unfinished change requests (lane B).
     private readonly changeRequestDeparture: ChangeRequestDepartureService,
+    // ACC-306 — the leaver's committee seats end with the deactivation (lane B).
+    private readonly committeeSeatDeparture: CommitteeSeatDepartureService,
     // ACC-316 PR 3b — a meeting's MEMBER invitees follow this change (after the
     // commit, never failing it; the SLA sweep is the backstop). Optional so a
     // service built by hand in a spec needs no sync.
@@ -1554,6 +1558,8 @@ export class UserService {
     // while they are still ACTIVE: ONE indexed query, and nothing else when there
     // are none. A request already sent for decision is left alone.
     const departure = await this.changeRequestDeparture.prepare(organizationId, id, actorId);
+    // ACC-306 — the leaver's committee seats, read while they are still ACTIVE (one query).
+    const seats = await this.committeeSeatDeparture.prepare(organizationId, id, actorId);
 
     // ACC-120 — the flip and the invariant commit or roll back together. The
     // side effects below stay OUTSIDE the transaction, matching this file's own
@@ -1577,6 +1583,8 @@ export class UserService {
       // ACC-283 PR 2b — withdrawn with the flip, after every lock above and
       // before any task row is written (instance, then task: ACC-190).
       await this.changeRequestDeparture.withdrawInTx(tx, departure);
+      // ACC-306 — LAST: the committees' rows, then the seats end (never blocked).
+      await this.committeeSeatDeparture.endSeatsInTx(tx, seats);
     }, DEACTIVATION_TX);
     // What the transaction actually withdrew (a request that moved meanwhile is not counted).
     const withdrawnChangeRequests = departure.applied.length;
@@ -1590,6 +1598,8 @@ export class UserService {
         `Change request departure follow-up failed: organizationId=${organizationId} userId=${id} (${(err as Error).name})`,
       );
     }
+    // ACC-306 — audit rows and the officers' notices, after commit; never throws.
+    await this.committeeSeatDeparture.finish(seats);
     await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a deactivation', (s) => s.forUser(organizationId, id));
 
     // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct
@@ -1627,6 +1637,7 @@ export class UserService {
       existing,
       reassignedCount,
       unassignedCount,
+      seats.applied.length,
     );
 
     await this.auditLog.log({
@@ -1636,7 +1647,7 @@ export class UserService {
       objectType: 'User',
       objectId: id,
       before: existing as unknown as Record<string, unknown>,
-      metadata: { event: 'deactivated', reassignedCount, unassignedCount, withdrawnChangeRequests },
+      metadata: { event: 'deactivated', reassignedCount, unassignedCount, withdrawnChangeRequests, endedCommitteeSeats: seats.applied.length },
     });
 
     return { reassignedCount, unassignedCount };
@@ -1663,6 +1674,7 @@ export class UserService {
    *   their unit flagged head-vacant ..... UNDONE, recomputed not assumed
    *   tasks reassigned to someone else ... not undone
    *   tasks nobody took .................. UNDONE, see returnUnassignedTasks()
+   *   committee seats ended (ACC-306) .... not undone; an admin re-adds them
    */
   async reactivate(
     id: string,
@@ -1914,12 +1926,14 @@ export class UserService {
     departedUser: IUser,
     reassignedCount: number,
     unassignedCount: number,
+    endedCommitteeSeats = 0,
   ): Promise<void> {
     // ACC-95 — each clause counted in its language's plural forms, and left out
     // at zero; "UNASSIGNED" is said in words.
     const clauses = [
       reassignedCount > 0 ? counted(reassignedCount, DEPARTURE_SUMMARY_REASSIGNED) : null,
       unassignedCount > 0 ? counted(unassignedCount, DEPARTURE_SUMMARY_UNASSIGNED) : null,
+      endedCommitteeSeats > 0 ? counted(endedCommitteeSeats, DEPARTURE_SUMMARY_COMMITTEE_SEATS) : null,
     ].filter((c): c is { en: string; ar: string } => c !== null);
     const summaryEn = clauses.map((c) => ` ${c.en}`).join('');
     const summaryAr = clauses.map((c) => ` ${c.ar}`).join('');

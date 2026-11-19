@@ -12,6 +12,7 @@ import { UserHomeCountsService } from './user-home-counts.service';
 import { StagePoolModule } from '../workflow/stage-pool.module';
 import { CommitteeTransferNoticeModule } from '../committees/transfer-notice/committee-transfer-notice.module';
 import { ChangeRequestDepartureModule } from '../committees/change-requests/departure/change-request-departure.module';
+import { CommitteeSeatDepartureModule } from '../committees/departure/committee-seat-departure.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { SecurityNoticeService } from '../notification/security-notice';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
@@ -62,6 +63,7 @@ import { UserSessionsService } from './sessions/user-sessions.service';
     // ACC-297 — the committee notice after a transfer. Its module imports only
     // Prisma and the queues, so this edge closes no cycle.
     CommitteeTransferNoticeModule,
+    CommitteeSeatDepartureModule,
     // ACC-316 PR 3b — the meeting invitee sync. Its module imports only Prisma
     // and the queues, so this edge closes no cycle.
     MeetingInviteesModule,
