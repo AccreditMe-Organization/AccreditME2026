@@ -114,4 +114,24 @@ describe('MeetingScheduleDialogComponent (ACC-316 PR 6)', () => {
       expect(document.querySelector('[data-testid="schedule-submit"]')).not.toBeNull();
     });
   });
+
+  // P189 j — the earliest day is today's, read again each time the dialog opens:
+  // a page left open past midnight must not offer yesterday.
+  describe('the earliest day', () => {
+    afterEach(() => jasmine.clock().uninstall());
+
+    it('is read again when the dialog opens, not once when it was made', () => {
+      jasmine.clock().install();
+      jasmine.clock().mockDate(new Date('2027-03-17T12:00:00Z'));
+      const { fixture, c } = create();
+      const day = () => [c.minDay().getFullYear(), c.minDay().getMonth(), c.minDay().getDate()];
+      expect(day()).toEqual([2027, 2, 17]);
+      fixture.componentRef.setInput('visible', false);
+      fixture.detectChanges();
+      jasmine.clock().mockDate(new Date('2027-03-18T12:00:00Z'));
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+      expect(day()).toEqual([2027, 2, 18]);
+    });
+  });
 });

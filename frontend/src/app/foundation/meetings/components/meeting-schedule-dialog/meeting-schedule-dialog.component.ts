@@ -62,7 +62,7 @@ const placeRequired = (group: AbstractControl): ValidationErrors | null => {
       @if (dateView()) {
         <div class="flex flex-col gap-2" data-testid="schedule-date-view">
           <button type="button" class="am-backlink self-start" (click)="dateView.set(false)">{{ 'meeting.when.back' | translate }}</button>
-          <am-inline-calendar [value]="day()" (valueChange)="pickDay($event)" [minDate]="minDay" />
+          <am-inline-calendar [value]="day()" (valueChange)="pickDay($event)" [minDate]="minDay()" />
         </div>
       } @else {
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
@@ -163,7 +163,8 @@ export class MeetingScheduleDialogComponent {
   readonly showErrors = signal(false);
   readonly dateView = signal(false);
   readonly day = signal<Date | null>(null);
-  readonly minDay = meetingToday(this.format);
+  /** Today in the tenant's zone, read again each time the dialog opens (it may stay on the page past midnight). */
+  readonly minDay = signal(meetingToday(this.format));
   readonly types = signal<{ id: string; labelEn: string; labelAr: string | null }[]>([]);
   private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
 
@@ -199,6 +200,7 @@ export class MeetingScheduleDialogComponent {
         this.error.set(null);
         this.showErrors.set(false);
         this.dateView.set(false);
+        this.minDay.set(meetingToday(this.format));
         this.uncertain.set(false);
         untracked(() => this.loadTypes());
       }

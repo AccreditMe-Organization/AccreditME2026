@@ -26,10 +26,28 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_NOT_INVITED: 'meeting.refusal.notInvited',
   MEETING_STARTED: 'meeting.refusal.started',
   STAGE_ACTION_NOT_ALLOWED: 'meeting.refusal.stageActionNotAllowed',
+  // ACC-316 PR 7 — the agenda editor's.
+  MEETING_AGENDA_TITLE_REQUIRED: 'meeting.refusal.agendaTitleRequired',
+  MEETING_AGENDA_ITEM_NOT_FOUND: 'meeting.refusal.agendaItemNotFound',
+  MEETING_AGENDA_ORDER_MISMATCH: 'meeting.refusal.agendaOrderMismatch',
+  MEETING_AGENDA_CHANGED: 'meeting.refusal.agendaChanged',
+  MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
 };
 
 /** The translation key for a meeting refusal, or null when the error carries no code this file knows. */
 export function meetingRefusalKey(err: unknown): string | null {
   const code = refusalCode(err);
   return code ? (MEETING_REFUSAL_KEYS[code] ?? null) : null;
+}
+
+/**
+ * P198 — the refusals that mean the agenda on screen is no longer the server's:
+ * the screen offers Reload (the page reads the meeting again), never Retry,
+ * which would send the same stale request.
+ */
+const RELOAD_CODES: ReadonlySet<string> = new Set(['MEETING_AGENDA_ITEM_NOT_FOUND', 'MEETING_AGENDA_ORDER_MISMATCH', 'MEETING_AGENDA_CHANGED']);
+
+export function meetingNeedsReload(err: unknown): boolean {
+  const code = refusalCode(err);
+  return !!code && RELOAD_CODES.has(code);
 }

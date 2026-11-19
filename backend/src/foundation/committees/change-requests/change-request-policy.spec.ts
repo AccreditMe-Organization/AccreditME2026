@@ -49,8 +49,9 @@ describe('change-request policy (ACC-239)', () => {
       approved: { open: false, actions: [] },
       rejected: { open: false, actions: [] },
       withdrawn: { open: false, actions: [] },
-      // A stage with no key counts as open, and allows only the requester's withdraw.
-      null: { open: true, actions: ['withdraw'] },
+      // ACC-245 — a stage with no key is an added REVIEW stage: open, decided by its
+      // own people (approve moves it one step on), and withdrawn by its requester.
+      null: { open: true, actions: ['withdraw', 'approve', 'return', 'reject'] },
     });
     expect(requestStagePolicy('a-stage-nobody-knows')).toBe(requestStagePolicy(null));
   });
@@ -122,9 +123,10 @@ describe('change-request policy (ACC-239)', () => {
     expect(committeeAllowsRequestMove({ actions: {}, flags: ['IN_FORCE', 'DISSOLVING'] }, 'edit')).toBe(false);
   });
 
-  it('each move lands in its own stage, and only a request under review awaits a decision', () => {
+  it('each move lands in its own stage, and a request under review or in an added review stage awaits a decision', () => {
     // Approve is not here: its target is the stage flagged APPLIES_APPROVED_CHANGE (§4.3).
     expect(ACTION_TARGET_STAGE).toEqual({ submit: 'under_review', withdraw: 'withdrawn', return: 'returned', reject: 'rejected' });
-    expect([...CHANGE_REQUEST_STAGE_KEYS, null].filter(awaitsDecision)).toEqual(['under_review']);
+    // ACC-245 — null: an added review stage (Submit itself now takes the forward move).
+    expect([...CHANGE_REQUEST_STAGE_KEYS, null].filter(awaitsDecision)).toEqual(['under_review', null]);
   });
 });

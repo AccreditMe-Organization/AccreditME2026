@@ -1587,6 +1587,58 @@ them together with their resolver.
          restricted line and "All N meetings", the clash line.
        - **Issue Agenda's confirm** says the design's lead without the counts
          ("Sent to: …", "Papers: …"), which no read gives.
+   - **6.6 PR 7 as built (19 Nov):** SYSTEM-REFERENCE §18.16. The agenda
+     editor, papers and attachments, and PR 6's review follow-ups. The
+     attendance-to-minutes screens listed under PR 7 below move to the next
+     PR.
+     - **The agenda editor:** Add item and Edit open one dialog (Title,
+       Description, Presenter, Duration; Remove item, with a confirm, when
+       editing). Rows reorder by drag or by the handle's arrow keys, said
+       aloud. A presenter is an invitee, or a person found by name, who is
+       added as a guest. Papers attach to an item; attachments to the meeting.
+       Every write answers with the whole agenda, and the page reads the
+       invitees again after one.
+     - **Review follow-ups (P189):**
+       - **The answer:** the three buttons carry `aria-pressed`; the plain
+         "Attending" line shows only once answering has closed.
+       - **The invitees:** the summary reads "Members: …"; each row ends with
+         its answer, the note under it; the remove button is a muted icon
+         named "Remove {{name}}".
+       - **The panel's See all** opens /meetings filtered to that committee or
+         unit (Upcoming and Past, the owner named, with a link to clear it).
+       - **Mine leaves out the SCHEDULER clause:** a scheduler's own
+         unit's meetings are in Upcoming and open, but are not "mine" unless
+         they are invited or organise it.
+       - **The scheduler check is uncorrelated:** the viewer's scheduling unit
+         is read once per query (an InitPlan), not once per meeting row.
+       - **A skipped time moves forward:** `instantAt()` reads 02:30 on
+         8 Mar 2026 in New York as 03:30.
+       - **The earliest day** for Schedule and Reschedule is read again each
+         time the dialog opens.
+       - **Spec strings** use the seed's own Arabic («الأجندة مُصدَرة»,
+         «اعتماد المحضر», «رئيس اللجنة»).
+     - **Departures:**
+       - **The guest email's subject and body keep their own keys**: the app
+         shares a string by reusing its key directly, not through a meeting
+         key, so nothing was moved.
+       - **Add a guest has no "Presents item" field.** A presenter is set from
+         the agenda item's own Presenter field, which also adds a person found
+         by name as a guest; the agenda row names who presents.
+     - **After lane B's review (P198) and the design thread's (P199):**
+       - **No silent lost update:** an edit sends only the fields changed; a
+         reorder sends the order seen (`expectedItemIds`) and is refused
+         `MEETING_AGENDA_CHANGED` (409) when the agenda moved meanwhile. Two
+         people changing the same field is ACC-323.
+       - **Reload, never Retry,** for the three "agenda is stale" refusals, in
+         the panel and the item dialog; a failed re-read says so, with Retry.
+       - **Keyboard reorder keeps focus** (`aria-disabled` while saving).
+       - **The presenter search** needs `may.manageGuests`.
+       - **`instantAt()`** tries the offsets a day either side, so a repeated
+         time east of UTC is its first occurrence (Berlin's spec found it).
+       - **Invitee rows say a status** («حضور», «اعتذار»), and P199's Arabic
+         wording.
+       - **No seeded meeting type adds a standing item**; standing items come
+         only from a series' own standing agenda.
 7. **PR 7: screens, part 2.**
    - Attendance (tablet), minutes, votes, action item drafts, open actions, the
      review banner and suggestions, the Review card, Approve and Return, Home's

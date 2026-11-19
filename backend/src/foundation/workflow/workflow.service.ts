@@ -120,6 +120,16 @@ export interface AppliedSystemMove {
 // rather than half-applied — the right failure, but not one to invite.
 const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 
+/** The 409 a record's app move gets when it cannot be made from where the record stands. */
+function transitionNotAvailable(): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    code: 'TRANSITION_NOT_AVAILABLE',
+    message: "This record can't make that move from the stage it is in now. Reload it and try again.",
+  });
+}
+
 // This is THE WorkflowService CLAUDE.md refers to in "Route ALL state
 // transitions through WorkflowService" — every future functional module calls
 // these methods, never manages its own status field.
@@ -1086,23 +1096,84 @@ export class WorkflowService {
         ...APP_MOVER_WHERE,
       },
     });
-    if (!transition) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        code: 'TRANSITION_NOT_AVAILABLE',
-        message: "This record can't make that move from the stage it is in now. Reload it and try again.",
-      });
+    if (!transition) throw transitionNotAvailable();
+    return this.prepareAppMove(instance, transition, organizationId, actorId, options.comment);
+  }
+
+  /**
+   * ACC-245 — the app's FORWARD move from the record's current stage, wherever it
+   * leads: the stage's single APP move of kind ADVANCE. A committee change
+   * request's Submit and a review stage's Approve use it, because an added review
+   * stage has no key and the stage after a review stage changes when one is added
+   * or removed. None, or more than one, is the 409 a missing move gets.
+   */
+  async triggerSystemAdvance(
+    instanceId: string,
+    organizationId: string,
+    actorId: string,
+    options: { comment?: string; inTx?: (tx: EngineTx) => Promise<void> } = {},
+  ): Promise<IWorkflowInstance> {
+    const prepared = await this.prepareSystemAdvance(instanceId, organizationId, actorId, { comment: options.comment });
+    const applied = await this.prisma.$transaction((tx) => this.applyMove(tx, prepared, { inTx: options.inTx }, 'refuse'), STAGE_CHANGE_TX);
+    return this.finishMove(applied!);
+  }
+
+  /** ACC-245 — triggerSystemAdvance()'s reads. No lock and no write. */
+  async prepareSystemAdvance(
+    instanceId: string,
+    organizationId: string,
+    actorId: string,
+    options: { comment?: string } = {},
+  ): Promise<PreparedSystemMove> {
+    const instance = await this.prisma.workflowInstance.findFirst({ where: { id: instanceId, organizationId } });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+    if (!instance.currentStageId) throw new ConflictException('Workflow instance has no current stage');
+    const moves = await this.prisma.workflowTransition.findMany({
+      where: {
+        fromStageId: instance.currentStageId,
+        kind: 'ADVANCE',
+        toStage: { workflowTemplateId: instance.workflowTemplateId },
+        ...APP_MOVER_WHERE,
+      },
+      take: 2,
+    });
+    if (moves.length !== 1) {
+      this.logger.warn(
+        `No single forward app move: instance ${instanceId} (organisation ${organizationId}) stage ${instance.currentStageId} has ${moves.length}.`,
+      );
+      throw transitionNotAvailable();
     }
+    return this.prepareAppMove(instance, moves[0]!, organizationId, actorId, options.comment);
+  }
+
+  /**
+   * ACC-245 — the people of many stages at once, for a module that decides by a
+   * stage's people (a committee change request's review stages): request key →
+   * the ACTIVE members, out-of-office routed. StagePoolService.resolveMany, in
+   * batches, never one per row.
+   */
+  async stagePoolMembers(organizationId: string, requests: StagePoolRequest[]): Promise<Map<string, string[]>> {
+    const pools = await this.stagePool.resolveMany(organizationId, requests);
+    return new Map([...pools].map(([key, pool]) => [key, pool.members]));
+  }
+
+  /** The tail both app-move preparations share: the from-stage, the open entry, then prepareMove(). */
+  private async prepareAppMove(
+    instance: NonNullable<Awaited<ReturnType<PrismaService['workflowInstance']['findFirst']>>>,
+    transition: NonNullable<Awaited<ReturnType<PrismaService['workflowTransition']['findFirst']>>>,
+    organizationId: string,
+    actorId: string,
+    comment: string | undefined,
+  ): Promise<PreparedSystemMove> {
     const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
     if (!fromStage) throw new NotFoundException('Current stage not found');
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
-      where: { workflowInstanceId: instance.id, stageId: instance.currentStageId, exitedAt: null },
+      where: { workflowInstanceId: instance.id, stageId: transition.fromStageId, exitedAt: null },
       orderBy: { enteredAt: 'desc' },
     });
     if (!currentInstanceStage) throw new ConflictException('No active stage entry found for this instance');
 
-    return this.prepareMove(instance, currentInstanceStage, transition, organizationId, actorId, options.comment, fromStage);
+    return this.prepareMove(instance, currentInstanceStage, transition, organizationId, actorId, comment, fromStage);
   }
 
   /**
@@ -1301,6 +1372,13 @@ export class WorkflowService {
       if (ifMoved === 'skip') return null;
       throw new ConflictException('This record has already moved on. Reload it and try again');
     }
+
+    // ACC-245 — the move as it stands NOW, under the instance's lock. Adding or
+    // removing a review stage re-points a move's target while holding this lock
+    // for every record in the stage it starts from, so a move prepared before
+    // that edit is refused here rather than sent to the old target.
+    const now = await tx.workflowTransition.findFirst({ where: { id: transition.id }, select: { toStageId: true } });
+    if (!now || now.toStageId !== transition.toStageId) throw transitionNotAvailable();
 
     // The gate, authoritative: under the lock, nothing can reopen a task
     // between this check and the move.

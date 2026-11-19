@@ -36,8 +36,17 @@ export type AccessHistoryKind =
   | 'TWO_STEP_RESET'
   | 'PASSWORD_RESET_REQUESTED'
   | 'PASSWORD_RESET'
+  | 'SESSIONS_ENDED'
   | 'SIGNED_IN_AS'
   | 'CHANGED';
+
+/**
+ * SESSIONS_ENDED: which sign-ins an ending reached (UserSessionsService).
+ *   one     the person ended one of their own sign-ins
+ *   others  the person ended every sign-in but the one in use
+ *   all     an administrator signed the person out everywhere
+ */
+export type AccessHistorySessionsScope = 'one' | 'others' | 'all';
 
 /**
  * The person's fields an edit can change, by the names the record page uses.
@@ -110,6 +119,13 @@ export interface IAccessHistoryRow {
   viaHeadship?: boolean;
   /** TRANSFERRED only. */
   transfer?: IAccessHistoryTransfer;
+  /**
+   * SESSIONS_ENDED only, both or neither: which sign-ins were ended, and how
+   * many. Absent when the stored values are not these shapes; the row is then
+   * still SESSIONS_ENDED, said without them.
+   */
+  sessionsScope?: AccessHistorySessionsScope;
+  sessionsCount?: number;
 }
 
 export interface IUserAccessHistoryPage {

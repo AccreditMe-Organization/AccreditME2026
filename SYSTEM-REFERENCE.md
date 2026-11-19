@@ -3082,6 +3082,46 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
     re-reads the template, which is ACC-55's trap.
   - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
     focus moves to the row's other arrow.
+  - **ACC-212 — and a drag handle on each row** (the drawing's ⣿, a 22 × 26
+    button named "Reorder task n: title"), through Angular CDK drag-drop:
+    - **Pointer:** drag the row by its handle. The preview stays inside the
+      list (`cdkDragPreviewContainer="parent"`), so it inherits the page's
+      direction in Arabic.
+    - **Keyboard, on the same handle:** Space lifts the row, ↑ / ↓ move it
+      (shown, not saved), Space or Enter drops it, and Escape (or focus
+      leaving the handle) puts it back. While a row is lifted, the arrows,
+      Edit and Delete wait.
+    - **Announced** in the arrows' live line: picked up (the position only),
+      each position, the drop, a cancel. The keys are described by a hint
+      (`aria-describedby`) only while nothing is lifted, so they are never read
+      twice. Focus stays on the row's handle.
+    - **A lifted row is put back** when the stage or `canManage` changes.
+    - **Saving:** both paths use the same order endpoint as the arrows, and
+      the new order shows at once.
+      - A failed save puts the rows back and says so ("The new order
+        couldn't be saved…").
+      - A refusal says what the arrows say for every code
+        (`plainWorkflowRefusalKey`).
+      - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+        Focus waits for the re-read, then goes to the moved row's handle, or
+        the list, or the section; never the page body.
+    - **The ↑ / ↓ buttons stay.**
+    - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
+      with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
+      CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
+      because it styles the caller's row; the next sortable list reuses it.
+      Keyboard pick-up stays with the list, which knows the order.
+      - **No literal sizes.** The handle box is `--am-drag-handle-inline` /
+        `-block` (22 × 26, from the Stage Tasks drawing).
+      - **Disabled** is the disabled-control border, not a fade.
+      - **The placeholder** is a dashed slot.
+      - **No slide animation** (no drawing gives a duration).
+      - **The preview's class is doubled.** The caller's row rule ties with it
+        on specificity, and whichever stylesheet loads last would win the
+        bottom border.
+    - **Specs:** `stage-task-list.drag.spec.ts` and
+      `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
+      px, both languages). Mutation-checked.
 - **`StageTaskDefinitionFormComponent`** is the two-step dialog.
   - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
   - The other routes are one or two selects.
@@ -6925,6 +6965,79 @@ ACC-255 PR 2, §2.18.1).
   self-approval refusal, or moving Approve's committee write outside the
   transaction, each turns it red.
 
+#### 3.18.1 Added review stages (ACC-245, PR 1)
+
+Plan, Ahmad's answers (19 Nov) and what PR 1 built:
+`backend/Plans/step-245-change-request-review-stages.md` (§10, §11).
+
+- **The order (option B):** Draft → [added review stages] → Under review →
+  Approved. Each added stage is decided by its own `who` pool, never the
+  requester; Under review is still decided by the chain, LAST, and its Approve
+  is still the only one that applies the change.
+- **A review stage is an UNKEYED, non-initial, non-final stage** of the
+  protected template (`isReviewStage()`), ordered between Draft and Under
+  review. It has four APP moves: ADVANCE to the next review stage or Under
+  review, RETURN to Returned, EXIT to Rejected, EXIT to Withdrawn.
+- **Adding one** (`POST /workflow-templates/:id/stages`, `reviewAfterStageId`)
+  creates the stage and its moves and re-points the forward move into its place
+  (both Submit moves when it follows Draft). **Removing an unused one**
+  re-points past it and deletes its moves and people. One that any request has
+  entered is `STAGE_IN_USE` and can only be renamed; a keyed one is
+  `REMOVE_STAGE`. Locks: the template, then the open records in the re-pointed
+  stages, then the moves (add) or the stage row and a second in-use count
+  (remove). Never the stage row before the records: a request entering it holds
+  its instance lock and key-share-locks the stage row. `review-stages.ts` is the
+  one place.
+- **Limits in this version:** at most 9 (`REVIEW_STAGE_LIMIT`); "any one of
+  them" only (`REVIEW_STAGE_ANY_ONE`); only names, description, deadline,
+  escalation and `who` may be set or changed (the template read's
+  `editableFields`); no reordering.
+- **Moves by the app, without a key:** `triggerSystemAdvance()` takes the
+  current stage's single APP ADVANCE. Submit and an added stage's Approve use
+  it. `applyMove` re-reads a move's target under the instance lock, so a move
+  prepared before a re-point is `TRANSITION_NOT_AVAILABLE`.
+- **Deciding in an added stage:** the record first (ACC-282: the committee
+  read rule, else the 404), then the pool. **A pool member who cannot open the
+  committee cannot decide**, so a stage with nobody who can waits, like an
+  empty pool. The decision re-reads the request's open stage ENTRY under the
+  instance lock: a different entry from the one the decider was admitted on
+  (moved on, or back again after a Return and Submit) is
+  `CHANGE_REQUEST_CHANGED`. The "to review" notice goes only to pool members
+  who may open the committee (`committeeReadersAmong()`, batched). It shares
+  every piece with the single check: `activeSeatWhere()` for the seat, and
+  `committeeOverseersAmong()` for oversight, which `overseesCommittee()` reads
+  too, on `findUnitAncestorIds()` (the active-unit rule in SQL) and
+  `findUnitLeadersAmong()` in `unit-headship.ts`; `committee-readers.db-spec.ts`
+  holds the two equal. The single check for a non-member who leads nothing now
+  costs 5 queries (it was 3). The CREATOR kind is refused on an added
+  stage (`REVIEW_STAGE_NO_CREATOR`). The requester gets
+  `CHANGE_REQUEST_OWN_DECISION`, a reader outside the pool (the chain
+  included) `CHANGE_REQUEST_NOT_DECIDER`. The pool is read in one batch per
+  page (`reviewDecisions`). Return and Reject work as in Under review; Submit
+  again starts at the first review stage. Approve now (the root head's own
+  request) passes every review stage by, audited `REVIEW_SKIPPED`, then
+  applies.
+- **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
+  and its owning unit.
+- **Known gap until PR 2:** the awaiting-decision lists read Under review
+  only, and `awaitingDecisionBy` is null in an added stage. The screens are
+  PR 3.
+- **Real-database specs:** the "added review stages (ACC-245)" block of
+  `committee-change-request.db-spec.ts`, 17 tests, two of them concurrent (an
+  add while a Submit moves, a remove while a request enters the stage; each
+  waits until `pg_stat_activity` shows a session waiting on a lock, never a
+  sleep). `committee-readers.db-spec.ts`: the parity of the batch and the
+  single check, 4 tests. Mutation-checked, each red: the target re-read, the
+  record-first check, the requester's exclusion, the Returned re-point, the
+  re-point on remove, Approve now's skip, the any-one rule, applying on an
+  added stage's Approve, the entry re-check on Approve, Return and Reject (and
+  comparing the template stage instead of the entry), the notice filter, the
+  CREATOR refusal, the second in-use count, the remove lock order, the add's
+  record locks, and, for parity, the batch's role, seat and oversight clauses,
+  the single check's seat clause, the shared ancestor rule and the shared
+  cover window.
+- **No migration.**
+
 ### 3.19 Who sees a task — one rule, keys per record type (ACC-244)
 
 Plan, Ahmad's answers (Q1–Q10) and the dry runs:
@@ -7672,6 +7785,64 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
 - **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
+- **The reason in Membership history (ACC-301):**
+  - The committee page's Membership history panel shows the reason on a LEFT
+    row with no `cause` (a person's removal). See all shows it too.
+  - It is read from the history response (`reason`); there is no second read.
+  - **Who reads it (Ahmad, 19 Nov):** overseers and the committee's officers
+    only, decided on the server in ONE place, `mayReadMembershipReasons()`
+    (`committees/membership-reason-readers.ts`):
+    - a `committees:view` holder (no query);
+    - this committee's ACTIVE Chairman or Secretary (their seats found by the
+      lookup KEYS, `OFFICER_SEAT_KEYS`, never a label), one indexed query;
+    - a head or acting cover in force whose oversight covers the committee (the
+      existing `overseesCommittee()` clause), asked only when the first two said
+      no.
+    - **Anyone else who may read the history** (its other members) gets each row
+      with `reason: null` and `reasonWithheld: true`, and the screen says
+      "Reason not shown" / «السبب غير معروض». The screen only renders what it
+      gets.
+    - Decided once per read, never per row.
+    - `CommitteesService.listMembershipEvents()` is deleted: no route called it,
+      and it returned every reason unfiltered.
+    - The Remove dialog says who will read it: "Only people who oversee
+      committees, and this committee's Chairman and Secretary, will see this
+      reason."
+    - Spec: `membership-reason-readers.db-spec.ts` (real Postgres):
+      - a member gets null;
+      - the Chairman, the Secretary, a `committees:view` holder and the unit
+        head with oversight read it;
+      - an inactive Chairman does not;
+      - an acting cover in force reads it; an ended cover and an INACTIVE head
+        (both plain members) do not;
+      - oversight from a parent unit reads a sub-unit committee's reason;
+      - a Chairman seat renamed through an override still counts (key, not
+        label);
+      - another organisation's reason reaches nobody.
+      Mutation-checked.
+  - **Where it goes:**
+    - **Panel:** on line 2, after the change and a separator, labelled
+      "Reason:" / «السبب:». The change keeps up to 55% of the line and the
+      reason takes the rest; each is cut with an ellipsis and keeps its whole
+      text in a tooltip.
+    - **Why not a third line:** the panel's rows are a fixed two lines
+      (`am-capped-panel`), and a third line would push the fifth row out of the
+      body.
+    - **See all:** under the change, in the same cell, and it WRAPS (never cut),
+      so keyboard and touch readers get all of it.
+    - **Direction:** the reason is in a `bdi dir="auto"`, so an Arabic reason in
+      English (or the reverse, or mixed) keeps its own direction.
+  - **When nothing extra shows:**
+    - a removal from before ACC-298 (no reason): no separator, no "—";
+    - a seat the app ended (any `cause`, ACC-306): said from its cause, never
+      from a stored reason;
+    - a JOINED row.
+  - **Search:** See all's search matches the reason.
+  - **Measured** at 1280 (the page's 988px content column, one of three panel
+    columns, 321px wide) in both languages, with a long reason beside a long
+    seat: body 294 / 328, rows 52 / 58, and the reason on one cut line 122px
+    wide (`committee-membership-history-panel.layout.spec.ts`).
+  - Mutation-checked.
 
 ### 3.21.3 Telling a committee after a member is transferred (ACC-297)
 
@@ -14450,9 +14621,9 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 - **The gate**, checked before any read, with no query (§1.9 clause a): yourself, or `users:view` (`GET /users/:id`'s rule). The refusal is a 403 "Required permission: users:view", the same for a real colleague and an invented id. Another organisation's person is the identical 404 ("User not found"). No `@Permissions()` on the route. `take` is 1–50 (default 5), `skip` ≥ 0; anything else is a 400.
 - **The rows are stored AuditLog rows, one paged source** (`accessHistoryWhere()`), scoped by organisation: objectType `User` with objectId = the person (the `[objectType, objectId]` index), and objectType `UserRole` whose `metadata.userId` is the person. **Role grants and removals are written against the ROLE** (`objectId` = roleId, `role.service.ts`), so `objectType User` alone would never show them. LOGIN and LOGOUT are left out (not changes; the Sessions panel will hold sign-ins), from the rows and the count. So `total` is exact and Load more never repeats or skips.
 - **A transfer appears once.** `transferUser()` writes an audit row AND a `UserTransferEvent`. The audit row is the one listed; an edit that moved the unit or position is matched to its event (same actor, same source and destination unit, within 10 minutes, nearest; `matchTransfers()`) and read as TRANSFERRED with the units, the position taken and the head appointment (NONE, DONE, FAILED). Unmatched, it stays a profile edit (an invited person's first placement). The failed head appointment's own audit row is listed as HEAD_APPOINTMENT_FAILED; its error text is never returned.
-- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
+- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; `sessions_ended` → SESSIONS_ENDED, with its `scope` and `count` when both are of their shapes; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
 - **Never returned: `before`, `after`, `metadata`.** They hold a whole User row (its invitation token included), a revoked invitation's email and an error message. The server reads them for the kind and, for an edit, which of nine fields differ (`name`, `language`, `calendar`, `position`, `unit`, `manager`, `actingUnit`, `outOfOffice`, `cover`), compared only where both copies hold the key. Never their values.
-- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, or `transfer` (`from`, `to`, `position`, `headAppointment`).
+- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, `transfer` (`from`, `to`, `position`, `headAppointment`), or `sessionsScope` + `sessionsCount` (SESSIONS_ENDED: `one`, `others` or `all`, and a whole number of zero or more; both or neither, neither when either stored value is not of its shape, and the screen then says it without them).
 - **The actor** is `{ id, name }` while a person of this organisation, deactivated included (they did it). It is null with no actorId (the system), or when the id is not a person here: a platform administrator signing in as the person (IMPERSONATE_START names them), or a deleted account. An impersonated write is stored under the impersonated person with no marker (Open / Deferred, ACC-99), so it cannot be told apart.
 - **A role is named only with `roles:view`** (`GET /users/:userId/roles`'s gate); without it the row says a role was granted, and no role is read.
 - **Cost:** at most 8 queries per page (the person; the page and its count; actors, roles and transfer events, each only when needed; units and positions only for a transfer), every one scoped by organisation. Nothing on the per-request path.
@@ -14490,8 +14661,10 @@ Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is "Signed-in de
   `sessions_ended` security email (a failed email never fails the sign-out).
 - **Audit** (every ending): `UPDATE` / `User` / the person, `metadata: { event:
   'sessions_ended', scope: 'one' | 'others' | 'all', count }`. No address, device or
-  token. Part 2's access history (#323) reads it as "Changed" until a SESSIONS_ENDED
-  kind is added there.
+  token. Part 2's access history reads it as SESSIONS_ENDED: "Signed out of one
+  device", "Signed out of other devices: {count} devices" or "Signed out
+  everywhere: {count} devices" (counted, every Arabic category), and "Signed out of
+  devices" when the scope or count could not be read.
 - **`users:manage_sessions`**: grantable, seeded to Organization Administrator only,
   in Users' "Account access" group. Existing organisations get it from
   `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`
@@ -17054,6 +17227,12 @@ write a second copy.
   owning unit and who holds `meetings:schedule` through an active role. It is
   in MEMBER's SQL (`meetingMemberSql`), so the parent rule, every list, the
   clash check and the task registry read it, live, with no query per row.
+  **Uncorrelated (PR 7):** the viewer's scheduling unit is one scalar subquery
+  (`viewerScheduledUnitSql`), which Postgres runs once per query as an InitPlan,
+  compared with each meeting's owning unit under `COALESCE(…, FALSE)`, so a
+  viewer who schedules nowhere reads FALSE, never NULL (a NULL under `NOT`
+  dropped Sub-units rows). The db-spec reads the plan to prove it.
+  `meetingInviteeSql` is MEMBER without this clause; only Mine uses it.
 
 Anyone else gets the identical 404 "Meeting not found". It is the same for a
 real meeting, a missing one and another organisation's.
@@ -17111,7 +17290,8 @@ then reads the page's meetings and their stages in one batch each.
 
 | `view` | Rows |
 |---|---|
-| `mine` (default) | meetings the viewer is a member of or organised; upcoming, soonest first |
+| `mine` (default) | meetings the viewer is invited to (a member by seat, unit or invitation) or organised; upcoming, soonest first. The SCHEDULER clause does not count here (PR 7): a scheduler's unit's meetings are in `upcoming`, not Mine |
+| `upcoming` | every meeting the viewer sees that has not started; soonest first |
 | `past` | every meeting the viewer sees that has started; latest first |
 | `minutes` | meetings whose minutes the viewer records: a seat with `record_minutes`, or `meetings:record_minutes` in the unit |
 | `all` | every meeting; `meetings:view` only, else 403 |
@@ -17302,6 +17482,10 @@ answer reads its deadline's clock after the locks.
   - `MEETING_AGENDA_TITLE_REQUIRED` 400;
   - `MEETING_AGENDA_ITEM_NOT_FOUND` 404;
   - `MEETING_AGENDA_ORDER_MISMATCH` 400;
+  - `MEETING_AGENDA_CHANGED` 409 (PR 7, P198): the order sent with
+    `expectedItemIds`, the order the person reordered FROM, is not the agenda's
+    order now (another reorder, an item added or removed meanwhile). Compared
+    under the agenda's locks; nothing moves. A db-spec races two reorders.
   - `MEETING_PRESENTER_NOT_FOUND` 404.
 - **"Open actions from the last meeting"** reads the previous meeting's action
   items. That arrives with the minutes (PR 4).
@@ -17667,3 +17851,90 @@ a day and a time, then HH:mm.
 **Test support:** `meeting-fixtures.testing.ts` (`aMeeting`, `anAttendee`) and
 `meeting-dialog-layout.testing.ts` (open, wait for the motion, measure), imported
 by specs only.
+
+### 18.16 The screens, part 2: the agenda editor (PR 7)
+
+Plan §6.6 lists the departures. Frontend under `foundation/meetings/`, on the
+routes of §18.10.
+
+**The agenda panel** (`am-meeting-agenda-panel`, on `/meetings/:id`):
+
+- **The header** counts the items and the minutes planned
+  (`plural.meeting.minutesPlanned`).
+- **Each row:** its place, title, "Presenter · seat · n min", its papers
+  (`am-meeting-file-list`) and, for a scheduler, Edit.
+- **Reorder:** drag by the handle, or the handle's ArrowUp / ArrowDown. Either
+  sends the whole order with the order seen (`PUT …/agenda/order`,
+  `expectedItemIds`); the new place is said aloud (`aria-live`), and a refusal
+  is said from its code. While a move saves, the handle is `aria-disabled`,
+  never disabled, so it keeps focus and its keys are ignored; after the move,
+  focus is put back on the moved item's handle.
+- **Reload, never Retry:** `MEETING_AGENDA_ITEM_NOT_FOUND`,
+  `MEETING_AGENDA_ORDER_MISMATCH` and `MEETING_AGENDA_CHANGED`
+  (`meetingNeedsReload()`) show "Reload the meeting", in the panel's line and in
+  the item dialog in Save's place; it closes the dialog and runs the page's
+  `load()`.
+- **A re-read that fails** after a write (the invitees after an agenda change,
+  the files after a paper or attachment) is said in the panel's line, with
+  Retry for that read.
+- **`canManage`** is the read's `may.manageAgenda`. Without it the panel is
+  read-only: no Add item, no Edit, no handle, no paper buttons. Absent, never
+  disabled.
+
+**The item dialog** (`app-meeting-agenda-item-dialog`, `app-edit-dialog`): Title
+(required), Description, then Presenter and Duration on one row.
+
+- **Presenter** lists the invitees (sent as `attendeeId`), or a person found by
+  name through the guest candidates (sent as `userId`, so the server adds them
+  as a guest, §18.10); a line under the field says so. The search is offered
+  only with `may.manageGuests`, since it adds a guest.
+- **An edit sends only the fields the person changed** (P198), so it never
+  writes back someone else's newer value for a field left alone. Save with
+  nothing changed sends nothing. Two people changing the SAME field is ACC-323.
+- **Duration** is 5 to 120 minutes, or Not set.
+- **Remove item** (editing only) asks first, and says the item's papers go to
+  the recycle bin.
+- **Every write answers with the whole agenda**, which replaces the panel's,
+  and the page then reads the invitees again (a presenter may have been added).
+- **A refusal** is said in the footer from its code; any other failure with the
+  dialog's own sentence.
+
+**Papers and attachments** (`am-meeting-file-list`): a chip per file opens the
+in-app viewer (`FileViewerService`); a scheduler also gets an add button (a
+hidden file input) and a remove icon that asks first. A refused upload is said
+from the storage layer's code (`FilesService.refusal()`), then the meeting's,
+never the server's words. The page's Attachments section shows when the viewer
+may manage the agenda or attachments exist.
+
+**The page, after the PR 6 review:**
+
+- **The answer** is three buttons with `aria-pressed`; the plain answer line
+  shows only once answering has closed. The note box is filled from
+  `myAnswer.note` when the page loads.
+- **The invitees' summary** reads "Members: …". Each row ends with its answer
+  as a status (`meeting.invitees.attending` / `cantAttend`: «حضور», «اعتذار»;
+  the answer buttons keep «سأحضر» and «لا يمكنني الحضور»),
+  the note under it, and a scheduler's remove is a muted icon named "Remove
+  {{name}}".
+- **The panel's See all** opens `/meetings?committeeId=` or `?orgUnitId=`, the
+  owner's name passed in the navigation's state (else read from the first row).
+  The list then offers Upcoming and Past for that owner only, names it, and
+  links back to every meeting.
+
+**The tenant's wall clock, a skipped hour:** `FormatService.instantAt()` reads
+a time a clock change repeats as its first occurrence, and a time it skips as
+the same moment one hour later (02:30 on 8 Mar 2026 in New York, or on 29 Mar
+2026 in Berlin, is 03:30). Its two candidates take the zone's offset a day
+before and a day after, so both sides of a change are tried east and west of
+UTC (P198: east of UTC, a repeated time had read as its second occurrence). The
+earliest day Schedule and Reschedule offer is read again each time they open.
+
+**The dialog**, measured under the 420px cap at 1280 and 390, in both
+languages, each keeping 20px:
+
+| Agenda item | Body (en / ar) |
+|---|---|
+| Empty, with its title error, or an item edited | 292 / 312 |
+| Filled, a presenter found by name, or refused | 309 / 312 at 1280; 326 / 329 at 390 |
+
+The design measured 301 / 322. Only the description scrolls, inside itself.
