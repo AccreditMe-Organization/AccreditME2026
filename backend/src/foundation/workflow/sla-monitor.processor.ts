@@ -19,6 +19,7 @@ import { TaskDueWarningService } from '../task/task-due-warning.service';
 import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
 import { readEscalationRules, type EscalationRule } from './stage-escalation';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
+import { stageDeciders } from './stage-deciders';
 import { findActiveCoversForUnits } from '../organization/unit-headship';
 
 /**
@@ -503,10 +504,24 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // look: one recomputer, from the pools just resolved.
     await this.recordPoolLeavers(openStages, pools);
 
+    // ACC-325 — who can DECIDE each entry (the record type's filter,
+    // stage-deciders.ts; the whole pool where none is registered), batched: one
+    // call per organisation and record type that has a filter, none otherwise.
+    const deciders = await stageDeciders(
+      this.prisma,
+      openStages.flatMap((e) => {
+        const pool = pools.get(e.id);
+        return pool
+          ? [{ key: e.id, organizationId: e.workflowInstance.organizationId, stage: e.stage, instance: e.workflowInstance, members: pool.members }]
+          : [];
+      }),
+      new Date(),
+    );
+
     for (const instanceStage of openStages) {
       const organizationId = instanceStage.workflowInstance.organizationId;
       const pool = pools.get(instanceStage.id);
-      const isNowUnassigned = !pool || pool.members.length === 0;
+      const isNowUnassigned = !pool || (deciders.get(instanceStage.id) ?? []).length === 0;
 
       // wasUnassigned read from the row as fetched at the top of this sweep
       // pass, before anything here touches it — the precise condition that

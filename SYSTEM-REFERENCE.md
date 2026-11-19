@@ -7049,6 +7049,21 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   review-stage move has an app-move line: the read keys an added stage as
   `REVIEW_STAGE_MOVE_KEY`. An empty added stage is flagged on entry and listed
   by `STAGE_WITHOUT_ASSIGNEE` (unchanged, now pinned).
+- **A review stage nobody can DECIDE is flagged too (ACC-325).** The two
+  `isUnassigned` flaggers (the engine's entry-time
+  `checkAndFlagUnassignedStage()` and the SLA sweep) test the stage's DECIDERS,
+  not its whole pool: `stageDeciders()` in `workflow/stage-deciders.ts`, a
+  per-record-type registry (`STAGE_DECIDER_FILTERS`, beside
+  `TRANSITION_PRECONDITIONS`, fail open). Its one entry, committee change
+  requests on an added review stage only, keeps a pool member who is not the
+  requester (`requestedById`, the column the decision path refuses
+  `CHANGE_REQUEST_OWN_DECISION` on) and may open the committee
+  (`committeeReadersAmong()`). Draft and Under review keep their whole pool. It
+  decides only the flag, never who may act. The sweep re-derives it, so the
+  flag clears when a reader who is not the requester joins. Cost: none for any
+  other entry; a review-stage entry costs one request read and one readers read
+  per committee, batched per organisation in the sweep. Setup health's type is
+  unchanged.
 - **A cover gives reach only while its person is ACTIVE** (PR 2):
   `findUnitsCoveredBy()`, `findUnitLeadersAmong()` and the gate's cover arm;
   `findRunningActingCoversForUnits()` (what a unit's cover IS) is unchanged.
