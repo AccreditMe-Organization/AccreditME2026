@@ -38,9 +38,11 @@ import { SYSTEM_WORKFLOW_SEED } from '../../workflow/workflow.seed';
 import { itEnforcesTenantIsolation } from '../../../common/testing/tenant-isolation';
 import { COMMITTEE_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-workflow';
-import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
+import { AWAITING_DECISION_CAP, ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
+import * as candidates from './awaiting-decision-candidates';
+import { chainCandidateIds, reviewCandidates } from './awaiting-decision-candidates';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
 import { ChangeRequestDepartureService, PreparedDeparture } from './departure/change-request-departure.service';
 import { UserService } from '../../user/user.service';
@@ -1334,7 +1336,10 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         return v;
       },
     }) as unknown as PrismaService;
-    return { svc: new CommitteeChangeRequestService(counting, workflow, tasks, audit, notifications, new StageRulesService(counting)), log };
+    // ACC-245 PR 2 — the engine and its pool read through the counting client too, so a
+    // review stage's pool reads are counted.
+    const countingWorkflow = new WorkflowService(counting, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(counting));
+    return { svc: new CommitteeChangeRequestService(counting, countingWorkflow, tasks, audit, notifications, new StageRulesService(counting)), log };
   };
 
   // ── Prompt 85: awaiting-decision costs a non-decider ONE query ──────────────
@@ -1803,6 +1808,45 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   // ── ACC-245 — added review stages (option B: Draft → [reviews] → Under review) ──
 
   describe('added review stages (ACC-245)', () => {
+    // P200 — the pinned queries (see 'PR 2 cost'). A change to any of these lists is a
+    // change to the endpoint's cost: say it in the PR, under the performance rule.
+    /** The gate (1), then where the viewer can be in a pool: the stages and their entries (2), the pool's users (1). */
+    const NON_REVIEWER_QUERIES = ['$queryRaw', 'workflowStage.findMany', 'workflowStageAssignee.findMany', 'user.findMany'];
+    const REVIEWER_QUERIES = [
+      ...NON_REVIEWER_QUERIES,
+      // One candidate page, its rows, their stage keys, the page's pool (no readable read: committees:view).
+      '$queryRaw',
+      'committeeChangeRequest.findMany',
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'workflowStageAssignee.findMany',
+      'user.findMany',
+      // The response: the committees' stage rules, the requests' stages, the stage's name. No chain batch.
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'workflowStageRecordAction.findMany',
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'workflowStage.findMany',
+    ];
+    const CHAIN_DECIDER_QUERIES = [
+      '$queryRaw', // the gate
+      '$queryRaw', // the chain arm's candidates
+      'committeeChangeRequest.findMany',
+      // One chain resolution.
+      'committee.findMany',
+      'committeeMember.findMany',
+      '$queryRaw',
+      'user.findMany',
+      'orgUnitHeadAssignment.findMany',
+      // The response: the committees' stage rules, the requests' stages, the unit's name.
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'workflowStageRecordAction.findMany',
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'orgUnit.findMany',
+    ];
     /** The change request template's stages and moves, read fresh. */
     async function shape(w: World) {
       const tpl = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST' } });
@@ -2194,18 +2238,168 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
     });
 
-    it('should NOT return records belonging to a different tenant — the awaiting list’s review stages: another organisation’s request never reaches a reviewer here', async () => {
+    it('should NOT return records belonging to a different tenant — the awaiting list’s review stages: each reviewer sees only their own organisation’s request', async () => {
       const w = await world();
       const other = await world();
       const legal = await person(w, 'Legal');
-      // The same person named on BOTH organisations' added stages (an id from another organisation is refused by the stage save, so the other names its own).
-      await addReview(w, 'Legal review', [legal]);
       const otherLegal = await person(other, 'Legal');
+      await addReview(w, 'Legal review', [legal]);
       await addReview(other, 'Legal review', [otherLegal]);
+      // A real submitted request standing in each organisation's own review stage,
+      // so both gates pass and both list queries run.
+      const ours = await submitted(w);
       const theirs = await submitted(other);
-      expect(await awaitingIds(w, { userId: legal, permissions: [VIEW] })).toEqual([]);
+      expect(await awaitingIds(w, { userId: legal, permissions: [VIEW] })).toEqual([ours.id]);
       expect(await awaitingIds(other, { userId: otherLegal, permissions: [VIEW] })).toEqual([theirs.id]);
-      expect((await requests.awaitingDecision(w.org, { userId: otherLegal, permissions: [VIEW] })).length).toBe(0);
+      // Each reviewer, asked in the OTHER organisation, sees nothing.
+      expect(await awaitingIds(w, { userId: otherLegal, permissions: [VIEW] })).toEqual([]);
+      expect(await awaitingIds(other, { userId: legal, permissions: [VIEW] })).toEqual([]);
+    });
+
+    // ── P200: every organisation predicate in the two candidate queries, against corrupt cross-organisation links ──
+
+    /** A request row written directly, for a corrupt fixture. */
+    const rawRequest = async (organizationId: string, committeeId: string, requestedById: string) =>
+      prisma.committeeChangeRequest.create({
+        data: {
+          organizationId,
+          committeeId,
+          requestedById,
+          number: 100_000 + Math.floor(Math.random() * 800_000),
+          reason: 'corrupt fixture',
+          changes: { quorumCount: 9 },
+          submittedAt: new Date(),
+        },
+      });
+    /** A newest instance written directly, labelled with `organizationId`, standing in `stageId`. */
+    const rawInstance = async (organizationId: string, templateId: string, objectId: string, stageId: string) =>
+      prisma.workflowInstance.create({
+        data: {
+          organizationId,
+          workflowTemplateId: templateId,
+          objectType: 'COMMITTEE_CHANGE_REQUEST',
+          objectId,
+          status: 'IN_PROGRESS',
+          currentStageId: stageId,
+          createdAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+    it('should NOT return records belonging to a different tenant — the chain arm’s query: each organisation predicate is load-bearing', async () => {
+      const w = await world();
+      const other = await world();
+      const a = await shape(w);
+      const b = await shape(other);
+      const viewerId = w.reader.userId;
+      // Control: a plain request Under review here.
+      const plain = await submitted(w);
+      // (1) the instance's organisation: a NEWER instance filed under the other
+      // organisation, at the other's Approved stage, names our request.
+      await rawInstance(other.org, b.tpl.id, plain.id, b.byKey('approved').id);
+      // (2) the stage's template: a request whose newest instance (ours) stands in
+      // the OTHER organisation's Under review.
+      const hijacked = await requests.create(w.other, { changes: { quorumCount: 8 }, reason: 'r', submit: true } as never, w.org, w.requester);
+      await rawInstance(w.org, a.tpl.id, hijacked.id, b.byKey('under_review').id);
+      // (3) the request's organisation: the other's request, with an instance filed under ours.
+      const foreign = await rawRequest(other.org, other.committee, other.requester.userId);
+      await rawInstance(w.org, a.tpl.id, foreign.id, a.byKey('under_review').id);
+
+      expect(await chainCandidateIds(prisma, w.org, viewerId, AWAITING_DECISION_CAP)).toEqual([plain.id]);
+    });
+
+    it('should NOT return records belonging to a different tenant — the review arm’s query: each organisation predicate is load-bearing', async () => {
+      const w = await world();
+      const other = await world();
+      const a = await shape(w);
+      const viewerId = w.reader.userId;
+      const reviewer = await person(w, 'Reviewer');
+      const stage = await addReview(w, 'Legal review', [reviewer]);
+      const scope = { stageIds: [stage.id], committeeStageIds: [], committeeIds: [], unitStageIds: [a.byKey('rejected').id], unitIds: [w.unit] };
+      // Control: a plain request standing in the review stage.
+      const plain = await submitted(w);
+      // (1) the instance's organisation: our withdrawn-to-draft request with a NEWER
+      // instance filed under the other organisation, standing in our review stage.
+      const draft = await requests.create(w.other, { changes: { quorumCount: 8 }, reason: 'r' } as never, w.org, w.requester);
+      await prisma.committeeChangeRequest.update({ where: { id: draft.id }, data: { submittedAt: new Date() } });
+      await rawInstance(other.org, a.tpl.id, draft.id, stage.id);
+      // (2) the request's organisation: the other's request on OUR committee, with an instance filed under ours.
+      const foreign = await rawRequest(other.org, w.committee, other.requester.userId);
+      await rawInstance(w.org, a.tpl.id, foreign.id, stage.id);
+      // (3) the committee's organisation: our request on the OTHER organisation's
+      // committee, which names our unit, standing in the unit-routed stage.
+      await prisma.committee.update({ where: { id: other.committee }, data: { orgUnitId: w.unit } });
+      const crossed = await rawRequest(w.org, other.committee, w.requester.userId);
+      await rawInstance(w.org, a.tpl.id, crossed.id, a.byKey('rejected').id);
+
+      expect((await reviewCandidates(prisma, w.org, viewerId, scope, null, AWAITING_DECISION_CAP)).map((c) => c.id)).toEqual([plain.id]);
+    });
+
+    it('P200: requests in an added stage the viewer is not in are never read for them, so they cannot use the cap', async () => {
+      const w = await world();
+      const [x, v] = [await person(w, 'X'), await person(w, 'V')];
+      await addReview(w, 'First', [x]);
+      await addReview(w, 'Second', [v]);
+      const older = await submitted(w); // stands in First (X's), submitted first
+      const mine = await requests.create(w.other, { changes: { quorumCount: 8 }, reason: 'r', submit: true } as never, w.org, w.requester);
+      await requests.approve(mine.id, w.org, { userId: x, permissions: [VIEW] }); // on to Second (V's)
+      const read = jest.spyOn(candidates, 'reviewCandidates');
+      expect(await awaitingIds(w, { userId: v, permissions: [VIEW] })).toEqual([mine.id]);
+      // The candidate read itself never returned X's request.
+      const returned = (await Promise.all(read.mock.results.map((r) => r.value as Promise<{ id: string }[]>))).flat().map((c) => c.id);
+      expect(returned).toEqual([mine.id]);
+      expect(returned).not.toContain(older.id);
+    });
+
+    it('P200: the readable path through oversight — the owning unit’s head, on no seat and without committees:view, named on the stage, sees the row', async () => {
+      const w = await world();
+      // The approver heads the root unit, which owns the committee; no seat, no view key here.
+      await addReview(w, 'Legal review', [w.approver.userId]);
+      const r = await submitted(w);
+      expect(await awaitingIds(w, { userId: w.approver.userId, permissions: [] })).toEqual([r.id]);
+    });
+
+    describe('PR 2 cost: the query counts, pinned (P200)', () => {
+      it('a non-reviewer and non-decider, while a request stands in an added stage: a small fixed number of queries, no request read', async () => {
+        const w = await world();
+        const legal = await person(w, 'Legal');
+        await addReview(w, 'Legal review', [legal]);
+        await submitted(w);
+        const { svc, log } = countedRequests();
+        expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
+        expect(log.filter((q) => q.startsWith('committeeChangeRequest.'))).toEqual([]);
+        expect(log).toEqual(NON_REVIEWER_QUERIES);
+      });
+
+      it('a reviewer: the same, then one candidate page, its rows, their stages and one pool read (a committees:view holder needs no readable read), then the response', async () => {
+        const w = await world();
+        const legal = await person(w, 'Legal');
+        await addReview(w, 'Legal review', [legal]);
+        const r = await submitted(w);
+        const { svc, log } = countedRequests();
+        expect((await svc.awaitingDecision(w.org, { userId: legal, permissions: [VIEW] })).map((x) => x.id)).toEqual([r.id]);
+        expect(log).toEqual(REVIEWER_QUERIES);
+      });
+
+      it('the gate reads only the NEWEST instance: an older one standing in an added stage opens nothing (one query)', async () => {
+        const w = await world();
+        const legal = await person(w, 'Legal');
+        await addReview(w, 'Legal review', [legal]);
+        const r = await submitted(w); // its instance stands in the added stage
+        const s = await shape(w);
+        await rawInstance(w.org, s.tpl.id, r.id, s.byKey('approved').id); // a NEWER instance, elsewhere
+        const { svc, log } = countedRequests();
+        expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
+        expect(log).toEqual(['$queryRaw']);
+      });
+
+      it('a chain decider, with no added stage holding a request: the gate, the chain arm, the response', async () => {
+        const w = await world();
+        const r = await submitted(w);
+        const { svc, log } = countedRequests();
+        expect((await svc.awaitingDecision(w.org, w.approver)).map((x) => x.id)).toEqual([r.id]);
+        expect(log).toEqual(CHAIN_DECIDER_QUERIES);
+        expect(log).not.toContain('workflowStageAssignee.findMany'); // the review arm never ran (its entries read)
+      });
     });
 
     it('B2: a review notice goes only to the stage’s people who may open the committee', async () => {
