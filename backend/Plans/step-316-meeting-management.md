@@ -1454,6 +1454,46 @@ them together with their resolver.
      - Home's review and answer rows.
    - **No migration.**
    - **Live after:** the API.
+   - **6.3 PR 4 as built (19 Nov):** SYSTEM-REFERENCE §18.13.
+     - **Routes:**
+       - `GET /meetings/:id/minutes` and `PUT /meetings/:id/attendance`;
+       - `PUT …/agenda/:itemId/minutes`, and the decisions under
+         `…/agenda/:itemId/decisions`;
+       - action items under `…/agenda/:itemId/actions` and `…/actions/:id`;
+       - `PUT …/open-actions/:taskId/note`;
+       - `POST …/distribute` and `POST …/return`;
+       - `PUT …/review/no-corrections`, `POST …/review/suggestions`, and
+         `…/apply` or `…/decline` on a suggestion;
+       - `GET /meetings/awaiting-me` (Home).
+     - **Departures from the plan:**
+       - **Attendance complete is Distribute's own check**, inside its `inTx`
+         under the meeting row's lock, and in the minutes read's `distribute`
+         block. It is not a `TRANSITION_PRECONDITIONS` entry: Minutes Draft
+         carries no flag to key it on, and ACC-255 retired keys. Only the
+         approval's four checks are the precondition.
+       - **The minutes' `draft` phase includes Agenda Issued for whoever
+         records them** (it allows `record_attendance` from the start), so
+         attendance can be taken during the meeting and read back.
+       - **Return clears `reviewBy`; answers are kept per round**, so "answers
+         reset" needs no delete: the next distribution opens round n + 1.
+       - **The reminder also goes on the review date itself** if the sweep
+         missed the day before. Never after the date.
+       - **Home's rows are their own read**, `GET /meetings/awaiting-me`, not a
+         part of `workflows/awaiting-me`. `MyWorkCountsService` joins it in PR 7.
+       - **A decline's reply is optional.** The author is told either way.
+       - **The engine:**
+         - `TransitionEffectDeps` gained `tasks`, and each part of an effect
+           gets the deps;
+         - preconditions take `PreconditionServices`;
+         - the moves list's `blockedBy`;
+         - `WorkflowService.currentStagePool()`.
+     - **Open for lane B:**
+       - **6.6 vs §4.1:** the AI design draws the Chair reading the Minutes
+         Draft's accepted text. §4.1, which PR 4 builds, opens Minutes Draft to
+         whoever records only (§6a).
+       - **An action-item draft with an empty owner or due date** needs an
+         expand migration (both are NOT NULL since PR 1), if ACC-322 wants one
+         (§6a).
 5. **PR 5: series, backend.**
    - Changes:
      - patterns, holiday moves, titles;

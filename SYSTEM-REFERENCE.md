@@ -16880,7 +16880,7 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
@@ -17236,3 +17236,121 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   - on cancel (the reason).
 
   The last two go only to those already invited.
+
+### 18.13 Minutes and review (PR 4)
+
+Plan §3.4–§3.9, §4.1, §4.2. Code: `meeting-minutes-rules.ts` (the rules, one
+home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
+`meeting-review-reminder.service.ts`, `meeting-minutes.controller.ts`.
+
+- **The phase is read from the stage's rules, never a key:**
+  - `approved`: the stage is flagged `MINUTES_FINAL`;
+  - `review`: it allows `suggest_correction` or `apply_suggestions`;
+  - `draft`: it allows `record_minutes` or `record_attendance`;
+  - Planned and Cancelled have none.
+- **Who reads `GET /meetings/:id/minutes` (§4.1):**
+  - whoever records the minutes (`MEETING_RECORDERS`), in any phase;
+  - from `review`: the committee's members (or the unit's own people), Minutes
+    Review's pool, and the approvers (heads above holding `approve_subunits`
+    included);
+  - once `approved`: everyone who may see the meeting.
+
+  Anyone else who sees the meeting gets 403 `MEETING_MINUTES_NOT_OPEN`; anyone
+  who doesn't, the identical 404.
+- **Who writes:** `MEETING_RECORDERS` (else 403 `MEETING_NOT_RECORDER`), and
+  what the stage allows:
+  - attendance: `record_attendance`, from the start time only
+    (`MEETING_NOT_STARTED`);
+  - the minutes, decisions and action items: `record_minutes`;
+  - in Minutes Review:
+    - the minutes and decisions under `apply_suggestions`;
+    - an action's due date under `change_action_dates`;
+    - each write records a `MeetingReviewChange` (`DISCUSSION`, `DECISION` or
+      `ACTION_DATE`).
+- **Lock order:** the instance FOR SHARE, the meeting row FOR UPDATE, then the
+  agenda item FOR UPDATE.
+- **Every minutes write records ONE Meeting audit row** through `minutesAudit()`,
+  with fields and ids, never the text. ACC-322 adds its `aiDraft` there.
+- **Attendance:**
+  - one row (saved on tap) or several;
+  - "Can't attend" shows as `suggested: APOLOGIES` until something is recorded;
+  - the quorum is frozen in `quorumAtAttendance` at the first recording.
+- **The quorum line** counts MEMBERS recorded present. Below the quorum, every
+  decision reads `takenWithoutQuorum`.
+- **Votes:** all three or none (`MEETING_VOTES_PARTIAL`). The sum may not exceed
+  the members present (`MEETING_VOTES_EXCEED_PRESENT`, with `present` and
+  `total`), counted under the meeting row's lock.
+- **An item's discussion is replaced whole** (`PUT …/agenda/:itemId/minutes`).
+- **Action items:**
+  - title, owner (an ACTIVE person of the organisation) and a future due date
+    (`MEETING_ACTION_DUE_IN_PAST`);
+  - an owner is never an outside guest, who has no user;
+  - PR 1's columns make both the owner and the due date required (plan §6a).
+- **Open actions from the last meeting:**
+  - the newest earlier meeting of the same committee or unit whose minutes were
+    approved;
+  - its action items whose task is still open;
+  - a note on each (`PUT …/open-actions/:taskId/note`).
+- **Distribute (`POST /meetings/:id/distribute`, the app's move into Minutes
+  Review):**
+  - only Minutes Draft's pool may press it;
+  - attendance must be recorded for every member and organisation guest
+    (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`), checked inside the move
+    under the meeting row's lock, so nothing is written;
+  - the review date (`reviewBy`, a day after today, default 5 working days) and
+    the round (`reviewRound` + 1) are written with the move (`inTx`);
+  - the members recorded present are told after the commit.
+- **Return (`POST /meetings/:id/return`, the app's move back to Minutes
+  Draft):**
+  - Minutes Review's pool, or whoever records the minutes;
+  - the reason is the entry's comment, and the present members are told;
+  - `reviewBy` is cleared. The round's answers and suggestions stay with it, and
+    the next distribution opens a new round.
+- **Review answers:**
+  - only a member recorded PRESENT answers (`MEETING_NOT_REVIEWER`), while the
+    stage allows `suggest_correction`;
+  - "No corrections" is a `MeetingReviewAnswer`;
+  - a suggestion counts as the member's answer and deletes their "No
+    corrections" in the round;
+  - "No corrections" after suggesting is `MEETING_REVIEW_SUGGESTED`.
+  - Apply and decline are the recorders', under `apply_suggestions`. A declined
+    suggestion's author is told, with the reply.
+- **Approve Minutes is held** by `TRANSITION_PRECONDITIONS` MEETING (a move that
+  enters `MINUTES_FINAL`), in this order:
+  1. the review is open: not every present member answered, and the date has
+     not passed in the organisation's zone (`MEETING_REVIEW_OPEN`, with
+     `waitingFor`);
+  2. an OPEN suggestion (`MEETING_SUGGESTION_OPEN`);
+  3. a draft due now or before (`MEETING_ACTION_PAST_DUE`);
+  4. a draft due after its task's SLA limit, MEDIUM counted from now
+     (`MEETING_ACTION_PAST_SLA_LIMIT`, with `limit`).
+
+  The moves list reads it as `blockedBy` (below).
+- **Entering `MINUTES_FINAL` (`TRANSITION_EFFECTS`):**
+  - every draft becomes a task in the move's transaction: the owner its only
+    assignee, MEDIUM, due when the draft says, its limit the MEDIUM window;
+  - the item is linked (`taskId`) and `minutesApprovedAt` / `approvedById` are
+    stamped;
+  - the tasks are announced after the commit, with one Meeting audit row.
+- **The reminder:** the `sla-monitor` sweep (`sweepMeetingReviewReminders`). On
+  the working day before the review date (or on it, if missed), it tells the
+  present members who haven't answered. One conditional UPDATE of
+  `reviewRemindedRound` makes it once per round.
+- **Home:** `GET /meetings/awaiting-me` is self-scoped and needs no permission:
+  - reviews to answer;
+  - invitations not answered before the start;
+  - each part capped at 200 candidates.
+
+**The engine, for every record type:**
+
+- `TransitionEffectDeps` gained `tasks`, and every part of an effect gets the
+  deps.
+- `TRANSITION_PRECONDITIONS` take `PreconditionServices` (now, the
+  organisation's zone, a task's SLA limit).
+- `GET /workflows/instances/:id/moves` gives each ADVANCE move `blockedBy`: the
+  precondition's refusal, run read-only, for a viewer in the pool, and only for
+  a type with a precondition.
+- `WorkflowService.currentStagePool()` lets a module's own endpoint say who may
+  press its APP move.
+- `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
+- `WorkingCalendarService.previousWorkingDay()`.
