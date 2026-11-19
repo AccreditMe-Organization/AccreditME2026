@@ -1101,6 +1101,13 @@
       "editNamed": "تعديل «{{title}}»",
       "deleteNamed": "حذف «{{title}}»",
       "moved": "نُقلت «{{title}}» إلى الموضع {{position}} من {{of}}",
+      "reorderNamed": "إعادة ترتيب المهمة {{position}}: {{title}}",
+      "handleHint": "المسافة لالتقاطها، ومفتاحا الأسهم لتحريكها، والمسافة لإفلاتها، وEscape للإلغاء.",
+      "pickedUp": "التُقطت «{{title}}»، الموضع {{position}} من {{of}}. مفتاحا الأسهم لتحريكها، والمسافة لإفلاتها، وEscape للإلغاء.",
+      "movingTo": "«{{title}}»، الموضع {{position}} من {{of}}",
+      "droppedUnchanged": "بقيت «{{title}}» في الموضع {{position}} من {{of}}",
+      "dropCancelled": "أُلغيت إعادة الترتيب. عادت «{{title}}» إلى الموضع {{position}} من {{of}}",
+      "orderNotSaved": "تعذّر حفظ الترتيب الجديد. عادت المهام إلى ترتيبها السابق.",
       "orderChanged": "غيّر شخص آخر هذه القائمة، فأُعيد تحميلها.",
       "delete": {
         "title": "حذف هذه المهمة؟",
