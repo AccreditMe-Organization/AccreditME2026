@@ -2,6 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import type { IFileDownload } from '../../../shared/files/files.service';
+
+function fileBody(file: File): FormData {
+  const body = new FormData();
+  body.append('file', file, file.name);
+  return body;
+}
 
 /**
  * ACC-316 PR 6 — the meeting API, as the backend answers it (PR 3a, 3b:
@@ -221,6 +228,29 @@ export class MeetingService {
 
   files(id: string): Observable<MeetingFilesDto> {
     return this.http.get<MeetingFilesDto>(`${this.base}/${id}/files`);
+  }
+
+  /** ACC-316 PR 7 — a paper of one agenda item (multipart, the field `file`). */
+  addPaper(id: string, itemId: string, file: File): Observable<MeetingFileDto> {
+    return this.http.post<MeetingFileDto>(`${this.base}/${id}/agenda/${itemId}/files`, fileBody(file));
+  }
+
+  /** ACC-316 PR 7 — a general attachment of the meeting. */
+  addAttachment(id: string, file: File): Observable<MeetingFileDto> {
+    return this.http.post<MeetingFileDto>(`${this.base}/${id}/files`, fileBody(file));
+  }
+
+  removeFile(id: string, fileId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/${id}/files/${fileId}`);
+  }
+
+  /** The in-app viewer's link (the same entitlement as the download). */
+  viewFile(id: string, fileId: string): Observable<IFileDownload> {
+    return this.http.get<IFileDownload>(`${this.base}/${id}/files/${fileId}/view`);
+  }
+
+  downloadFile(id: string, fileId: string): Observable<IFileDownload> {
+    return this.http.get<IFileDownload>(`${this.base}/${id}/files/${fileId}/download`);
   }
 
   clashes(body: { meetingId?: string; committeeId?: string; orgUnitId?: string; times: { startsAt: string; durationMinutes: number }[] }): Observable<MeetingClashDto[]> {

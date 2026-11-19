@@ -3668,6 +3668,10 @@
       "people": {
         "one": "{{count}} person",
         "other": "{{count}} people"
+      },
+      "minutesPlanned": {
+        "one": "{{planned}} of {{count}} min planned",
+        "other": "{{planned}} of {{count}} min planned"
       }
     }
   },
@@ -4872,8 +4876,12 @@
         "past": "Past",
         "minutes": "Minutes I record",
         "all": "All meetings",
-        "subunits": "Sub-units' meetings"
-      }
+        "subunits": "Sub-units' meetings",
+        "upcoming": "Upcoming"
+      },
+      "ownerFilter": "Meetings of {{owner}}",
+      "oneOwner": "one committee or unit",
+      "clearOwner": "Show all meetings"
     },
     "page": {
       "loading": "Loading the meeting…",
@@ -4899,7 +4907,13 @@
     "agenda": {
       "title": "Agenda",
       "empty": "No items yet.",
-      "standing": "Standing"
+      "standing": "Standing",
+      "add": "Add agenda item",
+      "edit": "Edit",
+      "editNamed": "Edit {{title}}",
+      "reorder": "Reorder item {{n}}, {{title}}: use the up and down arrow keys",
+      "moved": "{{title}} is now item {{n}}.",
+      "orderError": "The agenda couldn't be reordered."
     },
     "invitees": {
       "title": "Invitees",
@@ -4908,7 +4922,9 @@
       "outsideGuest": "Outside guest",
       "guestsNoQuorum": "Guests don't count toward quorum.",
       "removeGuest": "Remove {{name}}",
-      "removeError": "The guest couldn't be removed."
+      "removeError": "The guest couldn't be removed.",
+      "membersSummary": "Members: {{counts}}",
+      "noAnswer": "No answer"
     },
     "cancel": {
       "title": "Cancel this meeting?",
@@ -5022,7 +5038,47 @@
       "guestPresents": "This guest presents an agenda item. Choose another presenter first.",
       "notInvited": "You aren't invited to this meeting.",
       "started": "This meeting has started.",
-      "stageActionNotAllowed": "This meeting's stage doesn't allow that now."
+      "stageActionNotAllowed": "This meeting's stage doesn't allow that now.",
+      "agendaTitleRequired": "Give the item a title.",
+      "agendaItemNotFound": "This item is no longer on the agenda. Reload the meeting.",
+      "agendaOrderMismatch": "The agenda changed since you opened it. Reload the meeting and try again.",
+      "presenterNotFound": "That person is no longer available to present."
+    },
+    "agendaItem": {
+      "addTitle": "Add agenda item",
+      "editTitle": "Agenda item",
+      "context": "{{meeting}} · item {{n}}",
+      "title": "Title",
+      "titleRequired": "Give the item a title.",
+      "description": "Description",
+      "presenter": "Presenter",
+      "noPresenter": "No presenter",
+      "member": "Member",
+      "notInvited": "not invited yet",
+      "findPerson": "Find a person in the organisation",
+      "pickerTitle": "Choose a presenter",
+      "addedAsGuest": "Not invited yet, so they're added as a guest and can open the meeting.",
+      "duration": "Duration",
+      "noDuration": "Not set",
+      "save": "Save item",
+      "remove": "Remove item",
+      "removeTitle": "Remove this item?",
+      "removeLead": "“{{title}}” leaves the agenda. Its papers go to the recycle bin for 30 days.",
+      "error": "The item couldn't be saved."
+    },
+    "files": {
+      "attachments": "Attachments",
+      "addPaper": "Add paper",
+      "addAttachment": "Add attachment",
+      "remove": "Remove {{name}}",
+      "removeTitle": "Remove this file?",
+      "removeLead": "{{name}} goes to the recycle bin for 30 days.",
+      "removeConfirm": "Remove file",
+      "uploading": "Uploading {{name}}…",
+      "uploadError": "The file couldn't be added.",
+      "openError": "The file couldn't be opened.",
+      "removeError": "The file couldn't be removed.",
+      "viewerContext": "From {{name}}"
     }
   }
 }

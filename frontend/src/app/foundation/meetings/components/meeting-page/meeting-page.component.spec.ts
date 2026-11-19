@@ -41,6 +41,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
             get: () => meeting(),
             attendees: () => of(attendees),
             agenda: () => of([]),
+            files: () => of({ attachments: [], papers: [] }),
             answer,
             removeGuest,
           },
@@ -67,14 +68,15 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
   });
 
   const q = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`);
-  const removeButtons = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-attendee] p-button'));
+  const removeButtons = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-attendee] am-icon-button'));
 
   it('names the meeting, its stage, its owner and the answer summary in counted words', () => {
     const { el } = create();
     expect(el.querySelector('h1')?.textContent?.trim()).toBe(aMeeting().title);
     expect(el.querySelector('[data-meeting-stage]')?.textContent?.trim()).toBe('Planned');
     expect(el.textContent).toContain('Pharmacy and Therapeutics Committee');
-    expect(q(el, 'meeting-answer-summary')?.textContent?.trim()).toBe("5 attending · 2 can't attend · 1 no answer · quorum 5");
+    // Members only, said so (P189 b), so it reads against the invitee list.
+    expect(q(el, 'meeting-answer-summary')?.textContent?.trim()).toBe("Members: 5 attending · 2 can't attend · 1 no answer · quorum 5");
   });
 
   describe('Reschedule follows may.reschedule', () => {
@@ -91,9 +93,9 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     it('Add a guest and each guest\'s remove are offered; a member is never removable', () => {
       const { el } = create();
       expect(q(el, 'meeting-add-guest')).not.toBeNull();
-      expect(el.querySelector('[data-attendee="a-member"] p-button')).withContext('a member').toBeNull();
-      expect(el.querySelector('[data-attendee="a-guest"] p-button')).not.toBeNull();
-      expect(el.querySelector('[data-attendee="a-out"] p-button')).not.toBeNull();
+      expect(el.querySelector('[data-attendee="a-member"] am-icon-button')).withContext('a member').toBeNull();
+      expect(el.querySelector('[data-attendee="a-guest"] am-icon-button')).not.toBeNull();
+      expect(el.querySelector('[data-attendee="a-out"] am-icon-button')).not.toBeNull();
       expect(el.querySelector('[data-attendee="a-out"] [data-outside-chip]')).not.toBeNull();
     });
     it('neither is offered without it', () => {
@@ -108,6 +110,36 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       c.removeGuest(attendees[1]!);
       fixture.detectChanges();
       expect(el.querySelector('[data-testid="meeting-invitees"] [role="alert"]')?.textContent?.trim()).toBe(en.meeting.refusal.guestPresents);
+    });
+  });
+
+  describe('P189 — the answer, the rows and the guest remove', () => {
+    it('the pressed button is the answer given (aria-pressed); no line repeats it', () => {
+      meeting = () => of(aMeeting({ myAnswer: { answer: 'CANT_ATTEND', note: null } }));
+      const { el } = create();
+      expect(q(el, 'meeting-my-answer')).toBeNull();
+      expect(q(el, 'meeting-answer-cant')?.getAttribute('aria-pressed')).toBe('true');
+      expect(q(el, 'meeting-answer-attending')?.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it("each invitee's row ends with their answer, and their note sits under it", () => {
+      attendees = [
+        anAttendee({ id: 'a-yes', answer: 'ATTENDING', answerNote: 'Joining from the clinic' }),
+        anAttendee({ id: 'a-no', answer: 'CANT_ATTEND' }),
+        anAttendee({ id: 'a-none', answer: null }),
+      ];
+      const { el } = create();
+      const answerOf = (id: string) => el.querySelector(`[data-attendee="${id}"] [data-attendee-answer]`)?.textContent?.trim();
+      expect([answerOf('a-yes'), answerOf('a-no'), answerOf('a-none')]).toEqual(['Attending', "Can't attend", 'No answer']);
+      expect(el.querySelector('[data-attendee="a-yes"] [data-attendee-note]')?.textContent?.trim()).toBe('Joining from the clinic');
+      expect(el.querySelector('[data-attendee="a-no"] [data-attendee-note]')).toBeNull();
+    });
+
+    it("a guest's remove is the muted row icon, named for the guest", () => {
+      const { el } = create();
+      const remove = el.querySelector('[data-attendee="a-guest"] am-icon-button button');
+      expect(remove?.getAttribute('aria-label')).toBe('Remove Eng. Saad Al-Dosari');
+      expect(el.querySelector('[data-attendee="a-guest"] p-button[severity="danger"]')).toBeNull();
     });
   });
 

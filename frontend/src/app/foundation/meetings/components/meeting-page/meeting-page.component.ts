@@ -19,11 +19,15 @@ import {
   type MeetingAnswer,
   type MeetingAttendeeDto,
   type MeetingDto,
+  type MeetingFilesDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
 import { meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
 import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meeting-add-guest-dialog.component';
+import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
+import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
+import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -45,6 +49,9 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
     WorkflowStageIndicatorComponent,
     MeetingRescheduleDialogComponent,
     MeetingAddGuestDialogComponent,
+    MeetingAgendaPanelComponent,
+    MeetingFileListComponent,
+    IconButtonComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -122,19 +129,32 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
         @if (m.may.answer || m.myAnswer) {
           <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-answer">
             <h2 class="m-0 text-[15px] font-semibold">{{ 'meeting.answer.title' | translate }}</h2>
-            @if (m.myAnswer?.answer; as a) {
-              <p class="m-0 text-[13px]" data-testid="meeting-my-answer">{{ ('meeting.answer.' + a.toLowerCase()) | translate }}</p>
-            }
             @if (m.may.answer) {
-              <div class="flex flex-wrap items-center gap-2">
-                <p-button size="small" [severity]="m.myAnswer?.answer === 'ATTENDING' ? 'primary' : 'secondary'" [label]="'meeting.answer.attending' | translate" [loading]="answering() === 'ATTENDING'" (onClick)="answer('ATTENDING')" data-testid="meeting-answer-attending" />
-                <p-button size="small" [severity]="m.myAnswer?.answer === 'CANT_ATTEND' ? 'primary' : 'secondary'" [label]="'meeting.answer.cant_attend' | translate" [loading]="answering() === 'CANT_ATTEND'" (onClick)="answer('CANT_ATTEND')" data-testid="meeting-answer-cant" />
+              <!-- The pressed button IS the answer given (aria-pressed): no line repeats it. -->
+              <div role="group" class="am-segmented" [attr.aria-label]="'meeting.answer.title' | translate">
+                @for (a of answerChoices; track a.value) {
+                  <button
+                    type="button"
+                    class="am-segmented__option"
+                    [class.am-segmented__option--active]="m.myAnswer?.answer === a.value"
+                    [attr.aria-pressed]="m.myAnswer?.answer === a.value"
+                    [disabled]="answering() !== null"
+                    (click)="answer(a.value)"
+                    [attr.data-testid]="a.testId"
+                  >
+                    {{ a.labelKey | translate }}
+                  </button>
+                }
               </div>
               <label class="flex flex-col gap-1 text-meta">
                 <span>{{ 'meeting.answer.note' | translate }}</span>
                 <textarea pTextarea rows="2" maxlength="500" [(ngModel)]="answerNote" data-testid="meeting-answer-note"></textarea>
               </label>
             } @else {
+              <!-- Closed: no button carries the answer, so it is said. -->
+              @if (m.myAnswer?.answer; as a) {
+                <p class="m-0 text-[13px]" data-testid="meeting-my-answer">{{ ('meeting.answer.' + a.toLowerCase()) | translate }}</p>
+              }
               <p class="m-0 text-meta text-[var(--am-ink-500)]">{{ 'meeting.answer.closed' | translate }}</p>
             }
             @if (answerError()) {
@@ -144,29 +164,36 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
         }
 
         <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
-          <!-- Agenda -->
-          <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-agenda">
-            <h2 class="m-0 text-[15px] font-semibold">
-              {{ 'meeting.agenda.title' | translate }}
-              <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(agenda().length) }}</span>
-            </h2>
-            @if (agenda().length === 0) {
-              <p class="m-0 text-meta text-[var(--am-ink-500)]">{{ 'meeting.agenda.empty' | translate }}</p>
+          <div class="flex min-w-0 flex-col gap-3">
+            <!-- The agenda, its editor and its papers (PR 7). -->
+            <am-meeting-agenda-panel
+              [meeting]="m"
+              [items]="agenda()"
+              [attendees]="attendees()"
+              [papers]="files().papers"
+              [canManage]="m.may.manageAgenda"
+              (itemsChange)="onAgendaChange($event)"
+              (filesChanged)="loadFiles()"
+            />
+            <!-- General attachments: absent while empty for someone who may not add one. -->
+            @if (m.may.manageAgenda || files().attachments.length > 0) {
+              <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-attachments">
+                <h2 class="m-0 flex items-center gap-2 text-[15px] font-semibold">
+                  {{ 'meeting.files.attachments' | translate }}
+                  <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(files().attachments.length) }}</span>
+                </h2>
+                <am-meeting-file-list
+                  [meetingId]="m.id"
+                  [files]="files().attachments"
+                  [canManage]="m.may.manageAgenda"
+                  addLabel="meeting.files.addAttachment"
+                  [contextLabel]="m.title"
+                  testId="meeting-attachment-list"
+                  (changed)="loadFiles()"
+                />
+              </section>
             }
-            <ol class="m-0 flex flex-col gap-2 ps-0 list-none">
-              @for (item of agenda(); track item.id) {
-                <li class="flex flex-col gap-0.5" [attr.data-agenda-item]="item.id">
-                  <span class="text-[13px] font-medium">
-                    <span>{{ format.number(item.order) }}.</span> {{ item.title }}
-                    @if (item.standing) {
-                      <span class="ms-1 text-[11px] px-1.5 py-px rounded bg-[var(--am-surface)]">{{ 'meeting.agenda.standing' | translate }}</span>
-                    }
-                  </span>
-                  <span class="text-meta text-[var(--am-ink-500)]">{{ itemMeta(item) }}</span>
-                </li>
-              }
-            </ol>
-          </section>
+          </div>
 
           <!-- Invitees -->
           <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
@@ -183,26 +210,31 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
             }
             <ul class="m-0 flex flex-col gap-1.5 ps-0 list-none">
               @for (a of attendees(); track a.id) {
-                <li class="flex items-center justify-between gap-2" [attr.data-attendee]="a.id">
-                  <span class="flex min-w-0 flex-col">
-                    <span class="truncate text-[13px]">
-                      {{ a.name }}
-                      @if (a.kind === 'OUTSIDE_GUEST') {
-                        <span class="ms-1 text-[11px] px-1.5 py-px rounded border border-[var(--am-border)]" data-outside-chip>{{ 'meeting.invitees.outsideGuest' | translate }}</span>
+                <li class="flex flex-col gap-0.5" [attr.data-attendee]="a.id">
+                  <span class="flex items-center justify-between gap-2">
+                    <span class="flex min-w-0 flex-col">
+                      <span class="truncate text-[13px]">
+                        {{ a.name }}
+                        @if (a.kind === 'OUTSIDE_GUEST') {
+                          <span class="ms-1 text-[11px] px-1.5 py-px rounded border border-[var(--am-border)]" data-outside-chip>{{ 'meeting.invitees.outsideGuest' | translate }}</span>
+                        }
+                      </span>
+                      <span class="truncate text-meta text-[var(--am-ink-500)]">{{ attendeeLine(a) }}</span>
+                    </span>
+                    <span class="flex flex-none items-center gap-1">
+                      <span class="text-meta whitespace-nowrap" [class.text-[var(--am-ink-500)]]="!a.answer" data-attendee-answer>{{ answerLabel(a) | translate }}</span>
+                      @if (canManageGuests() && a.kind !== 'MEMBER') {
+                        <am-icon-button
+                          icon="pi pi-times"
+                          [label]="'meeting.invitees.removeGuest' | translate: { name: a.name }"
+                          [disabled]="removing() !== null"
+                          (activated)="removeGuest(a)"
+                        />
                       }
                     </span>
-                    <span class="truncate text-meta text-[var(--am-ink-500)]">{{ attendeeLine(a) }}</span>
                   </span>
-                  @if (canManageGuests() && a.kind !== 'MEMBER') {
-                    <p-button
-                      size="small"
-                      [text]="true"
-                      severity="danger"
-                      icon="pi pi-times"
-                      [ariaLabel]="'meeting.invitees.removeGuest' | translate: { name: a.name }"
-                      [loading]="removing() === a.id"
-                      (onClick)="removeGuest(a)"
-                    />
+                  @if (a.answerNote) {
+                    <span class="text-meta text-[var(--am-ink-700)] break-words" data-attendee-note dir="auto">{{ a.answerNote }}</span>
                   }
                 </li>
               }
@@ -219,6 +251,42 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
       <app-meeting-add-guest-dialog [visible]="guestOpen()" (visibleChange)="guestOpen.set($event)" [meeting]="m" (added)="load()" />
     }
   `,
+  styles: [
+    `
+      .am-segmented {
+        display: inline-flex;
+        align-self: flex-start;
+        overflow: hidden;
+        border: 1px solid var(--am-control-border);
+        border-radius: var(--am-radius-button);
+      }
+      .am-segmented__option {
+        min-block-size: var(--am-control-height);
+        padding-inline: var(--am-space-16);
+        font-size: var(--am-type-value-size);
+        font-weight: 500;
+        color: var(--am-ink-700);
+        background: var(--am-control-bg);
+        border: none;
+        cursor: pointer;
+      }
+      .am-segmented__option + .am-segmented__option {
+        border-inline-start: 1px solid var(--am-control-border);
+      }
+      .am-segmented__option:hover:not(:disabled) {
+        background: var(--am-primary-50);
+      }
+      .am-segmented__option--active,
+      .am-segmented__option--active:hover:not(:disabled) {
+        color: var(--am-control-bg);
+        background: var(--am-primary-600);
+      }
+      .am-segmented__option:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+    `,
+  ],
 })
 export class MeetingPageComponent {
   private readonly route = inject(ActivatedRoute);
@@ -234,6 +302,11 @@ export class MeetingPageComponent {
   readonly meeting = signal<MeetingDto | null>(null);
   readonly attendees = signal<MeetingAttendeeDto[]>([]);
   readonly agenda = signal<MeetingAgendaItemDto[]>([]);
+  readonly files = signal<MeetingFilesDto>({ attachments: [], papers: [] });
+  readonly answerChoices: { value: MeetingAnswer; labelKey: string; testId: string }[] = [
+    { value: 'ATTENDING', labelKey: 'meeting.answer.attending', testId: 'meeting-answer-attending' },
+    { value: 'CANT_ATTEND', labelKey: 'meeting.answer.cant_attend', testId: 'meeting-answer-cant' },
+  ];
   readonly instance = signal<WorkflowInstanceDto | null>(null);
   readonly rescheduleOpen = signal(false);
   readonly guestOpen = signal(false);
@@ -262,7 +335,7 @@ export class MeetingPageComponent {
     if (!m.durationMinutes) return start;
     return `${start}–${this.format.timeOfDay(new Date(new Date(m.scheduledAt).getTime() + m.durationMinutes * 60_000))}`;
   });
-  /** "6 attending · 2 can't attend · 1 no answer · quorum 5", counted strings. */
+  /** "Members: 6 attending · 2 can't attend · 1 no answer · quorum 5", counted strings. */
   readonly summary = computed(() => {
     const s = this.meeting()?.answers;
     if (!s) return '';
@@ -272,7 +345,8 @@ export class MeetingPageComponent {
       this.format.count('meeting.noAnswer', s.noAnswer),
     ];
     const quorum = s.quorum != null ? this.format.count('meeting.quorum', s.quorum) : null;
-    return [...parts, ...(quorum ? [quorum] : [])].join(' · ');
+    // Members only (quorum is about members): said, so it reads against the list below.
+    return this.translate.instant('meeting.invitees.membersSummary', { counts: [...parts, ...(quorum ? [quorum] : [])].join(' · ') }) as string;
   });
 
   constructor() {
@@ -285,14 +359,16 @@ export class MeetingPageComponent {
       meeting: this.meetings.get(this.id),
       attendees: this.meetings.attendees(this.id),
       agenda: this.meetings.agenda(this.id),
+      files: this.meetings.files(this.id),
       instances: this.workflow.getInstancesByObject('MEETING', this.id),
     }).subscribe({
-      next: ({ meeting, attendees, agenda, instances }) => {
+      next: ({ meeting, attendees, agenda, files, instances }) => {
         this.meeting.set(meeting);
         // The note as stored, so the next answer keeps it rather than clearing it.
         this.answerNote = meeting.myAnswer?.note ?? '';
         this.attendees.set(attendees);
         this.agenda.set(agenda);
+        this.files.set(files);
         this.instance.set(instances[0] ?? null);
         this.state.set('ready');
       },
@@ -305,6 +381,21 @@ export class MeetingPageComponent {
         this.state.set('error');
       },
     });
+  }
+
+  /** The agenda as the server returns it after a write; a new presenter may be a new invitee. */
+  onAgendaChange(items: MeetingAgendaItemDto[]): void {
+    this.agenda.set(items);
+    this.meetings.attendees(this.id).subscribe({ next: (a) => this.attendees.set(a) });
+  }
+
+  loadFiles(): void {
+    this.meetings.files(this.id).subscribe({ next: (f) => this.files.set(f) });
+  }
+
+  /** "Attending", "Can't attend" or "No answer", at the end of each invitee's row. */
+  answerLabel(a: MeetingAttendeeDto): string {
+    return a.answer === 'ATTENDING' ? 'meeting.answer.attending' : a.answer === 'CANT_ATTEND' ? 'meeting.answer.cant_attend' : 'meeting.invitees.noAnswer';
   }
 
   onMoved(instance: WorkflowInstanceDto): void {
@@ -369,13 +460,5 @@ export class MeetingPageComponent {
     if (a.kind === 'MEMBER') return a.seat ? this.language.bilingual(a.seat.labelEn, a.seat.labelAr) : '';
     if (a.kind === 'OUTSIDE_GUEST') return [a.outsideOrganisation, a.outsideRole].filter((x) => !!x).join(' · ');
     return this.translate.instant('meeting.invitees.guest') as string;
-  }
-
-  itemMeta(item: MeetingAgendaItemDto): string {
-    const parts = [
-      item.presenter?.name ?? null,
-      item.durationMinutes ? this.format.count('meeting.minutes', item.durationMinutes) : null,
-    ].filter((x): x is string => !!x);
-    return parts.join(' · ');
   }
 }

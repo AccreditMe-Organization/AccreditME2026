@@ -26,6 +26,11 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_NOT_INVITED: 'meeting.refusal.notInvited',
   MEETING_STARTED: 'meeting.refusal.started',
   STAGE_ACTION_NOT_ALLOWED: 'meeting.refusal.stageActionNotAllowed',
+  // ACC-316 PR 7 — the agenda editor's.
+  MEETING_AGENDA_TITLE_REQUIRED: 'meeting.refusal.agendaTitleRequired',
+  MEETING_AGENDA_ITEM_NOT_FOUND: 'meeting.refusal.agendaItemNotFound',
+  MEETING_AGENDA_ORDER_MISMATCH: 'meeting.refusal.agendaOrderMismatch',
+  MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
 };
 
 /** The translation key for a meeting refusal, or null when the error carries no code this file knows. */
