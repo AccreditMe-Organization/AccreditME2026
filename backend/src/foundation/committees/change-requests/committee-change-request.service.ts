@@ -279,7 +279,7 @@ const REQUEST_INCLUDE = {
 } as const;
 
 /** A request as loadRequest() reads it: the row, its newest instance, and its stage key. */
-type LoadedRequest = { row: RequestRow; instanceId: string; stageKey: string | null; stageId: string | null };
+type LoadedRequest = { row: RequestRow; instanceId: string; stageKey: string | null; stageId: string | null; entryId: string | null };
 
 /** ACC-283 PR 2 — the requester's task while a request is a draft or returned (Q8; lane A's Arabic). */
 const FINISH_TASK = { title: 'Finish or withdraw the change request', titleAr: 'إكمال طلب التغيير أو سحبه' } as const;
@@ -1224,8 +1224,8 @@ export class CommitteeChangeRequestService {
       select: { id: true },
     });
     if (!instance) throw new NotFoundException('Change request not found');
-    const stages = await requestStageKeys(this.prisma, [id], organizationId);
-    return { row, instanceId: instance.id, stageKey: stages.get(id)?.key ?? null, stageId: stages.get(id)?.stageId ?? null };
+    const [stages, entryId] = await Promise.all([requestStageKeys(this.prisma, [id], organizationId), openEntryId(this.prisma, instance.id)]);
+    return { row, instanceId: instance.id, stageKey: stages.get(id)?.key ?? null, stageId: stages.get(id)?.stageId ?? null, entryId };
   }
 
   /**
@@ -1666,7 +1666,7 @@ function toDto(
 
 // ── Locks and stage reads ─────────────────────────────────────────────────────
 
-type Reader = Pick<EngineTx, '$queryRaw' | 'workflowInstance' | 'workflowStage'>;
+type Reader = Pick<EngineTx, '$queryRaw' | 'workflowInstance' | 'workflowStage' | 'workflowInstanceStage'>;
 
 /** ACC-255 PR 2 — a committee with no live stage: nothing allowed, no flags (D14). */
 const NO_STAGE: CommitteeStageRules = { actions: {}, flags: [] };
@@ -1682,16 +1682,27 @@ async function lockCommitteeInstance(tx: EngineTx, committeeId: string, organiza
 }
 
 /**
- * ACC-245 — a decision is made in the stage its decider was admitted for. Run
- * inside the engine's transaction, under the instance lock: if the request has
- * moved since it was loaded (another member of an added stage's pool approved it
- * on, say), the decision is refused with nothing written, and the screen reloads.
- * Without it, a second member of stage R1's pool would move the request out of
- * R2, whose pool they are not in.
+ * ACC-245 — a decision is made in the stage ENTRY its decider was admitted for.
+ * Run inside the engine's transaction, under the instance lock: if the request has
+ * moved since it was loaded, the decision is refused with nothing written, and the
+ * screen reloads. Without it, a second member of stage R1's pool would move the
+ * request out of R2, whose pool they are not in. It compares the ENTRY (the open
+ * WorkflowInstanceStage), not the template stage: a request returned and
+ * resubmitted is back in R1 on a NEW entry, and a decider admitted on the old visit
+ * has not read the revised request.
  */
-async function assertStillAt(tx: Reader, loaded: Pick<LoadedRequest, 'instanceId' | 'stageId'>): Promise<void> {
-  const instance = await tx.workflowInstance.findFirst({ where: { id: loaded.instanceId }, select: { currentStageId: true } });
-  if ((instance?.currentStageId ?? null) !== loaded.stageId) throw new ChangeRequestRefusal('CHANGE_REQUEST_CHANGED');
+async function assertStillAt(tx: Reader, loaded: Pick<LoadedRequest, 'instanceId' | 'entryId'>): Promise<void> {
+  if ((await openEntryId(tx, loaded.instanceId)) !== loaded.entryId) throw new ChangeRequestRefusal('CHANGE_REQUEST_CHANGED');
+}
+
+/** The request instance's open stage entry (exitedAt null), or null. */
+async function openEntryId(client: Pick<EngineTx, 'workflowInstanceStage'>, instanceId: string): Promise<string | null> {
+  const entry = await client.workflowInstanceStage.findFirst({
+    where: { workflowInstanceId: instanceId, exitedAt: null },
+    orderBy: { enteredAt: 'desc' },
+    select: { id: true },
+  });
+  return entry?.id ?? null;
 }
 
 /** The stage key the request's instance stands in right now (inside the engine's lock, its from-stage). */
