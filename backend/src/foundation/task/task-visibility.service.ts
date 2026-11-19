@@ -33,6 +33,18 @@ export class TaskVisibilityService {
     return !!rows[0]?.ok;
   }
 
+  /**
+   * The rule for many tasks at once (ACC-316 PR 7b): which of these ids it
+   * admits, in ONE query whatever their number. The same condition as one row.
+   */
+  async visibleIds(ctx: TaskVisibilityContext, taskIds: readonly string[]): Promise<Set<string>> {
+    if (taskIds.length === 0) return new Set();
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT t.id FROM "Task" t
+        WHERE t.id = ANY(${[...taskIds]}::text[]) AND t."organizationId" = ${ctx.organizationId} AND ${taskVisibleSql(ctx)}`;
+    return new Set(rows.map((r) => r.id));
+  }
+
   /** How many of the organisation's tasks the rule admits — the backfill's before / after report. */
   async countVisible(ctx: TaskVisibilityContext): Promise<number> {
     const rows = await this.prisma.$queryRaw<{ n: bigint }[]>`

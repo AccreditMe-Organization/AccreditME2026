@@ -31,6 +31,20 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_AGENDA_ITEM_NOT_FOUND: 'meeting.refusal.agendaItemNotFound',
   MEETING_AGENDA_ORDER_MISMATCH: 'meeting.refusal.agendaOrderMismatch',
   MEETING_AGENDA_CHANGED: 'meeting.refusal.agendaChanged',
+  // PR 7b — the minutes.
+  MEETING_MINUTES_NOT_OPEN: 'meeting.refusal.minutesNotOpen',
+  MEETING_NOT_RECORDER: 'meeting.refusal.notRecorder',
+  MEETING_NOT_STARTED: 'meeting.refusal.notStarted',
+  MEETING_VOTES_PARTIAL: 'meeting.refusal.votesPartial',
+  MEETING_VOTES_EXCEED_PRESENT: 'meeting.refusal.votesExceedPresent',
+  MEETING_DECISION_NOT_FOUND: 'meeting.refusal.decisionNotFound',
+  MEETING_DECISION_TEXT_REQUIRED: 'meeting.refusal.decisionTextRequired',
+  MEETING_ACTION_NOT_FOUND: 'meeting.refusal.actionNotFound',
+  MEETING_ACTION_TITLE_REQUIRED: 'meeting.refusal.actionTitleRequired',
+  MEETING_ACTION_DUE_IN_PAST: 'meeting.refusal.actionDueInPast',
+  MEETING_OPEN_ACTION_NOT_FOUND: 'meeting.refusal.openActionNotFound',
+  MEETING_ATTENDANCE_INCOMPLETE: 'meeting.refusal.attendanceIncomplete',
+  MEETING_REVIEW_DATE_INVALID: 'meeting.refusal.reviewDateInvalid',
   MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
 };
 
