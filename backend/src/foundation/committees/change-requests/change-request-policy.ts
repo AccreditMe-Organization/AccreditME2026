@@ -47,11 +47,13 @@ export const REQUEST_STAGE_POLICY: Readonly<Record<ChangeRequestStageKey, Reques
 };
 
 /**
- * A stage with no key (or one this map does not know). It counts as OPEN, so one
- * open request per committee is never bypassed by an unrecognised stage, and
- * only its requester may withdraw it.
+ * A stage with no key. ACC-245 — on this protected template the only unkeyed stages
+ * are the ADDED REVIEW STAGES (review-stages.ts), so it is a review stage: open (one
+ * open request per committee holds), decided by its own people (approve moves it
+ * one step on; return, reject), and withdrawn by its requester. A key this map does
+ * not know reads the same way, so a request is never stranded.
  */
-export const UNKEYED_REQUEST_STAGE: RequestStagePolicy = { open: true, actions: allow('withdraw') };
+export const UNKEYED_REQUEST_STAGE: RequestStagePolicy = { open: true, actions: allow('approve', 'return', 'reject', 'withdraw') };
 
 export function requestStagePolicy(key: string | null | undefined): RequestStagePolicy {
   return (key && REQUEST_STAGE_POLICY[key as ChangeRequestStageKey]) || UNKEYED_REQUEST_STAGE;

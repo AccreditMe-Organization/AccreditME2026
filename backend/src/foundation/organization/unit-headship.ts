@@ -279,3 +279,62 @@ export async function findUnitSubtreeIds(
     SELECT id FROM s`;
   return rows.map((r) => r.id).sort();
 }
+
+/**
+ * ACC-245 — the REVERSE of findUnitSubtreeIds(): the units whose subtree holds
+ * `orgUnitId`, i.e. the unit itself and every unit above it, keeping only the
+ * ACTIVE ones (the same rule findUnitSubtreeIds() applies to a root: headship of
+ * a deactivated unit grants no reach). The walk itself passes through inactive
+ * units, as findUnitSubtreeIds() walks through inactive descendants, so an
+ * active unit above an inactive one still counts. The rule is in the SQL.
+ *
+ * One recursive query on OrgUnit(parentId), scoped by organisation at every
+ * step. UNION, not UNION ALL, so a cycle (which update refuses) cannot loop.
+ */
+export async function findUnitAncestorIds(
+  prisma: Pick<PrismaService, '$queryRaw'>,
+  organizationId: string,
+  orgUnitId: string,
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    WITH RECURSIVE up(id, "parentId", "isActive") AS (
+      SELECT u.id, u."parentId", u."isActive" FROM "OrgUnit" u
+       WHERE u."organizationId" = ${organizationId} AND u.id = ${orgUnitId}
+      UNION
+      SELECT p.id, p."parentId", p."isActive" FROM "OrgUnit" p JOIN up ON p.id = up."parentId"
+       WHERE p."organizationId" = ${organizationId}
+    )
+    SELECT id FROM up WHERE "isActive"`;
+  return rows.map((r) => r.id).sort();
+}
+
+/**
+ * ACC-245 — which of `userIds` lead any of `orgUnitIds` NOW: a head holder of one
+ * (headHolderWhere(), by their primary unit) or the person of an acting cover in
+ * force on one (runningActingCoverWhere(now)). The reverse of findUnitHeadedBy()
+ * and findUnitsCoveredBy() for many people at once, with the same two filters,
+ * so "does X lead one of these units" cannot mean one thing for one person and
+ * another for a list. Two queries, run together.
+ */
+export async function findUnitLeadersAmong(
+  prisma: Pick<PrismaService, 'user' | 'orgUnitHeadAssignment'>,
+  organizationId: string,
+  orgUnitIds: readonly string[],
+  userIds: readonly string[],
+  now: Date,
+): Promise<Set<string>> {
+  const units = [...new Set(orgUnitIds)];
+  const people = [...new Set(userIds)];
+  if (units.length === 0 || people.length === 0) return new Set();
+  const [heads, covers] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: people }, organizationId, primaryOrgUnitId: unitIdFilter(units), ...headHolderWhere() },
+      select: { id: true },
+    }),
+    prisma.orgUnitHeadAssignment.findMany({
+      where: { organizationId, userId: { in: people }, orgUnitId: unitIdFilter(units), ...runningActingCoverWhere(now) },
+      select: { userId: true },
+    }),
+  ]);
+  return new Set([...heads.map((h) => h.id), ...covers.map((c) => c.userId)]);
+}
