@@ -77,16 +77,16 @@ export interface ReviewStagesRead {
  * review can take no review stage (readShape() refuses ADD_STAGE then).
  */
 export function reviewStagesRead(stages: readonly ReadStage[], kinds: readonly StageAssigneeKind[]): ReviewStagesRead {
-  const draft = stages.find((s) => s.key === 'draft');
-  const underReview = stages.find((s) => s.key === 'under_review');
-  const review = stages.filter(isReviewStage).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
   const who = { modes: [...REVIEW_STAGE_WHO_MODES], assigneeKinds: kinds.filter((k) => !REVIEW_STAGE_REFUSED_KINDS.includes(k)) };
-  if (!draft || !underReview) return { canAdd: false, max: MAX_REVIEW_STAGES, count: review.length, after: [], who };
+  // P209 — the SAME shape check the save makes (shapeOf, which readShape() refuses
+  // ADD_STAGE by), so `canAdd` is never true where the save refuses.
+  const shape = shapeOf(stages);
+  if (!shape) return { canAdd: false, max: MAX_REVIEW_STAGES, count: stages.filter(isReviewStage).length, after: [], who };
   return {
-    canAdd: reviewStageFits(draft.order, underReview.order, review.length),
+    canAdd: reviewStageFits(shape.draft.order, shape.underReview.order, shape.review.length),
     max: MAX_REVIEW_STAGES,
-    count: review.length,
-    after: [draft, ...review].map(({ id, nameEn, nameAr }) => ({ id, nameEn, nameAr })),
+    count: shape.review.length,
+    after: [shape.draft, ...shape.review].map(({ id, nameEn, nameAr }) => ({ id, nameEn, nameAr })),
     who,
   };
 }
@@ -117,26 +117,34 @@ export function isReviewStage(stage: Pick<WorkflowStage, 'key' | 'isInitial' | '
   return stage.key === null && !stage.isInitial && !stage.isFinal;
 }
 
+/**
+ * The protected template's shape, from its stages: the five seeded keyed stages
+ * a review stage is wired to, and the review stages in order (order, then id).
+ * Null when any keyed stage is missing: no reshaping is safe then. The ONE check:
+ * the save refuses by it (readShape) and the template read answers by it
+ * (reviewStagesRead), so the two cannot disagree (P209).
+ */
+function shapeOf(stages: readonly StageRow[]): Shape | null {
+  const keyed = (key: string) => stages.find((s) => s.key === key);
+  const draft = keyed('draft');
+  const returned = keyed('returned');
+  const underReview = keyed('under_review');
+  const rejected = keyed('rejected');
+  const withdrawn = keyed('withdrawn');
+  if (!draft || !returned || !underReview || !rejected || !withdrawn) return null;
+  const review = stages.filter(isReviewStage).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { draft, returned, underReview, rejected, withdrawn, review };
+}
+
 async function readShape(tx: EngineTx, templateId: string, refusal: 'ADD_STAGE' | 'REMOVE_STAGE'): Promise<Shape> {
   const stages = await tx.workflowStage.findMany({
     where: { workflowTemplateId: templateId },
     select: { id: true, key: true, order: true, isInitial: true, isFinal: true, nameEn: true, nameAr: true },
-    orderBy: [{ order: 'asc' }, { id: 'asc' }],
   });
-  const keyed = (key: string): StageRow => {
-    const stage = stages.find((s) => s.key === key);
-    // The seeded shape is not there: no reshaping is safe.
-    if (!stage) refuseProtected(refusal);
-    return stage;
-  };
-  return {
-    draft: keyed('draft'),
-    returned: keyed('returned'),
-    underReview: keyed('under_review'),
-    rejected: keyed('rejected'),
-    withdrawn: keyed('withdrawn'),
-    review: stages.filter(isReviewStage),
-  };
+  const shape = shapeOf(stages);
+  // The seeded shape is not there: no reshaping is safe.
+  if (!shape) refuseProtected(refusal);
+  return shape;
 }
 
 /** The app's single forward move out of each of these stages, locked. */
