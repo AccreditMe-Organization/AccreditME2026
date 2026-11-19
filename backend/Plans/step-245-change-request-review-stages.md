@@ -366,3 +366,14 @@ A request in an added review stage reaches its reviewers. No migration, nothing 
 - **Home's work counts** read the same API (`MyWorkCountsService`), so they follow. `GET /workflows/awaiting-me` never lists a review stage (its moves are the app's, so it is no decision point), so nothing is counted twice.
 - **`awaitingDecisionBy`** gains `{ kind: 'REVIEW_STAGE', stage: { id, nameEn, nameAr } }`: in the list, on a request's read, and in a `CHANGE_REQUEST_NOT_DECIDER` refusal. The screens do not read it yet (PR 3).
 - **A cover gives reach only while its person is ACTIVE** (a separate commit): `findUnitsCoveredBy()` and `findUnitLeadersAmong()` now require it, as a head holder always did, and so does the gate's cover arm, which a db-spec holds equal to `findUnitsCoveredBy()` person by person. `findRunningActingCoversForUnits()`, which SHOWS a unit's cover in force, is unchanged.
+
+## 13. As built (PR 3a, the reads the screens need)
+
+Decided for PR 3 (19 Nov): two PRs, 3a (backend) then 3b (screens). The awaiting line names the stage only, never a person. The who section reads `reviewStages.who`.
+
+- **`reviewStages` on the template read (G1)**, on the protected change request template only (absent elsewhere): `{ canAdd, max, count, after: [{ id, nameEn, nameAr }], who: { modes, assigneeKinds } }`. `canAdd` is `reviewStageFits()`, the same function `addReviewStageInTx()` refuses `REVIEW_STAGE_LIMIT` by; `who` comes from `REVIEW_STAGE_WHO_MODES` and `REVIEW_STAGE_REFUSED_KINDS`, the same constants the save refuses `REVIEW_STAGE_ANY_ONE` and `REVIEW_STAGE_NO_CREATOR` by. `after` is Draft, then each review stage, in order.
+- **App-move lines for every review-stage move (G2)**, in both languages: the template read gives an added review stage the move key `REVIEW_STAGE_MOVE_KEY` (through `isReviewStage()`, on the protected template only), and `APP_MOVES` has an entry for each of the seven moves `review-stages.ts` creates or re-points.
+- **Setup health (G3): already right.** An added stage whose pool is empty is flagged on entry (`checkAndFlagUnassignedStage()`) and listed by `STAGE_WITHOUT_ASSIGNEE`; a db-spec now holds it. No change. (Not covered: a pool whose only member is the requester, or only people who cannot open the committee. The engine counts them, so the stage is not flagged while nobody can decide it.)
+- **G4: not needed.** The request page already reads the instance's stages.
+- **Rewording**, both languages: `ADD_STAGE` ("Only review stages can be added…, after a request is drafted and before it is decided": no stage named, since a tenant may rename them) and `CHANGE_REQUEST_NOT_UNDER_REVIEW` ("…waiting for a decision…").
+- **The read and the save share one shape check** (`shapeOf()` in `review-stages.ts`): all five seeded keyed stages, so `canAdd` is never true where the save refuses `ADD_STAGE` (P209).

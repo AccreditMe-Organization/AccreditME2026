@@ -29,7 +29,14 @@ import { applyWorkflowSeed } from './workflow-seed-apply';
 import { writeStartingAssignments } from './workflow-who';
 import { lockTypeDefaults, makeDefaultInTx } from './workflow-default';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
-import { addReviewStageInTx, isReviewStage, removeReviewStageInTx } from './review-stages';
+import {
+  addReviewStageInTx,
+  isReviewStage,
+  removeReviewStageInTx,
+  REVIEW_STAGE_REFUSED_KINDS,
+  REVIEW_STAGE_WHO_MODES,
+  reviewStagesRead,
+} from './review-stages';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
@@ -57,7 +64,7 @@ import {
   type WhoEntryForSentence,
   type WhoEntryInput,
 } from './stage-who';
-import { appMoveFor } from './app-moves';
+import { appMoveFor, REVIEW_STAGE_MOVE_KEY } from './app-moves';
 import { auditSecretsOf, headerChanges, maskActionConfig, mergeActionConfig } from './webhook-config-secrets';
 import { transitionMover } from './workflow-pool';
 import {
@@ -81,8 +88,10 @@ const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr
  * requester is taken out of every pool, so such an entry would name nobody.
  */
 function assertReviewWho(who: { mode: string; entries: readonly { kind: string }[] }): void {
-  if (who.mode !== 'ANY_ONE') throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
-  if (who.entries.some((e) => e.kind === 'CREATOR')) throw new WorkflowRefusalException('REVIEW_STAGE_NO_CREATOR', {});
+  if (!(REVIEW_STAGE_WHO_MODES as readonly string[]).includes(who.mode)) throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
+  if (who.entries.some((e) => (REVIEW_STAGE_REFUSED_KINDS as readonly string[]).includes(e.kind))) {
+    throw new WorkflowRefusalException('REVIEW_STAGE_NO_CREATOR', {});
+  }
 }
 
 const STAGE_EDIT_TX = { maxWait: 10_000, timeout: 20_000 } as const;
@@ -267,7 +276,11 @@ export class WorkflowTemplateService {
       this.holderCountsFor(allEntries, organizationId),
     ]);
     const recordRoute = RECORD_ROUTES[template.objectType];
-    const stageKeys = new Map(stages.map((s) => [s.id, s.key]));
+    // ACC-245 PR 3a — an added review stage has no key; the app-move registry reads it as REVIEW_STAGE_MOVE_KEY.
+    const protectedTemplate = PROTECTED_TEMPLATES.has(template.objectType);
+    const moveKeyOf = (s: { key: string | null; isInitial: boolean; isFinal: boolean }) =>
+      s.key ?? (protectedTemplate && isReviewStage(s) ? REVIEW_STAGE_MOVE_KEY : null);
+    const stageKeys = new Map(stages.map((s) => [s.id, moveKeyOf(s)]));
 
     return {
       ...this.mapTemplate(template),
@@ -276,6 +289,9 @@ export class WorkflowTemplateService {
       taskDueHours,
       // ACC-271 PR 3 — the kinds a stage of this record type may be worked by.
       assigneeKinds: assigneeKindsFor(template.objectType),
+      // ACC-245 PR 3a — added review stages: whether one more fits, where it may go,
+      // and who may decide one. The protected template only, from the rules addStage reads.
+      ...(protectedTemplate && { reviewStages: reviewStagesRead(stages, assigneeKindsFor(template.objectType)) }),
       // ACC-271 PR 5-be — the rules a stage's who must meet, from the constants
       // the save validates against.
       whoRules: whoRulesFor(template.objectType),
@@ -289,7 +305,7 @@ export class WorkflowTemplateService {
           s.transitionsFrom.map((t) => ({
             ...this.mapTransition(t, t.actions.map((a) => this.mapTransitionAction(a))),
             // ACC-271 PR 3 — when the app runs one of its own moves.
-            ...(transitionMover(t) === 'APP' && this.appMoveOf(template.objectType, s.key, stageKeys.get(t.toStageId))),
+            ...(transitionMover(t) === 'APP' && this.appMoveOf(template.objectType, moveKeyOf(s), stageKeys.get(t.toStageId))),
           })),
           orderedActionKeys(template.objectType, s.recordActions.map((r) => r.actionKey)),
         ),

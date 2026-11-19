@@ -18,6 +18,14 @@ export interface AppMove {
   ar: string;
 }
 
+/**
+ * ACC-245 PR 3a — the key an added review stage is read with here. Added stages
+ * have no key of their own (review-stages.ts); the template read passes this for
+ * a stage isReviewStage() says is one, on the protected template only. Its
+ * brackets keep it from ever matching a seeded key.
+ */
+export const REVIEW_STAGE_MOVE_KEY = '(review stage)';
+
 export const APP_MOVES: readonly AppMove[] = [
   {
     key: 'committee_change_request.submit',
@@ -73,6 +81,64 @@ export const APP_MOVES: readonly AppMove[] = [
     fromStageKey: 'under_review',
     toStageKey: 'withdrawn',
     en: 'Runs when the change request is withdrawn while under review.',
+    ar: 'يحدث عند سحب طلب التغيير أثناء مراجعته.',
+  },
+  // ACC-245 PR 3a — the moves an added review stage brings (review-stages.ts):
+  // the two Submit moves re-pointed to it, and its own four.
+  {
+    key: 'committee_change_request.submit_to_review',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: 'draft',
+    toStageKey: REVIEW_STAGE_MOVE_KEY,
+    en: 'Runs when the change request is submitted for review.',
+    ar: 'يحدث عند إرسال طلب التغيير للمراجعة.',
+  },
+  {
+    key: 'committee_change_request.resubmit_to_review',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: 'returned',
+    toStageKey: REVIEW_STAGE_MOVE_KEY,
+    en: 'Runs when the returned change request is submitted again.',
+    ar: 'يحدث عند إعادة إرسال طلب التغيير المُعاد.',
+  },
+  {
+    key: 'committee_change_request.review_approve',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: REVIEW_STAGE_MOVE_KEY,
+    toStageKey: REVIEW_STAGE_MOVE_KEY,
+    en: "Runs when someone on this review stage approves the change request on the committee's page.",
+    ar: 'يحدث عند اعتماد أحد أعضاء مرحلة المراجعة هذه لطلب التغيير من صفحة اللجنة.',
+  },
+  {
+    key: 'committee_change_request.review_approve_to_decision',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: REVIEW_STAGE_MOVE_KEY,
+    toStageKey: 'under_review',
+    en: "Runs when someone on this review stage approves the change request on the committee's page.",
+    ar: 'يحدث عند اعتماد أحد أعضاء مرحلة المراجعة هذه لطلب التغيير من صفحة اللجنة.',
+  },
+  {
+    key: 'committee_change_request.review_return',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: REVIEW_STAGE_MOVE_KEY,
+    toStageKey: 'returned',
+    en: "Runs when the change request is returned for changes on the committee's page.",
+    ar: 'يحدث عند إعادة طلب التغيير للتعديل من صفحة اللجنة.',
+  },
+  {
+    key: 'committee_change_request.review_reject',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: REVIEW_STAGE_MOVE_KEY,
+    toStageKey: 'rejected',
+    en: "Runs when the change request is rejected on the committee's page.",
+    ar: 'يحدث عند رفض طلب التغيير من صفحة اللجنة.',
+  },
+  {
+    key: 'committee_change_request.review_withdraw',
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    fromStageKey: REVIEW_STAGE_MOVE_KEY,
+    toStageKey: 'withdrawn',
+    en: 'Runs when the change request is withdrawn while it is being reviewed.',
     ar: 'يحدث عند سحب طلب التغيير أثناء مراجعته.',
   },
   {
