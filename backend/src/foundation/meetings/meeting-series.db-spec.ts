@@ -449,6 +449,24 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       expect(prepares).toBe(1);
     });
 
+    it('a this-and-later reschedule across a clock change keeps each meeting\'s wall-clock time (Europe/London)', async () => {
+      const london = await world('Europe/London');
+      // Thursdays 18 Mar, 25 Mar and 1 Apr 2027 at 09:00; the clocks go forward on Sunday 28 Mar.
+      const r = await series.create(weekly(london, { weekday: 4, firstDate: '2027-03-18', count: 3, startTime: '09:00' }), london.orgId, as(london, 'chair'));
+      const [first] = await seriesMeetings(r.seriesId);
+      // The first moves three days on, to Sunday 21 Mar at 09:00: the others follow by three calendar days.
+      const to = DateTime.fromISO('2027-03-21T09:00', { zone: 'Europe/London' }).toJSDate();
+      await series.rescheduleLater(first!.id, { scheduledAt: to.toISOString(), reason: 'Sundays now' }, london.orgId, as(london, 'chair'));
+      const rows = await seriesMeetings(r.seriesId);
+      expect(rows.map((m) => DateTime.fromJSDate(m.scheduledAt).setZone('Europe/London').toFormat('yyyy-MM-dd HH:mm'))).toEqual([
+        '2027-03-21 09:00',
+        '2027-03-28 09:00',
+        '2027-04-04 09:00',
+      ]);
+      // Non-vacuity: the 28th is after the change, so its 09:00 is 08:00 UTC, not 09:00.
+      expect(rows[1]!.scheduledAt.toISOString().slice(11, 16)).toBe('08:00');
+    });
+
     it('a this-and-later reschedule moves a later meeting past a day the owner already meets', async () => {
       const d = await world();
       const r = await series.create(weekly(d, { weekday: 1, firstDate: nextWeekday(d, 1), count: 2 }), d.orgId, as(d, 'chair'));
@@ -473,6 +491,23 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
   });
 
   describe('another organisation', () => {
+    itEnforcesTenantIsolation("End series never presses a move into another organisation's stage", async () => {
+      const e = await world();
+      const r = await series.create(weekly(e, { count: 1 }), e.orgId, as(e, 'chair'));
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: e.orgId, objectType: 'MEETING', isDefault: true } });
+      const planned = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'planned' } });
+      // This organisation's own Cancel Meeting is gone; a corrupt move leads from its Planned into another organisation's Cancelled.
+      const own = await prisma.workflowTransition.findMany({ where: { fromStageId: planned.id, toStage: { flags: { has: 'MEETING_CANCELLED' } } }, select: { id: true } });
+      await prisma.workflowTransitionAction.deleteMany({ where: { workflowTransitionId: { in: own.map((t) => t.id) } } });
+      await prisma.workflowTransition.deleteMany({ where: { id: { in: own.map((t) => t.id) } } });
+      const theirTemplate = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: b.orgId, objectType: 'MEETING', isDefault: true } });
+      const theirCancelled = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: theirTemplate.id, key: 'cancelled' } });
+      await prisma.workflowTransition.create({ data: { fromStageId: planned.id, toStageId: theirCancelled.id, labelEn: 'Cancel', labelAr: 'إلغاء', mover: 'PERSON', kind: 'EXIT' } });
+
+      expect(await code(series.end(r.seriesId, { reason: 'x' }, e.orgId, as(e, 'chair')))).toBe('MEETING_SERIES_CANNOT_CANCEL');
+      expect(await stageKey(r.meetingIds[0]!)).toBe('planned');
+    });
+
     itEnforcesTenantIsolation("a series and its meetings are out of another organisation's reach", async () => {
       const r = await series.create(weekly(a, { count: 2, weekday: 1, firstDate: nextWeekday(a, 1) }), a.orgId, as(a, 'chair'));
       const other = as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
