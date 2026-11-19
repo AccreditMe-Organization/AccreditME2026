@@ -6959,10 +6959,17 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
 - **Deciding in an added stage:** the record first (ACC-282: the committee
   read rule, else the 404), then the pool. **A pool member who cannot open the
   committee cannot decide**, so a stage with nobody who can waits, like an
-  empty pool. The decision re-reads the request's stage under the instance
-  lock: moved since the decider was admitted is `CHANGE_REQUEST_CHANGED`. The
-  "to review" notice goes only to pool members who may open the committee
-  (`committeeReadersAmong()`, batched). The CREATOR kind is refused on an added
+  empty pool. The decision re-reads the request's open stage ENTRY under the
+  instance lock: a different entry from the one the decider was admitted on
+  (moved on, or back again after a Return and Submit) is
+  `CHANGE_REQUEST_CHANGED`. The "to review" notice goes only to pool members
+  who may open the committee (`committeeReadersAmong()`, batched). It shares
+  every piece with the single check: `activeSeatWhere()` for the seat, and
+  `committeeOverseersAmong()` for oversight, which `overseesCommittee()` reads
+  too, on `findUnitAncestorIds()` (the active-unit rule in SQL) and
+  `findUnitLeadersAmong()` in `unit-headship.ts`; `committee-readers.db-spec.ts`
+  holds the two equal. The single check for a non-member who leads nothing now
+  costs 5 queries (it was 3). The CREATOR kind is refused on an added
   stage (`REVIEW_STAGE_NO_CREATOR`). The requester gets
   `CHANGE_REQUEST_OWN_DECISION`, a reader outside the pool (the chain
   included) `CHANGE_REQUEST_NOT_DECIDER`. The pool is read in one batch per
@@ -6975,15 +6982,20 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
 - **Known gap until PR 2:** the awaiting-decision lists read Under review
   only, and `awaitingDecisionBy` is null in an added stage. The screens are
   PR 3.
-- **Real-database spec:** the "added review stages (ACC-245)" block of
-  `committee-change-request.db-spec.ts`, 16 tests, two of them concurrent (an
-  add while a Submit moves, a remove while a request enters the stage).
-  Mutation-checked, 16 mutations, each red: the target re-read, the
+- **Real-database specs:** the "added review stages (ACC-245)" block of
+  `committee-change-request.db-spec.ts`, 17 tests, two of them concurrent (an
+  add while a Submit moves, a remove while a request enters the stage; each
+  waits until `pg_stat_activity` shows a session waiting on a lock, never a
+  sleep). `committee-readers.db-spec.ts`: the parity of the batch and the
+  single check, 4 tests. Mutation-checked, each red: the target re-read, the
   record-first check, the requester's exclusion, the Returned re-point, the
   re-point on remove, Approve now's skip, the any-one rule, applying on an
-  added stage's Approve, the stage re-check on Approve, Return and Reject, the
-  notice filter, the CREATOR refusal, the second in-use count, the remove lock
-  order, and the add's record locks.
+  added stage's Approve, the entry re-check on Approve, Return and Reject (and
+  comparing the template stage instead of the entry), the notice filter, the
+  CREATOR refusal, the second in-use count, the remove lock order, the add's
+  record locks, and, for parity, the batch's role, seat and oversight clauses,
+  the single check's seat clause, the shared ancestor rule and the shared
+  cover window.
 - **No migration.**
 
 ### 3.19 Who sees a task — one rule, keys per record type (ACC-244)

@@ -5281,8 +5281,13 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   instance lock.
 - **THE RECORD COMES FIRST** (ACC-282): a pool member who cannot open the
   committee gets the 404 before anything moves, and is not sent the notice. A
-  decision re-reads the request's stage under the instance lock
-  (`CHANGE_REQUEST_CHANGED` if it moved).
+  decision re-reads the request's open stage ENTRY under the instance lock
+  (`CHANGE_REQUEST_CHANGED` if it is not the one the decider was admitted on).
+- **WHO MAY READ A COMMITTEE, FOR MANY PEOPLE, IS `committeeReadersAmong()`**:
+  the same clauses as `mayReadCommittee()`, sharing `activeSeatWhere()` and
+  `committeeOverseersAmong()` (on `findUnitAncestorIds()` and
+  `findUnitLeadersAmong()` in `unit-headship.ts`). A parity db-spec holds the
+  two equal. Never a third copy.
 - **Lock order: the template, the records, then the moves or the stage row.**
   Never the stage row before the records: it deadlocks with a request entering
   the stage.
