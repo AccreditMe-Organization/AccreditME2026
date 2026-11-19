@@ -17329,17 +17329,27 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
 - **Entering `MINUTES_FINAL` (`TRANSITION_EFFECTS`):**
   - every draft becomes a task in the move's transaction: the owner its only
     assignee, MEDIUM, due when the draft says, its limit the MEDIUM window;
-  - the item is linked (`taskId`) and `minutesApprovedAt` / `approvedById` are
-    stamped;
-  - the tasks are announced after the commit, with one Meeting audit row.
+  - each draft's owner must still be ACTIVE, and the drafts must be as they were
+    prepared; otherwise `MEETING_CHANGED`, with nothing written;
+  - the item is linked (`taskId`), `minutesApprovedAt` / `approvedById` are
+    stamped, and the approval's Meeting audit row is written, all in the move's
+    transaction;
+  - each task is announced after the commit, on its own: one failure is logged
+    and the others still go.
+  - A failed task insert rolls the whole approval back. A second press is
+    refused, and a linked draft is never read again, so no second task.
 - **The reminder:** the `sla-monitor` sweep (`sweepMeetingReviewReminders`). On
   the working day before the review date (or on it, if missed), it tells the
-  present members who haven't answered. One conditional UPDATE of
-  `reviewRemindedRound` makes it once per round.
+  present members who haven't answered:
+  - never on the day the minutes went out (the current stage entry's day, in the
+    organisation's zone);
+  - once per round, by one conditional UPDATE of `reviewRemindedRound`;
+  - a failed send is logged, and stays stamped.
 - **Home:** `GET /meetings/awaiting-me` is self-scoped and needs no permission:
   - reviews to answer;
   - invitations not answered before the start;
-  - each part capped at 200 candidates.
+  - each part is one SQL read, every filter (the stage's action, the round
+    unanswered, the start) before its cap of 200.
 
 **The engine, for every record type:**
 
@@ -17348,8 +17358,9 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
 - `TRANSITION_PRECONDITIONS` take `PreconditionServices` (now, the
   organisation's zone, a task's SLA limit).
 - `GET /workflows/instances/:id/moves` gives each ADVANCE move `blockedBy`: the
-  precondition's refusal, run read-only, for a viewer in the pool, and only for
-  a type with a precondition.
+  precondition's refusal, run read-only (`readOnly`, no row lock), for a viewer
+  in the pool, and only for a type with a precondition. A committee's moves
+  carry it too: the same quorum precondition.
 - `WorkflowService.currentStagePool()` lets a module's own endpoint say who may
   press its APP move.
 - `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
