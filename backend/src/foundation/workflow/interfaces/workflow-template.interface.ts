@@ -1,6 +1,7 @@
 import { IWorkflowStage } from './workflow-stage.interface';
 import { TaskDueHours } from './stage-task-definition.interface';
 import type { WhoRules } from '../stage-who';
+import type { ReviewStagesRead } from '../review-stages';
 
 export interface IWorkflowTemplate {
   id: string;
@@ -39,6 +40,10 @@ export interface IWorkflowTemplate {
   // Committee entry), when the mode choice is shown, and the mode sent when it
   // is not. So the stage screen keeps no copy of a rule.
   whoRules?: WhoRules;
+  // ACC-245 PR 3a — detail only, the protected change request template only:
+  // whether one more added review stage fits, where it may go, and who may decide
+  // one, from the rules addStage reads (review-stages.ts). Absent elsewhere.
+  reviewStages?: ReviewStagesRead;
   taskDueHours?: TaskDueHours;
   // ACC-255 — detail only. What this template's record type offers a stage,
   // read from the registries (record-registry.ts) so no screen keeps a copy:

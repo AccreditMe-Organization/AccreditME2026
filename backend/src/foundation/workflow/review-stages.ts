@@ -1,4 +1,4 @@
-import type { WorkflowStage, WorkflowTransition } from '../../../generated/prisma/client';
+import type { StageAssigneeKind, StageWhoMode, WorkflowStage, WorkflowTransition } from '../../../generated/prisma/client';
 import type { EngineTx } from './workflow.service';
 import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
 
@@ -37,6 +37,59 @@ import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
 
 /** At most this many review stages: their orders sit between Draft's and Under review's. */
 export const MAX_REVIEW_STAGES = 9;
+
+/**
+ * ACC-245 PR 3a — who may decide an added review stage, in this version: "any
+ * one of them" only, never the CREATOR kind (it names whoever raised the
+ * request, who is taken out of every pool). The save's refusals
+ * (REVIEW_STAGE_ANY_ONE, REVIEW_STAGE_NO_CREATOR) and the template read's
+ * `reviewStages.who` both read these, so the screen never keeps a copy.
+ */
+export const REVIEW_STAGE_WHO_MODES: readonly StageWhoMode[] = ['ANY_ONE'];
+export const REVIEW_STAGE_REFUSED_KINDS: readonly StageAssigneeKind[] = ['CREATOR'];
+
+/**
+ * ACC-245 PR 3a — whether one more review stage fits: fewer than the maximum, and
+ * room for its order between Draft's and Under review's. addReviewStageInTx()
+ * refuses with REVIEW_STAGE_LIMIT exactly when this is false, and the template
+ * read's `reviewStages.canAdd` is this.
+ */
+export function reviewStageFits(draftOrder: number, underReviewOrder: number, count: number): boolean {
+  return count < MAX_REVIEW_STAGES && draftOrder + count + 1 < underReviewOrder;
+}
+
+type ReadStage = Pick<WorkflowStage, 'id' | 'key' | 'order' | 'isInitial' | 'isFinal' | 'nameEn' | 'nameAr'>;
+
+/** ACC-245 PR 3a — the template read's `reviewStages`, for the protected change request template. */
+export interface ReviewStagesRead {
+  canAdd: boolean;
+  max: number;
+  count: number;
+  /** Where a new review stage may go: after Draft, or after one of the review stages, in order. */
+  after: { id: string; nameEn: string; nameAr: string | null }[];
+  who: { modes: StageWhoMode[]; assigneeKinds: StageAssigneeKind[] };
+}
+
+/**
+ * ACC-245 PR 3a — `reviewStages` from the template's stages (already read, in
+ * order) and the record type's kinds: the same shape readShape() and
+ * reviewStageFits() decide by. A template missing its seeded Draft or Under
+ * review can take no review stage (readShape() refuses ADD_STAGE then).
+ */
+export function reviewStagesRead(stages: readonly ReadStage[], kinds: readonly StageAssigneeKind[]): ReviewStagesRead {
+  const draft = stages.find((s) => s.key === 'draft');
+  const underReview = stages.find((s) => s.key === 'under_review');
+  const review = stages.filter(isReviewStage).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
+  const who = { modes: [...REVIEW_STAGE_WHO_MODES], assigneeKinds: kinds.filter((k) => !REVIEW_STAGE_REFUSED_KINDS.includes(k)) };
+  if (!draft || !underReview) return { canAdd: false, max: MAX_REVIEW_STAGES, count: review.length, after: [], who };
+  return {
+    canAdd: reviewStageFits(draft.order, underReview.order, review.length),
+    max: MAX_REVIEW_STAGES,
+    count: review.length,
+    after: [draft, ...review].map(({ id, nameEn, nameAr }) => ({ id, nameEn, nameAr })),
+    who,
+  };
+}
 
 const LOG_AUDIT = [{ actionType: 'LOG_AUDIT' as const, order: 10 }];
 
@@ -145,7 +198,7 @@ export async function addReviewStageInTx(
   afterStageId: string | undefined,
 ): Promise<AddedReviewStage> {
   const shape = await readShape(tx, templateId, 'ADD_STAGE');
-  if (shape.review.length >= MAX_REVIEW_STAGES || shape.draft.order + shape.review.length + 1 >= shape.underReview.order) {
+  if (!reviewStageFits(shape.draft.order, shape.underReview.order, shape.review.length)) {
     throw new WorkflowRefusalException('REVIEW_STAGE_LIMIT', { max: MAX_REVIEW_STAGES });
   }
   const path = [shape.draft, ...shape.review];
