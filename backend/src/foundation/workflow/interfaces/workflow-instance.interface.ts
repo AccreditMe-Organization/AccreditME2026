@@ -60,6 +60,12 @@ export interface IWorkflowMove {
   toStageNameAr: string | null;
   /** ACC-316 PR 3a — the press must carry a reason (a comment), else 400 REASON_REQUIRED. */
   needsReason: boolean;
+  /**
+   * ACC-316 PR 4 — an ADVANCE move the record's precondition would refuse now:
+   * the refusal's code and its details ("Why?"), else null. Worked out
+   * read-only, only for a viewer in the stage's pool.
+   */
+  blockedBy: ({ code: string } & Record<string, unknown>) | null;
 }
 
 export interface IWorkflowMoves {

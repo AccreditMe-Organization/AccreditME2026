@@ -2611,6 +2611,8 @@ describe('WorkflowService', () => {
         toStageNameAr: null,
         // ACC-316 PR 3a — a committee move needs no reason.
         needsReason: false,
+        // ACC-316 PR 4 — nothing holds these moves.
+        blockedBy: null,
       });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
