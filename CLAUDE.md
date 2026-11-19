@@ -5262,6 +5262,29 @@ SYSTEM-REFERENCE.md §3.5. Plan and Ahmad's answers (13–14 Nov):
 - **No migration.** The screens are PR 2.
 
 
+## Key Architecture Decisions (ACC-245)
+
+Added review stages in committee change requests. Full mechanism:
+SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
+`backend/Plans/step-245-change-request-review-stages.md`. Briefly, as of PR 1:
+
+- **REVIEWS COME BEFORE THE DECISION (option B):** Draft → [added stages] →
+  Under review → Approved. An added stage is decided by its own pool, never
+  the requester. The chain decides LAST, and only its Approve applies a change.
+- **AN ADDED STAGE IS UNKEYED, AND IS THE ONLY RESHAPING THE PROTECTED TEMPLATE
+  ALLOWS.** Adding one creates its four app moves and re-points the forward move
+  into its place; removing an unused one re-points past it. One place:
+  `foundation/workflow/review-stages.ts`. "Any one of them" only, at most 9, no
+  reordering.
+- **AN APP MOVE WITHOUT A KEY IS THE STAGE'S SINGLE APP ADVANCE**
+  (`triggerSystemAdvance()`), and `applyMove` re-reads its target under the
+  instance lock.
+- **THE RECORD COMES FIRST** (ACC-282): a pool member who cannot open the
+  committee gets the 404 before anything moves.
+- **Approve now skips added stages; a stage nobody is on waits; Submit after a
+  Return starts at the first added stage; committee members may review.**
+- **No migration.** The awaiting-decision lists are PR 2; the screens PR 3.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
