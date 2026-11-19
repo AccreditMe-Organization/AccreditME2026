@@ -123,6 +123,16 @@ export const COMMITTEE_TASKS_PERMISSIONS = {
   VIEW_UNIT: 'committees:view_unit_tasks',
 } as const;
 
+// ACC-316 PR 3a — the same four task keys for meetings (task-record-types.ts):
+// a meeting's action items and any task raised on it. VIEW_UNIT reads the
+// meeting's OWNING unit (its own, or its committee's).
+export const MEETING_TASKS_PERMISSIONS = {
+  VIEW_ALL:  'meetings:view_all_tasks',
+  CREATE:    'meetings:create_tasks',
+  MANAGE:    'meetings:manage_tasks',
+  VIEW_UNIT: 'meetings:view_unit_tasks',
+} as const;
+
 export const NOTIFICATIONS_PERMISSIONS = {
   VIEW:   'notifications:view',
   MANAGE: 'notifications:manage',
@@ -133,6 +143,13 @@ export const MEETINGS_PERMISSIONS = {
   MANAGE:          'meetings:manage',
   RECORD_MINUTES:  'meetings:record_minutes',
   APPROVE_MINUTES: 'meetings:approve_minutes',
+  // ACC-316 (Ahmad, 18 Nov) — schedule, record and approve count only for the
+  // holder's OWN unit's meetings (schedule also for committees that unit owns);
+  // the two sub-units keys need the key AND headship of a unit above.
+  // meeting-authority.ts is where they are read.
+  SCHEDULE:          'meetings:schedule',
+  SCHEDULE_SUBUNITS: 'meetings:schedule_subunits',
+  APPROVE_SUBUNITS:  'meetings:approve_subunits',
 } as const;
 
 export const DOCUMENTS_PERMISSIONS = {
@@ -251,9 +268,9 @@ export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
   COMMITTEES_PERMISSIONS.MANAGE,
   NOTIFICATIONS_PERMISSIONS.VIEW,
   NOTIFICATIONS_PERMISSIONS.MANAGE,
+  // ACC-316 PR 2 — a seed-time umbrella only (ACC-44). record_minutes and
+  // approve_minutes left this list: the meeting stage pools read them.
   MEETINGS_PERMISSIONS.MANAGE,
-  MEETINGS_PERMISSIONS.RECORD_MINUTES,
-  MEETINGS_PERMISSIONS.APPROVE_MINUTES,
   DOCUMENTS_PERMISSIONS.VIEW,
   DOCUMENTS_PERMISSIONS.CREATE,
   DOCUMENTS_PERMISSIONS.SUBMIT,

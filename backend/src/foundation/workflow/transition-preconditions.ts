@@ -1,8 +1,9 @@
-import type { WorkflowObjectType, WorkflowTransitionKind } from '../../../generated/prisma/client';
+import type { TaskPriority, WorkflowObjectType, WorkflowTransitionKind } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { STAGE_FLAG } from './record-registry';
 import { activeMemberCount, emptyRequiredSeats } from '../committees/committee-seat-rules';
+import { meetingMinutesFinalPrecondition } from '../meetings/meeting-minutes-rules';
 
 // ACC-238 — what a record must satisfy before a transition may move it, per
 // kind of record. FAIL OPEN, unlike RECORD_ROUTES: a kind with no entry has no
@@ -26,6 +27,11 @@ export interface TransitionPreconditionContext {
   fromStageFlags: readonly string[];
   toStageFlags: readonly string[];
   kind: WorkflowTransitionKind;
+  /**
+   * ACC-316 PR 4 — the moves list's read-only run ("Why?"): no row lock. Inside
+   * the engine's transaction it is absent, and a precondition locks as it must.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -39,7 +45,18 @@ export function goesLive(ctx: Pick<TransitionPreconditionContext, 'fromStageFlag
   return ctx.toStageFlags.includes(STAGE_FLAG.IN_FORCE) && !ctx.fromStageFlags.includes(STAGE_FLAG.IN_FORCE);
 }
 
-export type TransitionPrecondition = (client: PreconditionClient, ctx: TransitionPreconditionContext) => Promise<void>;
+/**
+ * ACC-316 PR 4 — what a precondition may ask besides the record: the clock, the
+ * organisation's zone, and a task's SLA limit (a meeting's action items must
+ * fit theirs). Reads only; the engine supplies them.
+ */
+export interface PreconditionServices {
+  now(): Date;
+  timeZone(organizationId: string): Promise<string>;
+  taskLimitFrom(start: Date, priority: TaskPriority, organizationId: string): Promise<Date>;
+}
+
+export type TransitionPrecondition = (client: PreconditionClient, ctx: TransitionPreconditionContext, services?: PreconditionServices) => Promise<void>;
 
 export const TRANSITION_PRECONDITIONS: Partial<Record<WorkflowObjectType, TransitionPrecondition>> = {
   // A committee leaves Formation only with a quorum of at least 1 (Ahmad,
@@ -77,15 +94,21 @@ export const TRANSITION_PRECONDITIONS: Partial<Record<WorkflowObjectType, Transi
       });
     }
   },
+  // ACC-316 PR 4 — the minutes are approved (entering MINUTES_FINAL) only once
+  // the review has closed with nothing open and every action item can become a
+  // task (meeting-minutes-rules.ts, the one home of the rule).
+  MEETING: meetingMinutesFinalPrecondition,
 };
 
 export async function assertTransitionPreconditions(
   client: PreconditionClient,
   objectType: WorkflowObjectType,
   ctx: TransitionPreconditionContext,
+  // Optional only for the committee's specs; the engine always passes them.
+  services?: PreconditionServices,
 ): Promise<void> {
   const precondition = TRANSITION_PRECONDITIONS[objectType];
-  if (precondition) await precondition(client, ctx);
+  if (precondition) await precondition(client, ctx, services);
 }
 
 /** ACC-286 — whether this kind of record has a precondition at all (so the engine skips its reads otherwise). */

@@ -21,7 +21,8 @@ const mockPrisma = {
   orgPosition: { findMany: jest.fn() },
   user: { findMany: jest.fn(), groupBy: jest.fn() },
   committee: { findFirst: jest.fn() },
-  committeeMember: { findMany: jest.fn(), groupBy: jest.fn() },
+  // ACC-291 — findFirst is the membership rule's one query (isActiveMember()).
+  committeeMember: { findMany: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn() },
   lookupValue: { findMany: jest.fn() },
   // ACC-280 — mayCreateTasks()' membership answer, for a key holder without committees:view.
   $queryRaw: jest.fn(),
@@ -61,6 +62,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-1' });
     mockPrisma.committeeMember.findMany.mockResolvedValue([]);
     mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
+    mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
     mockLookups.getValues.mockResolvedValue([]);
 
@@ -94,7 +96,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
       const error = await captureError(service.listUnits(creator, ORG_A));
 
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
       expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
     });
@@ -132,7 +134,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
       const keyOnly: AssignmentViewer = { id: 'stranger', permissions: ['committees:create_tasks'] };
       const error = await captureError(service.listUnits(keyOnly, ORG_A));
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
     });
 
     it('still refuses someone with no Create tasks key at all', async () => {
@@ -183,13 +185,72 @@ describe('TaskAssignmentService (ACC-167)', () => {
         'listCommitteeMembers',
         () => service.listCommitteeMembers({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, 'committee-1', 'role-1'),
       ],
-    ])('%s also needs committees:view — 403 naming it, before anything is read', async (_name, call) => {
+    ])('%s also needs committees:view or membership — 403 naming committees:view, before anything else is read', async (_name, call) => {
       const error = await captureError(call());
 
       expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
+      // ACC-291 — the membership query is the only read, and it said no.
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledTimes(1);
       expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.committeeMember.findMany).not.toHaveBeenCalled();
       expect(mockPrisma.committeeMember.groupBy).not.toHaveBeenCalled();
+    });
+
+    // ── ACC-291 — a member chooses a seat on their own committee ───────────
+    describe('the committee route follows create.types’ rule (ACC-291)', () => {
+      const member: AssignmentViewer = { id: 'member', permissions: ['committees:create_tasks'] };
+
+      beforeEach(() => {
+        // mayCreateTasks(): a member of a committee that takes tasks.
+        mockPrisma.$queryRaw = jest.fn().mockResolvedValue([{ member: true }]);
+      });
+
+      it('a member without committees:view lists their own committee’s seats, asking the one membership rule', async () => {
+        mockPrisma.committeeMember.findFirst.mockResolvedValue({ roleValueId: 'role-sec' });
+        mockPrisma.committeeMember.groupBy.mockResolvedValue([{ roleValueId: 'role-sec', _count: { _all: 1 } }]);
+        mockPrisma.lookupValue.findMany.mockResolvedValue([
+          { id: 'role-sec', labelEn: 'Secretary', labelAr: 'أمين السر', labelOverrideEn: null, labelOverrideAr: null, sortOrder: 1 },
+        ]);
+
+        await expect(service.listCommitteeRoles(member, ORG_A, 'committee-1')).resolves.toEqual([
+          { id: 'role-sec', labelEn: 'Secretary', labelAr: 'أمين السر', memberCount: 1 },
+        ]);
+        expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledWith({
+          where: { committeeId: 'committee-1', userId: 'member', organizationId: ORG_A, isActive: true, committee: { organizationId: ORG_A, isActive: true } },
+          select: { roleValueId: true },
+        });
+      });
+
+      it('a member is refused another committee — today’s 403, and nothing about it is read', async () => {
+        const error = await captureError(service.listCommitteeMembers(member, ORG_A, 'committee-2', 'role-sec'));
+        expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
+        expect(mockPrisma.committeeMember.findMany).not.toHaveBeenCalled();
+      });
+
+      it('a member is refused the whole catalogue with no committee named, without a membership query', async () => {
+        const error = await captureError(service.listCommitteeRoleCatalogue(member, ORG_A, undefined));
+        expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
+        expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+        expect(mockLookups.getValues).not.toHaveBeenCalled();
+      });
+
+      it('a committees:view holder pays no membership query', async () => {
+        await service.listCommitteeRoles(assigner, ORG_A, 'committee-1');
+        await service.listCommitteeMembers(assigner, ORG_A, 'committee-1', 'role-sec');
+        await service.listCommitteeRoleCatalogue(assigner, ORG_A, undefined);
+        expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('should NOT return records belonging to a different tenant: a member asking for another organisation’s committee', async () => {
+        // The membership query is scoped to the caller's organisation, so another
+        // organisation's committee answers no, and the refusal is today's 403.
+        const error = await captureError(service.listCommitteeMembers(member, ORG_A, 'committee-of-org-b', 'role-sec'));
+        expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
+        const where = (mockPrisma.committeeMember.findFirst.mock.calls[0][0] as { where: Record<string, unknown> }).where;
+        expect(where['organizationId']).toBe(ORG_A);
+        expect(where['committee']).toEqual({ organizationId: ORG_A, isActive: true });
+        expect(mockPrisma.committeeMember.findMany).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -317,7 +378,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
         service.listCommitteeRoleCatalogue({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, undefined),
       );
 
-      expect((noPicker as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((noPicker as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
       expect((noCommittees as ForbiddenException).message).toBe('Required permission: committees:view');
       expect(mockLookups.getValues).not.toHaveBeenCalled();
     });

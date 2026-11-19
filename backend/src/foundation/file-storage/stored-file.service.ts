@@ -18,7 +18,8 @@ export type StoredFileTx = Parameters<Parameters<PrismaService['$transaction']>[
 
 /** What a caller is attaching a file to. */
 export interface IStoredFileOwner {
-  type: 'TASK';
+  /** ACC-316 PR 3b — a meeting's attachments and its agenda items' papers. */
+  type: 'TASK' | 'MEETING' | 'MEETING_AGENDA_ITEM';
   id: string;
   /** The key's module segment ("tasks"). */
   module: string;

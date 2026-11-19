@@ -52,10 +52,12 @@ import { ConfirmHostGate } from './confirm-host-gate';
       .am-confirm .p-confirmdialog-message {
         margin: 0;
       }
+      /* The gap is the space between the last detail line and the message, one
+         8px step (CC-333); without details the body holds the message alone. */
       .am-confirm__body {
         display: flex;
         flex-direction: column;
-        gap: var(--am-space-6);
+        gap: var(--am-space-8);
         min-inline-size: 0;
       }
       .am-confirm__details {

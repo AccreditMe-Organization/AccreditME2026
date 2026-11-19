@@ -236,66 +236,39 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
   });
 
   // ── #8 Deactivate role ──────────────────────────────────────────────────────
-  function deactivateRole(holders: number | undefined): Said {
-    create(RoleListComponent).onDeactivate({ id: 'r1', nameEn: 'Auditor', nameAr: 'مدقق', activeHolderCount: holders } as never);
-    return said();
+  // ACC-154 — Deactivate asks the server first. The confirm is reached only when
+  // nothing holds or names the role, so it never counts people: anyone holding
+  // it is listed in the "can't be deactivated yet" dialog instead.
+  function deactivateRole(blockers: unknown[] = []): void {
+    create(RoleListComponent).onDeactivate({ id: 'r1', nameEn: 'Auditor', nameAr: 'مدقق' } as never);
+    TestBed.inject(HttpTestingController)
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith('/roles/r1/deactivation-check'))
+      .flush({ canDeactivate: blockers.length === 0, rootRole: false, blockers });
   }
 
-  both('#8 Deactivate role counts the people who lose it', (lang) => {
-    expect(deactivateRole(3)).toEqual(
+  both('#8 Deactivate role, with nothing holding it, says nobody loses anything', (lang) => {
+    deactivateRole();
+    const words = said();
+    expect(words).toEqual(
       lang === 'en'
         ? {
             header: 'Deactivate the role “Auditor”?',
-            message: '3 people hold it and lose its permissions now. The role stays assigned, so reactivating it gives those permissions back.',
+            message: 'Nobody holds it now, so nobody loses anything. You can reactivate it later.',
             accept: 'Deactivate Role',
           }
         : {
-            header: 'تعطيل الدور «مدقق»؟',
-            message: 'يحمله 3 أشخاص سيفقدون صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيد صلاحياته.',
+            // ACC-154 — one verb for deactivate across the flow: «إلغاء تفعيل».
+            header: 'إلغاء تفعيل الدور «مدقق»؟',
+            message: 'لا أحد يحمله الآن، فلن يفقد أحد شيئًا. ويمكنك إعادة تفعيله لاحقًا.',
             accept: 'إلغاء تفعيل الدور',
           },
     );
+    expect(words.message).not.toMatch(/[0-9]/);
   });
 
-  both('#8 with one holder, the singular', (lang) => {
-    expect(deactivateRole(1).message).toBe(
-      lang === 'en'
-        ? '1 person holds it and loses its permissions now. The role stays assigned, so reactivating it gives those permissions back.'
-        : 'يحمله شخص واحد سيفقد صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيد صلاحياته.',
-    );
-  });
-
-  both('#8 with nobody holding it, says so plainly and never "0 people"', (lang) => {
-    const message = deactivateRole(0).message;
-    expect(message).toBe(
-      lang === 'en'
-        ? 'Nobody holds it now, so nobody loses anything. You can reactivate it later.'
-        : 'لا أحد يحمله الآن، فلن يفقد أحد شيئًا. ويمكنك إعادة تفعيله لاحقًا.',
-    );
-    expect(message).not.toContain('0');
-  });
-
-  it('#8 the Arabic plural has its own form for 0, 1, 2, 3, 11 and 100', () => {
-    setup('ar');
-    const format = TestBed.inject(FormatService);
-    const forms = [0, 1, 2, 3, 11, 100].map((n) => format.count('role.deactivateHolders', n));
-    expect(forms).toEqual([
-      'لا أحد يحمله الآن.',
-      'يحمله شخص واحد سيفقد صلاحيات الدور الآن.',
-      'يحمله شخصان سيفقدان صلاحيات الدور الآن.',
-      'يحمله 3 أشخاص سيفقدون صلاحيات الدور الآن.',
-      'يحمله 11 شخصًا سيفقدون صلاحيات الدور الآن.',
-      'يحمله 100 شخص سيفقدون صلاحيات الدور الآن.',
-    ]);
-    // Six different sentences, so a missing form cannot hide behind "other".
-    expect(new Set(forms).size).toBe(6);
-  });
-
-  it('#8 the English plural has one and other', () => {
-    setup('en');
-    const format = TestBed.inject(FormatService);
-    expect(format.count('role.deactivateHolders', 1)).toBe('1 person holds it and loses its permissions now.');
-    expect(format.count('role.deactivateHolders', 2)).toBe('2 people hold it and lose its permissions now.');
+  both('#8 Deactivate role asks nothing while the role is still held', () => {
+    deactivateRole([{ category: 'USER_GRANTS', count: 3, names: ['A', 'B', 'C'] }]);
+    expect(asked).toEqual([]);
   });
 
   // ── #14, #15, #16 the user status actions ───────────────────────────────────

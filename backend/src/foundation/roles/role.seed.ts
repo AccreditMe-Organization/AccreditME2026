@@ -7,6 +7,7 @@ import {
   WORKFLOWS_PERMISSIONS,
   COMMITTEES_PERMISSIONS,
   COMMITTEE_TASKS_PERMISSIONS,
+  MEETING_TASKS_PERMISSIONS,
   NOTIFICATIONS_PERMISSIONS,
   MEETINGS_PERMISSIONS,
   DOCUMENTS_PERMISSIONS,
@@ -45,6 +46,8 @@ const ALL = [
   // group's VIEW entry, and this group has none, so VIEWER gets no task-wide
   // reach (Ahmad, 20 Oct, Q2).
   COMMITTEE_TASKS_PERMISSIONS,
+  // ACC-316 PR 3a — the meeting task keys, by the same spread and the same reach.
+  MEETING_TASKS_PERMISSIONS,
 ].flatMap((g) => Object.values(g));
 
 const readOnly = (...groups: Record<string, string>[]) =>
@@ -88,12 +91,14 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       ...Object.values(INCIDENTS_PERMISSIONS),
       ...Object.values(MEETINGS_PERMISSIONS),
       ...Object.values(COMMITTEES_PERMISSIONS),
-      // ACC-244 — View all, Create and Manage on committees. Not View unit
-      // tasks: beside View all it adds nothing. (The flat tasks:* keys are
-      // retired.)
-      COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
-      COMMITTEE_TASKS_PERMISSIONS.CREATE,
-      COMMITTEE_TASKS_PERMISSIONS.MANAGE,
+      // ACC-244 — the task keys on committees. ACC-77: all four, because a
+      // role holding Manage tasks (the type's umbrella) holds every one of the
+      // type's task keys directly (manage-umbrellas.ts). View unit tasks adds
+      // nothing beside View all, but the umbrella rule has no exceptions. (The
+      // flat tasks:* keys are retired.)
+      ...Object.values(COMMITTEE_TASKS_PERMISSIONS),
+      // ACC-316 PR 3a — the same on meetings.
+      ...Object.values(MEETING_TASKS_PERMISSIONS),
       ...Object.values(KPI_PERMISSIONS),
       ...Object.values(REPORTS_PERMISSIONS),
       ORG_PERMISSIONS.VIEW,
@@ -124,6 +129,10 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       MEETINGS_PERMISSIONS.RECORD_MINUTES,
       // ACC-244 — no task keys: this role cannot see committees, so its old
       // tasks:view and tasks:manage reached no task (plan §5.2, Q6).
+      // ACC-77 — it holds no umbrella, so the umbrella rule gives it none either.
+      // Creating a task needs a type's Create tasks key and that type in view;
+      // meeting task keys go to the meeting managers (ACC-316), and whether a
+      // minute taker raises action items is a Meetings decision.
       KPI_PERMISSIONS.VIEW_DEPARTMENT,
       KPI_PERMISSIONS.ENTER_DATA,
       REPORTS_PERMISSIONS.VIEW,

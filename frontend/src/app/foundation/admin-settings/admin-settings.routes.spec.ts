@@ -1,5 +1,6 @@
 import { ADMIN_SETTINGS_ROUTES } from './admin-settings.routes';
 import { permissionGuard } from '../../core/guards/permission.guard';
+import { leaveGuard } from '../roles/permission-matrix/leave-guard';
 
 // ACC-79 — the parent 'admin-settings' path lost its nav item with the hub, so
 // it has no ROUTE_PERMISSIONS entry and the guard allows it. A child with no
@@ -19,6 +20,11 @@ describe('ADMIN_SETTINGS_ROUTES (ACC-79)', () => {
       'recycle-bin',
       'task-sla',
     ]);
+  });
+
+  // ACC-313 — Task SLA saves by section; leaving with one unsaved asks first.
+  it('asks before leaving Task SLA with unsaved work', () => {
+    expect(screens.find((r) => r.path === 'task-sla')?.canDeactivate).toEqual([leaveGuard]);
   });
 
   it('runs permissionGuard on every screen', () => {

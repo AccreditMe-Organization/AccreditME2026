@@ -17,9 +17,10 @@ import { SeatValue, seatValues } from './committee-seat-rules';
 // changing a default never reaches an existing committee.
 //
 // This file is the ONE reader of the stored rows (seatActionsFor) and the ONE
-// place defaults are worked out. Nothing decides by them yet: the chain of
-// authority (PR 2) reads decide_reporting_changes, and seat-granted member
-// actions come later in the ticket.
+// place defaults are worked out. The chain of authority (PR 2) reads
+// decide_reporting_changes; the other four are a member's actions, granted
+// through member-actions.ts (PR 6). ACC-316 PR 2 — schedule_meeting and
+// record_minutes are read by meeting-authority.ts (the meeting stage pools).
 
 export const SEAT_ACTIONS = {
   ADD_MEMBER: 'add_member',
@@ -27,6 +28,9 @@ export const SEAT_ACTIONS = {
   CHANGE_MEMBER_SEAT: 'change_member_seat',
   REQUEST_CHANGE: 'request_change',
   DECIDE_REPORTING_CHANGES: 'decide_reporting_changes',
+  // ACC-316 — default Chair and Secretary; record_minutes default Secretary.
+  SCHEDULE_MEETING: 'schedule_meeting',
+  RECORD_MINUTES: 'record_minutes',
 } as const;
 
 export type SeatActionKey = (typeof SEAT_ACTIONS)[keyof typeof SEAT_ACTIONS];
@@ -38,6 +42,8 @@ export const SEAT_ACTION_KEYS: readonly SeatActionKey[] = [
   SEAT_ACTIONS.CHANGE_MEMBER_SEAT,
   SEAT_ACTIONS.REQUEST_CHANGE,
   SEAT_ACTIONS.DECIDE_REPORTING_CHANGES,
+  SEAT_ACTIONS.SCHEDULE_MEETING,
+  SEAT_ACTIONS.RECORD_MINUTES,
 ];
 
 /** The lookup attribute that holds each action's default (lookup.seed.ts). */
@@ -47,6 +53,8 @@ export const SEAT_ACTION_DEFAULT_ATTRIBUTE: Readonly<Record<SeatActionKey, strin
   change_member_seat: 'seatChangesSeat',
   request_change: 'seatRequestsChange',
   decide_reporting_changes: 'seatDecidesReportingChanges',
+  schedule_meeting: 'seatSchedulesMeetings',
+  record_minutes: 'seatRecordsMinutes',
 };
 
 export function isSeatAction(key: string): key is SeatActionKey {

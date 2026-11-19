@@ -56,8 +56,8 @@ export const CAPPED_PANEL_BODY_PX = { ltr: 294, rtl: 328 } as const;
   template: `
     <section class="am-cp" [attr.aria-labelledby]="headingId" [attr.data-testid]="testIdPrefix() + '-panel'">
       <header class="am-cp__head" [attr.data-testid]="testIdPrefix() + '-head'">
-        <h2 class="am-cp__title" [id]="headingId">{{ heading() }}</h2>
-        <span class="am-cp__count" [attr.data-testid]="testIdPrefix() + '-count'">{{ state() === 'ready' ? format.number(total()) : '—' }}</span>
+        <h2 class="am-cp__title am-panel-title" [id]="headingId">{{ heading() }}</h2>
+        <span class="am-cp__count am-panel-count" [attr.data-testid]="testIdPrefix() + '-count'">{{ state() === 'ready' ? format.number(total()) : '—' }}</span>
         <span class="flex-1"></span>
         <ng-content select="[amPanelActions]" />
       </header>
@@ -119,8 +119,8 @@ export const CAPPED_PANEL_BODY_PX = { ltr: 294, rtl: 328 } as const;
       am-capped-panel{display:block;min-inline-size:0}
       .am-cp{background:var(--am-surface-raised);border:1px solid var(--am-border);border-radius:var(--am-radius-card);overflow:hidden}
       .am-cp__head{display:flex;align-items:center;gap:8px;block-size:42px;box-sizing:border-box;padding:0 12px 0 16px;border-block-end:1px solid var(--am-border)}
-      .am-cp__title{margin:0;font-size:14px;line-height:20px;font-weight:600;color:var(--am-ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .am-cp__count{flex:none;font-size:12px;font-weight:600;color:var(--am-ink-700);background:var(--am-surface);border:1px solid var(--am-border);border-radius:var(--am-radius-pill);padding:0 8px}
+      /* The title and count are the shared panel heading (am-panel-title,
+         am-panel-count in styles/typography.scss, CC-340). */
       .am-cp__body{display:flex;flex-direction:column;block-size:294px;box-sizing:border-box;overflow:hidden}
       .am-cp__list{list-style:none;margin:0;padding:0}
       .am-cp-row{display:flex;flex-direction:column;justify-content:center;block-size:52px;box-sizing:border-box;padding:4px 12px 4px 16px;border-block-end:1px solid var(--am-border);min-inline-size:0}

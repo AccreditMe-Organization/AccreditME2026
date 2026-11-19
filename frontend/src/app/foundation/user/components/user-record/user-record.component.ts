@@ -32,6 +32,7 @@ import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
+import { UserAccessHistoryPanelComponent } from './user-access-history-panel.component';
 import { UserSessionsPanelComponent } from './user-sessions-panel.component';
 import { observeTwoStepRow, twoStepBodyPx, USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -84,12 +85,15 @@ interface Fact {
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Tasks and Access history have no per-user endpoint here, so they are absent —
- * not a placeholder, not a disabled panel. ACC-216 adds the reads, one at a
- * time. A spec pins their absence.
+ * Tasks has no panel here yet, so it is absent — not a placeholder, not a
+ * disabled panel. A spec pins its absence.
  *
  * Committees (ACC-216 part 1) is its own component with its own request, shown
  * only to a viewer holding committees:view: absent otherwise, never empty.
+ *
+ * Access history (ACC-216 part 2) is its own component too, on am-capped-panel,
+ * shown to the person themself or a viewer holding users:view (the endpoint's
+ * rule): absent otherwise, never empty.
  *
  * Sessions ("Signed-in devices", ACC-216) is its own component too, on
  * am-capped-panel: for yourself (`own`: end your other devices) or for a
@@ -123,6 +127,7 @@ interface Fact {
     TwoStepOffDialogComponent,
     TwoStepResetDialogComponent,
     UserCommitteesPanelComponent,
+    UserAccessHistoryPanelComponent,
     UserSessionsPanelComponent,
   ],
   template: `
@@ -280,7 +285,7 @@ interface Fact {
               [outcome]="rolesOutcome()"
               (retry)="rolesHandle()?.retry()"
               [emptyTitle]="'userRecord.roles.empty' | translate"
-              [emptyMessage]="'userRecord.roles.emptyBody' | translate"
+              [emptyLine]="true"
             >
               <!-- ACC-272 — "See permissions": this person, on "A user's permissions". -->
               @if (canSeePermissions()) {
@@ -330,6 +335,11 @@ interface Fact {
           <!-- ACC-216 — absent without committees:view; a refused read hides it too. -->
           @if (canViewCommittees()) {
             <app-user-committees-panel [userId]="userId" />
+          }
+
+          <!-- ACC-216 part 2 — yourself, or users:view; absent otherwise. -->
+          @if (canViewAccessHistory()) {
+            <app-user-access-history-panel [userId]="userId" [personName]="user()?.name ?? ''" />
           }
 
           <!-- ACC-216 Sessions — yourself, or users:view + users:manage_sessions; absent otherwise. -->
@@ -594,6 +604,8 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canViewRoles = computed(() => this.can('roles:view'));
   /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
   readonly canViewCommittees = computed(() => this.can('committees:view'));
+  /** ACC-216 part 2 — GET /users/:id/access-history: yourself, or users:view. */
+  readonly canViewAccessHistory = computed(() => this.isOwn() || this.can('users:view'));
   /**
    * ACC-216 Sessions — GET /users/:id/sessions: yourself ('own', who may end
    * their other devices), or users:view + users:manage_sessions ('admin', who

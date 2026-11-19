@@ -54,13 +54,19 @@ const PAGE = 20;
 /** ACC-280 — the refusal POST /tasks gives a record that takes no new tasks (decision 7). */
 export const TASK_RECORD_CLOSED = 'TASK_RECORD_CLOSED';
 
+const CLOSED_MESSAGE: Record<string, string> = {
+  COMMITTEE: 'This committee is dissolved or inactive, so it takes no new tasks.',
+  MEETING: 'This meeting is cancelled, so it takes no new tasks.',
+};
+
 export class TaskRecordClosedException extends ConflictException {
   readonly code = TASK_RECORD_CLOSED;
 
-  constructor() {
+  constructor(sourceType: string) {
     super({
       statusCode: 409,
-      message: 'This committee is dissolved or inactive, so it takes no new tasks.',
+      // ACC-316 PR 3a — said for the record's own type; the screen says it from the code.
+      message: CLOSED_MESSAGE[sourceType] ?? 'This record is closed, so it takes no new tasks.',
       error: 'Conflict',
       code: TASK_RECORD_CLOSED,
     });
@@ -134,7 +140,7 @@ export async function assertRecordAcceptsTasks(
       SELECT 1 FROM ${choices.fromSql}
       WHERE r.id = ${sourceId} AND r."organizationId" = ${organizationId} AND ${choices.acceptsTasksSql}
     ) AS open`;
-  if (!row?.open) throw new TaskRecordClosedException();
+  if (!row?.open) throw new TaskRecordClosedException(sourceType);
 }
 
 /** May this caller create tasks at all? createTypes() names at least one type. */

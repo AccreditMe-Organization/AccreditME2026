@@ -471,9 +471,10 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
 
   // ── Test 14 (D1) ────────────────────────────────────────────────────────
   // ACC-216: Committees is absent here because ADMIN holds no committees:view
-  // (test 16 covers it with the key); Tasks and Access history have no read on
-  // this branch. Sessions has its own panel since ACC-216 Sessions (test 19).
-  it('14 · without committees:view, Committees, Tasks and Access history are absent — not empty, not disabled', () => {
+  // (test 16 covers it with the key); Tasks has no panel yet. Access history
+  // (part 2, test 18) and Signed-in devices (Sessions, test 19) are present,
+  // each on its own frame.
+  it('14 · without committees:view, Committees and Tasks are absent — not empty, not disabled', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ADMIN });
     flushUser(ctx, record({ id: ME }));
     ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}/roles`)).flush([]);
@@ -482,9 +483,40 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     const panels = Array.from(ctx.el.querySelectorAll('app-record-panel')).map((p) => p.getAttribute('data-panel'));
     expect(panels).toEqual(['roles', 'twoStep']);
     const text = ctx.el.textContent!;
-    for (const absent of ['Committees', 'Access history', 'Tasks']) {
+    for (const absent of ['Committees', 'Tasks']) {
       expect(text).not.toContain(absent);
     }
+  });
+
+  // ── Test 18 (ACC-216 part 2) ────────────────────────────────────────────
+  // Yourself, or users:view: the endpoint's own rule. Otherwise ABSENT and never
+  // asked, not an empty panel.
+  it('18 · ACC-216 · Access history: present for yourself and with users:view, absent and never requested otherwise', () => {
+    const accessRequests = (ctx: ReturnType<typeof render>) => urls(ctx.http).filter((u) => u.includes('/access-history'));
+
+    const neither = render({ viewer: ME, recordId: OTHER, permissions: ['roles:view'] });
+    flushUser(neither, record());
+    expect(neither.el.querySelector('app-user-access-history-panel')).toBeNull();
+    expect(accessRequests(neither)).toEqual([]);
+
+    const own = render({ viewer: ME, recordId: ME, permissions: [] });
+    flushUser(own, record({ id: ME }));
+    expect(own.el.querySelector('app-user-access-history-panel')).not.toBeNull();
+    // match() consumes what it returns: read it once.
+    const ownRequests = accessRequests(own);
+    expect(ownRequests.length).toBe(1);
+    expect(ownRequests[0]).toContain(`/users/${ME}/access-history?skip=0&take=5`);
+
+    const admin = render({ viewer: ME, recordId: OTHER, permissions: ['users:view'] });
+    flushUser(admin, record());
+    admin.http
+      .expectOne((r) => r.url.endsWith(`/users/${OTHER}/access-history`))
+      .flush({ rows: [{ id: 'audit:1', at: '2026-11-10T08:00:00.000Z', kind: 'DEACTIVATED', actor: null }], total: 1, skip: 0, take: 5 });
+    admin.fixture.detectChanges();
+    const panel = admin.el.querySelector('[data-testid="access-history-panel"]')!;
+    expect(panel).not.toBeNull();
+    expect(panel.textContent).toContain('Access history');
+    expect(panel.textContent).toContain('Account deactivated');
   });
 
   // ── Test 19 (ACC-216 Sessions) ──────────────────────────────────────────

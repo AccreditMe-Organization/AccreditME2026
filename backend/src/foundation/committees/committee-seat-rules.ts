@@ -1,5 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { STAGE_FLAG } from '../workflow/record-registry';
 
 // ACC-286 — the ONE reader of required committee seats and who fills them.
 // Going live (transition-preconditions.ts), keeping a seat filled
@@ -148,17 +150,75 @@ export async function seatHoldersFor(
       AND cm."roleValueId" = ANY(${[...seatIds]}::text[])`;
 }
 
+/**
+ * ACC-307 — THE rule for who counts toward a committee's quorum, as ONE SQL
+ * fragment every quorum count reads: an active membership of an ACTIVE user,
+ * scoped by organisation, grouped by committee. Going live
+ * (activeMemberCount()), Home's below-quorum count and Setup health's
+ * "Committee below quorum" (committeesInForceStanding()) all read it, so they
+ * cannot drift apart again (Home counted memberships of anyone, ACC-306 P161).
+ * `committeeIds` narrows it; omitted, it counts every committee.
+ */
+function activeMembersByCommittee(organizationId: string, committeeIds?: readonly string[]): Prisma.Sql {
+  const only = committeeIds ? Prisma.sql`AND cm."committeeId" = ANY(${[...committeeIds]}::text[])` : Prisma.empty;
+  return Prisma.sql`
+    SELECT cm."committeeId", COUNT(*)::int AS n
+      FROM "CommitteeMember" cm
+      JOIN "User" u ON u.id = cm."userId" AND u."organizationId" = ${organizationId}
+     WHERE cm."organizationId" = ${organizationId}
+       AND cm."isActive"
+       AND u.status = 'ACTIVE'
+       ${only}
+     GROUP BY cm."committeeId"`;
+}
+
 /** The members who count toward the committee's quorum: an active membership, an ACTIVE user. */
 export async function activeMemberCount(client: SeatClient, organizationId: string, committeeId: string): Promise<number> {
-  const rows = await client.$queryRaw<{ n: number }[]>`
-    SELECT COUNT(*)::int AS n
-    FROM "CommitteeMember" cm
-    JOIN "User" u ON u.id = cm."userId" AND u."organizationId" = ${organizationId}
-    WHERE cm."organizationId" = ${organizationId}
-      AND cm."committeeId" = ${committeeId}
-      AND cm."isActive"
-      AND u.status = 'ACTIVE'`;
+  const rows = await client.$queryRaw<{ n: number }[]>`SELECT n FROM (${activeMembersByCommittee(organizationId, [committeeId])}) m`;
   return rows[0]?.n ?? 0;
+}
+
+/** A committee in force, with its quorum and how many members count toward it. */
+export interface CommitteeQuorumStanding {
+  committeeId: string;
+  nameEn: string;
+  nameAr: string | null;
+  quorum: number;
+  /** Active members who are ACTIVE users (activeMembersByCommittee()). */
+  members: number;
+}
+
+/**
+ * ACC-307 — every committee IN FORCE, with its quorum and its counted members,
+ * in ONE query. In force is committeeListStatus()'s rule: the committee is
+ * active, and its NEWEST COMMITTEE instance's current stage is flagged
+ * IN_FORCE and not DISSOLVING (read from the flags, never a stage key, so
+ * Suspended counts). Every table is scoped by organisation in its own right.
+ */
+export async function committeesInForceStanding(client: SeatClient, organizationId: string): Promise<CommitteeQuorumStanding[]> {
+  return client.$queryRaw<CommitteeQuorumStanding[]>`
+    WITH newest AS (
+      SELECT DISTINCT ON (wi."objectId") wi."objectId", wi."currentStageId"
+        FROM "WorkflowInstance" wi
+       WHERE wi."organizationId" = ${organizationId} AND wi."objectType"::text = 'COMMITTEE'
+       ORDER BY wi."objectId", wi."createdAt" DESC
+    ), members AS (${activeMembersByCommittee(organizationId)})
+    SELECT c.id AS "committeeId", c."nameEn", c."nameAr", c."quorumCount" AS quorum, COALESCE(m.n, 0)::int AS members
+      FROM "Committee" c
+      JOIN newest l ON l."objectId" = c.id
+      JOIN "WorkflowStage" s ON s.id = l."currentStageId"
+      JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
+      LEFT JOIN members m ON m."committeeId" = c.id
+     WHERE c."organizationId" = ${organizationId}
+       AND c."isActive"
+       AND ${STAGE_FLAG.IN_FORCE} = ANY(s.flags)
+       AND NOT ${STAGE_FLAG.DISSOLVING} = ANY(s.flags)
+     ORDER BY c."nameEn", c.id`;
+}
+
+/** Below quorum: a quorum above 0, and fewer counted members than it. */
+export function isBelowQuorum(standing: Pick<CommitteeQuorumStanding, 'quorum' | 'members'>): boolean {
+  return standing.quorum > 0 && standing.members < standing.quorum;
 }
 
 /** The required seats nobody fills, in seat order. */

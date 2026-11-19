@@ -28,6 +28,7 @@ import {
   WorkflowObjectType,
   TaskSourceType,
 } from '../../../generated/prisma/client';
+import { WORKFLOW_OBJECT_TYPE_WORDS } from './workflow-object-type-words';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { ValidatorConfig } from './interfaces/workflow-transition.interface';
 import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
@@ -36,17 +37,28 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { isVotingMove, stageExitOutcome, votesFor } from './workflow-vote';
-import { assertTransitionPreconditions, hasTransitionPrecondition } from './transition-preconditions';
+import { assertTransitionPreconditions, hasTransitionPrecondition, type PreconditionServices } from './transition-preconditions';
+import type { TransitionEffectDeps } from './transition-effect.types';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
 import { INSTANCE_NOT_FOUND, InstanceAccess } from './instance-access';
 import type { IWorkflowMoves } from './interfaces/workflow-instance.interface';
 import { APP_MOVER_WHERE, transitionMover } from './workflow-pool';
+import { hasMoveReasonRule, moveNeedsReason } from './move-reasons';
+import {
+  applyTransitionEffects,
+  finishTransitionEffects,
+  prepareTransitionEffects,
+  type PreparedTransitionEffects,
+} from './transition-effects';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
 // PrismaService, whose extended client has its own transaction type.
 export type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
 /** ACC-239 — startInstance()'s reads, done before any transaction. */
+/** ACC-316 PR 5 — how many records prepareInstanceStarts() prepares at once when each needs its own. */
+const PREPARE_BATCH = 5;
+
 export interface PreparedInstanceStart {
   template: PrismaWorkflowTemplate;
   initialStage: PrismaWorkflowStage;
@@ -85,6 +97,8 @@ export interface PreparedSystemMove {
   organizationId: string;
   actorId: string;
   comment: string | undefined;
+  /** ACC-316 PR 3a — what entering the stage does to the record (TRANSITION_EFFECTS). */
+  effects: PreparedTransitionEffects;
 }
 
 /** ACC-283 PR 2b — what the move's transaction wrote, for the after-commit half. */
@@ -114,7 +128,7 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 // COMMITTEE_VOTE) the move's KIND (ACC-190) says what a press is — a vote for
 // that move, or an act at once (workflow-vote.ts). Each vote records its move,
 // and a move goes through when its own threshold is met. The old
-// WorkflowTransition.isApprovalPath is no longer read; it is dropped later.
+// WorkflowTransition.isApprovalPath was never read again, and ACC-294 removed it.
 //
 // ACC-271 PR 6a — who works a stage, who may move a record out of it and how
 // its votes decide come from the stage's pool and who mode only
@@ -210,6 +224,25 @@ export class WorkflowService {
   }
 
   /** The instance, its first entry and that entry's tasks, on the caller's transaction. */
+  /**
+   * ACC-316 PR 5 — the same prepare for many records of one type at once (a
+   * meeting series): the template, first stage and its clock are read ONCE.
+   * Shared when entering the stage creates no task and snapshots no quorum
+   * (both are per record); otherwise each record is prepared on its own.
+   */
+  async prepareInstanceStarts(objectType: string, objectIds: readonly string[], organizationId: string): Promise<PreparedInstanceStart[]> {
+    if (objectIds.length === 0) return [];
+    const first = await this.prepareInstanceStart(objectType, objectIds[0]!, organizationId);
+    if (first.entryTasks.tasks.length === 0 && first.quorumCount === null) return objectIds.map(() => first);
+    // Five at a time: a series' 52 reads at once would take the connection pool.
+    const out = [first];
+    const rest = objectIds.slice(1);
+    for (let i = 0; i < rest.length; i += PREPARE_BATCH) {
+      out.push(...(await Promise.all(rest.slice(i, i + PREPARE_BATCH).map((id) => this.prepareInstanceStart(objectType, id, organizationId, first.template.id)))));
+    }
+    return out;
+  }
+
   async insertInstanceStartInTx(
     tx: EngineTx,
     prepared: PreparedInstanceStart,
@@ -328,7 +361,7 @@ export class WorkflowService {
     const [stage, transitions] = await Promise.all([
       this.prisma.workflowStage.findFirst({
         where: { id: instance.currentStageId, workflowTemplate: { organizationId } },
-        select: { id: true, whoMode: true },
+        select: { id: true, whoMode: true, key: true, flags: true },
       }),
       // ACC-282 — each move carries what its button shows (label, kind) and the
       // stage it leads to, so no screen reads the whole template for them.
@@ -341,7 +374,7 @@ export class WorkflowService {
           labelAr: true,
           kind: true,
           toStageId: true,
-          toStage: { select: { nameEn: true, nameAr: true } },
+          toStage: { select: { nameEn: true, nameAr: true, flags: true } },
         },
         orderBy: { id: 'asc' },
       }),
@@ -353,9 +386,18 @@ export class WorkflowService {
     // ACC-282 — moves stay pool-only: anyone else who may open the record gets none.
     const pool = await this.access.poolOf(organizationId, stage.id, instance);
     if (!this.access.mayAct(pool, viewerId)) return none;
+    // ACC-316 PR 4 — "Why?": each ADVANCE move's precondition, read-only (no lock),
+    // only for a type that has one, so every other record pays nothing.
+    const blocked = await Promise.all(
+      byPerson.map((t) =>
+        t.kind === 'ADVANCE' && hasTransitionPrecondition(instance.objectType as WorkflowObjectType)
+          ? this.preconditionRefusal(instance, stage, t, organizationId)
+          : Promise.resolve(null),
+      ),
+    );
     return {
       transitionIds: byPerson.map((t) => t.id),
-      moves: byPerson.map((t) => ({
+      moves: byPerson.map((t, i) => ({
         id: t.id,
         labelEn: t.labelEn,
         labelAr: t.labelAr,
@@ -363,8 +405,82 @@ export class WorkflowService {
         toStageId: t.toStageId,
         toStageNameEn: t.toStage.nameEn,
         toStageNameAr: t.toStage.nameAr,
+        // ACC-316 PR 3a — the press must carry a reason (MOVE_REASON_FLAGS).
+        needsReason: moveNeedsReason(instance.objectType as WorkflowObjectType, t.toStage.flags),
+        blockedBy: blocked[i] ?? null,
       })),
     };
+  }
+
+  /** The precondition's refusal for this move now, as `{ code, ...details }`, or null when it would pass. */
+  private async preconditionRefusal(
+    instance: Pick<IWorkflowInstance, 'objectType' | 'objectId'>,
+    fromStage: { key: string | null; flags: string[] },
+    move: { kind: PrismaWorkflowTransition['kind']; toStage: { flags: string[] } },
+    organizationId: string,
+  ): Promise<({ code: string } & Record<string, unknown>) | null> {
+    try {
+      await assertTransitionPreconditions(
+        this.prisma,
+        instance.objectType as WorkflowObjectType,
+        {
+          objectId: instance.objectId,
+          organizationId,
+          fromStageKey: fromStage.key,
+          fromStageFlags: fromStage.flags,
+          toStageFlags: move.toStage.flags,
+          kind: move.kind,
+          readOnly: true,
+        },
+        this.preconditionServices(),
+      );
+      return null;
+    } catch (error) {
+      if (!(error instanceof WorkflowRefusalException)) throw error;
+      const body = error.getResponse() as Record<string, unknown>;
+      const details = Object.fromEntries(Object.entries(body).filter(([key]) => !['statusCode', 'message', 'error'].includes(key)));
+      return details as { code: string } & Record<string, unknown>;
+    }
+  }
+
+  /** ACC-316 PR 4 — what a precondition may ask besides the record (transition-preconditions.ts). */
+  private preconditionServices(): PreconditionServices {
+    return {
+      now: () => new Date(),
+      timeZone: (organizationId) => this.workingCalendar.getEffectiveTimeZone(organizationId),
+      taskLimitFrom: (start, priority, organizationId) => this.taskService.slaLimitFrom(start, priority, organizationId),
+    };
+  }
+
+  /** ACC-316 PR 4 — what a transition effect may use (transition-effect.types.ts). */
+  private effectDeps(): TransitionEffectDeps {
+    return { prisma: this.prisma, notifications: this.notificationService, calendar: this.workingCalendar, tasks: this.taskService };
+  }
+
+  /**
+   * ACC-316 PR 4 — the pool of the record's current stage, for a module whose
+   * own endpoint runs an APP move and must say who may press it (a meeting's
+   * Distribute and Return). The record check is the module's, done first.
+   * Null when the record has no workflow or no current stage.
+   */
+  async currentStagePool(
+    objectType: WorkflowObjectType,
+    objectId: string,
+    organizationId: string,
+  ): Promise<{ instanceId: string; stage: { id: string; nameEn: string; nameAr: string | null }; pool: StagePool } | null> {
+    const instance = await this.prisma.workflowInstance.findFirst({
+      where: { organizationId, objectType, objectId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, objectType: true, objectId: true, currentStageId: true },
+    });
+    if (!instance?.currentStageId) return null;
+    const stage = await this.prisma.workflowStage.findFirst({
+      where: { id: instance.currentStageId, workflowTemplate: { organizationId } },
+      select: { id: true, nameEn: true, nameAr: true },
+    });
+    if (!stage) return null;
+    const pool = await this.access.poolOf(organizationId, stage.id, instance);
+    return { instanceId: instance.id, stage, pool };
   }
 
   // ACC-76 — the real path an object took through its workflow.
@@ -636,6 +752,9 @@ export class WorkflowService {
     }
     // ACC-282 — may open the record (the identical 404 otherwise), then in the pool.
     const pool = await this.access.assertMayAct(instance, fromStage, organizationId, { id: actorId, permissions: userPermissions });
+    // ACC-316 PR 3a — a move into a stage that needs a reason, with none. After the
+    // record check, so a caller who may not open the record learns nothing from it.
+    await this.assertReasonGiven(instance.objectType, transition, organizationId, dto.comment);
 
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { workflowInstanceId: instanceId, stageId: fromStage.id, exitedAt: null },
@@ -748,6 +867,8 @@ export class WorkflowService {
     // ACC-284 — the decision's move, by kind: an approval votes for the stage's
     // ADVANCE, a return acts along its RETURN; exactly one, else a 409.
     const move = await this.voteMoveFor(stage, dto.decision);
+    // ACC-316 PR 3a — a vote for a move that needs a reason carries one.
+    if (move) await this.assertReasonGiven(instance.objectType, move, organizationId, dto.comment);
 
     // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
     // vote is refused BEFORE it is recorded.
@@ -1126,6 +1247,17 @@ export class WorkflowService {
     };
     // ACC-239 — the quorum a committee-approval stage's vote will count against.
     const quorumCount = await this.quorumSnapshot(toStage, organizationId, instance);
+    // ACC-316 PR 3a — the record's entry effects: their reads, before the transaction.
+    const effects = await prepareTransitionEffects(this.effectDeps(), {
+      objectType: instance.objectType,
+      objectId: instance.objectId,
+      organizationId,
+      actorId,
+      kind: transition.kind,
+      fromStageFlags: fromStage.flags,
+      toStageFlags: toStage.flags,
+      comment: comment ?? null,
+    });
     return {
       instance,
       currentInstanceStage,
@@ -1141,6 +1273,7 @@ export class WorkflowService {
       organizationId,
       actorId,
       comment,
+      effects,
     };
   }
 
@@ -1184,6 +1317,10 @@ export class WorkflowService {
       }
       await hook.inTx(tx);
     }
+
+    // ACC-316 PR 3a — the record's entry effects' writes, under this same lock
+    // (a record row they touch is locked after the instance, ACC-255's order).
+    await applyTransitionEffects(tx, p.effects);
 
     // ACC-202 — left with the outcome of the move's kind, whoever made it.
     await tx.workflowInstanceStage.update({
@@ -1244,6 +1381,18 @@ export class WorkflowService {
     await this.checkAndFlagUnassignedStage(toStage, newInstanceStage.id, instance, organizationId);
 
     await this.fireTransitionActions(transition, updatedInstance, organizationId, actorId);
+
+    // ACC-316 PR 3a — the entry effects' notices, after the commit. The move has
+    // committed: a notice that fails is logged, and never undoes or refuses it.
+    try {
+      await finishTransitionEffects(p.effects);
+    } catch (error) {
+      this.logger.error(
+        `Transition effects' notices failed for ${instance.objectType} ${instance.objectId} in org ${organizationId}: ${
+          error instanceof Error ? error.name : 'unknown error'
+        }`,
+      );
+    }
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -1319,6 +1468,28 @@ export class WorkflowService {
     return committee?.quorumCount ?? null;
   }
 
+  /**
+   * ACC-316 PR 3a — MOVE_REASON_FLAGS (move-reasons.ts): a person's press into a
+   * stage that needs a reason must carry a non-blank comment. Only a type with a
+   * rule pays the read of the destination's flags. Checked before anything is
+   * recorded, a vote included.
+   */
+  private async assertReasonGiven(
+    objectType: WorkflowObjectType,
+    transition: Pick<PrismaWorkflowTransition, 'toStageId' | 'labelEn' | 'labelAr'>,
+    organizationId: string,
+    comment: string | undefined,
+  ): Promise<void> {
+    if (!hasMoveReasonRule(objectType)) return;
+    const toStage = await this.prisma.workflowStage.findFirst({
+      where: { id: transition.toStageId, workflowTemplate: { organizationId } },
+      select: { flags: true },
+    });
+    if (moveNeedsReason(objectType, toStage?.flags ?? []) && !comment?.trim()) {
+      throw new WorkflowRefusalException('REASON_REQUIRED', { moveLabelEn: transition.labelEn, moveLabelAr: transition.labelAr });
+    }
+  }
+
   // ACC-238 — TRANSITION_PRECONDITIONS for this record's kind (a committee
   // needs a quorum to leave Formation). Fails open: a kind with no entry has
   // none. Read the precondition registry, not this method, for the rules.
@@ -1344,14 +1515,19 @@ export class WorkflowService {
         })
       )?.flags ??
       [];
-    await assertTransitionPreconditions(client, instance.objectType, {
-      objectId: instance.objectId,
-      organizationId,
-      fromStageKey: fromStage.key,
-      fromStageFlags: fromStage.flags,
-      toStageFlags,
-      kind: transition.kind,
-    });
+    await assertTransitionPreconditions(
+      client,
+      instance.objectType,
+      {
+        objectId: instance.objectId,
+        organizationId,
+        fromStageKey: fromStage.key,
+        fromStageFlags: fromStage.flags,
+        toStageFlags,
+        kind: transition.kind,
+      },
+      this.preconditionServices(),
+    );
   }
 
   // ACC-190 — THE GATE. An ADVANCE out of an entry is refused while any of the
@@ -1532,12 +1708,17 @@ export class WorkflowService {
     const assigneeIds = await this.whoWorks(toStage, instance, organizationId);
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
+    // ACC-95 — the record type in words (never the stored code), and each
+    // stored name's Arabic when it has one, else its English one.
+    const type = WORKFLOW_OBJECT_TYPE_WORDS[instance.objectType];
     for (const userId of assigneeIds) {
       await this.notificationService.create(
         {
           userId,
           titleEn: transition.labelEn,
-          bodyEn: `${instance.objectType} moved to ${toStage.nameEn}`,
+          titleAr: transition.labelAr ?? transition.labelEn,
+          bodyEn: `${type.en}: moved to ${toStage.nameEn}`,
+          bodyAr: `${type.ar}: الانتقال إلى مرحلة «${toStage.nameAr ?? toStage.nameEn}»`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
@@ -1560,7 +1741,9 @@ export class WorkflowService {
         {
           userId,
           titleEn: 'New workflow assignment',
+          titleAr: 'تكليف جديد في سير العمل',
           bodyEn: `You have been assigned to ${initialStage.nameEn}`,
+          bodyAr: `تم تكليفك بمرحلة «${initialStage.nameAr ?? initialStage.nameEn}»`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
@@ -1711,6 +1894,11 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
+    // ACC-312 — a record at its FINAL stage waits on nobody (its entry keeps
+    // exitedAt null for good), so it is never flagged unassigned and no pool
+    // is resolved for it. Withdrawn, approved and rejected change requests are
+    // the first such stages whose pool empties (the requester leaves).
+    if (stage.isFinal) return;
     // ACC-271 — a stage is unassigned when its pool is empty (plan §4.5), as a
     // stage with no `who` always is (PR 6a removed the two old detectors).
     const pool = await this.stagePool.resolve(organizationId, stage.id, instance);

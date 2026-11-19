@@ -24,7 +24,6 @@ const TRANSITION = {
   labelEn: 'Approve',
   labelAr: null,
   kind: 'ADVANCE',
-  isApprovalPath: false,
   actions: [{ id: 'a1', workflowTransitionId: 'transition-1', actionType: 'LOG_AUDIT', order: 10, isEnabled: true, configJson: null }],
 } as unknown as WorkflowTransitionDto;
 

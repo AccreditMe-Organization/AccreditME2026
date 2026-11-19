@@ -7,6 +7,7 @@ import { UpdateOrgPositionDto } from './dto/update-org-position.dto';
 import { IOrgPosition } from './interfaces/org-position.interface';
 import { DEFAULT_POSITIONS } from './org-position.seed';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
+import { lockActiveRole } from '../roles/role-active';
 
 @Injectable()
 export class OrgPositionService {
@@ -69,20 +70,22 @@ export class OrgPositionService {
     actorId: string,
   ): Promise<IOrgPosition> {
     this.validateHeadFlagPairing(dto.isUnitHeadPosition ?? false, dto.isSingleAssignee ?? false);
-    if (dto.roleId) {
-      await this.validateRoleReference(dto.roleId, organizationId);
-    }
 
-    const position = await this.prisma.orgPosition.create({
-      data: {
-        organizationId,
-        nameEn: dto.nameEn,
-        nameAr: dto.nameAr ?? null,
-        grade: dto.grade,
-        isSingleAssignee: dto.isSingleAssignee ?? false,
-        isUnitHeadPosition: dto.isUnitHeadPosition ?? false,
-        roleId: dto.roleId ?? null,
-      },
+    // ACC-154 — the role is checked and locked FOR SHARE in the transaction
+    // that writes the position, so a deactivate cannot slip between them.
+    const position = await this.prisma.$transaction(async (tx) => {
+      if (dto.roleId) await this.validateRoleReference(tx, dto.roleId, organizationId);
+      return tx.orgPosition.create({
+        data: {
+          organizationId,
+          nameEn: dto.nameEn,
+          nameAr: dto.nameAr ?? null,
+          grade: dto.grade,
+          isSingleAssignee: dto.isSingleAssignee ?? false,
+          isUnitHeadPosition: dto.isUnitHeadPosition ?? false,
+          roleId: dto.roleId ?? null,
+        },
+      });
     });
 
     await this.auditLog.log({
@@ -113,24 +116,23 @@ export class OrgPositionService {
       dto.isUnitHeadPosition ?? existing.isUnitHeadPosition,
       dto.isSingleAssignee ?? existing.isSingleAssignee,
     );
-    if (dto.roleId) {
-      await this.validateRoleReference(dto.roleId, organizationId);
-    }
+    // ACC-154 — `roleId: null` clears the position's role (the form sends it
+    // when the field is emptied). A CHANGED role is checked, and locked FOR
+    // SHARE, in the transaction that writes it; an unchanged one is not, so a
+    // position whose role was deactivated can still be renamed.
+    const roleChanged = !!dto.roleId && dto.roleId !== existing.roleId;
 
     // ACC-288 — turning a position's head flag off un-heads every unit its
     // holders head, so that write is one transaction with the root-head rule.
     const turnsHeadOff = existing.isUnitHeadPosition && dto.isUnitHeadPosition === false;
-    const position = turnsHeadOff
-      ? await this.prisma.$transaction(async (tx) => {
-          const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
-          const updated = await tx.orgPosition.update({ where: { id }, data: dto });
-          await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
-          return updated;
-        })
-      : await this.prisma.orgPosition.update({
-          where: { id },
-          data: dto,
-        });
+    const position = await this.prisma.$transaction(async (tx) => {
+      if (roleChanged) await this.validateRoleReference(tx, dto.roleId!, organizationId);
+      if (!turnsHeadOff) return tx.orgPosition.update({ where: { id }, data: dto });
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+      const updated = await tx.orgPosition.update({ where: { id }, data: dto });
+      await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
+      return updated;
+    });
 
     await this.auditLog.log({
       action: 'UPDATE',
@@ -326,8 +328,11 @@ export class OrgPositionService {
   // automatically as a side effect of holding an ordinary-sounding position
   // (rather than through the deliberate Roles UI) is a real self-escalation
   // risk, not merely a redundant safeguard.
-  private async validateRoleReference(roleId: string, organizationId: string): Promise<void> {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, organizationId } });
+  //
+  // ACC-154 — and an inactive role is refused (409 ROLE_INACTIVE), read under
+  // the role's FOR SHARE lock, inside the caller's transaction.
+  private async validateRoleReference(tx: Pick<PrismaService, 'role' | '$queryRaw'>, roleId: string, organizationId: string): Promise<void> {
+    const role = await tx.role.findFirst({ where: { id: roleId, organizationId } });
     if (!role) {
       throw new NotFoundException('Role not found in this tenant');
     }
@@ -336,6 +341,7 @@ export class OrgPositionService {
         'PLATFORM_ADMIN and TENANT_ADMIN cannot be mapped to an org position',
       );
     }
+    await lockActiveRole(tx, roleId, organizationId);
   }
 
   // ACC-46 Section 2.7.e — replaces validateEscalationTarget() entirely

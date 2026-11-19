@@ -32,14 +32,22 @@ const seedValue = (key: string) => seatCategory.values.find((v) => v.key === key
 
 describe('Seat actions (ACC-283)', () => {
   describe('the fixed list', () => {
-    it('is the five actions, in the order a screen lists them', () => {
-      expect(SEAT_ACTION_KEYS).toEqual(['add_member', 'remove_member', 'change_member_seat', 'request_change', 'decide_reporting_changes']);
+    it('is the seven actions, in the order a screen lists them (ACC-316 added the two meeting actions)', () => {
+      expect(SEAT_ACTION_KEYS).toEqual([
+        'add_member',
+        'remove_member',
+        'change_member_seat',
+        'request_change',
+        'decide_reporting_changes',
+        'schedule_meeting',
+        'record_minutes',
+      ]);
       expect(Object.values(SEAT_ACTIONS).sort()).toEqual([...SEAT_ACTION_KEYS].sort());
     });
 
-    it('knows its own keys and nothing else (Meetings adds its two later)', () => {
+    it('knows its own keys and nothing else', () => {
       for (const key of SEAT_ACTION_KEYS) expect(isSeatAction(key)).toBe(true);
-      expect(isSeatAction('schedule_meeting')).toBe(false);
+      expect(isSeatAction('approve_minutes')).toBe(false);
       expect(isSeatAction('change_member_role')).toBe(false);
     });
   });
@@ -54,8 +62,8 @@ describe('Seat actions (ACC-283)', () => {
         expect(typeof def['labelEn']).toBe('string');
         expect((def['labelEn'] as string).trim()).not.toBe('');
         expect(def['labelAr']).toMatch(ARABIC);
-        // The value form reads `label` today (ACC-310 keeps it until the form stops).
-        expect(def['label']).toBe(def['labelEn']);
+        // The old single `label` is gone: the value form reads labelEn / labelAr (ACC-310).
+        expect(def).not.toHaveProperty('label');
       },
     );
 
@@ -69,15 +77,18 @@ describe('Seat actions (ACC-283)', () => {
         seatChangesSeat: ["Change a member's seat", 'تغيير مقعد عضو'],
         seatRequestsChange: ['Request a change', 'طلب تغيير'],
         seatDecidesReportingChanges: ['Decide changes of committees that report to it', 'البتّ في تغييرات اللجان التابعة لها'],
+        // ACC-316
+        seatSchedulesMeetings: ['Schedule meetings', 'جدولة الاجتماعات'],
+        seatRecordsMinutes: ['Record the minutes', 'تسجيل المحضر'],
       });
     });
 
-    it("Q10's defaults: Chairman all five, Secretary the four member actions, every other seat none", () => {
+    it("Q10's defaults, and ACC-316's: Chairman all but record_minutes, Secretary the member actions and both meeting actions, every other seat none", () => {
       const defaults = Object.fromEntries(seatCategory.values.map((v) => [v.key, defaultActionsOf((v.attributes ?? {}) as Record<string, unknown>)]));
       expect(defaults).toEqual({
-        chairman: SEAT_ACTION_KEYS,
+        chairman: ['add_member', 'remove_member', 'change_member_seat', 'request_change', 'decide_reporting_changes', 'schedule_meeting'],
         vice_chairman: [],
-        secretary: ['add_member', 'remove_member', 'change_member_seat', 'request_change'],
+        secretary: ['add_member', 'remove_member', 'change_member_seat', 'request_change', 'schedule_meeting', 'record_minutes'],
         member: [],
         observer: [],
         advisor: [],
@@ -101,14 +112,14 @@ describe('Seat actions (ACC-283)', () => {
     it('refuses an action not on the list, naming it', () => {
       let thrown: unknown;
       try {
-        normaliseSeatActions([{ roleValueId: 'seat-1', actions: ['add_member', 'schedule_meeting'] }]);
+        normaliseSeatActions([{ roleValueId: 'seat-1', actions: ['add_member', 'approve_minutes'] }]);
       } catch (e) {
         thrown = e;
       }
       expect(thrown).toBeInstanceOf(SeatActionRefusal);
       expect((thrown as SeatActionRefusal).getStatus()).toBe(400);
       expect((thrown as SeatActionRefusal).getResponse()).toEqual(
-        expect.objectContaining({ code: 'SEAT_ACTION_UNKNOWN', actionKey: 'schedule_meeting', statusCode: 400 }),
+        expect.objectContaining({ code: 'SEAT_ACTION_UNKNOWN', actionKey: 'approve_minutes', statusCode: 400 }),
       );
     });
 

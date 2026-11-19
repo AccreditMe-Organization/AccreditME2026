@@ -223,10 +223,12 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       TASK_WITHOUT_OWNER: jest.fn().mockResolvedValue([]),
       ACTING_HEAD_OPEN_ENDED: jest.fn().mockResolvedValue([]),
       STORAGE_ALMOST_FULL: jest.fn().mockResolvedValue([]),
+      STORAGE_NOT_CONFIRMED: jest.fn().mockResolvedValue([]),
       STORAGE_ACCESS_WITHDRAWN: jest.fn().mockResolvedValue([]),
       STORAGE_SECRET_EXPIRING: jest.fn().mockResolvedValue([]),
       STAGE_ON_STARTING_ASSIGNMENT: jest.fn().mockResolvedValue([]),
       COMMITTEE_MISSING_REQUIRED_SEAT: jest.fn().mockResolvedValue([]),
+      COMMITTEE_BELOW_QUORUM: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -516,12 +518,16 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['TASK_WITHOUT_OWNER', 'SUCCEEDED'],
         ['ACTING_HEAD_OPEN_ENDED', 'SUCCEEDED'],
         ['STORAGE_ALMOST_FULL', 'SUCCEEDED'],
+        // ACC-261.
+        ['STORAGE_NOT_CONFIRMED', 'SUCCEEDED'],
         ['STORAGE_ACCESS_WITHDRAWN', 'SUCCEEDED'],
         ['STORAGE_SECRET_EXPIRING', 'SUCCEEDED'],
         // ACC-271 PR 3 — reconciled from PR 3, reported from PR 5.
         ['STAGE_ON_STARTING_ASSIGNMENT', 'SUCCEEDED'],
         // ACC-286 PR 2.
         ['COMMITTEE_MISSING_REQUIRED_SEAT', 'SUCCEEDED'],
+        // ACC-307 PR 2.
+        ['COMMITTEE_BELOW_QUORUM', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
         expect.objectContaining({ objectId: 'task-1' }),

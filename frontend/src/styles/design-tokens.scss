@@ -102,6 +102,9 @@
   --am-focus-ring:        #2E6FA3;
   --am-focus-ring-width:  2px;
   --am-focus-ring-offset: 2px;
+  // ACC-154 — the hairline under a list row or a card rule, so no component
+  // writes a literal 1px.
+  --am-rule-width:        1px;
 
   --am-overlay-scrim: rgba(30, 42, 56, 0.45);
 
@@ -138,6 +141,9 @@
   --am-form-control-height: 36px;
   --am-form-row-gap:        12px;
   --am-form-max-width:      640px;
+  // A field's message slot (am-field): one line, reserved so the layout never
+  // jumps. Read by layouts that centre beside a field's control (ACC-313).
+  --am-field-message-line:  17px;
   // ACC-292 — a find box above a page of cards: "Find a setting" at most 420px.
   --am-find-max-width:      420px;
 
@@ -146,6 +152,9 @@
   --am-dialog-form:    560px;
   --am-dialog-picker:  520px;
   --am-dialog-form-body-max: 420px;
+  // ACC-154 — an inner-scroll list inside a 420 confirm (the role-in-use
+  // dialog): the frame stops here, so the body keeps room under the cap.
+  --am-dialog-scroll-list-max: 280px;
   // ACC-299 — no dialog is wider than the screen less a 16px gutter each side.
   // The edit-dialog shell and the confirm host cap their width with it, so a
   // form or a 640px wizard fits a 390px phone. It bites only below width + 32.

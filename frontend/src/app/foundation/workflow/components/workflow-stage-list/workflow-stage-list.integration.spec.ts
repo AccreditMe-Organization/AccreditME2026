@@ -34,7 +34,6 @@ const TRANSITION = {
   labelEn: 'Approve',
   labelAr: 'اعتماد',
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE' as const,
   mover: 'PERSON' as const,
 };

@@ -102,6 +102,58 @@ export interface ITaskSlaSettings {
   CRITICAL: ITaskSlaTier;
 }
 
+export type TaskSlaPriority = keyof ITaskSlaSettings;
+
+/** ACC-313 — PATCH /tenant/task-sla/limits: Time limits, every priority. */
+export type ITaskSlaLimits = Record<TaskSlaPriority, Pick<ITaskSlaTier, 'dueAfterHours'>>;
+
+/** ACC-313 — how long before the due time a priority's assignees are reminded. */
+export type TaskSlaWarnBeforeDue = 'OFF' | 'H1' | 'H2' | 'H4' | 'H8' | 'WORKING_DAY';
+
+/**
+ * ACC-313 — PATCH /tenant/task-sla/escalation: who is told, and when, and the
+ * reminder before due. The warning is optional on the server; this page always
+ * sends it.
+ */
+export type ITaskSlaEscalation = Record<
+  TaskSlaPriority,
+  Pick<ITaskSlaTier, 'managerEscalationAfterHours' | 'headEscalationAfterHours'> & { warnBeforeDue?: TaskSlaWarnBeforeDue }
+>;
+
+/** ACC-313 — settings.taskSlaNotices: the reminders and the due-date switch. */
+export interface ITaskSlaNotices {
+  warnBeforeDue: Record<TaskSlaPriority, TaskSlaWarnBeforeDue>;
+  notifyOnDueChange: boolean;
+}
+
+/** ACC-313 — GET /tenant/task-sla/policy, and what Reset answers. */
+export interface ITaskSlaPolicy {
+  tiers: ITaskSlaSettings;
+  notices: ITaskSlaNotices;
+  /** The calendar's working day in hours: what "1 working day" means. */
+  workingHoursPerDay: number;
+}
+
+/**
+ * ACC-313 — one saved change to the policy, from the audit trail. `legacy` is
+ * a save from before ACC-313, recorded without values (before/after null).
+ */
+export interface ITaskSlaChange {
+  id: string;
+  changedAt: string;
+  actorName: string | null;
+  kind: 'limits' | 'escalation' | 'all' | 'notices' | 'reset' | 'legacy';
+  before: unknown;
+  after: unknown;
+  /** CC-332 — 'WORKING' on a row written since escalation counts working hours; null (or absent) on an older one. */
+  escalationHoursUnit?: 'WORKING' | null;
+}
+
+export interface ITaskSlaHistoryPage {
+  rows: ITaskSlaChange[];
+  total: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TenantService {
   private readonly http = inject(HttpClient);
@@ -142,11 +194,34 @@ export class TenantService {
     return this.http.delete<IEmailConfig>(`${this.baseUrl}/email-config`);
   }
 
-  getTaskSla(): Observable<ITaskSlaSettings> {
-    return this.http.get<ITaskSlaSettings>(`${this.baseUrl}/task-sla`);
+  /** ACC-313 — the whole policy the page reads: tiers, notices and the working day. */
+  getTaskSlaPolicy(): Observable<ITaskSlaPolicy> {
+    return this.http.get<ITaskSlaPolicy>(`${this.baseUrl}/task-sla/policy`);
   }
 
-  updateTaskSla(dto: ITaskSlaSettings): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/task-sla`, dto);
+  /** ACC-313 — the due-date switch; takes effect at once. */
+  updateTaskSlaNotices(dto: { notifyOnDueChange: boolean }): Observable<ITaskSlaNotices> {
+    return this.http.patch<ITaskSlaNotices>(`${this.baseUrl}/task-sla/notices`, dto);
+  }
+
+  /** ACC-313 — every value back to the defaults, for tasks created afterwards. */
+  resetTaskSla(): Observable<ITaskSlaPolicy> {
+    return this.http.post<ITaskSlaPolicy>(`${this.baseUrl}/task-sla/reset`, {});
+  }
+
+  // ACC-313 — the page saves by section; each answers the saved tiers.
+  updateTaskSlaLimits(dto: ITaskSlaLimits): Observable<ITaskSlaSettings> {
+    return this.http.patch<ITaskSlaSettings>(`${this.baseUrl}/task-sla/limits`, dto);
+  }
+
+  updateTaskSlaEscalation(dto: ITaskSlaEscalation): Observable<ITaskSlaSettings> {
+    return this.http.patch<ITaskSlaSettings>(`${this.baseUrl}/task-sla/escalation`, dto);
+  }
+
+  /** Newest first; 20 a page (the server allows 1–50). */
+  getTaskSlaHistory(skip = 0, take = 20): Observable<ITaskSlaHistoryPage> {
+    return this.http.get<ITaskSlaHistoryPage>(`${this.baseUrl}/task-sla/history`, {
+      params: { skip: String(skip), take: String(take) },
+    });
   }
 }

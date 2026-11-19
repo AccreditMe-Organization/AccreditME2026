@@ -1,3 +1,4 @@
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
@@ -28,6 +29,8 @@ import { SecurityNoticeService } from '../notification/security-notice';
     PasswordResetModule,
     // ACC-164 — the email-delivery queue the security notice is sent through.
     QueueModule,
+    // ACC-316 PR 3b — the meeting invitee sync, after an invitation is accepted.
+    MeetingInviteesModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, LoginAttemptService, SecurityNoticeService],

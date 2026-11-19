@@ -20,6 +20,7 @@ import {
   OrgUnitActingReason,
   OrgUnitHeadService,
 } from '../../services/org-unit-head.service';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 /**
  * Arrange cover — ACC-120 slice 2, section 3 of the head-management design.
@@ -858,7 +859,7 @@ export class SetActingHeadDialogComponent {
         },
         error: (err: unknown) => {
           this.saving.set(false);
-          this.saveError.set(extractErrorMessage(err, 'orgUnitHead.errorSave'));
+          this.saveError.set(roleInactiveMessage(err, this.translate) ?? extractErrorMessage(err, 'orgUnitHead.errorSave'));
         },
       });
   }

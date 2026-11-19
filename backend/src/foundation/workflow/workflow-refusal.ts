@@ -17,6 +17,9 @@ export type WorkflowRefusalCode =
   | 'STAGE_TASK_DUE_AFTER_STAGE_DEADLINE'
   | 'STAGE_DEADLINE_BEFORE_TASKS'
   | 'TASK_SLA_EXCEEDS_STAGE_DEADLINES'
+  // ACC-313 — a priority's warning must be shorter than its limit, from both sides.
+  | 'TASK_SLA_WARNING_NOT_BEFORE_DUE'
+  | 'TASK_SLA_LIMIT_NOT_AFTER_WARNING'
   | 'STAGE_TASKS_OPEN'
   | 'ACTION_TYPE_RETIRED'
   | 'VALIDATOR_RETIRED'
@@ -65,7 +68,14 @@ export type WorkflowRefusalCode =
   | 'DEFAULT_NEEDS_STAGES'
   | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
   | 'DEFAULT_TEMPLATE_REQUIRED'
-  | 'DEFAULT_TEMPLATE_INACTIVE';
+  | 'DEFAULT_TEMPLATE_INACTIVE'
+  // ACC-316 PR 3a — a move into a stage that needs a reason, pressed with none (move-reasons.ts).
+  | 'REASON_REQUIRED'
+  // ACC-316 PR 4 — what holds Approve Minutes (meeting-minutes-rules.ts).
+  | 'MEETING_REVIEW_OPEN'
+  | 'MEETING_SUGGESTION_OPEN'
+  | 'MEETING_ACTION_PAST_DUE'
+  | 'MEETING_ACTION_PAST_SLA_LIMIT';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -80,6 +90,8 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_DUE_AFTER_STAGE_DEADLINE: HttpStatus.CONFLICT,
   STAGE_DEADLINE_BEFORE_TASKS: HttpStatus.CONFLICT,
   TASK_SLA_EXCEEDS_STAGE_DEADLINES: HttpStatus.CONFLICT,
+  TASK_SLA_WARNING_NOT_BEFORE_DUE: HttpStatus.BAD_REQUEST,
+  TASK_SLA_LIMIT_NOT_AFTER_WARNING: HttpStatus.BAD_REQUEST,
   STAGE_TASKS_OPEN: HttpStatus.CONFLICT,
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
@@ -118,6 +130,11 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   DEFAULT_TEMPLATE_TYPE_CHANGE: HttpStatus.CONFLICT,
   DEFAULT_TEMPLATE_REQUIRED: HttpStatus.CONFLICT,
   DEFAULT_TEMPLATE_INACTIVE: HttpStatus.CONFLICT,
+  REASON_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_REVIEW_OPEN: HttpStatus.CONFLICT,
+  MEETING_SUGGESTION_OPEN: HttpStatus.CONFLICT,
+  MEETING_ACTION_PAST_DUE: HttpStatus.CONFLICT,
+  MEETING_ACTION_PAST_SLA_LIMIT: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -133,6 +150,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_TASK_DUE_AFTER_STAGE_DEADLINE: "This task's due time is longer than the stage's deadline. Raise the stage deadline or choose a higher priority",
   STAGE_DEADLINE_BEFORE_TASKS: "The stage's deadline can't be shorter than the longest task defined on it",
   TASK_SLA_EXCEEDS_STAGE_DEADLINES: 'This would make some workflow stages end before the tasks defined on them are due',
+  TASK_SLA_WARNING_NOT_BEFORE_DUE: "A priority's warning must be shorter than its time limit",
+  TASK_SLA_LIMIT_NOT_AFTER_WARNING: "A priority's time limit must be longer than its warning",
   STAGE_TASKS_OPEN: 'Finish the required tasks of this stage before moving the record forward',
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",
@@ -171,6 +190,11 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   DEFAULT_TEMPLATE_TYPE_CHANGE: "The default workflow's record type can't be changed. Make another template the default first.",
   DEFAULT_TEMPLATE_REQUIRED: 'This is the default workflow for its record type. Make another template the default first.',
   DEFAULT_TEMPLATE_INACTIVE: "A deactivated workflow can't be the default.",
+  REASON_REQUIRED: 'Give a reason for this move: the people told about it read it.',
+  MEETING_REVIEW_OPEN: "The review is still open: wait for every present member's answer or for the review date to pass.",
+  MEETING_SUGGESTION_OPEN: 'Apply or decline every open suggestion first.',
+  MEETING_ACTION_PAST_DUE: 'An action item is due in the past. Give it a later due date first.',
+  MEETING_ACTION_PAST_SLA_LIMIT: "An action item is due after its task's time limit. Give it an earlier due date first.",
 };
 
 export class WorkflowRefusalException extends HttpException {

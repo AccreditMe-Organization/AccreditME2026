@@ -45,6 +45,7 @@ import type { CommitteeTransferNoticeService } from '../committees/transfer-noti
 import { applyWorkflowSeed } from './workflow-seed-apply';
 import { seatMembersForQuorum, untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -95,6 +96,8 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
     // ACC-283 PR 2b — the real departure withdrawal: nobody here has a change request.
     departure,
+    // ACC-306 — the real seat ending (no seat here unless a test gives one).
+    new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
   );
 
   interface Org {
@@ -247,7 +250,6 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     const approve = await prisma.workflowTransition.findFirstOrThrow({
       where: { fromStageId: stageId, toStage: { key: 'active' } },
     });
-    await prisma.workflowTransition.update({ where: { id: approve.id }, data: { isApprovalPath: true } });
     const c = await o.committeeAt('terms_review', stays);
 
     // Before: one approval of two is not enough.

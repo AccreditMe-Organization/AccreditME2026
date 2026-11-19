@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
+import { MeetingInviteeSyncService } from '../meetings/invitees/meeting-invitee-sync.service';
+import { MeetingReviewReminderService } from '../meetings/meeting-review-reminder.service';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { DateTime } from 'luxon';
@@ -13,14 +15,19 @@ import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
+import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
+import { readEscalationRules, type EscalationRule } from './stage-escalation';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
-import {
-  POOL_LABEL_INCLUDE,
-  PICKABLE_STATUSES,
-  poolLabel,
-  poolTargetOf,
-  toPoolView,
-} from '../task/task-pool';
+
+/**
+ * ACC-312 — the entries the unassigned-stage sweep looks at: open, at a stage
+ * that is NOT final. A record at its final stage waits on nobody, so it is never
+ * flagged, its pool is never resolved (no queries), and no task is recovered on
+ * it. One constant, so the sweep and its spec cannot disagree about the filter.
+ */
+export const SWEEP_OPEN_ENTRIES_WHERE = { exitedAt: null, stage: { isFinal: false } } as const;
+import { CURRENT_ACTIVE_ASSIGNEE, PICKABLE_STATUSES, POOL_LABEL_INCLUDE, poolLabel, poolTargetOf, toPoolView } from '../task/task-pool';
 import {
   Task as PrismaTask,
   TaskAssignee as PrismaTaskAssignee,
@@ -28,18 +35,12 @@ import {
   WorkflowInstance as PrismaWorkflowInstance,
 } from '../../../generated/prisma/client';
 
-interface EscalationRule {
-  afterHours: number;
-  notifyRoleId?: string;
-  notifyUserId?: string;
-}
-
 // Repeatable BullMQ job — every 15 minutes, sweeps every tenant for
-// WorkflowInstanceStage rows past their slaDueAt and flags them, then fires
-// any escalationConfig rules whose threshold has elapsed. Per CLAUDE.md,
-// "Escalation triggers only fire during working hours" — the sweep itself
-// always runs on schedule, but individual escalations are deferred to a
-// later run if the tenant is currently outside working hours.
+// WorkflowInstanceStage rows past their slaDueAt, records the breach once,
+// and fires each escalationConfig rule once its threshold (WORKING hours
+// after the deadline) has passed. Per CLAUDE.md, "Escalation triggers only
+// fire during working hours": outside them nothing is marked, and the rule
+// fires on the first sweep inside them (ACC-105).
 @Injectable()
 @Processor('sla-monitor')
 export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
@@ -89,7 +90,14 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // owns the working-time shift. Same forwardRef edge as taskService.
     @Inject(forwardRef(() => TaskRequestService))
     private readonly taskRequests: TaskRequestService,
+    // ACC-313 — the due-soon reminder lives with the tasks; this sweep runs it.
+    @Inject(forwardRef(() => TaskDueWarningService))
+    private readonly dueWarnings: TaskDueWarningService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
+    // ACC-316 PR 3b — the meeting invitees' scheduled recomputer (ACC-82's rule).
+    private readonly meetingInvitees: MeetingInviteeSyncService,
+    // ACC-316 PR 4 — the minutes review's reminder, the day before its date.
+    private readonly meetingReviewReminders: MeetingReviewReminderService,
   ) {
     super();
   }
@@ -138,12 +146,19 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
     await this.runIsolatedStep('sweepUnpickedPoolTasks', failedSteps, () => this.sweepUnpickedPoolTasks(now));
     await this.runIsolatedStep('sweepDueHolds', failedSteps, () => this.sweepDueHolds(now));
+    // ACC-313 — after the holds, so a task resumed this pass can be reminded in it.
+    await this.runIsolatedStep('sweepDueWarnings', failedSteps, () => this.dueWarnings.sweep(now));
     await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
     await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
       this.sweepExpiredActingOrgUnitAssignments(now),
     );
     await this.runIsolatedStep('sweepDueHandovers', failedSteps, () => this.sweepDueHandovers(now));
     await this.runIsolatedStep('sweepOrgUnitVacancies', failedSteps, () => this.sweepOrgUnitVacancies());
+    // ACC-316 PR 3b — every open meeting's MEMBER invitees, recomputed from the
+    // committees and units (MeetingInviteeSyncService.sweep()). The writers'
+    // own calls only make a change show sooner; correctness rests here.
+    await this.runIsolatedStep('sweepMeetingInvitees', failedSteps, () => this.meetingInvitees.sweep(now).then(() => undefined));
+    await this.runIsolatedStep('sweepMeetingReviewReminders', failedSteps, () => this.meetingReviewReminders.sweep(now).then(() => undefined));
 
     // Every step has now run regardless of what failed. Surfacing the failure
     // to BullMQ is the last act, never a short-circuit.
@@ -176,50 +191,110 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 
-  // Extracted verbatim from the old inline body of process() (ACC-49) so it
-  // can be isolated like every other step — it was the most exposed of all,
-  // running first and unguarded, so anything it threw pre-empted all six
-  // sweeps behind it.
+  // ACC-105 — each rule fires once, as its threshold passes, across sweeps.
+  //   - An entry is read while it is still in the stage, past its deadline, and
+  //     either its breach is not yet recorded or a rule index is unclaimed. It
+  //     stops being read once it is left, or once every rule is claimed.
+  //   - slaBreached means "the deadline passed and the breach is recorded",
+  //     stamped once, whatever the hour.
+  //   - A rule's threshold is WORKING hours after slaDueAt (hoursBetweenWith on
+  //     the organisation's calendar). Outside working hours nothing is marked.
+  //   - A rule is CLAIMED by a conditional UPDATE before anyone is told, so two
+  //     sweeps never fire it twice. A stored rule that is not a valid rule
+  //     (written before ACC-105 validated them) is claimed unfired and logged.
+  //   - Reads are batched: one for the entries, one for the people, one for the
+  //     role holders, and each organisation's calendar once.
   private async sweepBreachedStageEscalations(now: Date): Promise<void> {
-    const breachedStages = await this.prisma.workflowInstanceStage.findMany({
-      where: { exitedAt: null, slaDueAt: { lt: now }, slaBreached: false },
-      include: { workflowInstance: true, stage: true },
+    const open = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT e.id FROM "WorkflowInstanceStage" e
+        JOIN "WorkflowStage" s ON s.id = e."stageId"
+       WHERE e."exitedAt" IS NULL AND e."slaDueAt" < ${now}
+         AND (NOT e."slaBreached"
+              OR (jsonb_typeof(s."escalationConfig") = 'array'
+                  AND jsonb_array_length(s."escalationConfig") > cardinality(e."escalatedRuleIndexes")))`;
+    if (open.length === 0) return;
+    const entries = await this.prisma.workflowInstanceStage.findMany({
+      where: { id: { in: open.map((o) => o.id) } },
+      select: {
+        id: true,
+        slaBreached: true,
+        slaDueAt: true,
+        escalatedRuleIndexes: true,
+        workflowInstance: { select: { organizationId: true } },
+        stage: { select: { nameEn: true, nameAr: true, escalationConfig: true } },
+      },
     });
 
-    for (const instanceStage of breachedStages) {
-      const organizationId = instanceStage.workflowInstance.organizationId;
-      const rules = (instanceStage.stage.escalationConfig as EscalationRule[] | null) ?? [];
-      const newlyEscalatedIndexes: number[] = [];
+    const unrecorded = entries.filter((e) => !e.slaBreached).map((e) => e.id);
+    if (unrecorded.length > 0) {
+      await this.prisma.workflowInstanceStage.updateMany({ where: { id: { in: unrecorded }, slaBreached: false }, data: { slaBreached: true } });
+    }
 
-      if (rules.length > 0 && instanceStage.slaDueAt) {
-        const hoursSinceDue = DateTime.fromJSDate(now).diff(
-          DateTime.fromJSDate(instanceStage.slaDueAt),
-          'hours',
-        ).hours;
-
-        for (let i = 0; i < rules.length; i++) {
-          if (instanceStage.escalatedRuleIndexes.includes(i)) continue;
-
-          const rule = rules[i];
-          if (!rule || hoursSinceDue < rule.afterHours) continue;
-
-          if (!(await this.isWithinWorkingHours(organizationId))) continue;
-
-          await this.fireEscalation(organizationId, instanceStage.id, i, rule);
-          newlyEscalatedIndexes.push(i);
+    const calendars = new Map<string, LoadedCalendar>();
+    const at = DateTime.fromJSDate(now);
+    const due: { entry: (typeof entries)[number]; index: number; rule: EscalationRule }[] = [];
+    for (const entry of entries) {
+      const organizationId = entry.workflowInstance.organizationId;
+      const rules = readEscalationRules(entry.stage.escalationConfig);
+      for (const [index, rule] of rules.entries()) {
+        if (rule === null && !entry.escalatedRuleIndexes.includes(index) && (await this.claimEscalationRule(entry.id, index))) {
+          this.logger.warn(`Stage escalation rule ${index} on stage entry ${entry.id} is not a valid rule; it is skipped.`);
         }
       }
-
-      await this.prisma.workflowInstanceStage.update({
-        where: { id: instanceStage.id },
-        data: {
-          slaBreached: true,
-          ...(newlyEscalatedIndexes.length > 0 && {
-            escalatedRuleIndexes: [...instanceStage.escalatedRuleIndexes, ...newlyEscalatedIndexes],
-          }),
-        },
+      let calendar = calendars.get(organizationId);
+      if (!calendar) {
+        calendar = await this.workingCalendar.loadCalendar(organizationId);
+        calendars.set(organizationId, calendar);
+      }
+      if (!entry.slaDueAt || !isWorkingMomentWith(calendar, at)) continue;
+      const workingHoursPastDue = this.workingCalendar.hoursBetweenWith(calendar, DateTime.fromJSDate(entry.slaDueAt), at);
+      rules.forEach((rule, index) => {
+        if (rule && !entry.escalatedRuleIndexes.includes(index) && workingHoursPastDue >= rule.afterHours) due.push({ entry, index, rule });
       });
     }
+    if (due.length === 0) return;
+
+    // Who may be told: ACTIVE people of the entry's organisation, and the
+    // ACTIVE holders of an active role of that organisation.
+    const userIds = [...new Set(due.flatMap((d) => (d.rule.notifyUserId ? [d.rule.notifyUserId] : [])))];
+    const roleIds = [...new Set(due.flatMap((d) => (d.rule.notifyRoleId ? [d.rule.notifyRoleId] : [])))];
+    const [people, holders] = await Promise.all([
+      userIds.length
+        ? this.prisma.user.findMany({ where: { id: { in: userIds }, status: 'ACTIVE' }, select: { id: true, organizationId: true } })
+        : Promise.resolve([]),
+      roleIds.length
+        ? this.prisma.userRole.findMany({
+            where: { roleId: { in: roleIds }, role: { isActive: true }, user: { status: 'ACTIVE' } },
+            select: { roleId: true, userId: true, role: { select: { organizationId: true } }, user: { select: { organizationId: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    const personOrg = new Map(people.map((p) => [p.id, p.organizationId]));
+
+    for (const { entry, index, rule } of due) {
+      if (!(await this.claimEscalationRule(entry.id, index))) continue;
+      const organizationId = entry.workflowInstance.organizationId;
+      const recipients = new Set<string>();
+      if (rule.notifyUserId && personOrg.get(rule.notifyUserId) === organizationId) recipients.add(rule.notifyUserId);
+      if (rule.notifyRoleId) {
+        const inRole = holders.filter(
+          (h) => h.roleId === rule.notifyRoleId && h.role.organizationId === organizationId && h.user.organizationId === organizationId,
+        );
+        if (inRole.length === 0) {
+          this.logger.warn(`Stage escalation rule ${index} on stage entry ${entry.id}: its role has no active holder; skipped.`);
+        }
+        for (const h of inRole) recipients.add(h.userId);
+      }
+      await this.fireEscalation(organizationId, entry.id, entry.stage, index, [...recipients]);
+    }
+  }
+
+  /** ACC-105 — claims one rule of one entry, once: false when it was already claimed, or the entry left. */
+  private async claimEscalationRule(instanceStageId: string, index: number): Promise<boolean> {
+    const claimed = await this.prisma.$executeRaw`
+      UPDATE "WorkflowInstanceStage" SET "escalatedRuleIndexes" = array_append("escalatedRuleIndexes", ${index}::int)
+       WHERE id = ${instanceStageId} AND "exitedAt" IS NULL AND NOT (${index}::int = ANY("escalatedRuleIndexes"))`;
+    return claimed === 1;
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window:
@@ -392,7 +467,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         {
           userId: user.id,
           titleEn: 'Acting-unit assignment ended',
+          titleAr: 'انتهى التكليف المؤقت بوحدة أخرى',
           bodyEn: 'Your acting assignment to another org unit has ended.',
+          bodyAr: 'انتهى تكليفك المؤقت في وحدة تنظيمية أخرى.',
         },
         user.organizationId,
       );
@@ -407,7 +484,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // queue — same precedent as sweepOverdueTasks() above.
   private async sweepUnassignedStages(): Promise<void> {
     const openStages = await this.prisma.workflowInstanceStage.findMany({
-      where: { exitedAt: null },
+      where: SWEEP_OPEN_ENTRIES_WHERE,
       include: { workflowInstance: true, stage: true },
     });
 
@@ -621,14 +698,20 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // escalation audit row would repeat every pass (REJECTED's reason).
         // An unpicked pool task escalates through sweepUnpickedPoolTasks()
         // instead; once picked, it is an ordinary task again.
+        // ACC-315 — "someone holds it" is ACC-86's rule, the one the pool sweep
+        // reads: a pool task held only by someone no longer ACTIVE is waiting, so
+        // it escalates there, never here too.
         OR: [
           { assignedPositionId: null, assignedCommitteeId: null },
-          { assignees: { some: { removedAt: null } } },
+          { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
         ],
       },
-      include: { assignees: { where: { removedAt: null } } },
+      include: { assignees: { where: CURRENT_ACTIVE_ASSIGNEE } },
     });
 
+    // ACC-313 (Q1) — hours overdue are WORKING hours, like the limits, on each
+    // organisation's calendar, loaded once per organisation per pass.
+    const calendars = new Map<string, LoadedCalendar>();
     for (const task of overdueTasks) {
       if (!task.slaBreachedAt) {
         await this.prisma.task.update({
@@ -639,13 +722,26 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
       const slaConfig = await this.tenantService.getTaskSla(task.organizationId);
       const tier = slaConfig[task.priority];
-      const hoursSinceDue = DateTime.fromJSDate(now).diff(
+      let calendar = calendars.get(task.organizationId);
+      if (!calendar) {
+        calendar = await this.workingCalendar.loadCalendar(task.organizationId);
+        calendars.set(task.organizationId, calendar);
+      }
+      const hoursSinceDue = this.workingCalendar.hoursBetweenWith(
+        calendar,
         DateTime.fromJSDate(task.dueAt!),
-        'hours',
-      ).hours;
+        DateTime.fromJSDate(now),
+      );
 
+      // ACC-315 — nobody on it (every current row is held by someone no longer
+      // ACTIVE): the breach is recorded above, but there is no one whose manager
+      // to tell. It is ownerless, and Setup health lists it (ACC-86).
+      if (task.assignees.length === 0) continue;
+
+      // ACC-318 — whether it is working time now, on the calendar already loaded.
+      const workingNow = isWorkingMomentWith(calendar, DateTime.fromJSDate(now));
       if (!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'MANAGER');
         }
       } else if (
@@ -653,7 +749,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         !task.headEscalatedAt &&
         hoursSinceDue >= tier.managerEscalationAfterHours + tier.headEscalationAfterHours
       ) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'HEAD');
         }
       }
@@ -709,7 +805,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         poolEscalatedAt: null,
         status: { in: [...PICKABLE_STATUSES] },
         OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-        assignees: { none: { removedAt: null } },
+        // ACC-86 — nobody on it: no current row held by an ACTIVE user.
+        assignees: { none: CURRENT_ACTIVE_ASSIGNEE },
       },
       include: POOL_LABEL_INCLUDE,
     });
@@ -827,7 +924,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         {
           userId: targetUserId,
           titleEn: 'Task SLA breach escalation',
-          bodyEn: 'A task has breached its SLA and has been escalated to you.',
+          titleAr: 'تصعيد مهمة تجاوزت مهلتها',
+          bodyEn: `"${task.title}" is past its SLA and has been escalated to you.`,
+          bodyAr: `تجاوزت المهمة «${task.titleAr ?? task.title}» مهلتها، وصُعِّدت إليك.`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -855,27 +954,22 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   private async fireEscalation(
     organizationId: string,
     instanceStageId: string,
+    // ACC-95 — the notice names the stage; the sweep already loaded it.
+    stage: { nameEn: string; nameAr: string | null },
     ruleIndex: number,
-    rule: EscalationRule,
+    // ACC-105 — ACTIVE people of this organisation, each once (the sweep decides).
+    recipients: string[],
   ): Promise<void> {
-    const userIds: string[] = [];
-
-    if (rule.notifyUserId) userIds.push(rule.notifyUserId);
-    if (rule.notifyRoleId) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { roleId: rule.notifyRoleId, user: { organizationId, status: 'ACTIVE' } },
-      });
-      userIds.push(...userRoles.map((ur) => ur.userId));
-    }
-
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
-    for (const userId of new Set(userIds)) {
+    for (const userId of recipients) {
       await this.notificationService.create(
         {
           userId,
           titleEn: 'SLA breach escalation',
-          bodyEn: `A workflow stage has breached its SLA and requires attention (escalation rule ${ruleIndex}).`,
+          titleAr: 'تصعيد لتجاوز المهلة',
+          bodyEn: `The "${stage.nameEn}" stage is past its SLA and needs attention.`,
+          bodyAr: `تجاوزت مرحلة «${stage.nameAr ?? stage.nameEn}» مهلتها وتحتاج إلى متابعة.`,
         },
         organizationId,
       );
@@ -886,32 +980,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       action: 'UPDATE',
       objectType: 'WorkflowInstanceStage',
       objectId: instanceStageId,
-      metadata: { escalationRuleIndex: ruleIndex, notifiedUserCount: userIds.length },
+      metadata: { escalationRuleIndex: ruleIndex, notifiedUserCount: recipients.length },
     });
   }
 
-  // No dedicated "is now within working hours" method exists on
-  // WorkingCalendarService (only getOrCreate/listHolidays are public) — this
-  // reimplements the same day/hour/holiday check calculateDeadline() uses
-  // internally, against the tenant's own calendar config.
+  // Whether now is inside the organisation's working hours, on a working day
+  // that is not a holiday — escalations fire only then.
   private async isWithinWorkingHours(organizationId: string): Promise<boolean> {
-    const calendar = await this.workingCalendar.getOrCreate(organizationId);
-    const holidays = await this.workingCalendar.listHolidays(organizationId);
-    const now = DateTime.now().setZone(calendar.timezone);
-
-    if (!calendar.workingDays.includes(now.weekday % 7)) return false;
-
-    const isHoliday = holidays.some((h) => {
-      const hDate = DateTime.fromJSDate(h.date).setZone(calendar.timezone);
-      if (h.isRecurring) return hDate.month === now.month && hDate.day === now.day;
-      return hDate.month === now.month && hDate.day === now.day && hDate.year === now.year;
-    });
-    if (isHoliday) return false;
-
-    const [startHour = 0, startMin = 0] = calendar.workingHoursStart.split(':').map(Number);
-    const [endHour = 0, endMin = 0] = calendar.workingHoursEnd.split(':').map(Number);
-    const nowMinutes = now.hour * 60 + now.minute;
-
-    return nowMinutes >= startHour * 60 + startMin && nowMinutes < endHour * 60 + endMin;
+    // ACC-318 — the one rule, isWorkingMomentWith() (working-time.ts), on the
+    // calendar read without creating a row; this used to be a hand copy whose
+    // holiday check read the date in the organisation's zone.
+    return isWorkingMomentWith(await this.workingCalendar.loadCalendar(organizationId), DateTime.now());
   }
 }

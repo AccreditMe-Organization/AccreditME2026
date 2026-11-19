@@ -20,11 +20,11 @@ import { TenantService } from './tenant.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
-import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
   TaskSlaHistoryQueryDto,
   UpdateTaskSlaEscalationDto,
   UpdateTaskSlaLimitsDto,
+  UpdateTaskSlaNoticesDto,
 } from './dto/update-task-sla-sections.dto';
 import { TaskSlaPolicyService } from './task-sla-policy.service';
 import {
@@ -34,6 +34,8 @@ import {
   IEmailConfig,
   ITaskSlaSettings,
   ITaskSlaHistoryPage,
+  ITaskSlaNotices,
+  ITaskSlaPolicy,
 } from './interfaces/tenant.interface';
 
 @Controller('tenant')
@@ -133,18 +135,6 @@ export class TenantController {
     return this.tenantService.getTaskSla(tenantId);
   }
 
-  // The whole-policy save the current screen uses. ACC-313 keeps it, under
-  // the same lock and audit as the section routes, until the new screen ships.
-  @Patch('task-sla')
-  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
-  async updateTaskSla(
-    @Body() dto: UpdateTaskSlaDto,
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() userId: string,
-  ): Promise<void> {
-    await this.taskSlaPolicy.replaceAll(tenantId, dto, userId);
-  }
-
   // ACC-313 — the page saves by section; each route merges only its fields.
   @Patch('task-sla/limits')
   @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
@@ -176,6 +166,32 @@ export class TenantController {
     @CurrentTenant() tenantId: string,
   ): Promise<ITaskSlaHistoryPage> {
     return this.taskSlaPolicy.history(tenantId, query.skip, query.take);
+  }
+
+  // ACC-313 — the whole policy the page reads: the tiers and the notices.
+  @Get('task-sla/policy')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getTaskSlaPolicy(@CurrentTenant() tenantId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.policy(tenantId);
+  }
+
+  // ACC-313 — whether an edit that moves a due date tells the assignees.
+  @Patch('task-sla/notices')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSlaNotices(
+    @Body() dto: UpdateTaskSlaNoticesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskSlaNotices> {
+    return this.taskSlaPolicy.saveNotices(tenantId, dto, userId);
+  }
+
+  // ACC-313 — every value back to the defaults, for tasks created afterwards.
+  @Post('task-sla/reset')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  resetTaskSla(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.reset(tenantId, userId);
   }
 
   @Post('bootstrap')

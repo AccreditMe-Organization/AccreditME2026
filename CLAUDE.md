@@ -1104,8 +1104,7 @@ Permission strings follow {module}:{action} pattern.
 
 **Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
 dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
-`permission.seed.ts` seeds: 75 keys (ACC-164 added `users:reset_mfa`, ACC-283
-PR 4 retired `committees:approve`, ACC-216 added `users:manage_sessions`). A
+`permission.seed.ts` seeds (82 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys and four meeting task keys, ACC-216 added `users:manage_sessions`). A
 key marked `*` is in `PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with
 it yet, so a role cannot gain it (ACC-120 slice 5). That file is the source; this
 list is a copy.
@@ -1129,8 +1128,11 @@ committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
 committees:create_tasks      committees:manage_tasks
-meetings:view               meetings:manage *         meetings:record_minutes *
-meetings:approve_minutes *
+meetings:view               meetings:manage *         meetings:record_minutes
+meetings:approve_minutes    meetings:schedule         meetings:schedule_subunits
+meetings:approve_subunits
+meetings:view_all_tasks      meetings:view_unit_tasks
+meetings:create_tasks        meetings:manage_tasks
 documents:view *            documents:create *        documents:submit *
 documents:review *          documents:approve *       documents:publish *
 documents:manage_templates * documents:manage_numbering *
@@ -1643,9 +1645,13 @@ consumes them.
 Built:
 
 ```
-email-delivery      All outbound emails via Resend
+email-delivery      All outbound emails via Resend (an outside meeting guest's
+                    too: the outside-email job, ACC-316 PR 3b)
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
-                    recompute cached org-unit vacancy and stage-reachability flags
+                    recompute cached org-unit vacancy and stage-reachability flags,
+                    every open meeting's MEMBER invitees (ACC-316 PR 3b), and the
+                    minutes review reminder, the working day before the date
+                    (ACC-316 PR 4)
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
 storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177),
                     and the 30-day SharePoint secret warning (ACC-185);
@@ -4677,8 +4683,12 @@ decisions (10 Nov): `backend/Plans/step-284-vote-on-advance.md`. Briefly:
     than half.
   - **A vote from before** counts for the ADVANCE moves.
 - **`isApprovalPath` IS DEAD:**
-  - the API still takes it (expand), and the screens no longer show it;
-  - lane B's follow-up ticket drops the column;
+  - ACC-294 PR A took it out of the client, the API (a sent value is the
+    whitelist's 400), the read, the audit, the seed and the screens, and kept
+    the column (`@ignore`);
+  - ACC-294 PR B drops the column (migration
+    `20261119094215_acc294_drop_is_approval_path`). Never roll Railway back
+    past PR A;
   - do not read it again.
 - **No backfill.** The migration runs in the pre-deploy step, never before.
 
@@ -4787,6 +4797,7 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   non-member without `committees:view` gets the 404 a missing committee gets. **Deciding
   (approve, return, reject) is NOT opened to members**: `committees:view` and
   `committees:approve`, never the requester. This is the interim rule until ACC-283.
+  Superseded (ACC-283 PR 6): for add, remove, change a seat and request a change, a member's SEAT also grants (`member-actions.ts`, the one rule; the three member routes lost their gates); deciding is the chain's (PR 2). SYSTEM-REFERENCE.md §3.21.
 - **Membership does not widen task visibility** (`taskVisibleSql` is unchanged); it names a
   member's own committee on their task rows.
 - **The committee read names what the page used to read every committee for**: `parent`
