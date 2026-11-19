@@ -42,6 +42,7 @@ import { AWAITING_DECISION_CAP, ChangeRequestViewer, CommitteeChangeRequestServi
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
 import { SetupConditionDetectors } from '../../setup-health/setup-condition.detectors';
+import { SlaMonitorProcessor } from '../../workflow/sla-monitor.processor';
 import * as candidates from './awaiting-decision-candidates';
 import { chainCandidates, reviewCandidates } from './awaiting-decision-candidates';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
@@ -2614,6 +2615,87 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(entry.isUnassigned).toBe(true);
       const conditions = await new SetupConditionDetectors(prisma).stagesWithoutAssignee(w.org);
       expect(conditions.map((c) => c.objectId)).toContain(stage.id);
+    });
+
+    // ── ACC-325: a review stage nobody can DECIDE is flagged, and clears ──
+
+    const unusedService = {} as never;
+    const sweeper = new SlaMonitorProcessor(
+      prisma, audit, calendar, notifications as never,
+      unusedService, workflow, unusedService, unusedService, unusedService, tasks,
+      unusedService, unusedService, unusedService, unusedService, unusedService,
+    );
+    const sweepUnassigned = () => (sweeper as unknown as { sweepUnassignedStages(): Promise<void> }).sweepUnassignedStages();
+    const entryOf = (stageId: string) => prisma.workflowInstanceStage.findFirstOrThrow({ where: { stageId, exitedAt: null } });
+    const listedOnSetupHealth = async (w: World) => (await new SetupConditionDetectors(prisma).stagesWithoutAssignee(w.org)).map((c) => c.objectId);
+
+    it('ACC-325: a review stage whose only pool member is the requester is flagged — and the requester’s press on it is refused (the same fact)', async () => {
+      const w = await world();
+      const stage = await addReview(w, 'Self review', [w.requester.userId]);
+      const r = await submitted(w);
+      expect(await stageNow(w, r.id)).toBe(stage.id); // non-vacuity: it waits there
+      expect((await entryOf(stage.id)).isUnassigned).toBe(true);
+      expect(await listedOnSetupHealth(w)).toContain(stage.id);
+      // The decision path refuses that same person, so the flag tells the truth.
+      expect(await outcome(requests.approve(r.id, w.org, w.requester))).toBe('CHANGE_REQUEST_OWN_DECISION');
+    });
+
+    it('ACC-325: a review stage whose pool holds only people who cannot open the committee is flagged', async () => {
+      const w = await world();
+      const outsider = await person(w, 'Outsider');
+      const stage = await addReview(w, 'Outside review', [outsider]);
+      await submitted(w);
+      expect((await entryOf(stage.id)).isUnassigned).toBe(true);
+      expect(await listedOnSetupHealth(w)).toContain(stage.id);
+    });
+
+    it('ACC-325: a mixed pool with one reader who is not the requester is not flagged', async () => {
+      const w = await world();
+      const outsider = await person(w, 'Outsider');
+      // The approver heads the root unit, which owns the committee: they may open it.
+      const stage = await addReview(w, 'Mixed review', [w.requester.userId, outsider, w.approver.userId]);
+      await submitted(w);
+      expect((await entryOf(stage.id)).isUnassigned).toBe(false);
+      expect(await listedOnSetupHealth(w)).not.toContain(stage.id);
+    });
+
+    it('ACC-325: Draft is never flagged, though its pool is the requester alone', async () => {
+      const w = await world();
+      const reviewer = await person(w, 'Reviewer');
+      await addReview(w, 'Legal review', [reviewer]); // a review stage exists in the template
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 9 }, reason: 'r' } as never, w.org, w.requester);
+      const draftStage = (await shape(w)).byKey('draft');
+      expect(await stageNow(w, draft.id)).toBe(draftStage.id);
+      expect((await entryOf(draftStage.id)).isUnassigned).toBe(false);
+      await sweepUnassigned();
+      expect((await entryOf(draftStage.id)).isUnassigned).toBe(false);
+    });
+
+    it('ACC-325: the flag clears on the next sweep once a reader who is not the requester joins the pool', async () => {
+      const w = await world();
+      const outsider = await person(w, 'Outsider');
+      const stage = await addReview(w, 'Outside review', [outsider]);
+      await submitted(w);
+      expect((await entryOf(stage.id)).isUnassigned).toBe(true);
+      await sweepUnassigned();
+      expect((await entryOf(stage.id)).isUnassigned).toBe(true); // the sweep agrees while nothing changed
+      // The outsider takes a seat on the committee: now they may open it, and decide.
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.committee, userId: outsider, roleValueId: 'seat-r' } });
+      await sweepUnassigned();
+      expect((await entryOf(stage.id)).isUnassigned).toBe(false);
+      expect(await listedOnSetupHealth(w)).not.toContain(stage.id);
+    });
+
+    it('ACC-325: the sweep flags it too — a pool whose only reader leaves is flagged on the next sweep', async () => {
+      const w = await world();
+      const member = await person(w, 'Member');
+      const seat = await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.committee, userId: member, roleValueId: 'seat-r' } });
+      const stage = await addReview(w, 'Member review', [member]);
+      await submitted(w);
+      expect((await entryOf(stage.id)).isUnassigned).toBe(false);
+      await prisma.committeeMember.update({ where: { id: seat.id }, data: { isActive: false } });
+      await sweepUnassigned();
+      expect((await entryOf(stage.id)).isUnassigned).toBe(true);
     });
 
     describe('PR 2 cost: the query counts, pinned (P200)', () => {

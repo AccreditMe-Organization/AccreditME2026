@@ -50,6 +50,7 @@ import {
   prepareTransitionEffects,
   type PreparedTransitionEffects,
 } from './transition-effects';
+import { stageDeciders } from './stage-deciders';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
 // PrismaService, whose extended client has its own transaction type.
@@ -1986,7 +1987,16 @@ export class WorkflowService {
     // ACC-271 PR 4 — who an "All of them" stage starts with, so the sweep can
     // tell when someone leaves it (plan §8).
     if (stage.whoMode === 'ALL') await this.stagePool.recordPoolChanges(organizationId, new Map([[instanceStageId, pool]]));
-    if (pool.members.length > 0) return;
+    // ACC-325 — unassigned when nobody in the pool can DECIDE it (the record
+    // type's filter, stage-deciders.ts; the whole pool where none is registered).
+    const deciders = (
+      await stageDeciders(
+        this.prisma,
+        [{ key: instanceStageId, organizationId, stage, instance: { objectType: instance.objectType, objectId: instance.objectId }, members: pool.members }],
+        new Date(),
+      )
+    ).get(instanceStageId);
+    if ((deciders ?? []).length > 0) return;
 
     await this.prisma.workflowInstanceStage.update({
       where: { id: instanceStageId },
