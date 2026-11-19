@@ -106,7 +106,7 @@ describe('CommitteeMembershipHistoryPanelComponent — a seat a deactivation end
     fixture.componentRef.setInput('committeeName', 'Quality Council');
     fixture.detectChanges();
     const row = (fixture.nativeElement as HTMLElement).querySelector('[data-history-row] .am-cp-l2');
-    return row?.textContent?.trim() ?? '';
+    return (row?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
   afterEach(() => {
@@ -122,11 +122,22 @@ describe('CommitteeMembershipHistoryPanelComponent — a seat a deactivation end
     expect(detailOf('ar', { ...LEFT, cause: 'DEACTIVATION' })).toBe('مغادرة — إلغاء تفعيل الحساب · أمين السر · بواسطة Sara Admin');
   });
 
-  it('a cause it does not know, or none, reads as a plain "Left", and never the stored reason', () => {
-    for (const cause of ['SOMETHING_NEW', null, undefined]) {
-      const text = detailOf('en', { ...LEFT, cause });
-      expect(text).toBe('Left — Secretary · by Sara Admin');
-      expect(text).not.toContain('English reason');
+  it('a cause it does not know reads as a plain "Left", and never the stored reason', () => {
+    const text = detailOf('en', { ...LEFT, cause: 'SOMETHING_NEW' });
+    expect(text).toBe('Left — Secretary · by Sara Admin');
+    expect(text).not.toContain('English reason');
+  });
+
+  it('a cause it knows never shows the stored reason either', () => {
+    expect(detailOf('en', { ...LEFT, cause: 'DEACTIVATION' })).not.toContain('English reason');
+  });
+
+  // ACC-301 — with NO cause, the row is a person's removal: the change still
+  // reads as a plain "Left", and the reason they typed is shown beside it.
+  it('no cause: the change reads as a plain "Left", and the reason is shown as the person typed it', () => {
+    for (const cause of [null, undefined]) {
+      const text = detailOf('en', { ...LEFT, cause, reason: 'Moved to the Pharmacy unit' });
+      expect(text).toBe('Left — Secretary · by Sara Admin · Reason: Moved to the Pharmacy unit');
       TestBed.resetTestingModule();
     }
   });

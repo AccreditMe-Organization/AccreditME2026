@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 // (Ahmad, 9 Oct, C): the task is UNASSIGNED with its target, and Setup health
 // lists it.
 
-type RouteClient = Pick<PrismaService, 'committee' | 'meeting'>;
+type RouteClient = Pick<PrismaService, 'committee' | 'meeting' | 'committeeChangeRequest'>;
 
 export interface RecordRoute {
   /** The unit the record belongs to, or null if the record has none. */
@@ -80,6 +80,33 @@ export const RECORD_ROUTES: Partial<Record<WorkflowObjectType, RecordRoute>> = {
     },
     async committeesOf(client, objectIds, organizationId) {
       const rows = await client.meeting.findMany({ where: { id: { in: objectIds }, organizationId }, select: { id: true, committeeId: true } });
+      return toMap(rows, (r) => r.id, (r) => r.committeeId);
+    },
+  },
+  // ACC-245 — a committee change request belongs to its committee, and through it
+  // to the committee's owning unit: an added review stage may be worked by "the
+  // request's committee" (a seat on it) or "the request's unit".
+  COMMITTEE_CHANGE_REQUEST: {
+    async unit(client, objectId, organizationId) {
+      const request = await client.committeeChangeRequest.findFirst({
+        where: { id: objectId, organizationId },
+        select: { committee: { select: { orgUnitId: true, organizationId: true } } },
+      });
+      return request?.committee.organizationId === organizationId ? request.committee.orgUnitId : null;
+    },
+    async committee(client, objectId, organizationId) {
+      const request = await client.committeeChangeRequest.findFirst({ where: { id: objectId, organizationId }, select: { committeeId: true } });
+      return request?.committeeId ?? null;
+    },
+    async unitsOf(client, objectIds, organizationId) {
+      const rows = await client.committeeChangeRequest.findMany({
+        where: { id: { in: objectIds }, organizationId, committee: { organizationId } },
+        select: { id: true, committee: { select: { orgUnitId: true } } },
+      });
+      return toMap(rows, (r) => r.id, (r) => r.committee.orgUnitId);
+    },
+    async committeesOf(client, objectIds, organizationId) {
+      const rows = await client.committeeChangeRequest.findMany({ where: { id: { in: objectIds }, organizationId }, select: { id: true, committeeId: true } });
       return toMap(rows, (r) => r.id, (r) => r.committeeId);
     },
   },

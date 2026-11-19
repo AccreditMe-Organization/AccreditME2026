@@ -551,7 +551,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(await edit(templates.updateTemplate(t.tpl.id, { isDefault: false } as never, w.org, a))).toBe(`${P}:REPLACE_DEFAULT`);
       expect(await edit(templates.updateTemplate(t.tpl.id, { objectType: 'DOCUMENT' } as never, w.org, a))).toBe(`${P}:CHANGE_TYPE`);
       expect(await edit(templates.deactivateTemplate(t.tpl.id, w.org, a))).toBe(`${P}:DEACTIVATE`);
-      expect(await edit(templates.addStage(t.tpl.id, { nameEn: 'Legal review', order: 22 } as never, w.org, a))).toBe(`${P}:ADD_STAGE`);
+      // ACC-245 — a REVIEW stage may be added (review-stages.db-spec.ts); any other stage may not.
+      expect(await edit(templates.addStage(t.tpl.id, { nameEn: 'Legal review', order: 22, isFinal: true } as never, w.org, a))).toBe(`${P}:ADD_STAGE`);
       expect(await edit(templates.removeStage(t.stage('returned').id, w.org, a))).toBe(`${P}:REMOVE_STAGE`);
       expect(await edit(templates.updateStage(t.stage('under_review').id, { order: 99 } as never, w.org, a))).toBe(`${P}:STAGE_FIELD`);
       expect(
@@ -1792,6 +1793,411 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await prisma.committeeSeatAction.create({ data: { organizationId: other.org, committeeId: w.committee, roleValueId: seat['member']!, actionKey: 'add_member' } });
       const preview = await requests.preview(w.committee, { seatActions: [{ roleValueId: seat['member']!, actions: ['add_member'] }] }, w.org, w.requester);
       expect(preview.impacts[0]).toEqual({ code: 'SEAT_ACTIONS', from: {}, to: { [seat['member']!]: ['add_member'] } });
+    });
+  });
+
+  // ── ACC-245 — added review stages (option B: Draft → [reviews] → Under review) ──
+
+  describe('added review stages (ACC-245)', () => {
+    /** The change request template's stages and moves, read fresh. */
+    async function shape(w: World) {
+      const tpl = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST' } });
+      const stages = await prisma.workflowStage.findMany({ where: { workflowTemplateId: tpl.id }, orderBy: { order: 'asc' } });
+      const byKey = (key: string) => stages.find((s) => s.key === key)!;
+      const moves = await prisma.workflowTransition.findMany({ where: { fromStage: { workflowTemplateId: tpl.id } } });
+      const advanceFrom = (stageId: string) => moves.filter((m) => m.fromStageId === stageId && m.kind === 'ADVANCE').map((m) => m.toStageId);
+      return { tpl, stages, byKey, moves, advanceFrom, review: stages.filter((s) => s.key === null) };
+    }
+    const person = async (w: World, name: string) =>
+      (await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-${name}@example.test`, name, status: 'ACTIVE' } })).id;
+    const addReview = async (w: World, nameEn: string, reviewers: string[], after?: string) => {
+      const { tpl } = await shape(w);
+      return templates.addStage(
+        tpl.id,
+        {
+          nameEn,
+          order: 0,
+          who: { mode: 'ANY_ONE', entries: reviewers.map((userId) => ({ kind: 'SPECIFIC_USER', userId })) },
+          ...(after && { reviewAfterStageId: after }),
+        } as never,
+        w.org,
+        w.approver.userId,
+      );
+    };
+    const statusOf = async (w: World, id: string) => (await requests.getOne(id, w.org, w.requester)).status;
+    const stageNow = async (w: World, id: string) => {
+      const instance = await prisma.workflowInstance.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: id }, orderBy: { createdAt: 'desc' } });
+      return instance.currentStageId;
+    };
+    const quorumOf = async (w: World) => (await prisma.committee.findFirstOrThrow({ where: { id: w.committee } })).quorumCount;
+
+    it('adding a review stage creates its four app moves and re-points BOTH Submit moves to it', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      const before = await shape(w);
+      expect(before.advanceFrom(before.byKey('draft').id)).toEqual([before.byKey('under_review').id]); // non-vacuity
+
+      const stage = await addReview(w, 'Legal review', [legal]);
+      const s = await shape(w);
+      expect(stage.reviewStage).toBe(true);
+      expect(s.review.map((r) => r.id)).toEqual([stage.id]);
+      // Between Draft and Under review.
+      expect(s.byKey('draft').order).toBeLessThan(stage.order);
+      expect(stage.order).toBeLessThan(s.byKey('under_review').order);
+      // Its four moves, all the app's.
+      const own = s.moves.filter((m) => m.fromStageId === stage.id).map((m) => [m.kind, m.mover, m.toStageId]).sort();
+      expect(own).toEqual(
+        [
+          ['ADVANCE', 'APP', s.byKey('under_review').id],
+          ['RETURN', 'APP', s.byKey('returned').id],
+          ['EXIT', 'APP', s.byKey('rejected').id],
+          ['EXIT', 'APP', s.byKey('withdrawn').id],
+        ].sort(),
+      );
+      // Both Submit moves now lead to it.
+      expect(s.advanceFrom(s.byKey('draft').id)).toEqual([stage.id]);
+      expect(s.advanceFrom(s.byKey('returned').id)).toEqual([stage.id]);
+      // The template read marks it, and says its people may change.
+      const read = await templates.getTemplateById(s.tpl.id, w.org);
+      const readStage = read.stages!.find((r) => r.id === stage.id)!;
+      expect(readStage.reviewStage).toBe(true);
+      expect(readStage.editableFields).toContain('who');
+    });
+
+    it('a second review stage goes after the first by default, and after Draft when asked: the forward moves chain in order', async () => {
+      const w = await world();
+      const [a, b, c] = [await person(w, 'A'), await person(w, 'B'), await person(w, 'C')];
+      const first = await addReview(w, 'First', [a]);
+      const second = await addReview(w, 'Second', [b]);
+      let s = await shape(w);
+      expect(s.review.map((r) => r.id)).toEqual([first.id, second.id]);
+      expect(s.advanceFrom(s.byKey('draft').id)).toEqual([first.id]);
+      expect(s.advanceFrom(first.id)).toEqual([second.id]);
+      expect(s.advanceFrom(second.id)).toEqual([s.byKey('under_review').id]);
+
+      const zeroth = await addReview(w, 'Zeroth', [c], s.byKey('draft').id);
+      s = await shape(w);
+      expect(s.review.map((r) => r.id)).toEqual([zeroth.id, first.id, second.id]);
+      expect(s.advanceFrom(s.byKey('draft').id)).toEqual([zeroth.id]);
+      expect(s.advanceFrom(s.byKey('returned').id)).toEqual([zeroth.id]);
+      expect(s.advanceFrom(zeroth.id)).toEqual([first.id]);
+    });
+
+    it('removing an unused review stage re-points past it and takes its moves; a used one is STAGE_IN_USE; a seeded one is refused', async () => {
+      const w = await world();
+      const [a, b] = [await person(w, 'A'), await person(w, 'B')];
+      const first = await addReview(w, 'First', [a]);
+      const second = await addReview(w, 'Second', [b]);
+      await templates.removeStage(first.id, w.org, w.approver.userId);
+      let s = await shape(w);
+      expect(s.review.map((r) => r.id)).toEqual([second.id]);
+      expect(s.advanceFrom(s.byKey('draft').id)).toEqual([second.id]);
+      expect(s.advanceFrom(s.byKey('returned').id)).toEqual([second.id]);
+      expect(s.moves.filter((m) => m.fromStageId === first.id || m.toStageId === first.id)).toEqual([]);
+
+      // A request enters Second: it can no longer be removed, and nothing changes.
+      await submitted(w);
+      expect(await outcome(templates.removeStage(second.id, w.org, w.approver.userId))).toBe('STAGE_IN_USE');
+      s = await shape(w);
+      expect(s.review.map((r) => r.id)).toEqual([second.id]);
+      expect(await outcome(templates.removeStage(s.byKey('returned').id, w.org, w.approver.userId))).toBe('WORKFLOW_TEMPLATE_PROTECTED');
+    });
+
+    it('approving through two review stages: each Approve moves one step and applies nothing; only the chain, in Under review, applies', async () => {
+      const w = await world();
+      const [legal, finance] = [await person(w, 'Legal'), await person(w, 'Finance')];
+      const first = await addReview(w, 'Legal review', [legal]);
+      const second = await addReview(w, 'Finance review', [finance]);
+      const quorum = await quorumOf(w);
+      const r = await submitted(w, { quorumCount: quorum + 2 });
+      expect(await stageNow(w, r.id)).toBe(first.id);
+      expect(r.status).toBeNull();
+
+      expect(await outcome(requests.approve(r.id, w.org, { userId: legal, permissions: [VIEW] }))).toBe('OK');
+      expect(await stageNow(w, r.id)).toBe(second.id);
+      expect(await quorumOf(w)).toBe(quorum);
+
+      expect(await outcome(requests.approve(r.id, w.org, { userId: finance, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('under_review');
+      expect(await quorumOf(w)).toBe(quorum);
+
+      expect(await outcome(requests.approve(r.id, w.org, w.approver))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('approved');
+      expect(await quorumOf(w)).toBe(quorum + 2);
+    });
+
+    it('the reviewer-pool rule: only the stage’s people decide it; the chain does not; the requester never does', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      // The requester is in the pool too: they are still never a decider of their own request.
+      await addReview(w, 'Legal review', [legal, w.requester.userId]);
+      const r = await submitted(w);
+      // The chain's deciders are not this stage's people.
+      expect(await outcome(requests.approve(r.id, w.org, w.approver))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      expect(await outcome(requests.returnForChanges(r.id, { note: 'n' }, w.org, w.approver))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      // A reader who is not in the pool.
+      expect(await outcome(requests.reject(r.id, { reason: 'x' }, w.org, w.reader))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      // The requester, though named on the stage.
+      expect(await outcome(requests.approve(r.id, w.org, w.requester))).toBe('CHANGE_REQUEST_OWN_DECISION');
+      // The record comes first (ACC-282): a pool member who cannot open the committee gets the 404, and nothing moves.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: legal, permissions: [] }))).toBe('Change request not found');
+      expect(await statusOf(w, r.id)).toBeNull();
+      // The stage's person, who may open the committee, decides.
+      const reviewer = { userId: legal, permissions: [VIEW] };
+      const read = await requests.getOne(r.id, w.org, reviewer);
+      expect(read.actions).toMatchObject({ approve: true, return: true, reject: true });
+      expect((await requests.getOne(r.id, w.org, w.approver)).actions).toMatchObject({ approve: false });
+      expect(await outcome(requests.approve(r.id, w.org, reviewer))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('under_review');
+    });
+
+    it('Return from a review stage sends it back, and Submit again starts the review over; Reject ends it', async () => {
+      const w = await world();
+      const [a, b] = [await person(w, 'A'), await person(w, 'B')];
+      const first = await addReview(w, 'First', [a]);
+      const second = await addReview(w, 'Second', [b]);
+      const r = await submitted(w);
+      await requests.approve(r.id, w.org, { userId: a, permissions: [VIEW] });
+      expect(await stageNow(w, r.id)).toBe(second.id);
+      expect(await outcome(requests.returnForChanges(r.id, { note: 'Say why' }, w.org, { userId: b, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('returned');
+      expect(await outcome(requests.submit(r.id, w.org, w.requester))).toBe('OK');
+      expect(await stageNow(w, r.id)).toBe(first.id);
+      expect(await outcome(requests.reject(r.id, { reason: 'Not now' }, w.org, { userId: a, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('rejected');
+    });
+
+    it('the root head’s own Approve now passes the review stages by and applies', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      await addReview(w, 'Legal review', [legal]);
+      // The approver heads the root unit (the world): their own request.
+      const own = { userId: w.approver.userId, permissions: [VIEW, EDIT, APPROVE] };
+      const quorum = await quorumOf(w);
+      const draft = await requests.create(w.committee, { changes: { quorumCount: quorum + 1 }, reason: 'Mine' } as never, w.org, own);
+      expect(draft.actions.approveNow).toBe(true);
+      expect(await outcome(requests.approveNow(draft.id, w.org, own))).toBe('OK');
+      expect(await statusOf(w, draft.id)).toBe('approved');
+      expect(await quorumOf(w)).toBe(quorum + 1);
+    });
+
+    it('a move prepared before a review stage is added is refused, never sent to the old target', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 9 }, reason: 'r' } as never, w.org, w.requester);
+      const instance = await prisma.workflowInstance.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: draft.id } });
+      const prepared = await workflow.prepareSystemAdvance(instance.id, w.org, w.requester.userId);
+      await addReview(w, 'Legal review', [legal]); // re-points Draft's forward move
+      expect(await outcome(prisma.$transaction((tx) => workflow.systemTransitionInTx(tx, prepared)))).toBe('TRANSITION_NOT_AVAILABLE');
+      expect(await statusOf(w, draft.id)).toBe('draft');
+    });
+
+    it('a review stage is "any one of them" in this version; other modes are refused', async () => {
+      const w = await world();
+      const { tpl } = await shape(w);
+      const a = await person(w, 'A');
+      expect(
+        await outcome(
+          templates.addStage(tpl.id, { nameEn: 'All', order: 0, who: { mode: 'ALL', entries: [{ kind: 'SPECIFIC_USER', userId: a }] } } as never, w.org, w.approver.userId),
+        ),
+      ).toBe('REVIEW_STAGE_ANY_ONE');
+    });
+
+    it('should NOT return records belonging to a different tenant: another organisation’s stage is no place to add after, and cannot be removed', async () => {
+      const w = await world();
+      const other = await world();
+      const a = await person(w, 'A');
+      const theirs = await addReview(other, 'Their review', [await person(other, 'B')]);
+      expect(await outcome(addReview(w, 'Mine', [a], theirs.id))).toBe('REVIEW_STAGE_POSITION');
+      expect(await outcome(templates.removeStage(theirs.id, w.org, w.approver.userId))).toBe('Workflow stage not found');
+      expect((await shape(other)).review.map((r) => r.id)).toEqual([theirs.id]);
+    });
+
+    // ── P193 ──
+    afterEach(() => jest.restoreAllMocks());
+
+    /** Runs `during` inside the next call's engine transaction, after its own checks, holding the instance lock. */
+    function pauseInside(method: 'triggerSystemAdvance' | 'triggerSystemTransition', during: () => Promise<void>) {
+      const real = (workflow[method] as (...a: unknown[]) => Promise<unknown>).bind(workflow);
+      const spy = jest.spyOn(workflow, method).mockImplementationOnce(((...args: unknown[]) => {
+        const at = method === 'triggerSystemAdvance' ? 3 : 4;
+        const options = (args[at] ?? {}) as { inTx?: (tx: unknown) => Promise<void> };
+        args[at] = {
+          ...options,
+          inTx: async (tx: unknown) => {
+            await options.inTx?.(tx);
+            await during();
+          },
+        };
+        return real(...args);
+      }) as never);
+      return spy;
+    }
+    /**
+     * Waits, by turns, until a session of this database waits on a lock (pg_stat_activity; ACC-248:
+     * count turns, never milliseconds). Throws if nothing ever does.
+     */
+    async function untilSomeoneWaitsOnALock(): Promise<void> {
+      for (let turn = 0; turn < 2_000; turn++) {
+        const [row] = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        if ((row?.n ?? 0) > 0) return;
+        await new Promise((r) => setImmediate(r));
+      }
+      throw new Error('Nothing waited on a lock');
+    }
+    /** Calls `act` first, for its decider check to read the stage, then lets `other` run before its move. */
+    function raceAfterLoad(method: 'triggerSystemAdvance' | 'triggerSystemTransition', other: () => Promise<unknown>) {
+      const real = (workflow[method] as (...a: unknown[]) => Promise<unknown>).bind(workflow);
+      return jest.spyOn(workflow, method).mockImplementationOnce((async (...args: unknown[]) => {
+        await other(); // runs the real method: the spy is used up
+        return real(...args);
+      }) as never);
+    }
+
+    it('B1: a second member of R1, admitted before the first moved it on, cannot move it out of R2', async () => {
+      const w = await world();
+      const [a, b, c] = [await person(w, 'A'), await person(w, 'B'), await person(w, 'C')];
+      await addReview(w, 'R1', [a, b]);
+      const r2 = await addReview(w, 'R2', [c]);
+      const asA = { userId: a, permissions: [VIEW] };
+      const asB = { userId: b, permissions: [VIEW] };
+      const r = await submitted(w);
+
+      // B's Approve is admitted in R1; A's Approve lands first.
+      raceAfterLoad('triggerSystemAdvance', () => requests.approve(r.id, w.org, asA));
+      expect(await outcome(requests.approve(r.id, w.org, asB))).toBe('CHANGE_REQUEST_CHANGED');
+      expect(await stageNow(w, r.id)).toBe(r2.id); // R2's review is not skipped
+      // R2's own person still decides it.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: c, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('under_review');
+    });
+
+    it('B1: a Return or Reject admitted in R1 is refused once the request has moved to R2', async () => {
+      const w = await world();
+      const [a, b, c] = [await person(w, 'A'), await person(w, 'B'), await person(w, 'C')];
+      await addReview(w, 'R1', [a, b]);
+      const r2 = await addReview(w, 'R2', [c]);
+      const r = await submitted(w);
+      raceAfterLoad('triggerSystemTransition', () => requests.approve(r.id, w.org, { userId: a, permissions: [VIEW] }));
+      expect(await outcome(requests.returnForChanges(r.id, { note: 'n' }, w.org, { userId: b, permissions: [VIEW] }))).toBe('CHANGE_REQUEST_CHANGED');
+      expect(await stageNow(w, r.id)).toBe(r2.id);
+      expect((await prisma.committeeChangeRequest.findFirstOrThrow({ where: { id: r.id } })).returnNote).toBeNull();
+
+      // Back to R1 (C returns it, the requester submits again), then the same race with Reject.
+      await requests.returnForChanges(r.id, { note: 'again' }, w.org, { userId: c, permissions: [VIEW] });
+      await requests.submit(r.id, w.org, w.requester);
+      raceAfterLoad('triggerSystemTransition', () => requests.approve(r.id, w.org, { userId: a, permissions: [VIEW] }));
+      expect(await outcome(requests.reject(r.id, { reason: 'x' }, w.org, { userId: b, permissions: [VIEW] }))).toBe('CHANGE_REQUEST_CHANGED');
+      expect(await stageNow(w, r.id)).toBe(r2.id);
+    });
+
+    it('B1: a decider admitted on one visit to R1 cannot decide on the next (Return, then Submit again): same stage, new entry', async () => {
+      const w = await world();
+      const [a, b] = [await person(w, 'A'), await person(w, 'B')];
+      const r1 = await addReview(w, 'R1', [a, b]);
+      const r = await submitted(w);
+      // B is admitted in R1. Before B's move: A returns it, and the requester submits it again.
+      raceAfterLoad('triggerSystemAdvance', async () => {
+        await requests.returnForChanges(r.id, { note: 'Say why' }, w.org, { userId: a, permissions: [VIEW] });
+        await requests.submit(r.id, w.org, w.requester);
+      });
+      expect(await outcome(requests.approve(r.id, w.org, { userId: b, permissions: [VIEW] }))).toBe('CHANGE_REQUEST_CHANGED');
+      expect(await stageNow(w, r.id)).toBe(r1.id); // back in R1, and still there
+      // Having read the request again, B decides it.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: b, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('under_review');
+    });
+
+    it('B2: a review notice goes only to the stage’s people who may open the committee', async () => {
+      const w = await world();
+      const outsider = await person(w, 'Outsider');
+      const member = await person(w, 'Member');
+      const viewer = await person(w, 'Viewer');
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.committee, userId: member, roleValueId: 'seat-m' } });
+      const role = await prisma.role.create({ data: { organizationId: w.org, nameEn: 'Viewers', key: `VIEWERS_${w.slug}` } });
+      await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: await permission('committees', 'view') } });
+      await prisma.userRole.create({ data: { userId: viewer, roleId: role.id } });
+      // The approver heads the root unit, which owns the committee: an overseer.
+      await addReview(w, 'Legal review', [outsider, member, viewer, w.approver.userId]);
+      const r = await submitted(w);
+      const told = notices.filter((n) => n.organizationId === w.org && n.titleEn === `Change request #${r.number} to review`);
+      expect(told.map((n) => n.userId).sort()).toEqual([member, viewer, w.approver.userId].sort());
+      // And the outsider cannot decide it (the record comes first).
+      expect(await outcome(requests.approve(r.id, w.org, { userId: outsider, permissions: [] }))).toBe('Change request not found');
+    });
+
+    it('S2: a review stage cannot name the CREATOR kind, on add or on a later who change', async () => {
+      const w = await world();
+      const { tpl } = await shape(w);
+      const a = await person(w, 'A');
+      expect(
+        await outcome(
+          templates.addStage(tpl.id, { nameEn: 'Mine', order: 0, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never, w.org, w.approver.userId),
+        ),
+      ).toBe('REVIEW_STAGE_NO_CREATOR');
+      const stage = await addReview(w, 'Legal review', [a]);
+      expect(
+        await outcome(
+          templates.updateStage(stage.id, { who: { mode: 'ANY_ONE', entries: [{ kind: 'SPECIFIC_USER', userId: a }, { kind: 'CREATOR' }] } } as never, w.org, w.approver.userId),
+        ),
+      ).toBe('REVIEW_STAGE_NO_CREATOR');
+      expect((await shape(w)).review.map((s) => s.id)).toEqual([stage.id]);
+    });
+
+    it('S1: adding a stage while a Submit is moving waits for it; the request lands where it was sent, then Draft is re-pointed', async () => {
+      const w = await world();
+      const [a, b] = [await person(w, 'A'), await person(w, 'B')];
+      const first = await addReview(w, 'First', [a]);
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 9 }, reason: 'r' } as never, w.org, w.requester);
+      let entered!: () => void;
+      let release!: () => void;
+      const inside = new Promise<void>((r) => (entered = r));
+      const gate = new Promise<void>((r) => (release = r));
+      pauseInside('triggerSystemAdvance', async () => {
+        entered();
+        await gate;
+      });
+      const submit = outcome(requests.submit(draft.id, w.org, w.requester));
+      await inside; // the Submit holds the request's instance lock
+      let addDone = false;
+      const add = outcome(addReview(w, 'Zeroth', [b], (await shape(w)).byKey('draft').id)).then((o) => ((addDone = true), o));
+      await untilSomeoneWaitsOnALock();
+      expect(addDone).toBe(false); // waiting on the request's lock, not deadlocked
+      release();
+      expect(await submit).toBe('OK');
+      expect(await add).toBe('OK');
+      const s = await shape(w);
+      expect(await stageNow(w, draft.id)).toBe(first.id);
+      expect(s.review.map((x) => x.nameEn)).toEqual(['Zeroth', 'First']);
+      expect(s.advanceFrom(s.byKey('draft').id)).toEqual([s.review[0]!.id]);
+    });
+
+    it('S1: removing a stage while a request is entering it waits, then counts it: STAGE_IN_USE, nothing removed', async () => {
+      const w = await world();
+      const a = await person(w, 'A');
+      const first = await addReview(w, 'First', [a]);
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 9 }, reason: 'r' } as never, w.org, w.requester);
+      let entered!: () => void;
+      let release!: () => void;
+      const inside = new Promise<void>((r) => (entered = r));
+      const gate = new Promise<void>((r) => (release = r));
+      pauseInside('triggerSystemAdvance', async () => {
+        entered();
+        await gate;
+      });
+      const submit = outcome(requests.submit(draft.id, w.org, w.requester));
+      await inside; // the request is moving into First, its entry not yet committed
+      let removeDone = false;
+      const remove = outcome(templates.removeStage(first.id, w.org, w.approver.userId)).then((o) => ((removeDone = true), o));
+      await untilSomeoneWaitsOnALock();
+      expect(removeDone).toBe(false);
+      release();
+      expect(await submit).toBe('OK');
+      expect(await remove).toBe('STAGE_IN_USE');
+      expect(await stageNow(w, draft.id)).toBe(first.id);
+      expect((await shape(w)).review.map((x) => x.id)).toEqual([first.id]);
     });
   });
 });

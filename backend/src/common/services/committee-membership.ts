@@ -1,7 +1,14 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '../../../generated/prisma/client';
 import { COMMITTEES_PERMISSIONS } from '../constants/permissions';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { findUnitHeadedBy, findUnitSubtreeIds, findUnitsCoveredBy } from '../../foundation/organization/unit-headship';
+import {
+  findUnitAncestorIds,
+  findUnitHeadedBy,
+  findUnitLeadersAmong,
+  findUnitSubtreeIds,
+  findUnitsCoveredBy,
+} from '../../foundation/organization/unit-headship';
 
 /**
  * ACC-281 — the ONE membership rule (Ahmad, 7 Nov): an ACTIVE member of an ACTIVE
@@ -27,10 +34,12 @@ import { findUnitHeadedBy, findUnitSubtreeIds, findUnitsCoveredBy } from '../../
  * committees:view, OR an active member, OR a head/cover in force of the owning
  * unit or an ancestor of it (mayReadCommittee, readableCommitteeIds). A WRITE is
  * unchanged: committees:view OR an active member (maySeeCommittee). Headship is
- * read only through unit-headship.ts, in committeeOversightUnitIds(); never a
- * second copy. A non-member pays it only after membership has said no: the two
- * headship reads at once, then the sub-unit walk and the committee only when the
- * viewer leads something. Active committees only, as for members.
+ * read only through unit-headship.ts, from two sides: committeeOversightUnitIds()
+ * walks DOWN from what a viewer leads (lists: readableCommitteeIds), and
+ * committeeOverseersAmong() walks UP from one committee's owning unit (one
+ * committee: mayReadCommittee, and ACC-245's committeeReadersAmong for many
+ * people). Never a third copy. A non-member pays it only after membership has
+ * said no. Active committees only, as for members.
  */
 
 type MembershipClient = Pick<PrismaService, 'committeeMember'>;
@@ -40,6 +49,15 @@ type ReadClient = MembershipClient & OversightClient & Pick<PrismaService, 'comm
 export interface CommitteeViewer {
   id: string;
   permissions: readonly string[];
+}
+
+/**
+ * ACC-245 — the ONE seat predicate: an ACTIVE seat on an ACTIVE committee, both in
+ * the organisation. activeSeatOf(), memberCommitteeIds() and
+ * committeeReadersAmong() all read it, beside their own committee and person.
+ */
+export function activeSeatWhere(organizationId: string): Prisma.CommitteeMemberWhereInput {
+  return { organizationId, isActive: true, committee: { organizationId, isActive: true } };
 }
 
 /** committees:view: oversight of every committee in the organisation. */
@@ -70,7 +88,7 @@ export async function activeSeatOf(
   organizationId: string,
 ): Promise<string | null> {
   const row = await client.committeeMember.findFirst({
-    where: { committeeId, userId, organizationId, isActive: true, committee: { organizationId, isActive: true } },
+    where: { committeeId, userId, ...activeSeatWhere(organizationId) },
     select: { roleValueId: true },
   });
   return row ? row.roleValueId : null;
@@ -114,9 +132,7 @@ export async function memberCommitteeIds(
   const rows = await client.committeeMember.findMany({
     where: {
       userId,
-      organizationId,
-      isActive: true,
-      committee: { organizationId, isActive: true },
+      ...activeSeatWhere(organizationId),
       ...(among ? { committeeId: { in: [...new Set(among)] } } : {}),
     },
     select: { committeeId: true },
@@ -146,7 +162,14 @@ export async function committeeOversightUnitIds(
   return new Set(await findUnitSubtreeIds(client, organizationId, roots));
 }
 
-/** ACC-283 PR 2a — does `viewerId` oversee this ACTIVE committee (its owning unit in their set)? */
+/**
+ * ACC-283 PR 2a — does `viewerId` oversee this ACTIVE committee: a head or cover
+ * in force of its owning unit or an active unit above it? ACC-245: read from the
+ * committee's side (committeeOverseersAmong(), the one copy committeeReadersAmong()
+ * reads too), which is the same set as walking down from the viewer's units
+ * (committeeOversightUnitIds()): a unit is in an active root's subtree exactly
+ * when that root is among its active ancestors. The parity db-spec holds them equal.
+ */
 export async function overseesCommittee(
   client: OversightClient & Pick<PrismaService, 'committee'>,
   committeeId: string,
@@ -154,13 +177,31 @@ export async function overseesCommittee(
   viewerId: string,
   now: Date,
 ): Promise<boolean> {
-  const units = await committeeOversightUnitIds(client, organizationId, viewerId, now);
-  if (units.size === 0) return false;
-  const row = await client.committee.findFirst({
-    where: { id: committeeId, organizationId, isActive: true, orgUnitId: { in: [...units] } },
-    select: { id: true },
+  return (await committeeOverseersAmong(client, committeeId, organizationId, [viewerId], now)).has(viewerId);
+}
+
+/**
+ * ACC-245 — which of `userIds` oversee this ACTIVE committee: a head holder or a
+ * cover in force of its owning unit or an active unit above it. The committee
+ * (active, in the organisation), then findUnitAncestorIds(), then
+ * findUnitLeadersAmong(): headship through unit-headship.ts only. An inactive or
+ * invented committee is overseen by nobody.
+ */
+export async function committeeOverseersAmong(
+  client: OversightClient & Pick<PrismaService, 'committee'>,
+  committeeId: string,
+  organizationId: string,
+  userIds: readonly string[],
+  now: Date,
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const committee = await client.committee.findFirst({
+    where: { id: committeeId, organizationId, isActive: true },
+    select: { orgUnitId: true },
   });
-  return row !== null;
+  if (!committee?.orgUnitId) return new Set();
+  const units = await findUnitAncestorIds(client, organizationId, committee.orgUnitId);
+  return findUnitLeadersAmong(client, organizationId, units, userIds, now);
 }
 
 /** ACC-283 PR 2a — does `viewerId` oversee the active committee this change request belongs to? */
@@ -233,6 +274,55 @@ export async function readableCommitteeIds(
   });
   for (const c of overseen) readable.add(c.id);
   return readable;
+}
+
+/**
+ * ACC-245 — which of `userIds` may READ this committee, by mayReadCommittee()'s
+ * rule, for MANY people at once (a review stage's pool, before a notice names the
+ * committee). The same three clauses, in the same order, never one query per
+ * person:
+ *   1. committees:view, through their active roles in this organisation (what
+ *      the permission resolver grants) — one query;
+ *   2. for the rest, an active seat on this committee (activeSeatWhere()) — one
+ *      query;
+ *   3. for the rest, committeeOverseersAmong() — the one copy overseesCommittee()
+ *      reads.
+ * Callers pass the people they would tell (a stage pool is ACTIVE people only);
+ * like mayReadCommittee(), this asks about the committee, not the person's status.
+ * The parity db-spec holds it equal to mayReadCommittee() person by person.
+ */
+export async function committeeReadersAmong(
+  client: ReadClient & Pick<PrismaService, 'userRole'>,
+  committeeId: string,
+  organizationId: string,
+  userIds: readonly string[],
+  now: Date = new Date(),
+): Promise<Set<string>> {
+  let rest = [...new Set(userIds)];
+  if (rest.length === 0) return new Set();
+
+  const [module, action] = COMMITTEES_PERMISSIONS.VIEW.split(':') as [string, string];
+  const holders = await client.userRole.findMany({
+    where: {
+      userId: { in: rest },
+      role: { isActive: true, organizationId, rolePermissions: { some: { permission: { module, action } } } },
+    },
+    select: { userId: true },
+  });
+  const readers = new Set(holders.map((h) => h.userId));
+  rest = rest.filter((id) => !readers.has(id));
+  if (rest.length === 0) return readers;
+
+  const seats = await client.committeeMember.findMany({
+    where: { committeeId, userId: { in: rest }, ...activeSeatWhere(organizationId) },
+    select: { userId: true },
+  });
+  for (const seat of seats) readers.add(seat.userId);
+  rest = rest.filter((id) => !readers.has(id));
+  if (rest.length === 0) return readers;
+
+  for (const id of await committeeOverseersAmong(client, committeeId, organizationId, rest, now)) readers.add(id);
+  return readers;
 }
 
 /**

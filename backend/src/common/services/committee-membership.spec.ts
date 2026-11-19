@@ -23,6 +23,10 @@ const ORG = 'org-a';
  * ACC-283 PR 2a — `lead` says what the viewer heads and covers: the head's unit
  * (user.findFirst), the covered units (orgUnitHeadAssignment.findMany), the units
  * below them ($queryRaw), and which committees those units own (committee).
+ * ACC-245 — the single check reads from the committee's side: the committee
+ * (committee.findFirst, owned by 'unit-a' when `owned` names it), the units above
+ * it ($queryRaw), then who among the viewer leads one (user.findMany for a head,
+ * orgUnitHeadAssignment.findMany for a cover).
  */
 function client(
   rows: { committeeId: string }[] = [],
@@ -33,11 +37,14 @@ function client(
       findFirst: jest.fn(async () => (rows.length ? { id: 'cm-1' } : null)),
       findMany: jest.fn(async () => rows),
     },
-    user: { findFirst: jest.fn(async () => (lead.headOf ? { primaryOrgUnitId: lead.headOf } : null)) },
-    orgUnitHeadAssignment: { findMany: jest.fn(async () => (lead.covers ?? []).map((orgUnitId) => ({ orgUnitId }))) },
+    user: {
+      findFirst: jest.fn(async () => (lead.headOf ? { primaryOrgUnitId: lead.headOf } : null)),
+      findMany: jest.fn(async () => (lead.headOf ? [{ id: 'u-1' }] : [])),
+    },
+    orgUnitHeadAssignment: { findMany: jest.fn(async () => (lead.covers ?? []).map((orgUnitId) => ({ orgUnitId, userId: 'u-1' }))) },
     $queryRaw: jest.fn(async () => (lead.subtree ?? []).map((id) => ({ id }))),
     committee: {
-      findFirst: jest.fn(async () => ((lead.owned ?? []).length ? { id: lead.owned![0] } : null)),
+      findFirst: jest.fn(async () => ((lead.owned ?? []).length ? { id: lead.owned![0], orgUnitId: 'unit-a' } : null)),
       findMany: jest.fn(async () => (lead.owned ?? []).map((id) => ({ id }))),
     },
   };
@@ -50,6 +57,7 @@ const reads = (prisma: ReturnType<typeof client>['prisma']) =>
   prisma.committeeMember.findFirst.mock.calls.length +
   prisma.committeeMember.findMany.mock.calls.length +
   prisma.user.findFirst.mock.calls.length +
+  prisma.user.findMany.mock.calls.length +
   prisma.orgUnitHeadAssignment.findMany.mock.calls.length +
   prisma.$queryRaw.mock.calls.length +
   prisma.committee.findFirst.mock.calls.length +
@@ -132,7 +140,9 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
     expect(where).toEqual(expect.objectContaining({ organizationId: ORG, userId: 'u-1', kind: 'ACTING', endedAt: null, validFrom: { lte: NOW } }));
   });
 
-  it('a READ: a holder costs nothing, a member one query, a non-member who leads nothing three, an overseer five', async () => {
+  // ACC-245 — the oversight half reads from the committee's side (committeeOverseersAmong):
+  // the committee, the units above it, then the two leadership reads, together.
+  it('a READ: a holder costs nothing, a member one query, anyone else the committee, its units and the two leadership reads', async () => {
     const holder = client();
     expect(await mayReadCommittee(holder.typed, 'c-1', ORG, { id: 'u-1', permissions: ['committees:view'] }, NOW)).toBe(true);
     expect(reads(holder.prisma)).toBe(0);
@@ -141,16 +151,30 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
     expect(await mayReadCommittee(member.typed, 'c-1', ORG, viewer, NOW)).toBe(true);
     expect(reads(member.prisma)).toBe(1);
 
-    const stranger = client();
+    // An invented (or inactive) committee: the membership read and the committee read, nothing more.
+    const invented = client();
+    expect(await mayReadCommittee(invented.typed, 'c-1', ORG, viewer, NOW)).toBe(false);
+    expect(reads(invented.prisma)).toBe(2);
+
+    const stranger = client([], { subtree: ['unit-a'], owned: ['c-1'] });
     expect(await mayReadCommittee(stranger.typed, 'c-1', ORG, viewer, NOW)).toBe(false);
-    expect(reads(stranger.prisma)).toBe(3);
+    expect(reads(stranger.prisma)).toBe(5);
 
     const head = client([], { headOf: 'unit-a', subtree: ['unit-a'], owned: ['c-1'] });
     expect(await mayReadCommittee(head.typed, 'c-1', ORG, viewer, NOW)).toBe(true);
     expect(reads(head.prisma)).toBe(5);
     expect((head.prisma.committee.findFirst.mock.calls[0] as unknown as [{ where: unknown }])[0].where).toEqual({
-      id: 'c-1', organizationId: ORG, isActive: true, orgUnitId: { in: ['unit-a'] },
+      id: 'c-1', organizationId: ORG, isActive: true,
     });
+    expect((head.prisma.user.findMany.mock.calls[0] as unknown as [{ where: unknown }])[0].where).toEqual(
+      expect.objectContaining({ id: { in: ['u-1'] }, organizationId: ORG, primaryOrgUnitId: 'unit-a', status: 'ACTIVE' }),
+    );
+
+    const cover = client([], { covers: ['unit-a'], subtree: ['unit-a'], owned: ['c-1'] });
+    expect(await mayReadCommittee(cover.typed, 'c-1', ORG, viewer, NOW)).toBe(true);
+    expect((cover.prisma.orgUnitHeadAssignment.findMany.mock.calls[0] as unknown as [{ where: unknown }])[0].where).toEqual(
+      expect.objectContaining({ organizationId: ORG, userId: { in: ['u-1'] }, orgUnitId: 'unit-a', kind: 'ACTING', endedAt: null, validFrom: { lte: NOW } }),
+    );
   });
 
   it('a WRITE never asks headship: an overseer is still refused with the 404 a missing committee gets', async () => {
@@ -177,9 +201,9 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
     expect(await committeeAccess(head.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: true, write: false, seat: null });
     expect(reads(head.prisma)).toBe(5);
 
-    const stranger = client();
+    const stranger = client([], { subtree: ['unit-a'], owned: ['c-1'] });
     expect(await committeeAccess(stranger.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: false, write: false, seat: null });
-    expect(reads(stranger.prisma)).toBe(3);
+    expect(reads(stranger.prisma)).toBe(5);
   });
 
   it('access.write is the very answer assertMayWriteCommittee acts on, for every kind of viewer', async () => {
@@ -212,7 +236,7 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
   itEnforcesTenantIsolation('committee oversight — every headship read and the committee read name the organisation', async () => {
     const { prisma, typed } = client([], { headOf: 'unit-a', covers: ['unit-b'], subtree: ['unit-a'], owned: ['c-1'] });
     await mayReadCommittee(typed, 'c-1', 'org-b', viewer, NOW);
-    const head = (prisma.user.findFirst.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where;
+    const head = (prisma.user.findMany.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where;
     const cover = (prisma.orgUnitHeadAssignment.findMany.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where;
     const committee = (prisma.committee.findFirst.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where;
     expect(head.organizationId).toBe('org-b');

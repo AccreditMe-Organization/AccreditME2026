@@ -28,6 +28,9 @@ import { SEAT_ACTIONS, seatActionsFor } from '../seat-actions';
 export type ChainStep =
   | { kind: 'REPORTS_TO_SEAT'; committeeId: string; seatIds: string[] }
   | { kind: 'UNIT_HEAD'; unitId: string; isRoot: boolean }
+  // ACC-245 — never from walkChain(): a request standing in an added review stage
+  // is decided by that stage's people (the service puts this step in the chain's place).
+  | { kind: 'REVIEW_STAGE'; stageId: string }
   | { kind: 'NONE' };
 
 export interface ChainResult {

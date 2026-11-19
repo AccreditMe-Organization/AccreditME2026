@@ -29,6 +29,7 @@ import { applyWorkflowSeed } from './workflow-seed-apply';
 import { writeStartingAssignments } from './workflow-who';
 import { lockTypeDefaults, makeDefaultInTx } from './workflow-default';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
+import { addReviewStageInTx, isReviewStage, removeReviewStageInTx } from './review-stages';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
@@ -70,6 +71,21 @@ import { assertEscalationRules } from './stage-escalation';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
 const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
+
+// ACC-245 — adding or removing a review stage locks the template, the records standing
+// where a move is re-pointed, and the moves: more than Prisma's 5 seconds on a busy tenant.
+/**
+ * ACC-245 — who decides an added review stage, in this version: "any one of
+ * them" (REVIEW_STAGE_ANY_ONE), and never the CREATOR kind
+ * (REVIEW_STAGE_NO_CREATOR), which names whoever raised the request: the
+ * requester is taken out of every pool, so such an entry would name nobody.
+ */
+function assertReviewWho(who: { mode: string; entries: readonly { kind: string }[] }): void {
+  if (who.mode !== 'ANY_ONE') throw new WorkflowRefusalException('REVIEW_STAGE_ANY_ONE', {});
+  if (who.entries.some((e) => e.kind === 'CREATOR')) throw new WorkflowRefusalException('REVIEW_STAGE_NO_CREATOR', {});
+}
+
+const STAGE_EDIT_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 
 /**
  * ACC-255 — every stage field an audit row may name, in the stage form's
@@ -277,6 +293,9 @@ export class WorkflowTemplateService {
           })),
           orderedActionKeys(template.objectType, s.recordActions.map((r) => r.actionKey)),
         ),
+        // ACC-245 — an added review stage, and what a save may change on it.
+        ...(PROTECTED_TEMPLATES.has(template.objectType) &&
+          isReviewStage(s) && { reviewStage: true, editableFields: [...PROTECTED_STAGE_EDITABLE, 'who'] }),
         taskDefinitionCount: stageTasks.get(s.id)?.taskDefinitionCount ?? 0,
         longestTaskHours: stageTasks.get(s.id)?.longestTaskHours ?? null,
         liveCount: liveCounts.get(s.id) ?? 0,
@@ -717,7 +736,8 @@ export class WorkflowTemplateService {
       where: { id: templateId, organizationId },
     });
     if (!template) throw new NotFoundException('Workflow template not found');
-    if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('ADD_STAGE');
+    // ACC-245 — the protected change request workflow takes REVIEW stages only.
+    if (PROTECTED_TEMPLATES.has(template.objectType)) return this.addReviewStage(template, dto, organizationId, actorId);
     // ACC-255 — a new stage allows what the save names, or the record type's
     // new-stage defaults (what such a stage allowed before stage rules).
     const rules = this.stageRuleKeys(template.objectType, dto.actions, dto.flags);
@@ -858,7 +878,10 @@ export class WorkflowTemplateService {
         if (field === 'flags') return !sameKeySet(storedFlags, value as string[]);
         return (stored[field] ?? null) !== (value ?? null);
       });
-      if (changed.length > 0 || whoChanged) refuseProtected('STAGE_FIELD');
+      // ACC-245 — an added review stage's people may change; any other stage's may not.
+      const review = isReviewStage(stage);
+      if (changed.length > 0 || (whoChanged && !review)) refuseProtected('STAGE_FIELD');
+      if (whoChanged && review && sentWho) assertReviewWho(sentWho);
     }
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
@@ -976,7 +999,11 @@ export class WorkflowTemplateService {
       },
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
-    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) refuseProtected('REMOVE_STAGE');
+    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) {
+      // ACC-245 — only an added review stage nobody has used.
+      if (!isReviewStage(stage)) refuseProtected('REMOVE_STAGE');
+      return this.removeReviewStage(stage, organizationId, actorId);
+    }
 
     // ACC-255 — the action rows go with the stage (cascade); an exactly-one
     // flag it carried must still sit on exactly one stage afterwards.
@@ -1023,6 +1050,130 @@ export class WorkflowTemplateService {
       objectType: 'WorkflowStage',
       objectId: id,
       before: stageSnapshot(stage, orderedActionKeys(objectType, (stage.recordActions ?? []).map((r) => r.actionKey))),
+    });
+  }
+
+  // ── Review stages (ACC-245) ──────────────────────────────────────────────────
+
+  /**
+   * ACC-245 — adds a REVIEW stage to the protected committee change request
+   * workflow (review-stages.ts): names, description, deadline and `who` only, its
+   * people deciding as "any one of them" in this version. Nothing else a stage
+   * carries may be set on it (isInitial, isFinal, actions, flags): the server sets
+   * its order, its four moves and the re-pointing. One transaction: the template,
+   * then the records standing where a forward move is re-pointed, then the moves.
+   */
+  private async addReviewStage(
+    template: PrismaWorkflowTemplate,
+    dto: CreateWorkflowStageDto,
+    organizationId: string,
+    actorId: string,
+  ): Promise<IWorkflowStage> {
+    if (dto.isInitial || dto.isFinal || (dto.actions?.length ?? 0) > 0 || (dto.flags?.length ?? 0) > 0) refuseProtected('ADD_STAGE');
+    const { who: sentWho } = dto;
+    if (sentWho === undefined) throw new WorkflowRefusalException('WHO_REQUIRED');
+    const recordRoute = RECORD_ROUTES[template.objectType];
+    const wantedWho = assertWhoShape(template.objectType, sentWho, {
+      unit: typeof recordRoute?.unit === 'function',
+      committee: typeof recordRoute?.committee === 'function',
+    });
+    assertReviewWho(sentWho);
+    const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
+
+    const added = await this.prisma.$transaction(async (tx) => {
+      await this.lockTemplate(tx, template.id, organizationId);
+      await assertEscalationRules(tx, organizationId, dto.escalationConfig);
+      const result = await addReviewStageInTx(
+        tx,
+        template.id,
+        organizationId,
+        {
+          nameEn: dto.nameEn,
+          nameAr: dto.nameAr ?? null,
+          description: dto.description ?? null,
+          slaWorkingHours: dto.slaWorkingHours ?? null,
+          escalationConfig: this.toJson(dto.escalationConfig),
+          whoMode: sentWho.mode,
+        },
+        dto.reviewAfterStageId,
+      );
+      await this.replaceStageWho(tx, result.stage.id, organizationId, wantedWho, actorId);
+      return result;
+    }, STAGE_EDIT_TX);
+
+    const entries: StoredWhoEntry[] = await this.prisma.workflowStageAssignee.findMany({
+      where: { organizationId, stageId: added.stage.id },
+      orderBy: { order: 'asc' },
+    });
+    const holders = await this.holderCountsFor(entries, organizationId);
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'CREATE',
+      objectType: 'WorkflowStage',
+      objectId: added.stage.id,
+      after: {
+        ...stageSnapshot(added.stage, []),
+        whoMode: added.stage.whoMode ?? null,
+        whoEntries: whoAuditEntries(entries.map((e) => ({ ...entryForSentence(e, whoRefs), isStartingAssignment: e.isStartingAssignment }))),
+        reviewStage: {
+          after: added.afterStageId,
+          next: added.nextStageId,
+          movesCreated: added.createdMoveIds,
+          movesRepointed: added.repointedMoveIds,
+        },
+      },
+    });
+    return {
+      ...this.mapStage(added.stage, undefined, []),
+      ...this.whoRead(added.stage.whoMode, entries, whoRefs, holders),
+      reviewStage: true,
+      editableFields: [...PROTECTED_STAGE_EDITABLE, 'who'],
+    };
+  }
+
+  /**
+   * ACC-245 — removes an added review stage nobody has used (STAGE_IN_USE
+   * otherwise, as for any stage): the move into it is re-pointed past it, and
+   * its four moves and its people go with it.
+   */
+  private async removeReviewStage(
+    stage: PrismaWorkflowStage & { recordActions?: { actionKey: string }[] },
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const removed = await this.prisma.$transaction(async (tx) => {
+      // LOCK ORDER: the template, then the records (in removeReviewStageInTx), then
+      // the stage row. NOT template-stage-records: a request moving INTO this stage
+      // holds its instance lock and needs a key-share lock on the stage row to write
+      // its entry, so locking the stage first deadlocks with it (proved by spec).
+      await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      const assertUnused = async () => {
+        const recordCount = await this.recordsThatEntered(tx, stage.id, organizationId);
+        if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
+      };
+      // A quick refusal now, read only; the authoritative one once the records are locked.
+      await assertUnused();
+      return removeReviewStageInTx(tx, stage.workflowTemplateId, organizationId, stage.id, async () => {
+        await tx.$queryRaw`SELECT id FROM "WorkflowStage" WHERE id = ${stage.id} FOR UPDATE`;
+        await assertUnused();
+      });
+    }, STAGE_EDIT_TX);
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'DELETE',
+      objectType: 'WorkflowStage',
+      objectId: stage.id,
+      before: {
+        ...stageSnapshot(stage, []),
+        reviewStage: {
+          previous: removed.previousStageId,
+          next: removed.nextStageId,
+          movesDeleted: removed.deletedMoveIds,
+          movesRepointed: removed.repointedMoveIds,
+        },
+      },
     });
   }
 

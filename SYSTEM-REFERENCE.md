@@ -3082,6 +3082,46 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
     re-reads the template, which is ACC-55's trap.
   - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
     focus moves to the row's other arrow.
+  - **ACC-212 — and a drag handle on each row** (the drawing's ⣿, a 22 × 26
+    button named "Reorder task n: title"), through Angular CDK drag-drop:
+    - **Pointer:** drag the row by its handle. The preview stays inside the
+      list (`cdkDragPreviewContainer="parent"`), so it inherits the page's
+      direction in Arabic.
+    - **Keyboard, on the same handle:** Space lifts the row, ↑ / ↓ move it
+      (shown, not saved), Space or Enter drops it, and Escape (or focus
+      leaving the handle) puts it back. While a row is lifted, the arrows,
+      Edit and Delete wait.
+    - **Announced** in the arrows' live line: picked up (the position only),
+      each position, the drop, a cancel. The keys are described by a hint
+      (`aria-describedby`) only while nothing is lifted, so they are never read
+      twice. Focus stays on the row's handle.
+    - **A lifted row is put back** when the stage or `canManage` changes.
+    - **Saving:** both paths use the same order endpoint as the arrows, and
+      the new order shows at once.
+      - A failed save puts the rows back and says so ("The new order
+        couldn't be saved…").
+      - A refusal says what the arrows say for every code
+        (`plainWorkflowRefusalKey`).
+      - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+        Focus waits for the re-read, then goes to the moved row's handle, or
+        the list, or the section; never the page body.
+    - **The ↑ / ↓ buttons stay.**
+    - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
+      with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
+      CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
+      because it styles the caller's row; the next sortable list reuses it.
+      Keyboard pick-up stays with the list, which knows the order.
+      - **No literal sizes.** The handle box is `--am-drag-handle-inline` /
+        `-block` (22 × 26, from the Stage Tasks drawing).
+      - **Disabled** is the disabled-control border, not a fade.
+      - **The placeholder** is a dashed slot.
+      - **No slide animation** (no drawing gives a duration).
+      - **The preview's class is doubled.** The caller's row rule ties with it
+        on specificity, and whichever stylesheet loads last would win the
+        bottom border.
+    - **Specs:** `stage-task-list.drag.spec.ts` and
+      `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
+      px, both languages). Mutation-checked.
 - **`StageTaskDefinitionFormComponent`** is the two-step dialog.
   - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
   - The other routes are one or two selects.
@@ -6925,6 +6965,79 @@ ACC-255 PR 2, §2.18.1).
   self-approval refusal, or moving Approve's committee write outside the
   transaction, each turns it red.
 
+#### 3.18.1 Added review stages (ACC-245, PR 1)
+
+Plan, Ahmad's answers (19 Nov) and what PR 1 built:
+`backend/Plans/step-245-change-request-review-stages.md` (§10, §11).
+
+- **The order (option B):** Draft → [added review stages] → Under review →
+  Approved. Each added stage is decided by its own `who` pool, never the
+  requester; Under review is still decided by the chain, LAST, and its Approve
+  is still the only one that applies the change.
+- **A review stage is an UNKEYED, non-initial, non-final stage** of the
+  protected template (`isReviewStage()`), ordered between Draft and Under
+  review. It has four APP moves: ADVANCE to the next review stage or Under
+  review, RETURN to Returned, EXIT to Rejected, EXIT to Withdrawn.
+- **Adding one** (`POST /workflow-templates/:id/stages`, `reviewAfterStageId`)
+  creates the stage and its moves and re-points the forward move into its place
+  (both Submit moves when it follows Draft). **Removing an unused one**
+  re-points past it and deletes its moves and people. One that any request has
+  entered is `STAGE_IN_USE` and can only be renamed; a keyed one is
+  `REMOVE_STAGE`. Locks: the template, then the open records in the re-pointed
+  stages, then the moves (add) or the stage row and a second in-use count
+  (remove). Never the stage row before the records: a request entering it holds
+  its instance lock and key-share-locks the stage row. `review-stages.ts` is the
+  one place.
+- **Limits in this version:** at most 9 (`REVIEW_STAGE_LIMIT`); "any one of
+  them" only (`REVIEW_STAGE_ANY_ONE`); only names, description, deadline,
+  escalation and `who` may be set or changed (the template read's
+  `editableFields`); no reordering.
+- **Moves by the app, without a key:** `triggerSystemAdvance()` takes the
+  current stage's single APP ADVANCE. Submit and an added stage's Approve use
+  it. `applyMove` re-reads a move's target under the instance lock, so a move
+  prepared before a re-point is `TRANSITION_NOT_AVAILABLE`.
+- **Deciding in an added stage:** the record first (ACC-282: the committee
+  read rule, else the 404), then the pool. **A pool member who cannot open the
+  committee cannot decide**, so a stage with nobody who can waits, like an
+  empty pool. The decision re-reads the request's open stage ENTRY under the
+  instance lock: a different entry from the one the decider was admitted on
+  (moved on, or back again after a Return and Submit) is
+  `CHANGE_REQUEST_CHANGED`. The "to review" notice goes only to pool members
+  who may open the committee (`committeeReadersAmong()`, batched). It shares
+  every piece with the single check: `activeSeatWhere()` for the seat, and
+  `committeeOverseersAmong()` for oversight, which `overseesCommittee()` reads
+  too, on `findUnitAncestorIds()` (the active-unit rule in SQL) and
+  `findUnitLeadersAmong()` in `unit-headship.ts`; `committee-readers.db-spec.ts`
+  holds the two equal. The single check for a non-member who leads nothing now
+  costs 5 queries (it was 3). The CREATOR kind is refused on an added
+  stage (`REVIEW_STAGE_NO_CREATOR`). The requester gets
+  `CHANGE_REQUEST_OWN_DECISION`, a reader outside the pool (the chain
+  included) `CHANGE_REQUEST_NOT_DECIDER`. The pool is read in one batch per
+  page (`reviewDecisions`). Return and Reject work as in Under review; Submit
+  again starts at the first review stage. Approve now (the root head's own
+  request) passes every review stage by, audited `REVIEW_SKIPPED`, then
+  applies.
+- **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
+  and its owning unit.
+- **Known gap until PR 2:** the awaiting-decision lists read Under review
+  only, and `awaitingDecisionBy` is null in an added stage. The screens are
+  PR 3.
+- **Real-database specs:** the "added review stages (ACC-245)" block of
+  `committee-change-request.db-spec.ts`, 17 tests, two of them concurrent (an
+  add while a Submit moves, a remove while a request enters the stage; each
+  waits until `pg_stat_activity` shows a session waiting on a lock, never a
+  sleep). `committee-readers.db-spec.ts`: the parity of the batch and the
+  single check, 4 tests. Mutation-checked, each red: the target re-read, the
+  record-first check, the requester's exclusion, the Returned re-point, the
+  re-point on remove, Approve now's skip, the any-one rule, applying on an
+  added stage's Approve, the entry re-check on Approve, Return and Reject (and
+  comparing the template stage instead of the entry), the notice filter, the
+  CREATOR refusal, the second in-use count, the remove lock order, the add's
+  record locks, and, for parity, the batch's role, seat and oversight clauses,
+  the single check's seat clause, the shared ancestor rule and the shared
+  cover window.
+- **No migration.**
+
 ### 3.19 Who sees a task — one rule, keys per record type (ACC-244)
 
 Plan, Ahmad's answers (Q1–Q10) and the dry runs:
@@ -7672,6 +7785,64 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
 - **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
+- **The reason in Membership history (ACC-301):**
+  - The committee page's Membership history panel shows the reason on a LEFT
+    row with no `cause` (a person's removal). See all shows it too.
+  - It is read from the history response (`reason`); there is no second read.
+  - **Who reads it (Ahmad, 19 Nov):** overseers and the committee's officers
+    only, decided on the server in ONE place, `mayReadMembershipReasons()`
+    (`committees/membership-reason-readers.ts`):
+    - a `committees:view` holder (no query);
+    - this committee's ACTIVE Chairman or Secretary (their seats found by the
+      lookup KEYS, `OFFICER_SEAT_KEYS`, never a label), one indexed query;
+    - a head or acting cover in force whose oversight covers the committee (the
+      existing `overseesCommittee()` clause), asked only when the first two said
+      no.
+    - **Anyone else who may read the history** (its other members) gets each row
+      with `reason: null` and `reasonWithheld: true`, and the screen says
+      "Reason not shown" / «السبب غير معروض». The screen only renders what it
+      gets.
+    - Decided once per read, never per row.
+    - `CommitteesService.listMembershipEvents()` is deleted: no route called it,
+      and it returned every reason unfiltered.
+    - The Remove dialog says who will read it: "Only people who oversee
+      committees, and this committee's Chairman and Secretary, will see this
+      reason."
+    - Spec: `membership-reason-readers.db-spec.ts` (real Postgres):
+      - a member gets null;
+      - the Chairman, the Secretary, a `committees:view` holder and the unit
+        head with oversight read it;
+      - an inactive Chairman does not;
+      - an acting cover in force reads it; an ended cover and an INACTIVE head
+        (both plain members) do not;
+      - oversight from a parent unit reads a sub-unit committee's reason;
+      - a Chairman seat renamed through an override still counts (key, not
+        label);
+      - another organisation's reason reaches nobody.
+      Mutation-checked.
+  - **Where it goes:**
+    - **Panel:** on line 2, after the change and a separator, labelled
+      "Reason:" / «السبب:». The change keeps up to 55% of the line and the
+      reason takes the rest; each is cut with an ellipsis and keeps its whole
+      text in a tooltip.
+    - **Why not a third line:** the panel's rows are a fixed two lines
+      (`am-capped-panel`), and a third line would push the fifth row out of the
+      body.
+    - **See all:** under the change, in the same cell, and it WRAPS (never cut),
+      so keyboard and touch readers get all of it.
+    - **Direction:** the reason is in a `bdi dir="auto"`, so an Arabic reason in
+      English (or the reverse, or mixed) keeps its own direction.
+  - **When nothing extra shows:**
+    - a removal from before ACC-298 (no reason): no separator, no "—";
+    - a seat the app ended (any `cause`, ACC-306): said from its cause, never
+      from a stored reason;
+    - a JOINED row.
+  - **Search:** See all's search matches the reason.
+  - **Measured** at 1280 (the page's 988px content column, one of three panel
+    columns, 321px wide) in both languages, with a long reason beside a long
+    seat: body 294 / 328, rows 52 / 58, and the reason on one cut line 122px
+    wide (`committee-membership-history-panel.layout.spec.ts`).
+  - Mutation-checked.
 
 ### 3.21.3 Telling a committee after a member is transferred (ACC-297)
 
