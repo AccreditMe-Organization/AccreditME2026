@@ -17711,7 +17711,9 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     corrections" in the round;
   - "No corrections" after suggesting is `MEETING_REVIEW_SUGGESTED`.
   - Apply and decline are the recorders', under `apply_suggestions`. A declined
-    suggestion's author is told, with the reply.
+    suggestion's author is told, with the reply. **A decline needs a reply**
+    (PR 7c-1, P212): trimmed, and an empty one is
+    `MEETING_SUGGESTION_REPLY_REQUIRED` (400), refused before any write.
 - **Approve Minutes is held** by `TRANSITION_PRECONDITIONS` MEETING (a move that
   enters `MINUTES_FINAL`), in this order:
   1. the review is open: not every present member answered, and the date has
@@ -18097,3 +18099,45 @@ languages, each keeping 20px:
 |---|---|
 | Raise action item (empty, every error, filled, refused) | 288 / 285 at 390; 271 / 285 at 1280 |
 | Distribute Minutes (ready, refused, five missing) | 177 / 190 |
+
+### 18.18 The screens, part 2c: the review (PR 7c-1)
+
+Plan §6.8. Frontend under `foundation/meetings/`, on the routes of §18.13. Every
+review write answers with nothing, so the page reads the minutes again after
+one; Return for Correction moves the stage, so the page reads the meeting.
+
+**Who sees what, from the server's flags only:**
+
+- **The review banner** (`am-meeting-review-banner`), "Review the minutes by
+  {date}": `may.review` (a member recorded present, while the stage takes
+  corrections). It says the person's own answer (`review.mine`); after "No
+  corrections" it offers only Suggest, which the server allows (it replaces the
+  answer). This round's changes are named by item ("item 2, decision").
+- **The Review card** (`am-meeting-review-card`): whenever the minutes are in
+  review or approved and a round has run. Whoever has the minutes read (§4.1)
+  sees it: who answered, the open suggestions, the date, each reviewer, and the
+  suggestions about the minutes as a whole.
+- **Suggestions about an item** sit under that item. Whoever may apply
+  suggestions (`may.applySuggestions`) gets **Edit to apply** and **Decline…**;
+  on the card, **Mark applied** and **Decline…** for the whole-minutes ones.
+- **Return for Correction**: `may.returnForCorrection`, beside the moves.
+
+**Edit to apply** (P212) opens the item's discussion and decision editors (the
+server allows those writes in review under `apply_suggestions`, recording a
+review change). The write goes FIRST; only once it succeeds is the suggestion
+marked applied (`…/apply`). A failed write applies nothing; a failed apply says
+the edit was saved, with Retry for the apply alone.
+
+**The dialogs:**
+
+- **Suggest a correction** (`app-meeting-suggest-dialog`): About (an item, or
+  the minutes as a whole, sent as no item) and the suggestion, required.
+- **Decline this suggestion?** (`app-meeting-decline-dialog`): the suggestion
+  quoted, and a REQUIRED reply its author reads; the server refuses an empty
+  one too.
+- **Return for Correction?** (`app-meeting-return-dialog`): who is told (the
+  present members, as the server tells them), the answers so far, and an
+  optional reason.
+
+Measured under the 420px cap at 1280 and 390, in both languages, each keeping
+20px (`meeting-review-dialogs.layout.spec.ts`).
