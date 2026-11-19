@@ -1639,11 +1639,24 @@ them together with their resolver.
          wording.
        - **No seeded meeting type adds a standing item**; standing items come
          only from a series' own standing agenda.
-7. **PR 7: screens, part 2.**
-   - Attendance (tablet), minutes, votes, action item drafts, open actions, the
-     review banner and suggestions, the Review card, Approve and Return, Home's
-     rows, print, phone.
-   - **Live after:** the whole single meeting, to approved minutes and tasks.
+7. **PR 7: screens, part 2.** Split (P201, 19 Nov): #374 shipped its agenda
+   and invitee half (§6.6). The rest is PR 7b to 7d, which this item now names:
+   - **PR 7b, the meeting held and its minutes drafted:**
+     - "Open actions from the last meeting" / «الإجراءات المفتوحة من الاجتماع
+       السابق», the agenda's fixed first section: read from the last
+       meeting's tasks, never moved, edited or removed, no papers; the
+       Secretary's note on each in Minutes Draft;
+     - attendance (tablet), the quorum line, "Quorum not met" on decisions;
+     - the minutes: each item's discussion, decisions with votes, action item
+       drafts (Raise action item);
+     - Distribute Minutes, with what still holds it.
+   - **PR 7c, review and approval:** the review banner (No corrections /
+     Suggest a correction), suggestions applied or declined, the Review card,
+     Return for Correction, Approve Minutes with "Can't move to Minutes
+     Approved yet" from `blockedBy`, and Home's Awaiting rows.
+   - **PR 7d, print and phone:** the approved minutes on A4, and the phone
+     (390) pass over every meeting screen.
+   - **Live after 7d:** the whole single meeting, to approved minutes and tasks.
 8. **PR 8: screens, part 3, series.**
    - Step 2 Repeat with its preview, the series line and view, the scope
      confirm, End series.
