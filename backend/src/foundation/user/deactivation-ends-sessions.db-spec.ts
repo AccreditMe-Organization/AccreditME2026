@@ -40,6 +40,7 @@ import { StagePoolService } from '../workflow/stage-pool.service';
 import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { TENANT_ADMIN_KEY } from '../roles/tenant-administrator.invariant';
 import { UserService } from './user.service';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -86,6 +87,8 @@ describe('Deactivation ends every sign-in, against a real database (ACC-216, CC-
     pools,
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
     new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
+    // ACC-306 — the real seat ending (no seat here unless a test gives one).
+    new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
   );
 
   interface Org {

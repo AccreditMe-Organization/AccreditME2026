@@ -2120,6 +2120,10 @@ model CommitteeMembershipEvent {
   effectiveDate  DateTime
   reason         String?
   approvedBy     String? // userId — nullable, not every event needs approval
+  // ACC-306 — why a seat ended when it was not ended by hand. null = a person
+  // changed it (add, remove, reseat); DEACTIVATION = the holder's account was
+  // deactivated, which ends every seat they held (CommitteeSeatDepartureService).
+  cause          CommitteeMembershipCause?
   createdAt      DateTime                  @default(now())
 
   committee Committee @relation(fields: [committeeId], references: [id])
@@ -2181,6 +2185,11 @@ enum CommitteeMembershipAction {
   JOINED
   LEFT
   ROLE_CHANGED
+}
+
+// ACC-306 — what ended a seat other than a person's own change (null on the event).
+enum CommitteeMembershipCause {
+  DEACTIVATION
 }
 
 // ---------------------------------------------------------------------------

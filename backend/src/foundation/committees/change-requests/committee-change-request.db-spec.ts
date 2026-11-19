@@ -53,6 +53,7 @@ import type { CommitteeTransferNoticeService } from '../transfer-notice/committe
 import { TENANT_ADMIN_KEY } from '../../roles/tenant-administrator.invariant';
 import { findUnitHeadedBy, findUnitsCoveredBy } from '../../organization/unit-headship';
 import { SEAT_ACTIONS } from '../seat-actions';
+import { CommitteeSeatDepartureService } from '../../committees/departure/committee-seat-departure.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -1509,6 +1510,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         new StagePoolService(prisma),
         { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
         departure,
+        // ACC-306 — the real seat ending: these people hold no committee seat ended here.
+        new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
       );
       const signIn = (w: World, userId: string) =>
         prisma.refreshToken.create({
