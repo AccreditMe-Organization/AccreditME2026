@@ -7931,6 +7931,61 @@ merge in the defaults each turn a spec red.
 **One additive migration:** `20261116120000_acc283_committee_seat_actions` (the
 table).
 
+### 3.21.6 A deactivated person's committee seats end (ACC-306)
+
+Plan, the readers' inventory and the open business answers:
+`backend/Plans/step-306-committee-seats-on-deactivation.md`. Built on the plan's
+recommendations before Ahmad confirmed them (P163). Each answer is one switch in
+`SEAT_DEPARTURE_POLICY` (`committees/departure/committee-seat-departure.service.ts`).
+
+- **What ends.** `UserService.deactivate()` ends every active membership the
+  person holds on an **active** committee, whatever its stage (Formation, Terms
+  Review, Active, Suspended, Dissolution Pending). This happens inside the
+  deactivation's own transaction.
+  - **Left as they were:**
+    - a committee whose current stage is **final and DISSOLVING** (Dissolved), because its roster is a closed record (ACC-255 Q-A);
+    - an inactive committee;
+    - a seat already left.
+- **How it is recorded.** Per seat:
+  - **The membership row:** `leftAt` = the deactivation's time, and `isActive: false`.
+  - **One `LEFT` event:** `CommitteeMembershipEvent` with `cause: DEACTIVATION` (a nullable column; null for every change a person makes), `approvedBy` = the person deactivating, and `reason: null`.
+  - **In the same transaction, batched:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`, so a rolled-back deactivation leaves no audit row for a seat it did not end (P167).
+  - **On the person's own `deactivated` audit row:** `endedCommitteeSeats: n`.
+- **Never blocked.** The ending checks:
+  - no stage rule;
+  - no ACC-286 rule 3 (the last Chairman of a committee in force still ends; Setup health's "missing a required seat" then lists it, as it already did for an inactive holder);
+  - no quorum.
+
+  Only the deactivation's existing refusals (account owner, last administrator, root unit's head) stop it, and the seats roll back with them.
+- **The hook** (`CommitteeSeatDepartureService`, the ACC-283 PR 2b shape):
+  - **`prepare()`:** before the transaction, while the person is ACTIVE. One indexed query, scoped by organisation.
+  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal (P167):
+    - it re-reads the person's active seats on active committees by `userId`, so a seat added since `prepare()` is ended too;
+    - it takes EVERY committee involved (prepared, or added since) FOR UPDATE in one sorted statement;
+    - under the lock, it skips a committee that is now inactive;
+    - it reads the seats again (a seat removed by hand meanwhile is skipped);
+    - then one `updateMany` and one `createMany` each for the events and the audit rows.
+    - **The Dissolved check stays `prepare()`'s.** A committee that reaches Dissolved inside that window has its seats ended, because re-reading its stage there would take its workflow instance after its row, an edge no other path has.
+  - **`finish()`:** after commit. The officers' notices only; it never throws.
+- **Lock order.** After everything the deactivation already locks, each committee's **row** only, never its workflow instance (no stage rule is read). The other paths that lock these rows:
+  - member writes: the instance FOR SHARE, then the row;
+  - going live: the instance, then the row FOR SHARE;
+  - change-request approve: the request's instance, the committee's, then its row.
+
+  So no cycle is closed. This is proved against a real database with all four running at once (`committee-seat-departure.db-spec.ts`).
+- **Who is told.**
+  - **Each committee's officers**, by ACC-297's rule, now one shared function (`committees/committee-audience.ts`: `committeeAudiences()`, `committeeReaders()`, with `recipientsByCommittee()`). That means the chair and secretary, and the owning unit's head (or the cover in force instead). Never the leaver or the actor, and ACTIVE people only.
+  - **How:** one in-app notice per recipient (`departureNoticeText()`, both languages, gender-neutral Arabic), after commit. A committee is named and linked only for a reader who may open it.
+  - **The other admins' departure notice** gains a counted clause: "3 committee seats ended." / «انتهت 3 عضويات في اللجان.»
+- **Reactivation restores nothing.** `addMember()` reuses the row (ACC-32) with a `JOINED` event.
+- **The transfer notice** (3.21.3) reads `cause`: a seat a deactivation ended reads "the Secretary seat ended when the account was deactivated", never "removed as part of the transfer".
+- **Membership history** returns `cause` on each event. The screen's wording is PR 2.
+- **What it changes for the readers** (plan §1.2): the readers that already ignore an inactive member are unchanged. These stop showing the person:
+  - the Members panel and the committee list counts;
+  - Home's below-quorum count;
+  - the person's own Committees panel.
+- **Existing data:** 0 active seats held by an inactive person on the shared database (19 Nov), so there is no backfill. One additive migration (`acc306_membership_event_cause`).
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
@@ -16891,7 +16946,7 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
@@ -17376,3 +17431,81 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
   press its APP move.
 - `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
 - `WorkingCalendarService.previousWorkingDay()`.
+
+### 18.14 Series (PR 5)
+
+Plan §3.2, §3.10. Code: `meeting-series-dates.ts` (the pattern, plain rules),
+`meeting-series.service.ts`, `meeting-create.ts` (one meeting written, shared
+with `schedule()`).
+
+- **Who:** whoever schedules for the owner (`MEETING_SCHEDULERS`), as for one
+  meeting. A committee's series needs its stage to allow `schedule_meeting`.
+- **The pattern** (Gregorian, on days in the organisation's zone):
+  - weekly or every two weeks on a weekday;
+  - monthly, or every 3, 6 or 12 months, on a day of the month (a missing day
+    falls on the month's last) or on the first to fourth, or last, weekday.
+
+  Refused under the field: `MEETING_SERIES_PATTERN_INVALID`,
+  `MEETING_SERIES_END_REQUIRED` (exactly one of `endsOn` and `count`),
+  `MEETING_SERIES_TOO_LONG` (past twelve months from today, with `limit`),
+  `MEETING_SERIES_EMPTY`, `MEETING_SERIES_TIME_INVALID`.
+- **At most 53 meetings**, weekly for twelve months, both ends included.
+- **Each day is moved** to the next working day (`WorkingCalendarService`:
+  weekend and holidays), then past any day the owner already has a meeting that
+  isn't cancelled (one read of the owner's meetings, their stages in one batch).
+  The preview says `moved`: `NOT_WORKING_DAY` or `OWNER_MEETS`.
+- **Titles,** in the organisation's language: `subject · October 2026` for
+  monthly and longer, from the pattern's month; `subject · 22 Oct 2026` for
+  weekly, from the day held. Each is the meeting's own.
+- **`POST /meetings/series/preview`** gives the dates and their clashes, in one
+  batched query (`MeetingClashService`, cap 53), and writes nothing.
+- **The start is the wall-clock time in the organisation's zone** on each day
+  (`set({ hour, minute })`), so a clock change never moves a meeting by an hour.
+- **`POST /meetings/series`:**
+  - the series and every meeting are written in ONE transaction, each meeting
+    with its MEMBER invitees, its instance at Planned and its audit row;
+  - its engine reads come first and once: the template and first stage
+    (`WorkflowService.prepareInstanceStarts()`, shared while the stage creates
+    no task and snapshots no quorum; otherwise five records at a time). The
+    owner's invitees are read once, inside the transaction. The writes are
+    batched (`insertMeetingsInTx()`: the rows, the invitees, the agenda items and
+    the audit rows each in one write; the instances one by one);
+  - after the commit, each meeting's notices are sent on their own: one that
+    fails is logged, and the answer is still the series;
+  - the standing agenda is copied into each meeting as `standing` items, and a
+    presenter not yet invited becomes an organisation guest
+    (`addedAsPresenter`);
+  - the reads (each instance's prepare) come first, and the notices after the
+    commit.
+- **This only:** an edit or reschedule of a series meeting adds what it changed
+  to that meeting's `ownEdits`.
+- **This and all later** (`scope: THIS_AND_LATER`):
+  - it reaches this meeting and every later one of the series that hasn't
+    started and whose stage allows the action (Planned, Agenda Issued);
+  - each is locked in id order: its instance FOR SHARE, then its row FOR
+    UPDATE;
+  - a later meeting's own edit is kept, and the answer's `scope.kept` names it;
+  - an edit carries the type, duration, place, link and quorum, never the
+    title;
+  - a reschedule moves each by the anchor's move AS PEOPLE READ IT, in the
+    organisation's zone: the same number of calendar days and the same change
+    of wall-clock time, from its time read under its lock (never elapsed time,
+    so a clock change between two meetings keeps their hour). It then places it
+    as creation places a day: off a day that
+    isn't a working day, and past a day the owner already meets (a meeting not
+    moving and not cancelled). One `MeetingReschedule` (`THIS_AND_LATER`) each.
+    The invitees of each are told after the commit.
+  - an edit sends no notice, as a single meeting's edit sends none.
+- **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
+  - first, the caller must be in the pool of every later open meeting's stage
+    (Cancel Meeting is a person's move, both its stages this organisation's);
+    otherwise 403
+    `MEETING_SERIES_CANNOT_CANCEL`, naming them, and nothing is written;
+  - each later meeting still in Planned or Agenda Issued is cancelled by its
+    own Cancel Meeting, so each tells its invitees; one that fails is logged with
+    its id and code, named in `failed`, and the rest go on;
+  - `endedAt` and `endReason` are stamped only when nothing failed. A re-run
+    finishes what is left; on an ended series it writes nothing.
+- **Organisation scoping:** another organisation's series is
+  `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
+  `seriesId` filter lists nothing of theirs.

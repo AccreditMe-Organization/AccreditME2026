@@ -21,7 +21,9 @@ export type TransferNoticeLine =
   | { kind: 'HOLDS'; committee: Named | null; seat: Named | null }
   | { kind: 'REMOVED_IN_TRANSFER'; committee: Named | null; seat: Named | null }
   | { kind: 'REMOVED_WITH_REASON'; committee: Named | null; seat: Named | null; reason: string }
-  | { kind: 'REMOVED_NO_REASON'; committee: Named | null; seat: Named | null };
+  | { kind: 'REMOVED_NO_REASON'; committee: Named | null; seat: Named | null }
+  // ACC-306 — the seat ended because the account was deactivated, not by a person's removal.
+  | { kind: 'ENDED_BY_DEACTIVATION'; committee: Named | null; seat: Named | null };
 
 export interface TransferNoticeFacts {
   personName: string;
@@ -54,6 +56,8 @@ function lineEn(line: TransferNoticeLine, unitEn: string): string {
       return `${committee}: was removed from ${seat}. Reason given: "${line.reason}".`;
     case 'REMOVED_NO_REASON':
       return `${committee}: was removed from ${seat}; no reason was given.`;
+    case 'ENDED_BY_DEACTIVATION':
+      return `${committee}: the ${seat} seat ended when the account was deactivated.`;
   }
 }
 
@@ -69,6 +73,8 @@ function lineAr(line: TransferNoticeLine, unitAr: string): string {
       return `${committee}: أُنهيت العضوية بصفة ${seat}. السبب المذكور: «${line.reason}».`;
     case 'REMOVED_NO_REASON':
       return `${committee}: أُنهيت العضوية بصفة ${seat} دون ذكر سبب.`;
+    case 'ENDED_BY_DEACTIVATION':
+      return `${committee}: انتهت العضوية بصفة ${seat} بإلغاء تفعيل الحساب.`;
   }
 }
 
