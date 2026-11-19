@@ -86,6 +86,7 @@ import { TaskVisibilityService } from './task-visibility.service';
     // ACC-313 — the due-soon reminder, run by the SLA monitor.
     TaskDueWarningService,
   ],
-  exports: [TaskService, TaskRequestService, TaskDueWarningService],
+  // ACC-316 PR 7b — TaskAdmissionService: the meeting's open actions link a task only where its page would open.
+  exports: [TaskService, TaskRequestService, TaskDueWarningService, TaskAdmissionService],
 })
 export class TaskModule {}

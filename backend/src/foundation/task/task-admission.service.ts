@@ -87,6 +87,18 @@ export class TaskAdmissionService {
     return access ? { task, access } : null;
   }
 
+  /**
+   * ACC-316 PR 7b — which of these tasks the task page would open for this
+   * viewer, batched: the same rule admit() asks of one row (its gate is the
+   * visibility rule), at a fixed number of queries for any number of ids. For
+   * a list that links each task's title only where the page would open it.
+   */
+  async admittedIds(taskIds: readonly string[], viewer: TaskViewer, organizationId: string, now: Date = new Date()): Promise<Set<string>> {
+    if (taskIds.length === 0) return new Set();
+    const ctx = await this.visibility.contextFor(viewer, organizationId, now);
+    return this.visibility.visibleIds(ctx, taskIds);
+  }
+
   private read(taskId: string, organizationId: string) {
     return this.prisma.task.findFirst({ where: { id: taskId, organizationId }, include: ADMISSION_INCLUDE });
   }
