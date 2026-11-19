@@ -222,8 +222,9 @@ export class MeetingService {
     return this.http.delete<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda/${itemId}`);
   }
 
-  orderAgenda(id: string, itemIds: string[]): Observable<MeetingAgendaItemDto[]> {
-    return this.http.put<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda/order`, { itemIds });
+  /** The new order, and the order the person saw (`expectedItemIds`): a different agenda now is MEETING_AGENDA_CHANGED. */
+  orderAgenda(id: string, itemIds: string[], expectedItemIds: string[]): Observable<MeetingAgendaItemDto[]> {
+    return this.http.put<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda/order`, { itemIds, expectedItemIds });
   }
 
   files(id: string): Observable<MeetingFilesDto> {

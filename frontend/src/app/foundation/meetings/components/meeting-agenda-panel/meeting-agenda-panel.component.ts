@@ -1,11 +1,11 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, ElementRef, afterEveryRender, computed, inject, input, output, signal } from '@angular/core';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { MeetingService, type MeetingAgendaItemDto, type MeetingAttendeeDto, type MeetingDto, type MeetingFileDto } from '../../services/meeting.service';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingAgendaItemDialogComponent } from '../meeting-agenda-item-dialog/meeting-agenda-item-dialog.component';
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
 
@@ -49,7 +49,7 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
                 class="am-agenda__handle"
                 [attr.aria-label]="'meeting.agenda.reorder' | translate: { n: format.number(i + 1), title: item.title }"
                 [attr.aria-keyshortcuts]="'ArrowUp ArrowDown'"
-                [disabled]="busy()"
+                [attr.aria-disabled]="busy() || null"
                 (keydown)="moveByKey($event, i)"
                 data-testid="meeting-agenda-handle"
               >
@@ -84,7 +84,17 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
         }
       </ol>
       @if (error()) {
-        <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-agenda-error">{{ error()! | translate }}</p>
+        <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-agenda-error">
+          {{ error()! | translate }}
+          @if (needsReload()) {
+            <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-testid="meeting-agenda-reload" (onClick)="reload.emit()" />
+          }
+        </p>
+      } @else if (readError()) {
+        <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-agenda-read-error">
+          {{ readError()! | translate }}
+          <p-button size="small" [text]="true" [label]="'common.retry' | translate" data-testid="meeting-agenda-read-retry" (onClick)="retryRead.emit()" />
+        </p>
       }
       <p class="sr-only" aria-live="polite">{{ announcement() }}</p>
     </section>
@@ -96,6 +106,7 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
       [position]="editingPosition()"
       [attendees]="attendees()"
       (saved)="onSaved($event)"
+      (reload)="reload.emit()"
     />
   `,
   styles: [
@@ -134,6 +145,9 @@ export class MeetingAgendaPanelComponent {
   private readonly meetings = inject(MeetingService);
   private readonly language = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** The item whose handle had focus when it was moved by key: focused again once its row is redrawn in its new place. */
+  private refocus: { id: string; at: number } | null = null;
   readonly format = inject(FormatService);
 
   readonly meeting = input.required<MeetingDto>();
@@ -146,13 +160,30 @@ export class MeetingAgendaPanelComponent {
   readonly itemsChange = output<MeetingAgendaItemDto[]>();
   /** A paper was added or removed: the page reads the files again. */
   readonly filesChanged = output<void>();
+  /** A read the page made after a write failed (the files or the invitees): said here, with Retry. */
+  readonly readError = input<string | null>(null);
+  readonly retryRead = output<void>();
+  /** The agenda on screen is stale: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
+  /** The refusal says the agenda on screen is stale: Reload, never Retry (P198). */
+  readonly needsReload = signal(false);
   readonly announcement = signal('');
   readonly dialogOpen = signal(false);
   readonly editing = signal<MeetingAgendaItemDto | null>(null);
   readonly editingPosition = signal<number | null>(null);
+
+  constructor() {
+    afterEveryRender(() => {
+      const r = this.refocus;
+      if (!r || this.items()[r.at]?.id !== r.id) return;
+      this.refocus = null;
+      const handle = this.handleOf(r.id);
+      if (handle && document.activeElement !== handle) handle.focus();
+    });
+  }
 
   /** "60 of 90 min planned": the items' durations against the meeting's, when it has one. */
   readonly planned = computed(() => {
@@ -188,6 +219,7 @@ export class MeetingAgendaPanelComponent {
 
   onSaved(items: MeetingAgendaItemDto[]): void {
     this.error.set(null);
+    this.needsReload.set(false);
     this.itemsChange.emit(items);
   }
 
@@ -196,7 +228,11 @@ export class MeetingAgendaPanelComponent {
     this.reorder(event.previousIndex, event.currentIndex);
   }
 
-  /** The handle's keys: ArrowUp and ArrowDown move the item one place. */
+  /**
+   * The handle's keys: ArrowUp and ArrowDown move the item one place. While a
+   * move is saving the handle is aria-disabled, never disabled, so it keeps
+   * focus; its keys are ignored until the move is done.
+   */
   moveByKey(event: KeyboardEvent, index: number): void {
     const to = event.key === 'ArrowUp' ? index - 1 : event.key === 'ArrowDown' ? index + 1 : null;
     if (to === null) return;
@@ -206,21 +242,33 @@ export class MeetingAgendaPanelComponent {
   }
 
   private reorder(from: number, to: number): void {
-    const ids = this.items().map((i) => i.id);
+    // The order the person saw goes with the new one: the server refuses if the
+    // agenda changed since (MEETING_AGENDA_CHANGED), so nothing is lost silently.
+    const seen = this.items().map((i) => i.id);
+    const ids = [...seen];
     moveItemInArray(ids, from, to);
     const moved = this.items()[from]!;
+    const hadFocus = this.handleOf(moved.id) === document.activeElement;
     this.busy.set(true);
     this.error.set(null);
-    this.meetings.orderAgenda(this.meeting().id, ids).subscribe({
+    this.needsReload.set(false);
+    this.meetings.orderAgenda(this.meeting().id, ids, seen).subscribe({
       next: (items) => {
         this.busy.set(false);
         this.itemsChange.emit(items);
         this.announcement.set(this.translate.instant('meeting.agenda.moved', { title: moved.title, n: this.format.number(to + 1) }));
+        // Moving a row in the DOM drops focus from it: put it back once the row is in its new place.
+        if (hadFocus) this.refocus = { id: moved.id, at: to };
       },
       error: (err: unknown) => {
         this.busy.set(false);
+        this.needsReload.set(meetingNeedsReload(err));
         this.error.set(meetingRefusalKey(err) ?? 'meeting.agenda.orderError');
       },
     });
+  }
+
+  private handleOf(itemId: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(`[data-agenda-item="${itemId}"] [data-testid="meeting-agenda-handle"]`);
   }
 }

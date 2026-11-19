@@ -174,6 +174,9 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
               [canManage]="m.may.manageAgenda"
               (itemsChange)="onAgendaChange($event)"
               (filesChanged)="loadFiles()"
+              [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
+              (retryRead)="retryRead()"
+              (reload)="load()"
             />
             <!-- General attachments: absent while empty for someone who may not add one. -->
             @if (m.may.manageAgenda || files().attachments.length > 0) {
@@ -354,6 +357,10 @@ export class MeetingPageComponent {
     this.load();
   }
 
+  /** A re-read after a write that failed: said in the agenda panel, with Retry (P198). */
+  readonly readFailed = signal<'files' | 'attendees' | null>(null);
+  readonly readErrorKey = { files: 'meeting.files.loadFailed', attendees: 'meeting.invitees.loadFailed' } as const;
+
   load(): void {
     forkJoin({
       meeting: this.meetings.get(this.id),
@@ -369,6 +376,7 @@ export class MeetingPageComponent {
         this.attendees.set(attendees);
         this.agenda.set(agenda);
         this.files.set(files);
+        this.readFailed.set(null);
         this.instance.set(instances[0] ?? null);
         this.state.set('ready');
       },
@@ -386,16 +394,39 @@ export class MeetingPageComponent {
   /** The agenda as the server returns it after a write; a new presenter may be a new invitee. */
   onAgendaChange(items: MeetingAgendaItemDto[]): void {
     this.agenda.set(items);
-    this.meetings.attendees(this.id).subscribe({ next: (a) => this.attendees.set(a) });
+    this.loadAttendees();
+  }
+
+  /** A presenter may have been added as a guest: the invitees are read again, and a failure is said. */
+  loadAttendees(): void {
+    this.meetings.attendees(this.id).subscribe({
+      next: (a) => {
+        this.attendees.set(a);
+        if (this.readFailed() === 'attendees') this.readFailed.set(null);
+      },
+      error: () => this.readFailed.set('attendees'),
+    });
   }
 
   loadFiles(): void {
-    this.meetings.files(this.id).subscribe({ next: (f) => this.files.set(f) });
+    this.meetings.files(this.id).subscribe({
+      next: (f) => {
+        this.files.set(f);
+        if (this.readFailed() === 'files') this.readFailed.set(null);
+      },
+      error: () => this.readFailed.set('files'),
+    });
+  }
+
+  /** Retry the read that failed after a write. */
+  retryRead(): void {
+    if (this.readFailed() === 'files') this.loadFiles();
+    else if (this.readFailed() === 'attendees') this.loadAttendees();
   }
 
   /** "Attending", "Can't attend" or "No answer", at the end of each invitee's row. */
   answerLabel(a: MeetingAttendeeDto): string {
-    return a.answer === 'ATTENDING' ? 'meeting.answer.attending' : a.answer === 'CANT_ATTEND' ? 'meeting.answer.cant_attend' : 'meeting.invitees.noAnswer';
+    return a.answer === 'ATTENDING' ? 'meeting.invitees.attending' : a.answer === 'CANT_ATTEND' ? 'meeting.invitees.cantAttend' : 'meeting.invitees.noAnswer';
   }
 
   onMoved(instance: WorkflowInstanceDto): void {

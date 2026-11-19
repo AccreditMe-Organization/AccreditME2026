@@ -23,6 +23,9 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
   let attendees: MeetingAttendeeDto[];
   let answer: jasmine.Spy;
   let removeGuest: jasmine.Spy;
+  let attendeesRead: () => Observable<MeetingAttendeeDto[]>;
+  let filesRead: () => Observable<{ attachments: never[]; papers: never[] }>;
+  let gets: number;
 
   function create() {
     TestBed.configureTestingModule({
@@ -38,10 +41,13 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
         {
           provide: MeetingService,
           useValue: {
-            get: () => meeting(),
-            attendees: () => of(attendees),
+            get: () => {
+              gets++;
+              return meeting();
+            },
+            attendees: () => attendeesRead(),
             agenda: () => of([]),
-            files: () => of({ attachments: [], papers: [] }),
+            files: () => filesRead(),
             answer,
             removeGuest,
           },
@@ -65,6 +71,9 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     ];
     answer = jasmine.createSpy('answer').and.returnValue(of(undefined));
     removeGuest = jasmine.createSpy('removeGuest').and.returnValue(of(undefined));
+    attendeesRead = () => of(attendees);
+    filesRead = () => of({ attachments: [], papers: [] });
+    gets = 0;
   });
 
   const q = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`);
@@ -133,6 +142,16 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       expect([answerOf('a-yes'), answerOf('a-no'), answerOf('a-none')]).toEqual(['Attending', "Can't attend", 'No answer']);
       expect(el.querySelector('[data-attendee="a-yes"] [data-attendee-note]')?.textContent?.trim()).toBe('Joining from the clinic');
       expect(el.querySelector('[data-attendee="a-no"] [data-attendee-note]')).toBeNull();
+    });
+
+    it('in Arabic a row says a status, not the first-person answer buttons (P199)', () => {
+      attendees = [anAttendee({ id: 'a-yes', answer: 'ATTENDING' }), anAttendee({ id: 'a-no', answer: 'CANT_ATTEND' }), anAttendee({ id: 'a-none', answer: null })];
+      const { el, fixture } = create();
+      TestBed.inject(TranslateService).use('ar');
+      fixture.detectChanges();
+      const answerOf = (id: string) => el.querySelector(`[data-attendee="${id}"] [data-attendee-answer]`)?.textContent?.trim();
+      expect([answerOf('a-yes'), answerOf('a-no'), answerOf('a-none')]).toEqual(['حضور', 'اعتذار', 'بلا رد']);
+      expect(q(el, 'meeting-answer-attending')?.textContent?.trim()).toBe('سأحضر');
     });
 
     it("a guest's remove is the muted row icon, named for the guest", () => {
@@ -210,6 +229,37 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     });
     it('any other move is pressed at once', () => {
       expect(create().c.confirmFor(move({ needsReason: false, toStageFlags: [] }))).toBeNull();
+    });
+  });
+
+  describe('after an agenda write (P198)', () => {
+    it('invitees that fail to load again are said in the agenda panel, with Retry, which reads them again', () => {
+      const { el, fixture, c } = create();
+      let fail = true;
+      attendeesRead = () => (fail ? throwError(() => new HttpErrorResponse({ status: 500 })) : of(attendees));
+      c.onAgendaChange([]);
+      fixture.detectChanges();
+      expect(q(el, 'meeting-agenda-read-error')?.textContent).toContain(en.meeting.invitees.loadFailed);
+      fail = false;
+      el.querySelector<HTMLElement>('[data-testid="meeting-agenda-read-retry"] button')!.click();
+      fixture.detectChanges();
+      expect(q(el, 'meeting-agenda-read-error')).toBeNull();
+    });
+
+    it('files that fail to load again are said the same way', () => {
+      const { el, fixture, c } = create();
+      filesRead = () => throwError(() => new HttpErrorResponse({ status: 500 }));
+      c.loadFiles();
+      fixture.detectChanges();
+      expect(q(el, 'meeting-agenda-read-error')?.textContent).toContain(en.meeting.files.loadFailed);
+    });
+
+    it("the panel's Reload reads the whole meeting again", () => {
+      const { fixture } = create();
+      expect(gets).toBe(1);
+      fixture.debugElement.query((d) => d.name === 'am-meeting-agenda-panel').componentInstance.reload.emit();
+      fixture.detectChanges();
+      expect(gets).toBe(2);
     });
   });
 });

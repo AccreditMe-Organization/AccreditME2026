@@ -89,12 +89,70 @@ describe('MeetingAgendaItemDialogComponent (ACC-316 PR 7)', () => {
     expect(c.showErrors()).toBeTrue();
   });
 
-  it("Edit opens on the item's own values and saves it, not a new one", () => {
+  it("Edit opens on the item's own values and sends ONLY what this person changed (P198)", () => {
     const { c } = create(ITEM);
     expect(c.form.getRawValue()).toEqual({ title: 'Isolation rooms', description: 'Status.', presenter: 'attendee:a-1', durationMinutes: 10 });
+    c.form.patchValue({ title: 'Isolation rooms, phase 2' });
     c.submit();
-    expect(update).toHaveBeenCalledWith('m-1', 'i-4', jasmine.objectContaining({ title: 'Isolation rooms' }));
+    // Not the duration, the description or the presenter: someone else may have changed them since.
+    expect(update).toHaveBeenCalledWith('m-1', 'i-4', { title: 'Isolation rooms, phase 2' });
     expect(add).not.toHaveBeenCalled();
+  });
+
+  it('an edit of the presenter and the duration sends those two; a cleared presenter is null', () => {
+    const { c } = create(ITEM);
+    c.form.patchValue({ presenter: 'none', durationMinutes: 20 });
+    c.submit();
+    expect(update).toHaveBeenCalledWith('m-1', 'i-4', { durationMinutes: 20, presenter: null });
+  });
+
+  it('Save with nothing changed sends nothing and closes', () => {
+    const { c } = create(ITEM);
+    const closed = jasmine.createSpy('closed');
+    c.visibleChange.subscribe(closed);
+    c.form.patchValue({ title: '  Isolation rooms  ' });
+    c.submit();
+    expect(update).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalledWith(false);
+  });
+
+  for (const code of ['MEETING_AGENDA_ITEM_NOT_FOUND', 'MEETING_AGENDA_ORDER_MISMATCH', 'MEETING_AGENDA_CHANGED']) {
+    it(`${code}: the dialog offers Reload, never Save again, which closes it and asks the page to read the meeting`, () => {
+      const { c, fixture } = create(ITEM);
+      const closed = jasmine.createSpy('closed');
+      const reload = jasmine.createSpy('reload');
+      c.visibleChange.subscribe(closed);
+      c.reload.subscribe(reload);
+      update.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code } })));
+      c.form.patchValue({ title: 'Changed' });
+      c.submit();
+      fixture.detectChanges();
+      expect(document.querySelector('[data-testid="agenda-item-save"]')).toBeNull();
+      const button = document.querySelector<HTMLElement>('[data-testid="agenda-item-reload"] button')!;
+      expect(button.textContent?.trim()).toBe(en.meeting.agenda.reload);
+      button.click();
+      expect(closed).toHaveBeenCalledWith(false);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('any other refusal keeps Save, with no Reload', () => {
+    const { c, fixture } = create(ITEM);
+    update.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MEETING_PRESENTER_NOT_FOUND' } })));
+    c.form.patchValue({ title: 'Changed' });
+    c.submit();
+    fixture.detectChanges();
+    expect(document.querySelector('[data-testid="agenda-item-reload"]')).toBeNull();
+    expect(document.querySelector('[data-testid="agenda-item-save"]')).not.toBeNull();
+  });
+
+  it('the search for a person is offered only to whoever may add guests; an invitee can still be picked', () => {
+    const { fixture, c } = create();
+    expect(document.querySelector('[data-testid="agenda-item-find-person"]')).not.toBeNull();
+    fixture.componentRef.setInput('meeting', aMeeting({ may: { edit: true, reschedule: true, manageGuests: false, manageAgenda: true, answer: true } }));
+    fixture.detectChanges();
+    expect(document.querySelector('[data-testid="agenda-item-find-person"]')).toBeNull();
+    expect(c.presenterOptions().map((o) => o.value)).toContain('attendee:a-2');
   });
 
   it('Remove asks first, naming the item, and removes only on Accept', () => {

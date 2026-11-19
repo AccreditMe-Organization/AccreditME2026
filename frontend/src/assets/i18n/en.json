@@ -4915,7 +4915,8 @@
       "editNamed": "Edit {{title}}",
       "reorder": "Reorder item {{n}}, {{title}}: use the up and down arrow keys",
       "moved": "{{title}} is now item {{n}}.",
-      "orderError": "The agenda couldn't be reordered."
+      "orderError": "The agenda couldn't be reordered.",
+      "reload": "Reload the meeting"
     },
     "invitees": {
       "title": "Invitees",
@@ -4926,7 +4927,10 @@
       "removeGuest": "Remove {{name}}",
       "removeError": "The guest couldn't be removed.",
       "membersSummary": "Members: {{counts}}",
-      "noAnswer": "No answer"
+      "attending": "Attending",
+      "cantAttend": "Can't attend",
+      "noAnswer": "No answer",
+      "loadFailed": "Couldn't load the invitees."
     },
     "cancel": {
       "title": "Cancel this meeting?",
@@ -4969,7 +4973,7 @@
       "error": "The meeting couldn't be scheduled.",
       "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
       "typesError": "The meeting types couldn't be loaded.",
-      "maybeScheduled": "Check the list before trying again, it may have been scheduled."
+      "maybeScheduled": "It may have been scheduled. Check the list before trying again."
     },
     "when": {
       "back": "← Back to details",
@@ -5044,6 +5048,7 @@
       "agendaTitleRequired": "Give the item a title.",
       "agendaItemNotFound": "This item is no longer on the agenda. Reload the meeting.",
       "agendaOrderMismatch": "The agenda changed since you opened it. Reload the meeting and try again.",
+      "agendaChanged": "The agenda changed since you opened it. Reload the meeting and try again.",
       "presenterNotFound": "That person is no longer available to present."
     },
     "agendaItem": {
@@ -5080,7 +5085,8 @@
       "uploadError": "The file couldn't be added.",
       "openError": "The file couldn't be opened.",
       "removeError": "The file couldn't be removed.",
-      "viewerContext": "From {{name}}"
+      "viewerContext": "From {{name}}",
+      "loadFailed": "Couldn't load the files."
     }
   }
 }

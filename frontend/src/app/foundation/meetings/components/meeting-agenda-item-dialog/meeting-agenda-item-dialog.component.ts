@@ -21,7 +21,7 @@ import {
   type MeetingDto,
   type MeetingGuestCandidatesDto,
 } from '../../services/meeting.service';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 
 /** The durations an item may take, in minutes (the design's "10 min"). */
 export const AGENDA_DURATIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120] as const;
@@ -56,7 +56,9 @@ type Presenter = { kind: 'none' } | { kind: 'attendee'; id: string } | { kind: '
           <am-field [label]="'meeting.agendaItem.presenter' | translate" [control]="form.controls.presenter" [hint]="presenterHint() | translate">
             <div class="flex items-center gap-2">
               <app-overlay-select class="flex-1 min-w-0" [options]="presenterOptions()" optionLabel="label" optionValue="value" formControlName="presenter" [ariaLabel]="'meeting.agendaItem.presenter' | translate" />
-              <p-button type="button" severity="secondary" icon="pi pi-search" [ariaLabel]="'meeting.agendaItem.findPerson' | translate" (onClick)="pickerOpen.set(true)" />
+              @if (meeting().may.manageGuests) {
+                <p-button type="button" severity="secondary" icon="pi pi-search" [ariaLabel]="'meeting.agendaItem.findPerson' | translate" data-testid="agenda-item-find-person" (onClick)="pickerOpen.set(true)" />
+              }
             </div>
           </am-field>
           <am-field [label]="'meeting.agendaItem.duration' | translate" [control]="form.controls.durationMinutes" message="none">
@@ -73,7 +75,11 @@ type Presenter = { kind: 'none' } | { kind: 'attendee'; id: string } | { kind: '
           <p-button class="me-auto" type="button" severity="danger" [text]="true" [label]="'meeting.agendaItem.remove' | translate" [disabled]="saving()" data-testid="agenda-item-remove" (onClick)="askRemove()" />
         }
         <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
-        <p-button type="button" data-testid="agenda-item-save" [label]="'meeting.agendaItem.save' | translate" [loading]="saving()" (onClick)="submit()" />
+        @if (needsReload()) {
+          <p-button type="button" data-testid="agenda-item-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else {
+          <p-button type="button" data-testid="agenda-item-save" [label]="'meeting.agendaItem.save' | translate" [loading]="saving()" (onClick)="submit()" />
+        }
       </div>
     </ng-template>
     <ng-template #pickerBody>
@@ -129,9 +135,13 @@ export class MeetingAgendaItemDialogComponent {
   readonly visibleChange = output<boolean>();
   /** The agenda as the server returns it after a save or a removal. */
   readonly saved = output<MeetingAgendaItemDto[]>();
+  /** The agenda changed under the person: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  /** The refusal says the agenda on screen is stale: Reload, never Retry (P198). */
+  readonly needsReload = signal(false);
   readonly showErrors = signal(false);
   readonly pickerOpen = signal(false);
   /** A person found by name, not yet invited: offered as a presenter beside the invitees. */
@@ -195,6 +205,7 @@ export class MeetingAgendaItemDialogComponent {
         });
         this.presenterValue.set(this.form.controls.presenter.value ?? 'none');
         this.error.set(null);
+        this.needsReload.set(false);
         this.showErrors.set(false);
       });
     });
@@ -241,8 +252,30 @@ export class MeetingAgendaItemDialogComponent {
       presenter: this.presenterBody(),
     };
     const item = this.item();
-    const request = item ? this.meetings.updateAgendaItem(this.meeting().id, item.id, body) : this.meetings.addAgendaItem(this.meeting().id, body);
-    this.run(request);
+    if (!item) {
+      this.run(this.meetings.addAgendaItem(this.meeting().id, body));
+      return;
+    }
+    // An edit sends only what this person changed, so it never writes back
+    // someone else's newer value for a field they did not touch (P198).
+    const changes: Partial<AgendaItemRequest> = {};
+    if (body.title !== item.title) changes.title = body.title;
+    if (body.description !== (item.description ?? null)) changes.description = body.description;
+    if (body.durationMinutes !== (item.durationMinutes ?? null)) changes.durationMinutes = body.durationMinutes;
+    if ((v.presenter ?? 'none') !== (item.presenter ? `attendee:${item.presenter.attendeeId}` : 'none')) changes.presenter = body.presenter;
+    if (Object.keys(changes).length === 0) {
+      this.form.markAsPristine();
+      this.visibleChange.emit(false);
+      return;
+    }
+    this.run(this.meetings.updateAgendaItem(this.meeting().id, item.id, changes));
+  }
+
+  /** Close, and let the page read the meeting again. */
+  reloadMeeting(): void {
+    this.form.markAsPristine();
+    this.visibleChange.emit(false);
+    this.reload.emit();
   }
 
   askRemove(): void {
@@ -269,6 +302,7 @@ export class MeetingAgendaItemDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
+        this.needsReload.set(meetingNeedsReload(err));
         this.error.set(meetingRefusalKey(err) ?? 'meeting.agendaItem.error');
       },
     });

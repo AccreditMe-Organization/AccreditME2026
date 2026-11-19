@@ -4,7 +4,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
@@ -76,7 +76,8 @@ describe('MeetingAgendaPanelComponent (ACC-316 PR 7)', () => {
     const { el, changes } = create(true);
     const handle = el.querySelector<HTMLButtonElement>('[data-agenda-item="i-1"] [data-testid="meeting-agenda-handle"]')!;
     handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-    expect(order).toHaveBeenCalledWith('m-1', ['i-2', 'i-1', 'i-3']);
+    // With the order the person saw, so a reorder made meanwhile is refused, never undone.
+    expect(order).toHaveBeenCalledWith('m-1', ['i-2', 'i-1', 'i-3'], ['i-1', 'i-2', 'i-3']);
     expect(changes[0]!.map((i) => i.id)).toEqual(['i-2', 'i-1', 'i-3']);
   });
 
@@ -90,11 +91,99 @@ describe('MeetingAgendaPanelComponent (ACC-316 PR 7)', () => {
 
   it('a refused reorder is said from its code', () => {
     const { el, fixture, changes } = create(true);
-    order.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_AGENDA_ORDER_MISMATCH' } })));
+    order.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_PRESENTER_NOT_FOUND' } })));
     el.querySelector<HTMLButtonElement>('[data-agenda-item="i-2"] [data-testid="meeting-agenda-handle"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
     fixture.detectChanges();
-    expect(el.querySelector('[data-testid="meeting-agenda-error"]')?.textContent?.trim()).toBe(en.meeting.refusal.agendaOrderMismatch);
+    expect(el.querySelector('[data-testid="meeting-agenda-error"]')?.textContent?.trim()).toBe(en.meeting.refusal.presenterNotFound);
+    expect(el.querySelector('[data-testid="meeting-agenda-reload"]')).toBeNull();
     expect(changes).toEqual([]);
+  });
+
+  for (const [code, key] of [
+    ['MEETING_AGENDA_CHANGED', 'agendaChanged'],
+    ['MEETING_AGENDA_ORDER_MISMATCH', 'agendaOrderMismatch'],
+    ['MEETING_AGENDA_ITEM_NOT_FOUND', 'agendaItemNotFound'],
+  ] as const) {
+    it(`${code}: said, with Reload the meeting, which asks the page to read it again (P198)`, () => {
+      const { el, fixture, c } = create(true);
+      const reload = jasmine.createSpy('reload');
+      c.reload.subscribe(reload);
+      order.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code } })));
+      el.querySelector<HTMLButtonElement>('[data-agenda-item="i-2"] [data-testid="meeting-agenda-handle"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="meeting-agenda-error"]')?.textContent).toContain(en.meeting.refusal[key]);
+      const button = el.querySelector<HTMLElement>('[data-testid="meeting-agenda-reload"] button')!;
+      expect(button.textContent?.trim()).toBe(en.meeting.agenda.reload);
+      button.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("a re-read the page could not make is said in the panel, with Retry (P198)", () => {
+    const { el, fixture, c } = create(true);
+    const retry = jasmine.createSpy('retry');
+    c.retryRead.subscribe(retry);
+    expect(el.querySelector('[data-testid="meeting-agenda-read-error"]')).toBeNull();
+    fixture.componentRef.setInput('readError', 'meeting.files.loadFailed');
+    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="meeting-agenda-read-error"]')?.textContent).toContain(en.meeting.files.loadFailed);
+    el.querySelector<HTMLElement>('[data-testid="meeting-agenda-read-retry"] button')!.click();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  for (const [key, id, expected] of [
+    ['ArrowUp', 'i-3', ['i-1', 'i-3', 'i-2']],
+    ['ArrowUp', 'i-2', ['i-2', 'i-1', 'i-3']],
+    ['ArrowDown', 'i-2', ['i-1', 'i-3', 'i-2']],
+  ] as const) {
+    it(`${key} on ${id}: focus is back on that item's handle once its row is redrawn in its new place (P198)`, () => {
+      const { el, fixture, changes } = create(true);
+      document.body.appendChild(el);
+      try {
+        const handleOf = (x: string) => el.querySelector<HTMLButtonElement>(`[data-agenda-item="${x}"] [data-testid="meeting-agenda-handle"]`)!;
+        handleOf(id).focus();
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+        fixture.componentRef.setInput('items', changes[0]!);
+        fixture.detectChanges();
+        expect(changes[0]!.map((i) => i.id)).toEqual([...expected]);
+        expect(document.activeElement).toBe(handleOf(id));
+      } finally {
+        el.remove();
+      }
+    });
+  }
+
+  it('the handle keeps focus while a move saves and after it, so a second ArrowDown moves the item again (P198)', () => {
+    const { el, fixture, changes } = create(true);
+    document.body.appendChild(el);
+    try {
+      const pending = new Subject<MeetingAgendaItemDto[]>();
+      order.and.returnValue(pending);
+      const handleOf = (id: string) => el.querySelector<HTMLButtonElement>(`[data-agenda-item="${id}"] [data-testid="meeting-agenda-handle"]`)!;
+      handleOf('i-1').focus();
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      // Saving: the handle says it is unavailable, but is never disabled, so the browser keeps focus on it.
+      expect(handleOf('i-1').disabled).toBeFalse();
+      expect(handleOf('i-1').getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(handleOf('i-1'));
+      // A key while saving is ignored.
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      expect(order).toHaveBeenCalledTimes(1);
+
+      pending.next([ITEMS[1]!, ITEMS[0]!, ITEMS[2]!].map((x, i) => ({ ...x, order: i + 1 })));
+      pending.complete();
+      fixture.componentRef.setInput('items', changes[0]!);
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(handleOf('i-1'));
+
+      order.and.callFake((_id: string, ids: string[]) => of(ids.map((id, i) => ({ ...ITEMS.find((x) => x.id === id)!, order: i + 1 }))));
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      expect(order).toHaveBeenCalledTimes(2);
+      expect(order.calls.mostRecent().args).toEqual(['m-1', ['i-2', 'i-3', 'i-1'], ['i-2', 'i-1', 'i-3']]);
+    } finally {
+      el.remove();
+    }
   });
 
   it('with no meeting length, no planned line; with no items, the empty sentence', () => {
