@@ -43,6 +43,8 @@ const TYPE_ORDER: SetupConditionType[] = [
   'STAGE_ON_STARTING_ASSIGNMENT',
   'TASK_WITHOUT_OWNER',
   'COMMITTEE_MISSING_REQUIRED_SEAT',
+  // ACC-307 — beside the other committee condition.
+  'COMMITTEE_BELOW_QUORUM',
   // ACC-261 — first of the storage conditions: nothing can be uploaded at all.
   'STORAGE_NOT_CONFIRMED',
   'STORAGE_ACCESS_WITHDRAWN',

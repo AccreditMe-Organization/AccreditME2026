@@ -9,8 +9,9 @@
  *   EXIT      acts at once          a vote for the move
  *
  * The committee template is provisioned by the seed's own code, and its moves are left
- * exactly as seeded: Approve Committee (Terms Review → Active) keeps `isApprovalPath`
- * false, which used to make one press move the committee alone. Terms Review's RETURN is
+ * exactly as seeded: Approve Committee (Terms Review → Active) was never marked as the
+ * approval path, which used to make one press move the committee alone (that flag,
+ * `isApprovalPath`, is gone since ACC-294). Terms Review's RETURN is
  * the seeded "Revise Terms". The template has no EXIT, so each world adds one, as a tenant
  * can (Terms Review → Dissolved).
  *
@@ -182,9 +183,8 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
   });
 
   describe('"All of them"', () => {
-    it('the seeded Approve (isApprovalPath false): the first press is a vote and the committee waits; the last press moves it', async () => {
+    it('the seeded Approve: the first press is a vote and the committee waits; the last press moves it', async () => {
       const w = await world('ALL', 2);
-      expect(w.moves.approve.isApprovalPath).toBe(false); // as seeded, untouched
 
       expect(await outcome(press(w, 0, w.moves.approve.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.termsId);
@@ -204,9 +204,8 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       expect(await votes(w)).toEqual([{ approverId: w.people[0], decision: 'RETURNED', transitionId: w.moves.revise.id }]);
     });
 
-    it('RETURN still acts at once with isApprovalPath set on it: the flag is not read', async () => {
+    it('RETURN acts at once: the move’s kind decides', async () => {
       const w = await world('ALL', 2);
-      await prisma.workflowTransition.update({ where: { id: w.moves.revise.id }, data: { isApprovalPath: true } });
       expect(await outcome(press(w, 0, w.moves.revise.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.stages.formation);
     });

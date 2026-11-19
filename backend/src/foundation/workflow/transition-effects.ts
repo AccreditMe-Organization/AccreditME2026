@@ -1,5 +1,4 @@
 import type { WorkflowObjectType } from '../../../generated/prisma/client';
-import type { PrismaService } from '../../prisma/prisma.service';
 import type { EngineTx } from './workflow.service';
 import { MEETING_TRANSITION_EFFECTS } from '../meetings/meeting-effects';
 import type { AnyTransitionEffect, TransitionEffectContext, TransitionEffectDeps } from './transition-effect.types';
@@ -41,23 +40,24 @@ export function effectsFor(ctx: Pick<TransitionEffectContext, 'objectType' | 'fr
 /** A move's effects with what each prepared, carried from prepareMove() to finishMove(). */
 export interface PreparedTransitionEffects {
   ctx: TransitionEffectContext;
+  deps: TransitionEffectDeps;
   effects: { effect: AnyTransitionEffect; prepared: unknown }[];
 }
 
-export async function prepareTransitionEffects(prisma: PrismaService, ctx: TransitionEffectContext): Promise<PreparedTransitionEffects> {
+export async function prepareTransitionEffects(deps: TransitionEffectDeps, ctx: TransitionEffectContext): Promise<PreparedTransitionEffects> {
   const effects = effectsFor(ctx);
-  const prepared = await Promise.all(effects.map(async (effect) => ({ effect, prepared: await effect.prepare(prisma, ctx) })));
-  return { ctx, effects: prepared };
+  const prepared = await Promise.all(effects.map(async (effect) => ({ effect, prepared: await effect.prepare(deps, ctx) })));
+  return { ctx, deps, effects: prepared };
 }
 
 export async function applyTransitionEffects(tx: EngineTx, p: PreparedTransitionEffects): Promise<void> {
   for (const entry of p.effects) {
-    const result = await entry.effect.apply?.(tx, p.ctx, entry.prepared);
+    const result = await entry.effect.apply?.(tx, p.ctx, entry.prepared, p.deps);
     // What apply() read under the lock is what finish() acts on.
     if (result !== undefined) entry.prepared = result;
   }
 }
 
-export async function finishTransitionEffects(deps: TransitionEffectDeps, p: PreparedTransitionEffects): Promise<void> {
-  for (const { effect, prepared } of p.effects) await effect.finish?.(deps, p.ctx, prepared);
+export async function finishTransitionEffects(p: PreparedTransitionEffects): Promise<void> {
+  for (const { effect, prepared } of p.effects) await effect.finish?.(p.deps, p.ctx, prepared);
 }

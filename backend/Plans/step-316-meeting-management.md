@@ -1454,6 +1454,44 @@ them together with their resolver.
      - Home's review and answer rows.
    - **No migration.**
    - **Live after:** the API.
+   - **6.3 PR 4 as built (19 Nov):** SYSTEM-REFERENCE §18.13.
+     - **Routes:**
+       - `GET /meetings/:id/minutes` and `PUT /meetings/:id/attendance`;
+       - `PUT …/agenda/:itemId/minutes`, and the decisions under
+         `…/agenda/:itemId/decisions`;
+       - action items under `…/agenda/:itemId/actions` and `…/actions/:id`;
+       - `PUT …/open-actions/:taskId/note`;
+       - `POST …/distribute` and `POST …/return`;
+       - `PUT …/review/no-corrections`, `POST …/review/suggestions`, and
+         `…/apply` or `…/decline` on a suggestion;
+       - `GET /meetings/awaiting-me` (Home).
+     - **Departures from the plan:**
+       - **Attendance complete is Distribute's own check**, inside its `inTx`
+         under the meeting row's lock, and in the minutes read's `distribute`
+         block. It is not a `TRANSITION_PRECONDITIONS` entry: Minutes Draft
+         carries no flag to key it on, and ACC-255 retired keys. Only the
+         approval's four checks are the precondition.
+       - **The minutes' `draft` phase includes Agenda Issued for whoever
+         records them** (it allows `record_attendance` from the start), so
+         attendance can be taken during the meeting and read back.
+       - **Return clears `reviewBy`; answers are kept per round**, so "answers
+         reset" needs no delete: the next distribution opens round n + 1.
+       - **The reminder also goes on the review date itself** if the sweep
+         missed the day before. Never after the date.
+       - **Home's rows are their own read**, `GET /meetings/awaiting-me`, not a
+         part of `workflows/awaiting-me`. `MyWorkCountsService` joins it in PR 7.
+       - **A decline's reply is optional.** The author is told either way.
+       - **The engine:**
+         - `TransitionEffectDeps` gained `tasks`, and each part of an effect
+           gets the deps;
+         - preconditions take `PreconditionServices`;
+         - the moves list's `blockedBy`;
+         - `WorkflowService.currentStagePool()`.
+     - **Answered by lane B (Prompt 164), §6a:**
+       - **Minutes Draft stays readable by whoever records only.** 6.6's Chair
+         view is read as Minutes Review.
+       - **An AI action-item draft with an empty owner or due date** stays in
+         ACC-322's own row. Both columns stay NOT NULL.
 5. **PR 5: series, backend.**
    - Changes:
      - patterns, holiday moves, titles;
@@ -1463,6 +1501,42 @@ them together with their resolver.
      - series clashes.
    - **No migration.**
    - **Live after:** the API.
+   - **6.4 PR 5 as built (19 Nov):** SYSTEM-REFERENCE §18.14.
+     - **Routes:**
+       - `POST /meetings/series/preview` (dates and clashes, writes nothing);
+       - `POST /meetings/series`;
+       - `POST /meetings/series/:seriesId/end`;
+       - `PATCH /meetings/:id` and `POST /meetings/:id/reschedule` take
+         `scope: THIS_AND_LATER`;
+       - `GET /meetings?seriesId=` lists one series;
+       - the meeting read says `series` (index, total, ended).
+     - **Departures from the plan:**
+       - **"This and all later" never carries the title:** a title is each
+         meeting's own (§3.2), so it changes only the meeting edited.
+       - **A "this and all later" reschedule shifts each later meeting by the
+         same amount,** from its time read under its lock, then places it as
+         creation does (off the working week, past a day the owner already
+         meets), at the same time of day.
+       - **End series cancels each meeting by its own Cancel Meeting** (the
+         reason rule and its notices), one after another. Before anything, the
+         caller must be able to press Cancel on every one, or the call is
+         refused (`MEETING_SERIES_CANNOT_CANCEL`). One that still fails is
+         named in `failed`, and the series is ended only when none did.
+         Running it again finishes what is left; on an ended series it writes
+         nothing.
+       - **Lane B's review of #360 (Prompt 170), all built:**
+         - the wall-clock start across a clock change;
+         - End's pre-check and conditional stamp;
+         - create's notices after the commit, each on its own;
+         - the create transaction's reads done once, and its writes batched;
+         - the cancel move read scoped by organisation;
+         - the reschedule's placement.
+         - An edit sends no notice, as one meeting's edit sends none.
+       - **The standing agenda is copied at creation.** Changing it later on
+         the series reaches no meeting already made (every meeting is made at
+         once).
+       - **The clash check's cap is 53,** a series' most meetings (weekly for
+         twelve months, both ends included); it was 52.
 6. **PR 6: screens, part 1.**
    - The rail item, `/meetings` with "Sub-units' meetings", the committee and
      unit panels, Schedule (one meeting), the meeting page through Agenda
@@ -1488,13 +1562,97 @@ them together with their resolver.
 **Not in these slices:**
 
 - Calendar availability and the Outlook rows (ACC-293);
-- Meetings AI;
+- Meetings AI (ACC-322, §6a);
 - `.ics` invites;
 - a minutes PDF;
 - confidential items;
 - publishing to documents;
 - e-signatures;
 - meeting numbers.
+
+---
+
+## 6a. Meetings AI (ACC-322)
+
+**Its own ticket, built after the nine PRs, not inside them.** The design is
+`frontend/design-reference/AccreditMe AI for Users.dc.html`, section 6
+(version 1795061547-1f3b, accepted as final by Ahmad on 19 Nov with build notes
+1–4). The review is `design-review-meetings-ai-refresh-2026-11-19.md`. Every
+surface uses `am-ai-assist` and `AiService.run()` (ACC-194), and only the
+Secretary sees it.
+
+**The six surfaces:**
+
+- **6.1 Suggest agenda items (Planned):** from the committee's open tasks and
+  pending approvals, each with its reason and source. Never one already in
+  "Open actions from the last meeting". Ticked items are added as ordinary
+  items.
+- **6.2 Draft minutes (Minutes Draft):** from the Secretary's rough notes, a
+  discussion and decisions per agenda item, each accepted, edited or discarded
+  on its own. Votes are filled only when the notes state them.
+- **6.3 Action items drafted with the minutes:** what, owner and due only.
+  Accepting one adds a draft action item to its agenda item; no task until
+  Approve Minutes.
+- **6.4 Votes, quorum and attendance stay the Secretary's:** attendance is never
+  AI. The quorum line and "Taken without quorum" come from attendance.
+- **6.5 Summary for absent members (Minutes Approved):** beside Print minutes.
+  It goes to the members attendance records as Apologies or Absent, never to
+  guests.
+- **6.6 Who is looking:** the Chair, members, guests and absent members see no
+  trigger and no AI panel. Accepted text is ordinary minutes.
+
+**M1–M10, as decided (Ahmad, 19 Nov: the designer's recommendations):**
+
+- **M1:** Suggest agenda items in Planned only.
+- **M2:** an undecided action-item suggestion does not hold Distribute Minutes.
+  Its confirm says "3 AI suggestions undecided will be discarded", and they
+  are.
+- **M3:** the rough notes are seen by the writer only and deleted at Distribute
+  Minutes. The history keeps "drafted with AI, accepted by …" per item.
+- **M4:** added agenda items go before Any other business, in tick order.
+- **M5:** Accept replaces what the Secretary typed in that item, with a line
+  saying so. Edit is how to combine.
+- **M6:** vote counts over the members present are copied as stated and
+  flagged with the minutes' own error, never changed.
+- **M7:** an action whose owner in the notes is an outside guest keeps an empty
+  owner.
+- **M8:** Draft again touches only items still empty or undecided.
+- **M9:** no Draft minutes after Return for Correction in v1.
+- **M10:** the trigger reads "Draft summary", with the aria-label "Draft a
+  summary for absent members".
+
+**What PRs 4–8 must not preclude.** Each hook is named with the PR it lands in.
+None of the AI is built there:
+
+| Hook | What ACC-322 needs | Lands in |
+|---|---|---|
+| Per-item minutes text an Accept can replace | `PUT /meetings/:id/agenda/:itemId/minutes` sets the item's whole `discussion`, never appends. Decisions are rows, each written on its own. So an Accept is one write per item. | PR 4 (API), PR 7 (the editor) |
+| An action-item draft with an empty owner and an empty due date | **Not possible as built:** PR 1 made `MeetingActionItem.ownerUserId` and `dueAt` NOT NULL. So a suggestion with either one empty lives in ACC-322's own row, and Accept is offered only after Edit fills both, as the design draws for a past date. If ACC-322 stores a draft with them empty instead, that is an expand migration in ACC-322 making both nullable. The approval check (`minutesApprovalBlocks()`, PR 4) then gains `MEETING_ACTION_INCOMPLETE`, in the one place approval is checked. | PR 4 (the rule's one home), ACC-322 |
+| A Distribute Minutes confirm that can carry a count line | The minutes read answers a `distribute` block (`ready`, `blockedBy`). ACC-322 adds its undecided count there. The confirm (PR 7) takes an optional extra line. Discarding happens inside Distribute's `inTx` (`MeetingReviewService.distribute()`), which ACC-322 extends. | PR 4 (the block, the `inTx`), PR 7 (the confirm) |
+| A history entry naming who accepted an AI draft | Every minutes write records ONE Meeting audit row through one helper (`minutesAudit()`), with `metadata`. ACC-322 adds `aiDraft`, checked against the AI log as ACC-197 does. The history screen reads it. | PR 4 (the helper), PR 7 (the history) |
+| Rough notes visible only to the writer, deleted at Distribute | ACC-322 stores them (its own table, read only by their writer), not PR 4. They are deleted in Distribute's `inTx`: the same hook as the count line. | ACC-322, on PR 4's `inTx` |
+
+**Build notes for the screens PRs (6–8):**
+
+- **The Secretary seat reads the lookup's label,** «أمين السر»
+  (`lookup.seed.ts`), never a word written into a screen. That includes the
+  attendance note («يسجّله أمين السر. …»). Both design files draw «أمينة السر».
+- **The attendance card shows guests,** as Meeting Screens draws them: an
+  organisation guest (Eng. Khalid Al-Shehri), and an outside guest with its
+  "Outside guest" chip (Dr. Lina Mansour). 6.2's drawing lists the nine members
+  only.
+- **Arabic about a person stays neutral** (Ahmad, 6 Nov). Two of the design's
+  strings are corrected in build note 1. The credits refusal says «لمنشأتك»,
+  never «لمؤسستك», on every AI surface (build note 3).
+
+- **The Chair doesn't read Minutes Draft** (lane B, Prompt 164). Minutes Draft
+  is readable by whoever records the minutes only (§4.1). 6.6's "Minutes Draft ·
+  seen by the Chair" is read as Minutes Review, where the Chair first reads the
+  text, so PR 7's screens never draw the Chair in Draft.
+- **An AI action-item draft with an empty owner or due date** stays in
+  ACC-322's own suggestion row (lane B, Prompt 164). `ownerUserId` and `dueAt`
+  stay NOT NULL, with no expand migration. Accept comes only after Edit fills
+  both.
 
 ---
 

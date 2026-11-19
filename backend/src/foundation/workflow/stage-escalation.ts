@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { lockRolesForShare } from '../roles/role-active';
 
 /**
  * ACC-105 — a stage's SLA escalation rules (`WorkflowStage.escalationConfig`).
@@ -58,9 +59,15 @@ function refuse(reason: EscalationRefusalReason, rule: number | null, message: s
  * (an active role of the organisation), one read each however many rules.
  * null or [] clears the rules and checks nothing. Refused with 400
  * STAGE_ESCALATION_INVALID, `{ reason, rule }` naming the first bad rule.
+ *
+ * ACC-154 — called INSIDE the stage save's transaction, before its write: the
+ * roles are read by locking them FOR SHARE (lockRolesForShare(), scoped by id
+ * and organisation), so a role deactivate cannot commit between this check and
+ * the write. A save that locks first holds the deactivate, which then sees the
+ * rule (ROLE_IN_USE); a save queued behind one reads the role inactive here.
  */
 export async function assertEscalationRules(
-  client: Pick<PrismaService, 'user' | 'role'>,
+  client: Pick<PrismaService, 'user' | '$queryRaw'>,
   organizationId: string,
   config: unknown,
 ): Promise<void> {
@@ -78,12 +85,10 @@ export async function assertEscalationRules(
     userIds.length
       ? client.user.findMany({ where: { id: { in: userIds }, organizationId, status: 'ACTIVE' }, select: { id: true } })
       : Promise.resolve([]),
-    roleIds.length
-      ? client.role.findMany({ where: { id: { in: roleIds }, organizationId, isActive: true }, select: { id: true } })
-      : Promise.resolve([]),
+    lockRolesForShare(client, roleIds, organizationId),
   ]);
   const activeUsers = new Set(users.map((u) => u.id));
-  const activeRoles = new Set(roles.map((r) => r.id));
+  const activeRoles = new Set([...roles].filter(([, r]) => r.isActive).map(([id]) => id));
   valid.forEach((r, i) => {
     if (r.notifyUserId && !activeUsers.has(r.notifyUserId)) {
       refuse('USER', i, `Escalation rule ${i + 1}: notifyUserId is not an active user of this organisation`);

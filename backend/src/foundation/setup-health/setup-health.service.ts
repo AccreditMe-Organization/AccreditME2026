@@ -38,6 +38,8 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'TASK_WITHOUT_OWNER',
   // ACC-286 PR 2 — reported once its detector exists; after Task, as the page orders it.
   'COMMITTEE_MISSING_REQUIRED_SEAT',
+  // ACC-307 PR 2 — reported once its detector exists; beside the other committee condition.
+  'COMMITTEE_BELOW_QUORUM',
   'ACTING_HEAD_OPEN_ENDED',
   // ACC-261 — first of the storage conditions: nothing can be uploaded at all.
   'STORAGE_NOT_CONFIRMED',
@@ -75,6 +77,8 @@ const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   STAGE_ON_STARTING_ASSIGNMENT: 'OBJECT',
   // FIRST_DETECTED (ACC-286, Q-B): nothing records when a seat emptied.
   COMMITTEE_MISSING_REQUIRED_SEAT: 'FIRST_DETECTED',
+  // FIRST_DETECTED (ACC-307): nothing records when a committee fell below quorum.
+  COMMITTEE_BELOW_QUORUM: 'FIRST_DETECTED',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {

@@ -192,6 +192,9 @@ export interface ICommitteeMembershipEvent {
   effectiveDate: Date;
   reason: string | null;
   approvedBy: string | null;
+  // ACC-306 — why the seat ended when not by hand: DEACTIVATION when the
+  // holder's account was deactivated; null for every change a person made.
+  cause: 'DEACTIVATION' | null;
   createdAt: Date;
 }
 

@@ -33,7 +33,7 @@ const SAFETY = { id: 'c-safety', nameEn: 'Safety Committee', nameAr: 'لجنة �
 
 interface World {
   held: { id: string; roleValueId: string; joinedAt: Date; committee: typeof QUALITY }[];
-  left: { committeeId: string; roleValueId: string; reason: string | null; approvedBy: string | null; committee: Omit<typeof SAFETY, 'id'> }[];
+  left: { committeeId: string; roleValueId: string; reason: string | null; approvedBy: string | null; cause?: 'DEACTIVATION' | null; committee: Omit<typeof SAFETY, 'id'> }[];
   officers: { committeeId: string; userId: string }[];
   heads: { id: string; primaryOrgUnitId: string }[];
   covers: { orgUnitId: string; userId: string }[];
@@ -281,6 +281,18 @@ describe('CommitteeTransferNoticeService.run (ACC-297), in-process', () => {
       await service.run(JOB);
       expect(row('chair').bodyEn).toContain('Safety Committee: was removed from Secretary; no reason was given.');
       expect(row('chair').bodyAr).toContain('«لجنة السلامة»: أُنهيت العضوية بصفة «أمين السر» دون ذكر سبب.');
+    });
+
+    // ACC-306 — a seat a deactivation ended is said as that, even when the person
+    // deactivating is the transfer's actor, and never as "removed".
+    it('ended by a deactivation: said as that, never as removed by the actor', async () => {
+      const world = withLeft(ACTOR, null);
+      world.left = [{ ...world.left[0]!, cause: 'DEACTIVATION' } as World['left'][number]];
+      const { service, row } = build(world);
+      await service.run(JOB);
+      expect(row('chair').bodyEn).toContain('Safety Committee: the Secretary seat ended when the account was deactivated.');
+      expect(row('chair').bodyEn).not.toContain('was removed');
+      expect(row('chair').bodyAr).toContain('«لجنة السلامة»: انتهت العضوية بصفة «أمين السر» بإلغاء تفعيل الحساب.');
     });
 
     it('still holds: the seat held now', async () => {

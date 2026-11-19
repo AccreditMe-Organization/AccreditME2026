@@ -43,6 +43,30 @@ export interface IMeeting extends IMeetingListItem {
   answers: IMeetingAnswerSummary | null;
   /** The viewer's own answer when they are an invitee; null otherwise. */
   myAnswer: { answer: 'ATTENDING' | 'CANT_ATTEND' | null; note: string | null } | null;
+  /** ACC-316 PR 5 — "Meeting 3 of 12" and the series it belongs to; null for a single meeting. */
+  series: { id: string; index: number; total: number; every: string; ended: boolean } | null;
+}
+
+/** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */
+export interface IMeetingSeriesDate {
+  index: number;
+  /** The pattern's day, and the day the meeting is held (moved off a weekend, holiday or a day the owner already meets). */
+  patternDay: string;
+  day: string;
+  startsAt: Date;
+  title: string;
+  moved: 'NOT_WORKING_DAY' | 'OWNER_MEETS' | null;
+}
+
+export interface IMeetingSeriesPreview {
+  dates: IMeetingSeriesDate[];
+  clashes: IMeetingClash[];
+}
+
+/** What "this and all later" changed, and what each meeting kept as its own. */
+export interface IMeetingScopeResult {
+  changed: string[];
+  kept: { meetingId: string; title: string; fields: string[] }[];
 }
 
 /** "6 attending · 2 can't · quorum 5": MEMBER answers only (plan §3.4). */
@@ -111,4 +135,109 @@ export interface IMeetingClash {
     /** id and title only when the asker may open that meeting; otherwise both null ("another meeting"). */
     meetings: { id: string | null; title: string | null; startsAt: Date; durationMinutes: number }[];
   }[];
+}
+
+// ── ACC-316 PR 4 — the minutes and the review ────────────────────────────────
+
+/** One invitee's attendance. `suggested` is "Apologies" for someone who answered "Can't attend" and has none recorded yet. */
+export interface IMeetingAttendanceRow {
+  attendeeId: string;
+  kind: 'MEMBER' | 'ORG_GUEST' | 'OUTSIDE_GUEST';
+  userId: string | null;
+  name: string;
+  seat: { id: string; labelEn: string; labelAr: string | null } | null;
+  attendance: 'PRESENT' | 'APOLOGIES' | 'ABSENT' | null;
+  suggested: 'APOLOGIES' | null;
+}
+
+export interface IMeetingDecision {
+  id: string;
+  order: number;
+  text: string;
+  votes: { for: number; against: number; abstain: number } | null;
+  /** The meeting's present members were below its quorum (plan §3.5). */
+  takenWithoutQuorum: boolean;
+}
+
+export interface IMeetingActionItem {
+  id: string;
+  title: string;
+  owner: { id: string; name: string };
+  dueAt: Date;
+  /** Set once the minutes are approved; the task's live status (R3-8). */
+  task: { id: string; status: string } | null;
+}
+
+export interface IMeetingMinutesItem {
+  id: string;
+  order: number;
+  title: string;
+  standing: boolean;
+  discussion: string | null;
+  decisions: IMeetingDecision[];
+  actionItems: IMeetingActionItem[];
+}
+
+/** An action from the last meeting whose task is still open, with this meeting's note on it. */
+export interface IMeetingOpenAction {
+  taskId: string;
+  title: string;
+  status: string;
+  dueAt: Date | null;
+  owner: { id: string; name: string } | null;
+  fromMeetingId: string;
+  note: string | null;
+}
+
+export interface IMeetingSuggestion {
+  id: string;
+  round: number;
+  agendaItemId: string | null;
+  author: { id: string; name: string };
+  text: string;
+  status: 'OPEN' | 'APPLIED' | 'DECLINED';
+  reply: string | null;
+  createdAt: Date;
+  decidedAt: Date | null;
+}
+
+export interface IMeetingReview {
+  round: number;
+  /** yyyy-MM-dd, or null before the first distribution. */
+  reviewBy: string | null;
+  datePassed: boolean;
+  closed: boolean;
+  reviewers: { userId: string; name: string; answered: boolean }[];
+  suggestions: IMeetingSuggestion[];
+  /** "Changed during review: item 2, decision" — one row per item and kind of change. */
+  changes: { round: number; agendaItemId: string | null; what: string }[];
+  /** The viewer's own answer in the current round, when they are a reviewer. */
+  mine: 'NO_CORRECTIONS' | 'SUGGESTED' | null;
+}
+
+export interface IMeetingMinutes {
+  phase: 'draft' | 'review' | 'approved';
+  attendance: IMeetingAttendanceRow[];
+  quorum: { quorum: number | null; presentMembers: number; met: boolean | null };
+  items: IMeetingMinutesItem[];
+  openActions: IMeetingOpenAction[];
+  review: IMeetingReview;
+  /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
+  distribute: { ready: boolean; blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null } | null;
+  approvedAt: Date | null;
+  may: {
+    recordAttendance: boolean;
+    recordMinutes: boolean;
+    distribute: boolean;
+    returnForCorrection: boolean;
+    review: boolean;
+    applySuggestions: boolean;
+    changeActionDates: boolean;
+  };
+}
+
+/** Home's rows for a meeting (self-scoped): reviews to answer, invitations to answer. */
+export interface IMeetingAwaitingMe {
+  review: { meetingId: string; title: string; reviewBy: string | null }[];
+  answer: { meetingId: string; title: string; scheduledAt: Date }[];
 }

@@ -12,6 +12,7 @@ import { UserHomeCountsService } from './user-home-counts.service';
 import { StagePoolModule } from '../workflow/stage-pool.module';
 import { CommitteeTransferNoticeModule } from '../committees/transfer-notice/committee-transfer-notice.module';
 import { ChangeRequestDepartureModule } from '../committees/change-requests/departure/change-request-departure.module';
+import { CommitteeSeatDepartureModule } from '../committees/departure/committee-seat-departure.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { SecurityNoticeService } from '../notification/security-notice';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
@@ -20,6 +21,8 @@ import { UserCommitteesController } from './committees/user-committees.controlle
 import { UserCommitteesService } from './committees/user-committees.service';
 import { UserAccessHistoryController } from './access-history/user-access-history.controller';
 import { UserAccessHistoryService } from './access-history/user-access-history.service';
+import { OwnSessionsController, UserSessionsController } from './sessions/user-sessions.controller';
+import { UserSessionsService } from './sessions/user-sessions.service';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
 // TaskModule -> forwardRef TenantModule edge (UserModule -> forwardRef
@@ -60,6 +63,7 @@ import { UserAccessHistoryService } from './access-history/user-access-history.s
     // ACC-297 — the committee notice after a transfer. Its module imports only
     // Prisma and the queues, so this edge closes no cycle.
     CommitteeTransferNoticeModule,
+    CommitteeSeatDepartureModule,
     // ACC-316 PR 3b — the meeting invitee sync. Its module imports only Prisma
     // and the queues, so this edge closes no cycle.
     MeetingInviteesModule,
@@ -73,7 +77,7 @@ import { UserAccessHistoryService } from './access-history/user-access-history.s
     // names them. LookupModule forwardRef()s TenantModule, as this module does.
     forwardRef(() => LookupModule),
   ],
-  controllers: [UserController, UserCommitteesController, UserAccessHistoryController],
+  controllers: [UserController, UserCommitteesController, UserAccessHistoryController, UserSessionsController, OwnSessionsController],
   providers: [
     UserService,
     UserHomeCountsService,
@@ -81,6 +85,7 @@ import { UserAccessHistoryService } from './access-history/user-access-history.s
     SecurityNoticeService,
     UserCommitteesService,
     UserAccessHistoryService,
+    UserSessionsService,
   ],
   exports: [UserService, UserHomeCountsService],
 })

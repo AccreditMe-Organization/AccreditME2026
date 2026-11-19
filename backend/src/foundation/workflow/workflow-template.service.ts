@@ -738,14 +738,15 @@ export class WorkflowTemplateService {
       committee: typeof recordRoute?.committee === 'function',
     });
     const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
-    // ACC-105 — the escalation rules are checked like the stage's other ids.
-    await assertEscalationRules(this.prisma, organizationId, dto.escalationConfig);
 
     const counted = exactlyOneFlags(template.objectType).filter((f) => flags.includes(f));
     const { stage, movedFrom } = await this.prisma.$transaction(async (tx) => {
       // ACC-57 — a new stage always changes the template's start and end, so
       // the template is locked and read before the write, and checked after.
       await this.lockTemplate(tx, templateId, organizationId);
+      // ACC-105 — the escalation rules are checked like the stage's other ids;
+      // ACC-154 — inside the transaction, their roles locked FOR SHARE.
+      await assertEscalationRules(tx, organizationId, dto.escalationConfig);
       const before = await readStartEnd(tx, templateId, organizationId);
       // Q1 — a new starting stage takes over from the old one.
       const moved = dto.isInitial ? await clearOtherStartingStages(tx, templateId, organizationId, before) : [];
@@ -861,8 +862,6 @@ export class WorkflowTemplateService {
     }
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
-    // ACC-105 — the escalation rules are checked like the stage's other ids.
-    if (dto.escalationConfig !== undefined) await assertEscalationRules(this.prisma, organizationId, dto.escalationConfig);
     const rules = this.stageRuleKeys(objectType, dto.actions, dto.flags);
 
     // ACC-190 — the stage-deadline rule from the stage's side: a deadline
@@ -890,6 +889,9 @@ export class WorkflowTemplateService {
 
     const { updated, actionsBefore, actionsAfter, movedFrom } = await this.prisma.$transaction(async (tx) => {
       if (counted.length > 0 || touchesStartEnd) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      // ACC-105 — the escalation rules are checked like the stage's other ids;
+      // ACC-154 — inside the transaction, their roles locked FOR SHARE.
+      if (dto.escalationConfig !== undefined) await assertEscalationRules(tx, organizationId, dto.escalationConfig);
       const before = touchesStartEnd ? await readStartEnd(tx, stage.workflowTemplateId, organizationId) : null;
       // Q1 — ticking Initial moves the starting stage here.
       const moved =
@@ -1164,7 +1166,6 @@ export class WorkflowTemplateService {
         labelAr: dto.labelAr,
         validatorConfig: this.toJson(dto.validatorConfig),
         ...(dto.kind !== undefined && { kind: dto.kind }),
-        ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
         mover: 'PERSON',
       },
     });
@@ -1201,7 +1202,6 @@ export class WorkflowTemplateService {
         ...(dto.labelEn !== undefined && { labelEn: dto.labelEn }),
         ...(dto.labelAr !== undefined && { labelAr: dto.labelAr }),
         ...(dto.validatorConfig !== undefined && { validatorConfig: this.toJson(dto.validatorConfig) }),
-        ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
         ...(dto.kind !== undefined && { kind: dto.kind }),
       },
     });
@@ -1216,7 +1216,6 @@ export class WorkflowTemplateService {
         labelEn: transition.labelEn,
         labelAr: transition.labelAr,
         validatorConfig: transition.validatorConfig,
-        isApprovalPath: transition.isApprovalPath,
         kind: transition.kind,
         mover: transition.mover,
       },
@@ -1224,7 +1223,6 @@ export class WorkflowTemplateService {
         labelEn: updated.labelEn,
         labelAr: updated.labelAr,
         validatorConfig: updated.validatorConfig,
-        isApprovalPath: updated.isApprovalPath,
         kind: updated.kind,
         mover: updated.mover,
       },
@@ -1470,7 +1468,6 @@ export class WorkflowTemplateService {
       labelEn: transition.labelEn,
       labelAr: transition.labelAr,
       validatorConfig: transition.validatorConfig as Record<string, unknown> | null,
-      isApprovalPath: transition.isApprovalPath,
       kind: transition.kind,
       mover: transitionMover(transition),
       ...(actions !== undefined && { actions }),

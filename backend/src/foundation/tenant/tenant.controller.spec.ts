@@ -51,7 +51,7 @@ describe('TenantController', () => {
     getTaskSla: jest.Mock;
   };
   // ACC-313 — every task SLA write and the history go through the policy service.
-  let taskSlaPolicy: { replaceAll: jest.Mock; saveLimits: jest.Mock; saveEscalation: jest.Mock; history: jest.Mock };
+  let taskSlaPolicy: { saveLimits: jest.Mock; saveEscalation: jest.Mock; history: jest.Mock };
 
   beforeEach(async () => {
     service = {
@@ -73,7 +73,6 @@ describe('TenantController', () => {
       getTaskSla: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
     };
     taskSlaPolicy = {
-      replaceAll: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
       saveLimits: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
       saveEscalation: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
       history: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
@@ -180,17 +179,6 @@ describe('TenantController', () => {
     });
   });
 
-  describe('updateTaskSla', () => {
-    it('saves the whole policy through TaskSlaPolicyService.replaceAll with tenantId, dto, and userId', async () => {
-      await controller.updateTaskSla(MOCK_TASK_SLA, MOCK_TENANT_ID, MOCK_USER_ID);
-      expect(taskSlaPolicy.replaceAll).toHaveBeenCalledWith(
-        MOCK_TENANT_ID,
-        MOCK_TASK_SLA,
-        MOCK_USER_ID,
-      );
-    });
-  });
-
   // ACC-313 — the page saves by section, and reads its history.
   describe('task SLA sections and history', () => {
     const limits = { LOW: { dueAfterHours: 80 }, MEDIUM: { dueAfterHours: 40 }, HIGH: { dueAfterHours: 16 }, CRITICAL: { dueAfterHours: 4 } };
@@ -245,7 +233,7 @@ describe('TenantController authorization split (ACC-79)', () => {
   // ACC-313 — the task SLA page's reads and writes all take the key that may
   // change the policy: the history names colleagues and the values they replaced.
   it('gates every task SLA route on tenant:manage_config', () => {
-    for (const handler of ['getTaskSla', 'updateTaskSla', 'updateTaskSlaLimits', 'updateTaskSlaEscalation', 'getTaskSlaHistory'] as const) {
+    for (const handler of ['getTaskSla', 'updateTaskSlaLimits', 'updateTaskSlaEscalation', 'getTaskSlaHistory'] as const) {
       expect(permissionsOn(handler)).toEqual([TENANT_PERMISSIONS.MANAGE_CONFIG]);
     }
   });

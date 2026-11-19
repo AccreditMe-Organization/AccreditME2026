@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import type { PeopleDate } from '../task/task-sla.service';
 import type { OutsideEmailText } from '../notification/outside-email';
 import type { OrganisationNames } from './meeting-send';
@@ -135,5 +136,57 @@ export function presenterLeftNotice(person: string, items: readonly string[], ti
     titleAr: 'بند يقدَّم الآن من ضيف',
     bodyEn: `${person} presents ${en} at ${title} and has left the committee or unit. They stay invited as a guest.`,
     bodyAr: `${person}: انتهاء العضوية في اللجنة أو الوحدة، مع تقديم ${ar} في ${title}. الدعوة باقية بصفة ضيف.`,
+  };
+}
+
+/**
+ * ACC-316 PR 4 — a day (yyyy-MM-dd) as people read it, both languages, Latin
+ * digits: "1 Oct 2026" / "1 أكتوبر 2026". A review date is a day, not a time.
+ */
+export function peopleDay(day: string): { en: string; ar: string } {
+  const at = DateTime.fromISO(day, { zone: 'UTC' });
+  return {
+    en: at.setLocale('en-GB').toFormat('d LLL yyyy'),
+    ar: at.reconfigure({ locale: 'ar', numberingSystem: 'latn' }).toFormat('d LLLL yyyy'),
+  };
+}
+
+/** The minutes are distributed: the members recorded present review them. */
+export function distributedNotice(title: string, by: { en: string; ar: string }): NoticeText {
+  return {
+    titleEn: 'Review the minutes',
+    titleAr: 'مراجعة المحضر',
+    bodyEn: `The minutes of ${title} are ready. Review them by ${by.en}.`,
+    bodyAr: `محضر ${title} جاهز للمراجعة حتى ${by.ar}.`,
+  };
+}
+
+/** The day before the review date: a present member who hasn't answered. */
+export function reviewReminderNotice(title: string, by: { en: string; ar: string }): NoticeText {
+  return {
+    titleEn: 'The minutes review closes soon',
+    titleAr: 'مراجعة المحضر تنتهي قريبًا',
+    bodyEn: `The review of the minutes of ${title} closes on ${by.en}. Answer "No corrections" or suggest a correction.`,
+    bodyAr: `تنتهي مراجعة محضر ${title} في ${by.ar}. الرد بـ«لا تصحيحات» أو اقتراح تصحيح.`,
+  };
+}
+
+/** A suggestion is declined: its author, with the reply. */
+export function suggestionDeclinedNotice(title: string, reply: string | null): NoticeText {
+  return {
+    titleEn: 'Correction declined',
+    titleAr: 'رفض اقتراح التصحيح',
+    bodyEn: `Your suggested correction to the minutes of ${title} was declined.${reply ? ` Reply: ${reply}` : ''}`,
+    bodyAr: `رُفض اقتراح التصحيح على محضر ${title}.${reply ? ` الرد: ${reply}` : ''}`,
+  };
+}
+
+/** The minutes are returned for correction: the members recorded present, with the reason. */
+export function returnedNotice(title: string, reason: string | null): NoticeText {
+  return {
+    titleEn: 'Minutes returned for correction',
+    titleAr: 'إعادة المحضر للتصحيح',
+    bodyEn: `The minutes of ${title} were returned for correction.${reason ? ` Reason: ${reason}` : ''}`,
+    bodyAr: `أُعيد محضر ${title} للتصحيح.${reason ? ` السبب: ${reason}` : ''}`,
   };
 }

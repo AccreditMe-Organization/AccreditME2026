@@ -68,3 +68,66 @@ describe('CommitteeMembershipHistoryPanelComponent — the date in Arabic (ACC-3
     expectArabicDateInPageDirection(document.querySelector('[data-history-date]'), { day: '3', month: 'نوفمبر' });
   });
 });
+
+/**
+ * ACC-306 — a seat a deactivation ended says so, from the event's `cause`, in
+ * both languages; never from a stored English reason. A cause this screen does
+ * not know reads as a plain "Left".
+ */
+describe('CommitteeMembershipHistoryPanelComponent — a seat a deactivation ended (ACC-306)', () => {
+  preserveDocumentLanguage();
+
+  const LEFT: CommitteeMembershipEventDto = {
+    id: 'e-2',
+    organizationId: 'org-a',
+    committeeId: 'c-1',
+    userId: 'u-1',
+    roleValueId: 'r-1',
+    action: 'LEFT',
+    effectiveDate: '2026-11-19T08:00:00.000Z',
+    reason: 'An English reason that must never be shown',
+    approvedBy: 'u-admin',
+    createdAt: '2026-11-19T08:00:00.000Z',
+    userName: 'Huda Al-Harbi',
+    approvedByName: 'Sara Admin',
+    roleLabelEn: 'Secretary',
+    roleLabelAr: 'أمين السر',
+  };
+
+  function detailOf(lang: 'en' | 'ar', event: CommitteeMembershipEventDto): string {
+    TestBed.configureTestingModule({
+      imports: [CommitteeMembershipHistoryPanelComponent],
+      providers: [provideNoopAnimations(), provideTranslateService({ lang }), provideFormatTesting(), providePrimeNG({})],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(lang);
+    const fixture = TestBed.createComponent(CommitteeMembershipHistoryPanelComponent);
+    fixture.componentRef.setInput('events', [event]);
+    fixture.componentRef.setInput('committeeName', 'Quality Council');
+    fixture.detectChanges();
+    const row = (fixture.nativeElement as HTMLElement).querySelector('[data-history-row] .am-cp-l2');
+    return row?.textContent?.trim() ?? '';
+  }
+
+  afterEach(() => {
+    document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove());
+    TestBed.resetTestingModule();
+  });
+
+  it('English: "Left — account deactivated", the seat, and who deactivated', () => {
+    expect(detailOf('en', { ...LEFT, cause: 'DEACTIVATION' })).toBe('Left — account deactivated · Secretary · by Sara Admin');
+  });
+
+  it('Arabic: the same, in Arabic', () => {
+    expect(detailOf('ar', { ...LEFT, cause: 'DEACTIVATION' })).toBe('مغادرة — إلغاء تفعيل الحساب · أمين السر · بواسطة Sara Admin');
+  });
+
+  it('a cause it does not know, or none, reads as a plain "Left", and never the stored reason', () => {
+    for (const cause of ['SOMETHING_NEW', null, undefined]) {
+      const text = detailOf('en', { ...LEFT, cause });
+      expect(text).toBe('Left — Secretary · by Sara Admin');
+      expect(text).not.toContain('English reason');
+      TestBed.resetTestingModule();
+    }
+  });
+});

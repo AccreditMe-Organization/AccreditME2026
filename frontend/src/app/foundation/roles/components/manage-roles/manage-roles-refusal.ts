@@ -24,6 +24,8 @@ const SAVE_REFUSALS: Readonly<Record<string, string>> = {
   LAST_ACTIVE_ADMINISTRATOR: 'manageRoles.refusal.lastAdministrator',
   // ACC-221 — the account owner keeps Organization Administrator.
   ACCOUNT_OWNER_PROTECTED: 'manageRoles.refusal.accountOwnerProtected',
+  // ACC-154 — a deactivated role is never given out again.
+  ROLE_INACTIVE: 'roles.refusal.roleInactive',
   ROLE_NOT_FOUND: 'manageRoles.refusal.roleNotFound',
   USER_NOT_FOUND: 'manageRoles.refusal.userNotFound',
   ROLE_ASSIGNMENT_NOT_FOUND: 'manageRoles.refusal.assignmentNotFound',

@@ -11,6 +11,7 @@ import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { getMetadataStorage } from 'class-validator';
 import { UpdateWorkflowStageDto } from './dto/update-workflow-stage.dto';
 import { WorkflowObjectType } from '../../../generated/prisma/enums';
+import { answerRoleShareLock } from '../roles/role-active.testing';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -570,6 +571,21 @@ describe('WorkflowTemplateService', () => {
       );
     });
 
+    // ACC-294 — the template read names its fields; isApprovalPath is not one. A row
+    // that still carries the column (the database keeps it until PR B) never leaks it.
+    it('a template read carries no isApprovalPath, even from a row that still has the column', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { ...BASE_STAGE, transitionsFrom: [{ ...BASE_TRANSITION, isApprovalPath: true, actions: [] }] },
+      ]);
+
+      const result = await service.getTemplateById('template-1', ORG_A);
+
+      const transition = result.stages?.[0]?.transitions?.[0];
+      expect(transition?.id).toBe(BASE_TRANSITION.id); // non-vacuity: the move is read
+      expect(transition).not.toHaveProperty('isApprovalPath');
+    });
+
     it('throws NotFoundException when the template does not exist', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(null);
 
@@ -881,21 +897,50 @@ describe('WorkflowTemplateService', () => {
       );
     });
 
+    /** ACC-154 — the role reads are the FOR SHARE lock, inside the save's transaction. */
+    const roleLocks = () =>
+      mockPrisma.$queryRaw.mock.calls
+        .map(([q]) => q as { sql?: string; values?: unknown[] })
+        .filter((q) => q.sql?.includes('FROM "Role"') && q.sql.includes('FOR SHARE'));
+
     it('refuses a role that is not an active role of this organisation (ROLE)', async () => {
-      mockPrisma.role.findMany.mockResolvedValue([]);
-      const got = await refusal(
-        service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-elsewhere' }] } as never, ORG_A, ACTOR),
-      );
-      expect(got).toEqual(expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'ROLE', rule: 0 }));
-      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: { in: ['role-elsewhere'] }, organizationId: ORG_A, isActive: true } }),
-      );
-      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      for (const answer of [answerRoleShareLock(new Set(['role-elsewhere'])), async () => []]) {
+        jest.clearAllMocks();
+        mockPrisma.$queryRaw.mockImplementation(answer);
+        const got = await refusal(
+          service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-elsewhere' }] } as never, ORG_A, ACTOR),
+        );
+        expect(got).toEqual(expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'ROLE', rule: 0 }));
+        // Locked by id AND organisation.
+        expect(roleLocks().map((q) => q.values)).toEqual([['role-elsewhere', ORG_A]]);
+        expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      }
+    });
+
+    it('locks the roles inside the save’s transaction, before the stage is written (ACC-154)', async () => {
+      const order: string[] = [];
+      mockPrisma.$transaction.mockImplementation(async (arg) => {
+        order.push('begin');
+        const out = await (arg as (tx: unknown) => Promise<unknown>)(mockPrisma);
+        order.push('commit');
+        return out;
+      });
+      mockPrisma.$queryRaw.mockImplementation(async (q: unknown) => {
+        const rows = await answerRoleShareLock()(q);
+        if (rows.length > 0) order.push('lock role');
+        return rows;
+      });
+      mockPrisma.workflowStage.update.mockImplementation(async () => {
+        order.push('write stage');
+        return BASE_STAGE;
+      });
+      await service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-q' }] } as never, ORG_A, ACTOR);
+      expect(order.slice(0, 4)).toEqual(['begin', 'lock role', 'write stage', 'commit']);
     });
 
     it('saves valid rules, reading the people and the roles once each, however many rules', async () => {
       mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-a' }, { id: 'user-b' }]);
-      mockPrisma.role.findMany.mockResolvedValue([{ id: 'role-q' }]);
+      mockPrisma.$queryRaw.mockImplementation(answerRoleShareLock());
       const escalationConfig = [
         { afterHours: 4, notifyUserId: 'user-a' },
         { afterHours: 8, notifyRoleId: 'role-q' },
@@ -906,7 +951,7 @@ describe('WorkflowTemplateService', () => {
         expect.objectContaining({ data: expect.objectContaining({ escalationConfig }) }),
       );
       expect(mockPrisma.user.findMany.mock.calls.filter(([a]) => JSON.stringify(a).includes('"status":"ACTIVE"'))).toHaveLength(1);
-      expect(mockPrisma.role.findMany.mock.calls.filter(([a]) => JSON.stringify(a).includes('"isActive":true'))).toHaveLength(1);
+      expect(roleLocks()).toHaveLength(1);
     });
 
     it('clears the rules with an empty list or null, checking nothing', async () => {
@@ -1021,8 +1066,9 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
     });
 
-    // ACC-271 PR 5b — the transition panel sets Approval path when adding.
-    it('stores isApprovalPath when sent on create, and leaves the default when not', async () => {
+    // ACC-294 — isApprovalPath is gone. The DTO refuses one (dto/is-approval-path.dto.spec.ts);
+    // and if one ever reached the service, nothing writes it.
+    it('never writes isApprovalPath on create, even when one reaches the service', async () => {
       const add = async (extra: Record<string, unknown>): Promise<Record<string, unknown>> => {
         mockPrisma.workflowStage.findFirst
           .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
@@ -1036,7 +1082,7 @@ describe('WorkflowTemplateService', () => {
         const calls = mockPrisma.workflowTransition.create.mock.calls;
         return (calls[calls.length - 1]![0] as { data: Record<string, unknown> }).data;
       };
-      expect((await add({ isApprovalPath: true })).isApprovalPath).toBe(true);
+      expect(await add({ isApprovalPath: true })).not.toHaveProperty('isApprovalPath');
       expect(await add({})).not.toHaveProperty('isApprovalPath');
     });
 

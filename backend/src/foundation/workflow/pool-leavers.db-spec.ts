@@ -49,6 +49,7 @@ import { applyWorkflowSeed } from './workflow-seed-apply';
 import { seatMembersForQuorum, untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { writeStartingAssignments } from './workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -96,6 +97,8 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
     // ACC-283 PR 2b — the real departure withdrawal: nobody here has a change request.
     new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
+    // ACC-306 — the real seat ending (no seat here unless a test gives one).
+    new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
   );
 
   interface Org {
@@ -130,7 +133,6 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     let order = 0;
     for (const e of entries) await prisma.workflowStageAssignee.create({ data: { organizationId: o.id, stageId: stage.id, order: ++order, ...e } as never });
     const approve = await prisma.workflowTransition.findFirstOrThrow({ where: { fromStageId: stage.id, toStage: { key: 'active' } } });
-    await prisma.workflowTransition.update({ where: { id: approve.id }, data: { isApprovalPath: true } });
     return { stageId: stage.id, approveId: approve.id };
   }
 

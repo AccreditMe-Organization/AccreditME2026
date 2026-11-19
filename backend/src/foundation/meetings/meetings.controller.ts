@@ -26,10 +26,14 @@ import { MeetingPeopleService } from './meeting-people.service';
 import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
+import { MeetingReviewService } from './meeting-review.service';
+import { MeetingSeriesService } from './meeting-series.service';
 import {
   AddMeetingGuestDto,
   AnswerMeetingDto,
   CheckMeetingClashesDto,
+  CreateMeetingSeriesDto,
+  EndMeetingSeriesDto,
   CreateAgendaItemDto,
   ListMeetingsDto,
   OrderAgendaDto,
@@ -42,10 +46,13 @@ import type {
   IMeeting,
   IMeetingAgendaItem,
   IMeetingAttendee,
+  IMeetingAwaitingMe,
   IMeetingClash,
   IMeetingFile,
   IMeetingFiles,
   IMeetingList,
+  IMeetingScopeResult,
+  IMeetingSeriesPreview,
 } from './interfaces/meeting.interface';
 
 /**
@@ -66,7 +73,45 @@ export class MeetingsController {
     private readonly agenda: MeetingAgendaService,
     private readonly files: MeetingFilesService,
     private readonly clashes: MeetingClashService,
+    private readonly review: MeetingReviewService,
+    private readonly series: MeetingSeriesService,
   ) {}
+
+  // ── Series (PR 5) ────────────────────────────────────────────────────────────
+
+  /** The dates a repeat would make, each placed and titled, and their clashes. Writes nothing. */
+  @Post('series/preview')
+  @HttpCode(HttpStatus.OK)
+  previewSeries(
+    @Body() dto: CreateMeetingSeriesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingSeriesPreview> {
+    return this.series.preview(dto, tenantId, { id: userId, permissions });
+  }
+
+  @Post('series')
+  createSeries(
+    @Body() dto: CreateMeetingSeriesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<{ seriesId: string; meetingIds: string[] }> {
+    return this.series.create(dto, tenantId, { id: userId, permissions });
+  }
+
+  @Post('series/:seriesId/end')
+  @HttpCode(HttpStatus.OK)
+  endSeries(
+    @Param('seriesId') seriesId: string,
+    @Body() dto: EndMeetingSeriesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<{ cancelled: string[]; failed: string[] }> {
+    return this.series.end(seriesId, dto, tenantId, { id: userId, permissions });
+  }
 
   @Get()
   list(
@@ -88,6 +133,12 @@ export class MeetingsController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IMeetingClash[]> {
     return this.clashes.check(dto, tenantId, { id: userId, permissions });
+  }
+
+  /** ACC-316 PR 4 — Home's meeting rows, self-scoped. Before ':id', so it is not read as an id. */
+  @Get('awaiting-me')
+  awaitingMe(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMeetingAwaitingMe> {
+    return this.review.awaitingMe(tenantId, userId);
   }
 
   @Get(':id')
@@ -117,7 +168,9 @@ export class MeetingsController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
-  ): Promise<IMeeting> {
+  ): Promise<IMeeting | (IMeeting & { scope: IMeetingScopeResult })> {
+    // ACC-316 PR 5 — a series meeting's "this and all later".
+    if (dto.scope === 'THIS_AND_LATER') return this.series.updateLater(id, dto, tenantId, { id: userId, permissions });
     return this.meetings.update(id, dto, tenantId, { id: userId, permissions });
   }
 
@@ -128,7 +181,8 @@ export class MeetingsController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
-  ): Promise<IMeeting> {
+  ): Promise<IMeeting | (IMeeting & { scope: IMeetingScopeResult })> {
+    if (dto.scope === 'THIS_AND_LATER') return this.series.rescheduleLater(id, dto, tenantId, { id: userId, permissions });
     return this.meetings.reschedule(id, dto, tenantId, { id: userId, permissions });
   }
 

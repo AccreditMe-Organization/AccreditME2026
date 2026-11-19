@@ -624,11 +624,11 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         comment: null,
       };
 
-      const prepared = await prepareTransitionEffects(prisma, ctx);
+      const prepared = await prepareTransitionEffects({ prisma, notifications, calendar, tasks: {} as never }, ctx);
       // Added after the reads, before the move's transaction.
       await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'ORG_GUEST', userId: a.people['invitee']! } });
       await prisma.$transaction((tx) => applyTransitionEffects(tx as never, prepared));
-      await finishTransitionEffects({ prisma, notifications, calendar }, prepared);
+      await finishTransitionEffects(prepared);
 
       const rows = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, invitedAt: true } });
       expect(rows.every((r) => r.invitedAt !== null)).toBe(true);
@@ -1196,7 +1196,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');
-      expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(53).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
+      expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(54).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
         'MEETING_CLASH_TOO_MANY_TIMES',
       );
     });

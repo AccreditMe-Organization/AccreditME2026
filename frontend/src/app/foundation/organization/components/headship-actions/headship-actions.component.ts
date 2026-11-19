@@ -14,6 +14,7 @@ import { AppointHeadDialogComponent, HeadshipPerson } from '../appoint-head-dial
 import { AppointSuccessorDialogComponent } from '../appoint-successor-dialog/appoint-successor-dialog.component';
 import { SetActingHeadDialogComponent } from '../set-acting-head-dialog/set-acting-head-dialog.component';
 import { HeadshipAction, deriveHeadshipState } from '../headship-panel/headship-state';
+import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -177,7 +178,9 @@ export class HeadshipActionsComponent implements OnInit {
         // ACC-288 — vacating, ending a cover or completing a handover that would
         // leave the root unit with nobody is refused; said here, in the panel.
         this.actionError.set(
-          rootUnitNeedsHeadMessage(err, this.translate, this.language) ?? extractErrorMessage(err, 'headship.saveFailed'),
+          rootUnitNeedsHeadMessage(err, this.translate, this.language) ??
+            roleInactiveMessage(err, this.translate) ??
+            extractErrorMessage(err, 'headship.saveFailed'),
         );
       },
     });

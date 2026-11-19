@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { EngineTx } from '../workflow/workflow.service';
 import { peopleDateIn } from '../task/task-sla.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
@@ -5,6 +6,11 @@ import type { AnyTransitionEffect, TransitionEffectContext } from '../workflow/t
 import { transitionEffect } from '../workflow/transition-effect.types';
 import { cancelledNotice, invitationNotice, outsideCancelledEmail, outsideInvitationEmail } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
+import type { ITask } from '../task/interfaces/task.interface';
+import type { PreparedTask } from '../task/task.service';
+import { ACTION_ITEM_PRIORITY, draftActionItems } from './meeting-minutes-rules';
+import { lockMeetingRow } from './meeting-access';
+import { MeetingRefusal } from './meeting-refusal';
 
 /**
  * ACC-316 — what entering a meeting's stages does (TRANSITION_EFFECTS, plan
@@ -16,6 +22,10 @@ import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNa
  *                  by email in the organisation's language (PR 3b).
  *   Cancelled      everyone invited is told, with the reason; outside guests
  *                  by email, only if they were invited.
+ *   Minutes        (PR 4) every action item still a draft becomes a task, its
+ *   Approved       owner the only assignee, due when the draft says; the
+ *                  meeting is stamped approved. The move's own transaction:
+ *                  approval and tasks commit together or not at all.
  *
  * The invitation names the meeting's date and time, absolute, in the
  * organisation's zone (the working calendar's), with Latin digits:
@@ -138,4 +148,92 @@ const cancelled = transitionEffect<Invited | null>({
   },
 });
 
-export const MEETING_TRANSITION_EFFECTS: readonly AnyTransitionEffect[] = [agendaIssued, cancelled];
+/** What MINUTES_FINAL prepared: a task per draft action item, and (after apply) what was inserted. */
+interface Approval {
+  drafts: { id: string; ownerUserId: string; ownerStatus: string; dueAt: Date; title: string; prepared: PreparedTask }[];
+  created: { task: ITask; prepared: PreparedTask }[];
+}
+
+/** The draft's fields a task is built from, as one comparable string. */
+const draftKey = (d: { id: string; ownerUserId: string; ownerStatus: string; dueAt: Date; title: string }) =>
+  `${d.id} ${d.ownerUserId} ${d.ownerStatus} ${d.dueAt.toISOString()} ${d.title}`;
+
+const logger = new Logger('MeetingEffects');
+
+/**
+ * ACC-316 PR 4 — the minutes are approved (plan §3.7, §3.8.1). prepare() builds
+ * a task per draft action item before the transaction (TaskService's own
+ * record-task path: the owner the only assignee, MEDIUM, due when the draft
+ * says); apply() locks the meeting row AFTER the instance (ACC-255's order),
+ * refuses MEETING_CHANGED if the drafts moved since, inserts the tasks, links
+ * each item to its task and stamps the approval; finish() announces the tasks
+ * and writes the meeting's audit row.
+ */
+const minutesFinal = transitionEffect<Approval>({
+  key: 'meeting.minutes_final',
+  flag: STAGE_FLAG.MINUTES_FINAL,
+  async prepare(deps, ctx) {
+    const drafts = await draftActionItems(deps.prisma, ctx.objectId, ctx.organizationId);
+    const prepared = await Promise.all(
+      drafts.map(async (d) => ({
+        id: d.id,
+        ownerUserId: d.ownerUserId,
+        ownerStatus: d.ownerStatus,
+        dueAt: d.dueAt,
+        title: d.title,
+        prepared: await deps.tasks.prepareRecordTask(
+          {
+            title: d.title,
+            titleAr: null,
+            description: null,
+            priority: ACTION_ITEM_PRIORITY,
+            sourceType: 'MEETING',
+            sourceId: ctx.objectId,
+            assigneeUserIds: [d.ownerUserId],
+            dueAt: d.dueAt,
+          },
+          ctx.organizationId,
+        ),
+      })),
+    );
+    return { drafts: prepared, created: [] };
+  },
+  async apply(tx, ctx, prepared, deps) {
+    await lockMeetingRow(tx, ctx.objectId, ctx.organizationId);
+    const now = await draftActionItems(tx, ctx.objectId, ctx.organizationId);
+    // The drafts as they were prepared, each owner still ACTIVE: never a task with nobody on it.
+    if (now.map(draftKey).sort().join('|') !== prepared.drafts.map(draftKey).sort().join('|')) throw new MeetingRefusal('MEETING_CHANGED');
+    if (now.some((d) => d.ownerStatus !== 'ACTIVE')) throw new MeetingRefusal('MEETING_CHANGED');
+    const created: Approval['created'] = [];
+    for (const d of prepared.drafts) {
+      const task = await deps.tasks.insertPrepared(tx, d.prepared, ctx.organizationId, ctx.actorId);
+      await tx.meetingActionItem.update({ where: { id: d.id }, data: { taskId: task.id } });
+      created.push({ task, prepared: d.prepared });
+    }
+    await tx.meeting.update({ where: { id: ctx.objectId }, data: { minutesApprovedAt: new Date(), approvedById: ctx.actorId } });
+    // The approval's audit row commits with it, never after a notice that could fail.
+    await tx.auditLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        actorId: ctx.actorId,
+        action: 'UPDATE',
+        objectType: 'Meeting',
+        objectId: ctx.objectId,
+        after: { minutesApproved: true, tasksCreated: created.map((c) => c.task.id) },
+      },
+    });
+    return { ...prepared, created };
+  },
+  async finish(deps, ctx, prepared) {
+    // Each task announced on its own: one failure is logged and the others still go.
+    for (const { task, prepared: p } of prepared.created) {
+      try {
+        await deps.tasks.announceCreated(task, p, ctx.organizationId, ctx.actorId, { meetingActionItem: true });
+      } catch (error) {
+        logger.error(`Announcing task ${task.id} for meeting ${ctx.objectId} in org ${ctx.organizationId} failed: ${error instanceof Error ? error.name : 'unknown error'}`);
+      }
+    }
+  },
+});
+
+export const MEETING_TRANSITION_EFFECTS: readonly AnyTransitionEffect[] = [agendaIssued, cancelled, minutesFinal];

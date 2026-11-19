@@ -70,7 +70,12 @@ export type WorkflowRefusalCode =
   | 'DEFAULT_TEMPLATE_REQUIRED'
   | 'DEFAULT_TEMPLATE_INACTIVE'
   // ACC-316 PR 3a — a move into a stage that needs a reason, pressed with none (move-reasons.ts).
-  | 'REASON_REQUIRED';
+  | 'REASON_REQUIRED'
+  // ACC-316 PR 4 — what holds Approve Minutes (meeting-minutes-rules.ts).
+  | 'MEETING_REVIEW_OPEN'
+  | 'MEETING_SUGGESTION_OPEN'
+  | 'MEETING_ACTION_PAST_DUE'
+  | 'MEETING_ACTION_PAST_SLA_LIMIT';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -126,6 +131,10 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   DEFAULT_TEMPLATE_REQUIRED: HttpStatus.CONFLICT,
   DEFAULT_TEMPLATE_INACTIVE: HttpStatus.CONFLICT,
   REASON_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_REVIEW_OPEN: HttpStatus.CONFLICT,
+  MEETING_SUGGESTION_OPEN: HttpStatus.CONFLICT,
+  MEETING_ACTION_PAST_DUE: HttpStatus.CONFLICT,
+  MEETING_ACTION_PAST_SLA_LIMIT: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -182,6 +191,10 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   DEFAULT_TEMPLATE_REQUIRED: 'This is the default workflow for its record type. Make another template the default first.',
   DEFAULT_TEMPLATE_INACTIVE: "A deactivated workflow can't be the default.",
   REASON_REQUIRED: 'Give a reason for this move: the people told about it read it.',
+  MEETING_REVIEW_OPEN: "The review is still open: wait for every present member's answer or for the review date to pass.",
+  MEETING_SUGGESTION_OPEN: 'Apply or decline every open suggestion first.',
+  MEETING_ACTION_PAST_DUE: 'An action item is due in the past. Give it a later due date first.',
+  MEETING_ACTION_PAST_SLA_LIMIT: "An action item is due after its task's time limit. Give it an earlier due date first.",
 };
 
 export class WorkflowRefusalException extends HttpException {
