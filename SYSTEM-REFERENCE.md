@@ -14229,10 +14229,12 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**Two panels are left OUT, not empty**: Tasks and Sessions have no per-user
-endpoint. ACC-216 adds the reads one at a time (RefreshToken; tasks after a
-visibility decision). A spec pins their absence. Committees and Access
-history were the other two; ACC-216 parts 1 and 2 built them (below).
+**Two panels are left OUT, not empty**: Tasks and Sessions. Both reads exist: a
+person's tasks through the task list's `person` filter and
+`GET /tasks/record-panel?person=` (#332), and Sessions through
+`GET /users/:userId/sessions` and its endings (below). Each panel is a later PR.
+A spec pins their absence. Committees and Access history were the other two;
+ACC-216 parts 1 and 2 built them (below).
 
 **The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
 `UserCommitteesService` (`foundation/user/committees/`, its own controller
@@ -14259,6 +14261,46 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 - **A role is named only with `roles:view`** (`GET /users/:userId/roles`'s gate); without it the row says a role was granted, and no role is read.
 - **Cost:** at most 8 queries per page (the person; the page and its count; actors, roles and transfer events, each only when needed; units and positions only for a transfer), every one scoped by organisation. Nothing on the per-request path.
 - **The panel** (`UserAccessHistoryPanelComponent`) is on `am-capped-panel`: five rows, its own outcome (skeleton, "Access history couldn't be loaded." with Retry, "No changes recorded" / «لم تُسجَّل أي تغييرات»), See all into `am-list-dialog` compact with Load more by 50. It renders for yourself or a `users:view` holder; otherwise it is absent and never asks, and a refused read hides its host. The words are `access-history-text.ts`: Arabic as verbal nouns («منح دور», «إيقاف الحساب»), singular and gender-neutral, «منشأة» for the organisation; your own acts read "by you" / «بواسطتك»; dates through `FormatService.dateTime()`.
+
+**A person's sign-ins, and ending them (ACC-216 Sessions, PR 1, the backend).**
+`UserSessionsService` (`foundation/user/sessions/`); plan and Ahmad's answers (17
+Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
+- **A sign-in is a chain of `RefreshToken` rows** (each renewal revokes one row and
+  writes the next, copying `sessionStartedAt`); the row listed is its one live row.
+  **Live** (`liveSessionWhere()`): not revoked, not expired, under 12 hours from its
+  start (a null start counts from `createdAt`), the person's current `tokenVersion`
+  (null = before the column); and the person ACTIVE, or nothing is listed.
+- **`GET /users/:userId/sessions`**: yourself, or `users:view` + `users:manage_sessions`,
+  checked before any read (403 naming the key; the identical 404 for another
+  organisation). Capped at 20, newest renewal first; `total` counts past it. Each row:
+  `id`, `startedAt`, `lastActiveAt` (the last renewal, to about 15 minutes),
+  `expiresAt`, `device` (`{ browser, os }`, parsed on the server by
+  `session-device.ts`; the raw User-Agent is never sent), `address` (yourself and the
+  key holder only), `current` (yourself only: the access token's `sst`, to the
+  second). Two reads after the gate. Nothing on the per-request path.
+- **Yourself, under `/auth/sessions`** (where the refresh cookie arrives, so "this
+  device" is the cookie's row by hash): `POST :id/end` revokes the chosen sign-in's
+  whole chain (refused for the current one: `SESSION_IS_CURRENT`), and
+  `POST end-others` every chain but yours (`CURRENT_SESSION_UNKNOWN` without the
+  cookie). It bites at that device's next renewal, **up to 15 minutes later** (Q7): no
+  check is added to TenantGuard. Refused while impersonating. Sends nothing.
+- **An administrator, `POST /users/:userId/sessions/end-all`** ("Sign out
+  everywhere", `users:manage_sessions`): `endEverySessionInTx()` under the person's
+  row lock, so it is immediate (`tokenVersion + 1`). The **account-action rule**
+  (`foundation/user/account-action-rule.ts`, ACC-164's rule generalised; the two-step
+  reset now calls it too): not yourself (`SESSIONS_END_SELF`), not while
+  impersonating, not the account owner (`ACCOUNT_OWNER_PROTECTED`), and the floor
+  (`SESSIONS_END_HIGHER_ACCOUNT`). After the commit: the audit row and the
+  `sessions_ended` security email (a failed email never fails the sign-out).
+- **Audit** (every ending): `UPDATE` / `User` / the person, `metadata: { event:
+  'sessions_ended', scope: 'one' | 'others' | 'all', count }`. No address, device or
+  token. Part 2's access history (#323) reads it as "Changed" until a SESSIONS_ENDED
+  kind is added there.
+- **`users:manage_sessions`**: grantable, seeded to Organization Administrator only,
+  in Users' "Account access" group. Existing organisations get it from
+  `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`
+  written directly, one audit row per tenant, refuses customers, skips the platform
+  organisation; dry run by default).
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the

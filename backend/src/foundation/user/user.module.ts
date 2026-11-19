@@ -20,6 +20,8 @@ import { UserCommitteesController } from './committees/user-committees.controlle
 import { UserCommitteesService } from './committees/user-committees.service';
 import { UserAccessHistoryController } from './access-history/user-access-history.controller';
 import { UserAccessHistoryService } from './access-history/user-access-history.service';
+import { OwnSessionsController, UserSessionsController } from './sessions/user-sessions.controller';
+import { UserSessionsService } from './sessions/user-sessions.service';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
 // TaskModule -> forwardRef TenantModule edge (UserModule -> forwardRef
@@ -73,7 +75,7 @@ import { UserAccessHistoryService } from './access-history/user-access-history.s
     // names them. LookupModule forwardRef()s TenantModule, as this module does.
     forwardRef(() => LookupModule),
   ],
-  controllers: [UserController, UserCommitteesController, UserAccessHistoryController],
+  controllers: [UserController, UserCommitteesController, UserAccessHistoryController, UserSessionsController, OwnSessionsController],
   providers: [
     UserService,
     UserHomeCountsService,
@@ -81,6 +83,7 @@ import { UserAccessHistoryService } from './access-history/user-access-history.s
     SecurityNoticeService,
     UserCommitteesService,
     UserAccessHistoryService,
+    UserSessionsService,
   ],
   exports: [UserService, UserHomeCountsService],
 })

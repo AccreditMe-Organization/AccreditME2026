@@ -97,7 +97,7 @@ describe('SYSTEM_ROLE_SEED — setup:view (ACC-82)', () => {
 });
 
 // ACC-164 — users:reset_mfa. Grantable to any role (Ahmad, 14 Nov), but SEEDED
-// to Organization Administrator only (lane B). Platform Administrator holds the
+// to Organization Administrator only (agreed at review). Platform Administrator holds the
 // whole catalogue by construction, frozen and inert in a tenant. Every other
 // seeded role is named, so a change that hands it out is a decision in a test.
 describe('SYSTEM_ROLE_SEED — users:reset_mfa (ACC-164)', () => {
@@ -114,6 +114,28 @@ describe('SYSTEM_ROLE_SEED — users:reset_mfa (ACC-164)', () => {
     (key) => {
       expect(SYSTEM_ROLE_SEED.some((r) => r.key === key)).toBe(true);
       expect(permissionsOf(key)).not.toContain(USERS_PERMISSIONS.RESET_MFA);
+    },
+  );
+});
+
+// ACC-216 — users:manage_sessions. Another person's sign-ins: seeing them and
+// "Sign out everywhere". Grantable to any role, SEEDED to Organization
+// Administrator only (plan step-216 §2.7); Platform Administrator holds
+// the whole catalogue by construction. Every other seeded role is named.
+describe('SYSTEM_ROLE_SEED — users:manage_sessions (ACC-216)', () => {
+  it('is in the global permission catalog', () => {
+    expect(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`)).toContain(USERS_PERMISSIONS.MANAGE_SESSIONS);
+  });
+
+  it.each(['TENANT_ADMIN', 'PLATFORM_ADMIN'])('is granted to %s', (key) => {
+    expect(permissionsOf(key)).toContain(USERS_PERMISSIONS.MANAGE_SESSIONS);
+  });
+
+  it.each(['READ_ONLY_ADMIN', 'QUALITY_MANAGER', 'QUALITY_OFFICER', 'AUDITOR', 'BASE_USER', 'VIEWER'])(
+    'is not granted to %s',
+    (key) => {
+      expect(SYSTEM_ROLE_SEED.some((r) => r.key === key)).toBe(true);
+      expect(permissionsOf(key)).not.toContain(USERS_PERMISSIONS.MANAGE_SESSIONS);
     },
   );
 });
