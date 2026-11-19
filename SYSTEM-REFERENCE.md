@@ -17398,9 +17398,10 @@ with `schedule()`).
 - **`POST /meetings/series`:**
   - the series and every meeting are written in ONE transaction, each meeting
     with its MEMBER invitees, its instance at Planned and its audit row;
-  - its reads come first and once: the template and first stage
+  - its engine reads come first and once: the template and first stage
     (`WorkflowService.prepareInstanceStarts()`, shared while the stage creates
-    no task and snapshots no quorum) and the owner's invitees. The writes are
+    no task and snapshots no quorum; otherwise five records at a time). The
+    owner's invitees are read once, inside the transaction. The writes are
     batched (`insertMeetingsInTx()`: the rows, the invitees, the agenda items and
     the audit rows each in one write; the instances one by one);
   - after the commit, each meeting's notices are sent on their own: one that
@@ -17420,15 +17421,19 @@ with `schedule()`).
   - a later meeting's own edit is kept, and the answer's `scope.kept` names it;
   - an edit carries the type, duration, place, link and quorum, never the
     title;
-  - a reschedule shifts each by the same amount, worked out from its time read
-    under its lock, then places it as creation places a day: off a day that
+  - a reschedule moves each by the anchor's move AS PEOPLE READ IT, in the
+    organisation's zone: the same number of calendar days and the same change
+    of wall-clock time, from its time read under its lock (never elapsed time,
+    so a clock change between two meetings keeps their hour). It then places it
+    as creation places a day: off a day that
     isn't a working day, and past a day the owner already meets (a meeting not
     moving and not cancelled). One `MeetingReschedule` (`THIS_AND_LATER`) each.
     The invitees of each are told after the commit.
   - an edit sends no notice, as a single meeting's edit sends none.
 - **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
   - first, the caller must be in the pool of every later open meeting's stage
-    (Cancel Meeting is a person's move); otherwise 403
+    (Cancel Meeting is a person's move, both its stages this organisation's);
+    otherwise 403
     `MEETING_SERIES_CANNOT_CANCEL`, naming them, and nothing is written;
   - each later meeting still in Planned or Agenda Issued is cancelled by its
     own Cancel Meeting, so each tells its invitees; one that fails is logged with
