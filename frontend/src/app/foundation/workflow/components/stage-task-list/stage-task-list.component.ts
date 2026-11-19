@@ -15,6 +15,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { DragHandleComponent } from '../../../../shared/components/drag-handle/drag-handle.component';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -88,6 +89,7 @@ type LoadState = 'loading' | 'ready' | 'error';
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
+    DragHandleComponent,
     EditDialogComponent,
     IconButtonComponent,
     StageTaskDefinitionFormComponent,
@@ -161,28 +163,24 @@ type LoadState = 'loading' | 'ready' | 'error';
               >
                 @for (row of rows(); track row.id; let i = $index; let first = $first; let last = $last) {
                   <li
-                    class="am-stage-task"
-                    [class.am-stage-task--lifted]="lifted()?.id === row.id"
+                    class="am-stage-task am-drag-row"
+                    [class.am-drag-row--lifted]="lifted()?.id === row.id"
                     [attr.data-stage-task]="row.id"
                     cdkDrag
                     [cdkDragData]="row"
                     cdkDragPreviewContainer="parent"
                   >
                     @if (canManage()) {
-                      <button
-                        type="button"
-                        class="am-stage-task__handle"
+                      <am-drag-handle
                         cdkDragHandle
                         [attr.data-handle]="row.id"
-                        [attr.aria-label]="'workflow.stageTasks.reorderNamed' | translate: { position: i + 1, title: titleOf(row) }"
-                        [attr.aria-describedby]="hintId"
-                        [attr.aria-pressed]="lifted()?.id === row.id"
+                        [label]="'workflow.stageTasks.reorderNamed' | translate: { position: i + 1, title: titleOf(row) }"
+                        [describedBy]="hintId"
+                        [pressed]="lifted()?.id === row.id"
                         [disabled]="busy()"
                         (keydown)="onHandleKey($event, row)"
                         (focusout)="onHandleFocusOut(row)"
-                      >
-                        <span aria-hidden="true">⣿</span>
-                      </button>
+                      />
                     }
                     <span class="am-stage-task__n" aria-hidden="true">{{ i + 1 }}</span>
                     <div class="am-stage-task__body">
@@ -450,71 +448,6 @@ type LoadState = 'loading' | 'ready' | 'error';
         gap: var(--am-space-8);
         padding-block: var(--am-space-8);
         border-block-end: 1px solid var(--am-border);
-      }
-      /* ACC-212 — the drag handle (drawing: a 22 × 26 bordered button). */
-      .am-stage-task__handle {
-        flex: none;
-        inline-size: 22px;
-        block-size: 26px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        border: 1px solid var(--am-control-border);
-        border-radius: var(--am-radius-control);
-        background: var(--am-surface-raised);
-        color: var(--am-ink-500);
-        font-size: var(--am-type-micro-size);
-        cursor: grab;
-        touch-action: none;
-      }
-      .am-stage-task__handle:hover:not(:disabled) {
-        border-color: var(--am-control-border-hover);
-        color: var(--am-ink-700);
-      }
-      .am-stage-task__handle:focus-visible {
-        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: 2px;
-      }
-      .am-stage-task__handle:disabled {
-        cursor: default;
-        opacity: 0.6;
-      }
-      .am-stage-task__handle[aria-pressed='true'] {
-        cursor: grabbing;
-        border-color: var(--am-primary-600);
-        color: var(--am-primary-700);
-        background: var(--am-primary-100);
-      }
-      /* The row picked up from the keyboard: a tint and a bar on its start edge. */
-      .am-stage-task--lifted {
-        background: var(--am-primary-50);
-        box-shadow: inset 3px 0 0 var(--am-primary-600);
-      }
-      :host-context([dir='rtl']) .am-stage-task--lifted {
-        box-shadow: inset -3px 0 0 var(--am-primary-600);
-      }
-      .am-stage-task.cdk-drag-preview {
-        list-style: none;
-        background: var(--am-surface-raised);
-        border: 1px solid var(--am-border-strong);
-        border-radius: var(--am-radius-button);
-        box-shadow: var(--am-shadow-overlay);
-        padding-inline: var(--am-space-8);
-      }
-      .am-stage-task.cdk-drag-placeholder {
-        opacity: 0.35;
-      }
-      /* The other rows slide aside. Not the preview: it lives inside the list
-         (so it inherits the direction), and a transition on it would make the
-         CDK wait for it before the drop lands. */
-      .cdk-drop-list-dragging .am-stage-task:not(.cdk-drag-placeholder):not(.cdk-drag-preview) {
-        transition: transform 200ms ease;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .cdk-drop-list-dragging .am-stage-task:not(.cdk-drag-placeholder):not(.cdk-drag-preview) {
-          transition: none;
-        }
       }
       .am-stage-task__n {
         flex: none;
@@ -1042,7 +975,7 @@ export class StageTaskListComponent implements OnInit {
     this.relocating = true;
     afterNextRender(
       () => {
-        this.host.nativeElement.querySelector<HTMLElement>('[data-handle="' + id + '"]')?.focus();
+        this.host.nativeElement.querySelector<HTMLElement>('[data-handle="' + id + '"] button')?.focus();
         this.relocating = false;
       },
       { injector: this.injector },

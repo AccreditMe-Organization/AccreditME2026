@@ -12,6 +12,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 import { StageTaskDefinitionListItemDto, WorkflowStageDto, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { StageTaskListComponent } from './stage-task-list.component';
 
@@ -99,6 +100,8 @@ class HostComponent {
 }
 
 describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () => {
+  // The pointer drags read the rows' boxes, so they measure in the real font.
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let http: HttpTestingController;
@@ -130,7 +133,7 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const order = () => Array.from(el.querySelectorAll<HTMLElement>('[data-stage-task]')).map((r) => r.getAttribute('data-stage-task'));
-    const handle = (id: string) => el.querySelector<HTMLButtonElement>(`[data-handle="${id}"]`)!;
+    const handle = (id: string) => el.querySelector<HTMLButtonElement>(`[data-handle="${id}"] button`)!;
     const announced = () => el.querySelector('[data-stage-tasks-announcement]')?.textContent?.trim() ?? '';
     const error = () => el.querySelector('.am-stage-tasks__action-error')?.textContent?.trim() ?? null;
     return { el, order, handle, announced, error };
@@ -173,7 +176,7 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
 
   it('each row has a named handle (non-vacuity: three rows, three handles)', async () => {
     const { el, handle } = await setup();
-    expect(el.querySelectorAll('[data-handle]').length).toBe(3);
+    expect(el.querySelectorAll('[data-handle] button').length).toBe(3);
     expect(handle('def-2').getAttribute('aria-label')).toBe('Reorder task 2: Collect the records');
     expect(handle('def-2').tagName).toBe('BUTTON');
   });

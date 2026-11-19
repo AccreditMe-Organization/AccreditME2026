@@ -170,11 +170,11 @@ describe('StageTaskListComponent — the drag handle fits the row (ACC-212)', ()
         // Non-vacuity: laid out at the panel width, three rows, three handles.
         expect(host.getBoundingClientRect().width).withContext('host not laid out').toBeCloseTo(c.width, 0);
         expect(rows.length).withContext('rows rendered').toBe(3);
-        expect(host.querySelectorAll('[data-handle]').length).withContext('handles rendered').toBe(3);
+        expect(host.querySelectorAll('[data-handle] button').length).withContext('handles rendered').toBe(3);
 
         for (const row of rows) {
           const r = row.getBoundingClientRect();
-          const handle = row.querySelector<HTMLElement>('[data-handle]')!.getBoundingClientRect();
+          const handle = row.querySelector<HTMLElement>('[data-handle] button')!.getBoundingClientRect();
           const n = row.querySelector<HTMLElement>('.am-stage-task__n')!.getBoundingClientRect();
           const body = row.querySelector<HTMLElement>('.am-stage-task__body')!.getBoundingClientRect();
           const actions = row.querySelector<HTMLElement>('.am-stage-task__actions')!.getBoundingClientRect();
