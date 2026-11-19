@@ -1659,6 +1659,10 @@ them together with their resolver.
        - **Departures:** Distribute's confirm leaves out the design's "Told: 3
          others · 1 guest" (the server tells only the present members); the
          Action items summary card and the review card are 7c's.
+       - **After lane B's review (P206):** answers shown only for the newest
+         write; attendance taps queued; typed discussion kept; votes checked on
+         the client; votes above the members present hold Distribute (one
+         readiness check); "nothing to show" is `mayRead: false` both ways.
    - **PR 7c, review and approval:** the review banner (No corrections /
      Suggest a correction), suggestions applied or declined, the Review card,
      Return for Correction, Approve Minutes with "Can't move to Minutes

@@ -17638,16 +17638,25 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     `{ mayRead, rows }`, each row with `mayOpen`. This meeting's own visibility
     first (the identical 404); then rows only for whoever may read the LAST
     meeting's minutes, asked by the same `minutesAccess()` the minutes read
-    uses (an organisation guest of this meeting only reads none, and gets
-    `mayRead: false`, no error); then each row's task linked only where the task
-    page would open it, by `TaskAdmissionService.admittedIds()`, one query for
-    every row. A fixed number of queries for any number of rows (db-spec).
+    uses (an organisation guest of this meeting only reads none); then each
+    row's task linked only where the task page would open it, by
+    `TaskAdmissionService.admittedIds()`, one query for every row. A fixed
+    number of queries for any number of rows (db-spec).
+  - **Nothing to show answers one way (P206):** no earlier approved meeting and
+    "you can't read it" are both `{ mayRead: false, rows: [] }`, never an error.
+    The last meeting is checked with `MeetingAccess.canSee()`, which writes no
+    concealed-refusal log line: nothing is concealed from this caller there.
 - **Distribute (`POST /meetings/:id/distribute`, the app's move into Minutes
   Review):**
   - only Minutes Draft's pool may press it;
-  - attendance must be recorded for every member and organisation guest
-    (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`), checked inside the move
-    under the meeting row's lock, so nothing is written;
+  - ONE readiness check, `distributeBlockedBy()` (`meeting-minutes-rules.ts`),
+    read by the minutes read's `distribute.blockedBy` and run again inside the
+    move under the meeting row's lock, so nothing is written:
+    - attendance recorded for every member and organisation guest
+      (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`);
+    - then no decision whose votes exceed the members now present
+      (`MEETING_VOTES_EXCEED_PRESENT`, with `items`: item, total, present). The
+      attendance tap that lowered the count is not refused (P206);
   - the review date (`reviewBy`, a day after today, default 5 working days) and
     the round (`reviewRound` + 1) are written with the move (`inTx`). The
     default is `reviewDayDefaults()` (`meeting-minutes-rules.ts`), its one home;
@@ -18017,8 +18026,25 @@ date-time, ACC-94), with the meeting's day-and-time field.
 
 **Distribute Minutes** (`app-meeting-distribute-dialog`, a confirm), beside the
 moves for `may.distribute`: opens on `distribute.defaultReviewBy` and sends a
-date only when the person changes it. While attendance is incomplete it names
-who is missing and offers no Distribute.
+date only when the person changes it. While `distribute.blockedBy` holds it, it
+says why (who is missing, or which item's votes exceed the members present)
+and offers no Distribute.
+
+**After lane B's review (P206):**
+
+- **Answers in order:** every minutes write answers with the whole minutes, so
+  the page keeps one `MinutesWriteOrder` (provided by the page) and shows an
+  answer only when it answers the newest write begun.
+- **Attendance taps are queued per row** while a save runs, never dropped, and
+  sent when it ends; focus moves only once a tap is accepted. At the start time
+  a timer (cleared on destroy) removes "opens at" and the page reads the
+  minutes again, so attendance opens without a reload.
+- **Typed discussion is kept:** the box follows the STORED discussion only when
+  that string changes and the box is clean. A change while the person has typed
+  keeps their text, with a line saying it changed elsewhere and Reload.
+- **Votes are checked before sending:** whole numbers, 0 or more, all three or
+  none, said under the field. `MEETING_VOTES_EXCEED_PRESENT` says its numbers.
+- **Open actions:** a new read drops notes saved on the page since.
 
 **The dialogs**, measured under the 420px cap at 1280 and 390, in both
 languages, each keeping 20px:
