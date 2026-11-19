@@ -14597,11 +14597,13 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**One panel is left OUT, not empty**: Tasks. Its read exists: a person's tasks
-through the task list's `person` filter and `GET /tasks/record-panel?person=`
-(#332). Its panel is a later PR. A spec pins its absence. Committees, Access
-history and Sessions were the other three: ACC-216 parts 1 and 2 built the first
-two, and its Sessions panel is "Signed-in devices" (below).
+**All four per-user panels are built: Committees, Tasks, Access history and
+Sessions.** Each is left OUT, not shown empty, for a viewer who may not read it,
+and a spec pins each absence. ACC-216 parts 1 and 2 built Committees and Access
+history. Tasks (#339) is the record Tasks panel for a person: the tasks they are
+on that the viewer may see, through the task list's `person` filter and
+`GET /tasks/record-panel?person=` (#332), for the person themself or a
+`users:view` holder. The Sessions panel is "Signed-in devices" (below).
 
 **The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
 `UserCommitteesService` (`foundation/user/committees/`, its own controller

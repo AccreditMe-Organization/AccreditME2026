@@ -86,8 +86,9 @@ interface Fact {
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Tasks has no panel here yet, so it is absent — not a placeholder, not a
- * disabled panel. A spec pins its absence.
+ * Tasks (ACC-216, #339) is the record Tasks panel for a person — the tasks they
+ * are on that the viewer may see — shown to the person themself or a viewer
+ * holding users:view (the endpoint's rule): absent otherwise, never empty.
  *
  * Committees (ACC-216 part 1) is its own component with its own request, shown
  * only to a viewer holding committees:view: absent otherwise, never empty.
