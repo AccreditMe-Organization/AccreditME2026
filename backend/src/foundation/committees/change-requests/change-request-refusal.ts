@@ -40,7 +40,7 @@ export const CHANGE_REQUEST_REFUSALS = {
   },
   CHANGE_REQUEST_NOT_UNDER_REVIEW: {
     status: HttpStatus.CONFLICT,
-    message: 'Only a change request under review can be approved, returned or rejected.',
+    message: 'Only a change request waiting for a decision can be approved, returned or rejected.',
   },
   CHANGE_REQUEST_NOT_OPEN: {
     status: HttpStatus.CONFLICT,
