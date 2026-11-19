@@ -18,7 +18,7 @@ import {
   SuggestCorrectionDto,
   UpdateActionItemDto,
 } from './dto/meeting.dto';
-import type { IMeetingMinutes } from './interfaces/meeting.interface';
+import type { IMeetingMinutes, IMeetingOpenActions } from './interfaces/meeting.interface';
 
 /**
  * ACC-316 PR 4 — a meeting's minutes and their review. No route carries
@@ -43,6 +43,17 @@ export class MeetingMinutesController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IMeetingMinutes> {
     return this.minutes.getMinutes(id, tenantId, { id: userId, permissions });
+  }
+
+  /** ACC-316 PR 7b — the agenda's "Open actions from the last meeting", for whoever may read that meeting's minutes. */
+  @Get(':id/open-actions')
+  openActions(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingOpenActions> {
+    return this.minutes.getOpenActions(id, tenantId, { id: userId, permissions });
   }
 
   @Put(':id/attendance')

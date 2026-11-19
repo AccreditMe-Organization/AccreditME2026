@@ -5,7 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of, type Observable } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
@@ -20,6 +21,8 @@ import {
   type MeetingAttendeeDto,
   type MeetingDto,
   type MeetingFilesDto,
+  type MeetingMinutesDto,
+  type MeetingOpenActionsDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
 import { meetingRefusalKey } from '../../meeting-refusal';
@@ -28,6 +31,10 @@ import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meet
 import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { MeetingAttendanceComponent } from '../meeting-attendance/meeting-attendance.component';
+import { MeetingActionDialogComponent } from '../meeting-action-dialog/meeting-action-dialog.component';
+import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/meeting-distribute-dialog.component';
+import { MinutesWriteOrder } from '../../minutes-write-order';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -39,6 +46,8 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 @Component({
   selector: 'app-meeting-page',
   standalone: true,
+  // P206 — one order for the page's minutes writes: an older answer never puts back what a newer one changed.
+  providers: [MinutesWriteOrder],
   imports: [
     TranslatePipe,
     RouterLink,
@@ -52,6 +61,9 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
     MeetingAgendaPanelComponent,
     MeetingFileListComponent,
     IconButtonComponent,
+    MeetingAttendanceComponent,
+    MeetingActionDialogComponent,
+    MeetingDistributeDialogComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -87,6 +99,9 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
           <div class="flex flex-wrap items-center gap-2">
             @if (m.may.reschedule) {
               <p-button size="small" severity="secondary" [label]="'meeting.reschedule.open' | translate" data-testid="meeting-reschedule" (onClick)="rescheduleOpen.set(true)" />
+            }
+            @if (minutes()?.may?.distribute) {
+              <p-button size="small" [label]="'meeting.distribute.open' | translate" data-testid="meeting-distribute" (onClick)="distributeOpen.set(true)" />
             }
             @if (instance(); as inst) {
               <app-workflow-transition-actions
@@ -177,6 +192,10 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
               [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
               (retryRead)="retryRead()"
               (reload)="load()"
+              [minutes]="minutes()"
+              [openActions]="openActions()"
+              (minutesChange)="minutes.set($event)"
+              (raiseAction)="actionItem.set($event)"
             />
             <!-- General attachments: absent while empty for someone who may not add one. -->
             @if (m.may.manageAgenda || files().attachments.length > 0) {
@@ -198,6 +217,10 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
             }
           </div>
 
+          @if (minutes(); as mm) {
+            <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
+            <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+          } @else {
           <!-- Invitees -->
           <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
             <h2 class="m-0 flex items-center justify-between gap-2 text-[15px] font-semibold">
@@ -247,11 +270,29 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
               <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert">{{ guestError()! | translate }}</p>
             }
           </section>
+          }
         </div>
       </div>
 
       <app-meeting-reschedule-dialog [visible]="rescheduleOpen()" (visibleChange)="rescheduleOpen.set($event)" [meeting]="m" (rescheduled)="load()" />
       <app-meeting-add-guest-dialog [visible]="guestOpen()" (visibleChange)="guestOpen.set($event)" [meeting]="m" (added)="load()" />
+      <app-meeting-action-dialog
+        [visible]="actionItem() !== null"
+        (visibleChange)="$event ? null : actionItem.set(null)"
+        [meetingId]="m.id"
+        [item]="actionItem()"
+        [attendance]="minutes()?.attendance ?? []"
+        (saved)="minutes.set($event)"
+      />
+      <app-meeting-distribute-dialog
+        [visible]="distributeOpen()"
+        (visibleChange)="distributeOpen.set($event)"
+        [meetingId]="m.id"
+        [context]="m.title"
+        [minutes]="minutes()"
+        (distributed)="load()"
+        (refreshMinutes)="refreshMinutes()"
+      />
     }
   `,
   styles: [
@@ -312,6 +353,13 @@ export class MeetingPageComponent {
   ];
   readonly instance = signal<WorkflowInstanceDto | null>(null);
   readonly rescheduleOpen = signal(false);
+  /** PR 7b — the minutes, where this person may read them (null otherwise, and before the meeting is held). */
+  readonly minutes = signal<MeetingMinutesDto | null>(null);
+  /** PR 7b — "Open actions from the last meeting", for whoever may read that meeting's minutes. */
+  readonly openActions = signal<MeetingOpenActionsDto | null>(null);
+  /** The agenda item "Raise action item" was pressed on, while its dialog is open. */
+  readonly actionItem = signal<{ id: string; order: number; title: string } | null>(null);
+  readonly distributeOpen = signal(false);
   readonly guestOpen = signal(false);
   readonly answering = signal<MeetingAnswer | null>(null);
   readonly answerError = signal<string | null>(null);
@@ -354,12 +402,22 @@ export class MeetingPageComponent {
 
   constructor() {
     registerPageName(() => this.meeting()?.title ?? null);
+    // P211 — an answer dropped as older than a newer write: once the newest
+    // settles, the minutes are read again, so a saved write is never left unseen.
+    inject(MinutesWriteOrder)
+      .reread.pipe(takeUntilDestroyed())
+      .subscribe(() => this.refreshMinutes());
     this.load();
   }
 
   /** A re-read after a write that failed: said in the agenda panel, with Retry (P198). */
-  readonly readFailed = signal<'files' | 'attendees' | null>(null);
-  readonly readErrorKey = { files: 'meeting.files.loadFailed', attendees: 'meeting.invitees.loadFailed' } as const;
+  readonly readFailed = signal<'files' | 'attendees' | 'minutes' | 'openActions' | null>(null);
+  readonly readErrorKey = {
+    files: 'meeting.files.loadFailed',
+    attendees: 'meeting.invitees.loadFailed',
+    minutes: 'meeting.minutes.loadFailed',
+    openActions: 'meeting.openActions.loadFailed',
+  } as const;
 
   load(): void {
     forkJoin({
@@ -368,15 +426,20 @@ export class MeetingPageComponent {
       agenda: this.meetings.agenda(this.id),
       files: this.meetings.files(this.id),
       instances: this.workflow.getInstancesByObject('MEETING', this.id),
+      // PR 7b — read alongside; a refusal is "not for you", any other failure is said with Retry.
+      minutes: this.optional(this.meetings.minutes(this.id), 'minutes'),
+      openActions: this.optional(this.meetings.openActions(this.id), 'openActions'),
     }).subscribe({
-      next: ({ meeting, attendees, agenda, files, instances }) => {
+      next: ({ meeting, attendees, agenda, files, instances, minutes, openActions }) => {
         this.meeting.set(meeting);
         // The note as stored, so the next answer keeps it rather than clearing it.
         this.answerNote = meeting.myAnswer?.note ?? '';
         this.attendees.set(attendees);
         this.agenda.set(agenda);
         this.files.set(files);
-        this.readFailed.set(null);
+        this.minutes.set(minutes);
+        this.openActions.set(openActions);
+        if (this.readFailed() === 'files' || this.readFailed() === 'attendees') this.readFailed.set(null);
         this.instance.set(instances[0] ?? null);
         this.state.set('ready');
       },
@@ -418,10 +481,33 @@ export class MeetingPageComponent {
     });
   }
 
+  /** The minutes read again (attendance opens at the start time, without a reload). */
+  refreshMinutes(): void {
+    this.optional(this.meetings.minutes(this.id), 'minutes').subscribe((m) => {
+      if (m) this.minutes.set(m);
+    });
+  }
+
   /** Retry the read that failed after a write. */
   retryRead(): void {
     if (this.readFailed() === 'files') this.loadFiles();
     else if (this.readFailed() === 'attendees') this.loadAttendees();
+    else if (this.readFailed() === 'minutes' || this.readFailed() === 'openActions') this.load();
+  }
+
+  /**
+   * A read the page shows only to some: a 403 or 404 (the minutes not open to
+   * this person yet) is simply nothing to show; any other failure is said in
+   * the agenda panel's line, with Retry, never swallowed.
+   */
+  private optional<T>(read: Observable<T>, which: 'minutes' | 'openActions'): Observable<T | null> {
+    if (this.readFailed() === which) this.readFailed.set(null);
+    return read.pipe(
+      catchError((err: unknown) => {
+        if (!(err instanceof HttpErrorResponse && (err.status === 403 || err.status === 404))) this.readFailed.set(which);
+        return of(null);
+      }),
+    );
   }
 
   /** "Attending", "Can't attend" or "No answer", at the end of each invitee's row. */
