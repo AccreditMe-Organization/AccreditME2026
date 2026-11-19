@@ -3100,6 +3100,11 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
         couldn't be saved…").
       - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
     - **The ↑ / ↓ buttons stay.**
+    - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
+      with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
+      CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
+      because it styles the caller's row; the next sortable list reuses it.
+      Keyboard pick-up stays with the list, which knows the order.
     - **Specs:** `stage-task-list.drag.spec.ts` and
       `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
       px, both languages). Mutation-checked.
