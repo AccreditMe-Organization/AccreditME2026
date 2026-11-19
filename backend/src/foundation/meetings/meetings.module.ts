@@ -23,8 +23,8 @@ import { TaskModule } from '../task/task.module';
 // (forwardRef, as CommitteesModule takes it); WorkflowModule for the instance
 // start and the stage rules. NotificationService is @Global (NotificationModule).
 @Module({
-  // ACC-316 PR 7b — TaskModule for TaskAdmissionService (the open actions' task links).
-  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule, forwardRef(() => TaskModule)],
+  // ACC-316 PR 7b — TaskModule for TaskAdmissionService (the open actions' task links). TaskModule never imports this module, so no forwardRef.
+  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule, TaskModule],
   controllers: [MeetingsController, MeetingMinutesController],
   providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingMinutesService, MeetingReviewService, MeetingSeriesService, MeetingFormChoicesService],
   exports: [MeetingsService],

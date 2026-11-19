@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { isActiveMember } from '../../common/services/committee-membership';
@@ -18,7 +18,7 @@ import {
   reviewDatePassed,
   reviewDayDefaults,
   reviewers,
-  unrecordedAttendance,
+  distributeBlockedBy,
   type MinutesPhase,
 } from './meeting-minutes-rules';
 import type {
@@ -152,7 +152,7 @@ export class MeetingMinutesService {
       this.calendar.getEffectiveTimeZone(organizationId),
       this.openActions(this.prisma, id, organizationId),
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
-      writing ? unrecordedAttendance(this.prisma, id, organizationId) : Promise.resolve([]),
+      writing ? distributeBlockedBy(this.prisma, id, organizationId) : Promise.resolve(null),
     ]);
 
     const quorum = quorumLine(
@@ -216,8 +216,8 @@ export class MeetingMinutesService {
       },
       distribute: writing
         ? {
-            ready: blocked.length === 0,
-            blockedBy: blocked.length ? { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: blocked } : null,
+            ready: blocked === null,
+            blockedBy: blocked,
             // PR 7b — the review date Distribute uses when none is chosen (the screen offers it).
             defaultReviewBy: (await reviewDayDefaults(this.calendar, organizationId, now)).defaultDay,
           }
@@ -244,22 +244,20 @@ export class MeetingMinutesService {
    * 2. The rows come from the LAST meeting, so they are shown only to whoever
    *    may read ITS approved minutes, by the same rule as its minutes read
    *    (minutesAccess()); an organisation guest of this meeting only does not.
-   *    Anyone else gets `{ mayRead: false, rows: [] }`: no error, and nothing
-   *    says a section is hidden.
+   *    No earlier approved meeting and "you can't read it" answer the SAME way,
+   *    `{ mayRead: false, rows: [] }` (P206): no error, nothing says a section
+   *    is hidden, and the screen draws nothing for either. The last meeting is
+   *    checked with MeetingAccess.canSee(), which writes no concealed-refusal
+   *    log line: nothing is concealed from this caller here.
    * 3. Each row's task is linked only where the task page would open it, asked
    *    for every row at once (TaskAdmissionService.admittedIds()).
    */
   async getOpenActions(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingOpenActions> {
     await this.access.seeing(id, organizationId, viewer, now);
     const last = await this.lastApprovedMeeting(this.prisma, id, organizationId);
-    if (!last) return { mayRead: true, rows: [] };
-    let lastOwner: MeetingOwner;
-    try {
-      lastOwner = await this.access.seeing(last.id, organizationId, viewer, now);
-    } catch (error) {
-      if (error instanceof NotFoundException) return { mayRead: false, rows: [] };
-      throw error;
-    }
+    if (!last) return { mayRead: false, rows: [] };
+    const lastOwner = await this.access.canSee(last.id, organizationId, viewer, now);
+    if (!lastOwner) return { mayRead: false, rows: [] };
     const { readable } = await this.minutesAccess(last.id, lastOwner, organizationId, viewer, now);
     if (!readable) return { mayRead: false, rows: [] };
     const rows = await this.openActions(this.prisma, id, organizationId, last);

@@ -28,6 +28,7 @@
  * and refuses any database that is not on this machine.
  */
 import { randomUUID } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -294,7 +295,14 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       await lastWithOpenActions(w, 1);
       const m = await next(w);
       await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: m.id, kind: 'ORG_GUEST', userId: w.people['viewer']!, invitedAt: new Date() } });
-      expect(await minutes.getOpenActions(m.id, w.orgId, as(w, 'viewer'))).toEqual({ mayRead: false, rows: [] });
+      // Nothing is concealed from this caller here: no concealed-refusal log line about the last meeting (P206).
+      const warn = jest.spyOn(Logger.prototype, 'warn');
+      try {
+        expect(await minutes.getOpenActions(m.id, w.orgId, as(w, 'viewer'))).toEqual({ mayRead: false, rows: [] });
+        expect(warn.mock.calls.filter(([line]) => String(line).includes('Visibility refusal'))).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it("the last meeting's own minutes rule decides: where its stage no longer marks them final, nobody reads the rows", async () => {
@@ -317,10 +325,39 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       expect((refused as { statusCode?: number }).statusCode).toBe(404);
     });
 
-    it('no earlier approved meeting: readable, and nothing to show', async () => {
+    it("no earlier approved meeting answers exactly as \"you can't read it\" does (P206)", async () => {
       const w = await world();
       const m = await next(w);
-      expect(await minutes.getOpenActions(m.id, w.orgId, as(w, 'member'))).toEqual({ mayRead: true, rows: [] });
+      expect(await minutes.getOpenActions(m.id, w.orgId, as(w, 'member'))).toEqual({ mayRead: false, rows: [] });
+    });
+
+    itEnforcesTenantIsolation("the last meeting is never another organisation's, even one filed under this committee's id", async () => {
+      const w = await world();
+      // The real last meeting, approved, with one open action.
+      await lastWithOpenActions(w, 1);
+      const m = await next(w);
+      // A corrupt row NEWER than it: an approved meeting naming this committee, filed under organisation b.
+      const corrupt = await prisma.meeting.create({
+        data: {
+          organizationId: b.orgId,
+          organizerId: b.people['secretary']!,
+          title: 'Corrupt',
+          typeValueId: meetingType,
+          scheduledAt: new Date(Date.now() - DAY / 2),
+          durationMinutes: 60,
+          location: 'Room 4',
+          committeeId: w.committeeId,
+          minutesApprovedAt: new Date(),
+        },
+      });
+      try {
+        // The real one is still the last meeting: the corrupt row is never read.
+        const read = await minutes.getOpenActions(m.id, w.orgId, as(w, 'member'));
+        expect(read.mayRead).toBe(true);
+        expect(read.rows.map((r) => r.title)).toEqual(['Action 1']);
+      } finally {
+        await prisma.meeting.delete({ where: { id: corrupt.id } });
+      }
     });
 
     itEnforcesTenantIsolation("another organisation's meeting is the identical refusal a missing one gets", async () => {
@@ -491,6 +528,22 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
   });
 
   describe('Distribute Minutes (the app move)', () => {
+    it("votes above the members now present hold Distribute, naming the item; the attendance tap itself isn't refused (P206)", async () => {
+      const m = await meetingAt(a, 'minutes_draft');
+      await allPresent(a, m.id);
+      await minutes.addDecision(m.id, m.itemId, { text: 'Approve the audit plan.', votesFor: 2, votesAgainst: 1, votesAbstain: 0 } as never, a.orgId, as(a, 'secretary'));
+      expect((await minutes.getMinutes(m.id, a.orgId, as(a, 'secretary'))).distribute?.blockedBy).toBeNull();
+      // Lowered after the vote: allowed at the tap.
+      const memberRow = await prisma.meetingAttendee.findFirstOrThrow({ where: { meetingId: m.id, userId: a.people['member'] } });
+      await minutes.recordAttendance(m.id, { rows: [{ attendeeId: memberRow.id, attendance: 'ABSENT' }] } as never, a.orgId, as(a, 'secretary'));
+      const read = await minutes.getMinutes(m.id, a.orgId, as(a, 'secretary'));
+      expect(read.distribute?.ready).toBe(false);
+      expect(read.distribute?.blockedBy).toEqual({ code: 'MEETING_VOTES_EXCEED_PRESENT', items: [{ agendaItemId: m.itemId, title: 'Hand hygiene', total: 3, present: 2 }] });
+      // The move refuses it, and nothing moves.
+      expect(await code(review.distribute(m.id, {}, a.orgId, as(a, 'secretary')))).toBe('MEETING_VOTES_EXCEED_PRESENT');
+      expect(await stageKey(m.id)).toBe('minutes_draft');
+    });
+
     it('refuses incomplete attendance with nothing written, refuses someone outside the pool, then writes the round with the move and tells the present members', async () => {
       const m = await meetingAt(a, 'minutes_draft');
       expect(await outcome(review.distribute(m.id, {}, a.orgId, as(a, 'secretary')))).toMatchObject({ code: 'MEETING_ATTENDANCE_INCOMPLETE' });

@@ -12,7 +12,7 @@ import { MEETING_ACTIONS } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
-import { dayAsDate, reviewDayDefaults, unrecordedAttendance } from './meeting-minutes-rules';
+import { dayAsDate, distributeBlockedBy, reviewDayDefaults } from './meeting-minutes-rules';
 import { minutesAudit } from './meeting-minutes.service';
 import { distributedNotice, peopleDay, returnedNotice, suggestionDeclinedNotice } from './meeting-notices';
 import { notifyUsers } from './meeting-send';
@@ -81,8 +81,9 @@ export class MeetingReviewService {
       .triggerSystemTransition(current.instanceId, TO_REVIEW, organizationId, viewer.id, {
         inTx: async (tx) => {
           await lockMeetingRow(tx, id, organizationId);
-          const missing = await unrecordedAttendance(tx, id, organizationId);
-          if (missing.length > 0) throw new MeetingRefusal('MEETING_ATTENDANCE_INCOMPLETE', { missing });
+          const blocked = await distributeBlockedBy(tx, id, organizationId);
+          if (blocked?.code === 'MEETING_ATTENDANCE_INCOMPLETE') throw new MeetingRefusal(blocked.code, { missing: blocked.missing });
+          if (blocked?.code === 'MEETING_VOTES_EXCEED_PRESENT') throw new MeetingRefusal(blocked.code, { items: blocked.items });
           const meeting = await tx.meeting.update({
             where: { id },
             data: { reviewRound: { increment: 1 }, reviewBy: dayAsDate(day) },

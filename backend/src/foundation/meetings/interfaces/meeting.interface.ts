@@ -205,8 +205,9 @@ export interface IMeetingOpenActionRow extends IMeetingOpenAction {
 
 /**
  * ACC-316 PR 7b — "Open actions from the last meeting" for the agenda. Rows
- * only for whoever may read the LAST meeting's approved minutes; anyone else
- * who sees this meeting gets `mayRead: false` and no rows.
+ * only for whoever may read the LAST meeting's approved minutes. Anyone else
+ * who sees this meeting, and everyone when there is no earlier approved
+ * meeting, gets `mayRead: false` and no rows.
  */
 export interface IMeetingOpenActions {
   mayRead: boolean;
@@ -249,7 +250,11 @@ export interface IMeetingMinutes {
   /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
   distribute: {
     ready: boolean;
-    blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null;
+    /** What holds Distribute: attendance first, then votes above the members present (P206). */
+    blockedBy:
+      | { code: 'MEETING_ATTENDANCE_INCOMPLETE'; missing: { attendeeId: string; name: string }[] }
+      | { code: 'MEETING_VOTES_EXCEED_PRESENT'; items: { agendaItemId: string; title: string; total: number; present: number }[] }
+      | null;
     /** yyyy-MM-dd: the review date when none is chosen (PR 7b). */
     defaultReviewBy: string;
   } | null;
