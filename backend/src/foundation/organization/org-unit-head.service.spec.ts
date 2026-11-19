@@ -1543,6 +1543,8 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       orgPosition: { findFirst: jest.fn() },
       user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), update: jest.fn().mockResolvedValue({}) },
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
+      // ACC-324 — no cover in force (findActiveCoversForUnits reads the period table).
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn() },
       // ACC-288 — the root-head invariant: no organisation row, so no root to

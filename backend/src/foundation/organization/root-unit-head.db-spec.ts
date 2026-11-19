@@ -21,6 +21,27 @@ import { UserService } from '../user/user.service';
 import { RoleService } from '../roles/role.service';
 import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
 import { ROOT_UNIT_NEEDS_HEAD } from './org-unit-refusals';
+// ACC-324 — the real person deactivation, and Setup health's reader.
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
+import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
+import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { NotificationService } from '../notification/notification.service';
+import { TenantService } from '../tenant/tenant.service';
+import { LookupService } from '../lookup/lookup.service';
+import { TaskService } from '../task/task.service';
+import { TaskAuthorityService } from '../task/task-authority.service';
+import { TaskAssignmentService } from '../task/task-assignment.service';
+import { TaskSlaService } from '../task/task-sla.service';
+import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
+import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import type { AuthProvider } from '../../providers/auth/auth.provider';
+import { WorkflowService } from '../workflow/workflow.service';
+import { StageTaskDefinitionService } from '../workflow/stage-task-definition.service';
+import { StagePoolService } from '../workflow/stage-pool.service';
+import { SetupConditionDetectors } from '../setup-health/setup-condition.detectors';
+import { captureRootHeadBaseline } from './root-unit-head.invariant';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -121,5 +142,120 @@ describe('The root unit keeps a head, against a real database (ACC-288)', () => 
     expect(open).toBe(1);
     expect(ended).toBe(0);
     expect(unit?.actingHeadUserId).not.toBeNull();
+  });
+
+  // ── ACC-324: a cover heads the root only while its person is ACTIVE ─────────
+  describe('a cover heads the root only while its person is ACTIVE (ACC-324)', () => {
+    const notifications = { create: async () => ({ id: randomUUID() }), createInAppMany: async () => 0 } as unknown as NotificationService;
+    const labels = new DelegationLabelService(prisma);
+    const visibility = new ObjectVisibilityService(prisma);
+    const calendar = new WorkingCalendarService(prisma, audit);
+    const authority = new TaskAuthorityService(prisma);
+    const lookups = { getValues: async () => [] } as unknown as LookupService;
+    const tasks = new TaskService(
+      prisma, audit, labels, visibility, calendar, notifications,
+      { getTaskSla: async () => null } as unknown as TenantService,
+      new TaskAssignmentService(prisma, authority, lookups), authority, new TaskSlaService(prisma, calendar),
+      new TaskClosedNoticeService(prisma, notifications),
+    );
+    const pools = new StagePoolService(prisma);
+    const workflow = new WorkflowService(
+      prisma, audit, labels, visibility, calendar, notifications, tasks, { add: async () => undefined } as never,
+      new StageTaskDefinitionService(prisma, audit, tasks), pools,
+    );
+    // The real deactivation, with the real organisation service (its vacancy refresh reads the new rule).
+    const users = new UserService(
+      prisma,
+      audit,
+      notifications,
+      { getUserPermissions: async () => [] } as unknown as RoleService,
+      tasks,
+      organizations,
+      {} as unknown as AuthProvider,
+      {} as OrgUnitHeadService,
+      {} as OrgPositionService,
+      pools,
+      { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
+      new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
+      new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
+    );
+
+    /** A tenant (or the platform) whose root has NO head holder and one acting cover in force; optionally a head holder too. */
+    async function rootWithCover(opts: { withHead?: boolean; platform?: boolean } = {}) {
+      const slug = `acc324-${randomUUID().slice(0, 8)}`;
+      const org = await prisma.organization.create({ data: { name: slug, slug, country: 'SA', isPlatformOrg: opts.platform ?? false } });
+      const root = await prisma.orgUnit.create({ data: { organizationId: org.id, nameEn: 'Root', code: `R-${slug}` } });
+      const actor = await prisma.user.create({ data: { organizationId: org.id, email: `actor-${slug}@example.test`, name: 'Actor', status: 'ACTIVE' } });
+      if (opts.withHead) {
+        const position = await prisma.orgPosition.create({
+          data: { organizationId: org.id, nameEn: 'Director', grade: 10, isUnitHeadPosition: true, isSingleAssignee: true },
+        });
+        await prisma.user.create({
+          data: { organizationId: org.id, email: `head-${slug}@example.test`, name: 'Head', status: 'ACTIVE', primaryOrgUnitId: root.id, positionId: position.id },
+        });
+      }
+      const cover = await prisma.user.create({ data: { organizationId: org.id, email: `cover-${slug}@example.test`, name: 'Cover', status: 'ACTIVE' } });
+      await prisma.orgUnitHeadAssignment.create({
+        data: {
+          organizationId: org.id,
+          orgUnitId: root.id,
+          userId: cover.id,
+          kind: 'ACTING',
+          reason: 'VACANCY',
+          validFrom: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          createdById: actor.id,
+        },
+      });
+      await prisma.orgUnit.update({ where: { id: root.id }, data: { actingHeadUserId: cover.id } });
+      return { organizationId: org.id, rootId: root.id, coverId: cover.id, actorId: actor.id };
+    }
+
+    const baselineOf = (organizationId: string) => prisma.$transaction((tx) => captureRootHeadBaseline(organizationId, tx));
+
+    it('a root covered only by a deactivated person is headless; an unrelated change still passes (already headless)', async () => {
+      const t = await rootWithCover();
+      expect(await baselineOf(t.organizationId)).toBe(true); // non-vacuity: the active cover heads it
+      await prisma.user.update({ where: { id: t.coverId }, data: { status: 'INACTIVE' } });
+      expect(await baselineOf(t.organizationId)).toBe(false);
+      // The cover on record is unchanged: findRunningActingCover() still shows it.
+      expect((await findRunningActingCover(prisma, t.organizationId, t.rootId))?.userId).toBe(t.coverId);
+      // Already headless: deactivating someone unrelated is allowed (logged, never refused).
+      const other = await prisma.user.create({ data: { organizationId: t.organizationId, email: `other-${t.rootId}@example.test`, name: 'Other', status: 'ACTIVE' } });
+      expect(await code(users.deactivate(other.id, t.organizationId, t.actorId))).toBe('OK');
+    });
+
+    it('deactivating the root’s only active cover is refused, and nothing is written', async () => {
+      const t = await rootWithCover();
+      expect(await code(users.deactivate(t.coverId, t.organizationId, t.actorId))).toBe(ROOT_UNIT_NEEDS_HEAD);
+      const cover = await prisma.user.findFirstOrThrow({ where: { id: t.coverId } });
+      expect(cover.status).toBe('ACTIVE');
+      expect(await prisma.orgUnitHeadAssignment.count({ where: { organizationId: t.organizationId, orgUnitId: t.rootId, endedAt: null } })).toBe(1);
+      expect(await baselineOf(t.organizationId)).toBe(true);
+    });
+
+    it('deactivating a cover while the root has a head holder succeeds', async () => {
+      const t = await rootWithCover({ withHead: true });
+      expect(await code(users.deactivate(t.coverId, t.organizationId, t.actorId))).toBe('OK');
+      expect((await prisma.user.findFirstOrThrow({ where: { id: t.coverId } })).status).toBe('INACTIVE');
+      expect(await baselineOf(t.organizationId)).toBe(true);
+    });
+
+    it('Setup health lists the root, as blocking work, once its only cover is deactivated', async () => {
+      const t = await rootWithCover();
+      await organizations.refreshOrgUnitHeadVacancy(t.rootId, t.organizationId);
+      const detectors = new SetupConditionDetectors(prisma);
+      expect((await detectors.orgUnitsWithoutHead(t.organizationId)).map((c) => c.objectId)).toEqual([]); // covered: not listed
+      // Reached outside the guarded paths (a status written directly, or older data).
+      await prisma.user.update({ where: { id: t.coverId }, data: { status: 'INACTIVE' } });
+      await organizations.refreshOrgUnitHeadVacancy(t.rootId, t.organizationId);
+      const listed = await detectors.orgUnitsWithoutHead(t.organizationId);
+      expect(listed.map((c) => [c.objectId, c.severity])).toEqual([[t.rootId, 'BLOCKS_WORK']]);
+    });
+
+    it('the platform organisation stays excluded: deactivating its root’s only cover is not refused', async () => {
+      const t = await rootWithCover({ platform: true });
+      expect(await code(users.deactivate(t.coverId, t.organizationId, t.actorId))).toBe('OK');
+      expect((await prisma.user.findFirstOrThrow({ where: { id: t.coverId } })).status).toBe('INACTIVE');
+    });
   });
 });
