@@ -7690,6 +7690,8 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
       "Reason not shown" / «السبب غير معروض». The screen only renders what it
       gets.
     - Decided once per read, never per row.
+    - `CommitteesService.listMembershipEvents()` is deleted: no route called it,
+      and it returned every reason unfiltered.
     - The Remove dialog says who will read it: "Only people who oversee
       committees, and this committee's Chairman and Secretary, will see this
       reason."
@@ -7698,6 +7700,11 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
       - the Chairman, the Secretary, a `committees:view` holder and the unit
         head with oversight read it;
       - an inactive Chairman does not;
+      - an acting cover in force reads it; an ended cover and an INACTIVE head
+        (both plain members) do not;
+      - oversight from a parent unit reads a sub-unit committee's reason;
+      - a Chairman seat renamed through an override still counts (key, not
+        label);
       - another organisation's reason reaches nobody.
       Mutation-checked.
   - **Where it goes:**
