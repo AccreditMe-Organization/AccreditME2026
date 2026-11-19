@@ -56,6 +56,9 @@ import {
 export type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
 /** ACC-239 — startInstance()'s reads, done before any transaction. */
+/** ACC-316 PR 5 — how many records prepareInstanceStarts() prepares at once when each needs its own. */
+const PREPARE_BATCH = 5;
+
 export interface PreparedInstanceStart {
   template: PrismaWorkflowTemplate;
   initialStage: PrismaWorkflowStage;
@@ -231,8 +234,13 @@ export class WorkflowService {
     if (objectIds.length === 0) return [];
     const first = await this.prepareInstanceStart(objectType, objectIds[0]!, organizationId);
     if (first.entryTasks.tasks.length === 0 && first.quorumCount === null) return objectIds.map(() => first);
-    const rest = await Promise.all(objectIds.slice(1).map((id) => this.prepareInstanceStart(objectType, id, organizationId, first.template.id)));
-    return [first, ...rest];
+    // Five at a time: a series' 52 reads at once would take the connection pool.
+    const out = [first];
+    const rest = objectIds.slice(1);
+    for (let i = 0; i < rest.length; i += PREPARE_BATCH) {
+      out.push(...(await Promise.all(rest.slice(i, i + PREPARE_BATCH).map((id) => this.prepareInstanceStart(objectType, id, organizationId, first.template.id)))));
+    }
+    return out;
   }
 
   async insertInstanceStartInTx(

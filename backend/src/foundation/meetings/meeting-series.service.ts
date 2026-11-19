@@ -93,12 +93,9 @@ export class MeetingSeriesService {
     const presenters = await this.standingPresenters(dto, organizationId);
     const seriesId = randomUUID();
     const ids = plan.dates.map(() => randomUUID());
-    // Every read first, once for the whole series: the template and first stage
-    // (shared by every meeting), and the owner's invitees (the same for each).
-    const [prepared, members] = await Promise.all([
-      this.workflow.prepareInstanceStarts('MEETING', ids, organizationId),
-      ownerMembers(this.prisma, organizationId, plan.owner),
-    ]);
+    // Every engine read first, once for the whole series: the template and first
+    // stage, shared by every meeting.
+    const prepared = await this.workflow.prepareInstanceStarts('MEETING', ids, organizationId);
     const meetings: NewMeeting[] = plan.dates.map((date, i) => ({
       id: ids[i]!,
       organizationId,
@@ -114,7 +111,6 @@ export class MeetingSeriesService {
       seriesId,
       seriesIndex: date.index,
     }));
-    const { attendees, items } = standingRows(organizationId, ids, members, dto, presenters, viewer.id);
 
     const started = await this.prisma.$transaction(async (tx) => {
       if (plan.owner.committeeId) {
@@ -144,6 +140,10 @@ export class MeetingSeriesService {
           createdById: viewer.id,
         },
       });
+      // The owner's invitees, read ONCE and inside the transaction (as schedule()
+      // reads them), so a membership change can't leave every meeting stale.
+      const members = await ownerMembers(tx, organizationId, plan.owner);
+      const { attendees, items } = standingRows(organizationId, ids, members, dto, presenters, viewer.id);
       // Batched: the rows, the invitees (presenters included), the audit rows; the instances one by one.
       const out = await insertMeetingsInTx(tx, this.workflow, prepared, meetings, { attendees });
       if (items.length > 0) await tx.agendaItem.createMany({ data: items });
@@ -277,7 +277,7 @@ export class MeetingSeriesService {
               fromStageId: current.stage.id,
               fromStage: { workflowTemplate: { organizationId } },
               mover: 'PERSON',
-              toStage: { flags: { has: STAGE_FLAG.MEETING_CANCELLED } },
+              toStage: { flags: { has: STAGE_FLAG.MEETING_CANCELLED }, workflowTemplate: { organizationId } },
             },
             select: { id: true },
           })
@@ -428,8 +428,14 @@ export class MeetingSeriesService {
         }
         const anchorRow = locked.find((l) => l.id === id);
         if (!anchorRow) return;
-        const shift = toAt.getTime() - anchorRow.scheduledAt.getTime();
-        if (shift === 0) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
+        if (toAt.getTime() === anchorRow.scheduledAt.getTime()) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
+        // The anchor's move in the organisation's zone, as people read it: a
+        // number of calendar days and a wall-clock change, never elapsed time,
+        // so a clock change between two meetings doesn't move their hour.
+        const from = DateTime.fromJSDate(anchorRow.scheduledAt).setZone(zone);
+        const to = DateTime.fromJSDate(toAt).setZone(zone);
+        const dayShift = Math.round((Date.parse(`${to.toISODate()}T00:00:00Z`) - Date.parse(`${from.toISODate()}T00:00:00Z`)) / 86_400_000);
+        const minuteShift = to.hour * 60 + to.minute - (from.hour * 60 + from.minute);
 
         // 2. The days the owner already meets on, other than the meetings moving now.
         const moving = new Set(locked.map((l) => l.id));
@@ -439,12 +445,16 @@ export class MeetingSeriesService {
         for (const l of [...locked].sort((x, y) => x.seriesIndex - y.seriesIndex)) {
           let at = toAt;
           if (l.id !== id) {
-            const shifted = DateTime.fromJSDate(new Date(l.scheduledAt.getTime() + shift)).setZone(zone);
-            let day = await this.calendar.nextWorkingDay(shifted.toISODate()!, organizationId);
+            const wall = DateTime.fromJSDate(l.scheduledAt).setZone(zone);
+            const minutes = wall.hour * 60 + wall.minute + minuteShift;
+            const carry = Math.floor(minutes / 1440);
+            const minuteOfDay = ((minutes % 1440) + 1440) % 1440;
+            const shiftedDay = DateTime.fromISO(wall.toISODate()!, { zone: 'UTC' }).plus({ days: dayShift + carry }).toISODate()!;
+            let day = await this.calendar.nextWorkingDay(shiftedDay, organizationId);
             for (let step = 0; taken.has(day) && step < MOVE_LIMIT; step++) {
               day = await this.calendar.nextWorkingDay(DateTime.fromISO(day, { zone: 'UTC' }).plus({ days: 1 }).toISODate()!, organizationId);
             }
-            at = DateTime.fromISO(day, { zone }).set({ hour: shifted.hour, minute: shifted.minute }).toJSDate();
+            at = DateTime.fromISO(day, { zone }).set({ hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60 }).toJSDate();
             if (at <= now) continue;
           }
           taken.add(DateTime.fromJSDate(at).setZone(zone).toISODate()!);
