@@ -1034,7 +1034,6 @@
     "errorLoad": "Failed to load workflow data.",
     "errorTransition": "Unable to complete this action.",
     "escalation": "Escalation",
-    "isApprovalPath": "This is the approval path (advances the workflow)",
     "isDefault": "Default",
     "isFinal": "Final Stage",
     "isInitial": "Initial Stage",
@@ -2640,6 +2639,7 @@
     },
     "types": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Committee missing a required seat",
+      "COMMITTEE_BELOW_QUORUM": "Committee below quorum",
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
@@ -2688,6 +2688,7 @@
     },
     "fix": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Appoint members",
+      "COMMITTEE_BELOW_QUORUM": "Add members",
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
@@ -2701,6 +2702,7 @@
     },
     "fixNeeds": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Fixing this needs permission to add committee members.",
+      "COMMITTEE_BELOW_QUORUM": "Fixing this needs permission to add committee members.",
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
@@ -3213,6 +3215,10 @@
       }
     },
     "setupHealth": {
+      "committeeBelowQuorum": {
+        "one": "The quorum needs {{count}} member, and the committee has {{members}} active.",
+        "other": "The quorum needs {{count}} members, and the committee has {{members}} active."
+      },
       "stageItemsBlocked": {
         "one": "{{count}} open item cannot advance: no one can act on this stage.",
         "other": "{{count}} open items cannot advance: no one can act on this stage."

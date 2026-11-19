@@ -163,7 +163,6 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
         // ACC-271 PR 6b — no old people column (they keep their database
         // defaults until 6c drops them); the mover says who moves it.
         validatorConfig: toJson(seedTransition.validatorConfig),
-        isApprovalPath: seedTransition.isApprovalPath ?? false,
         kind: seedTransition.kind ?? 'ADVANCE',
       };
 

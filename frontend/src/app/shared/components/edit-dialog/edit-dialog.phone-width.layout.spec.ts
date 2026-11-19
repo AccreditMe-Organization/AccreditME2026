@@ -192,6 +192,11 @@ describe('Form dialogs at a 390px phone width (ACC-299)', () => {
       fixture = TestBed.createComponent(NewTaskHostComponent);
       await settle();
       http.expectOne(`${API}/tasks/assignment/units`).flush([]);
+      // ACC-291 — the picker asks once whether this committee's seats are open to a
+      // caller without committees:view. Refused here, so the form is measured as before.
+      http
+        .expectOne((r) => r.url === `${API}/tasks/assignment/committee-roles`)
+        .flush({ message: 'Required permission: committees:view' }, { status: 403, statusText: 'Forbidden' });
       http.expectOne(`${API}/working-calendar`).flush({
         id: 'cal-1',
         organizationId: 'org-1',

@@ -7,7 +7,6 @@ export interface IWorkflowTransition {
   // ACC-271 PR 6b — no old people field: whoever works the from-stage presses a
   // PERSON move.
   validatorConfig: Record<string, unknown> | null;
-  isApprovalPath: boolean;
   kind: string; // WorkflowTransitionKind — ACC-190
   // ACC-271 PR 3 — who moves the record: PERSON (whoever works the from-stage)
   // or APP (the module's own code). PR 6b — the stored value only; null (none

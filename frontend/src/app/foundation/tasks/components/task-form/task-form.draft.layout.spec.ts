@@ -245,7 +245,13 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
 
   for (const language of ['en', 'ar'] as const) {
     describe(language, () => {
-      afterEach(() => http.verify());
+      // ACC-291 — a picker on a committee task, for a caller without committees:view,
+      // asks the server once whether this committee's seats are open to them (the
+      // membership rule stays the server's). These specs are not about that answer.
+      afterEach(() => {
+        http.match((r) => r.url.endsWith('/tasks/assignment/committee-roles')).filter((r) => !r.cancelled).forEach((r) => r.flush([]));
+        http.verify();
+      });
 
       it('idle: the trigger on the label row adds NO height to step 2, and sits wholly inside the body', async () => {
         await open(language);

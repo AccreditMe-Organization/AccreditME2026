@@ -29,7 +29,10 @@ export type SetupConditionType =
   | 'STAGE_ON_STARTING_ASSIGNMENT'
   // ACC-286 — a committee in force with a required seat nobody fills. Learned in
   // PR 1, before anything writes it; the backend reports it from PR 2.
-  | 'COMMITTEE_MISSING_REQUIRED_SEAT';
+  | 'COMMITTEE_MISSING_REQUIRED_SEAT'
+  // ACC-307 — a committee in force with fewer active members (ACTIVE users) than
+  // its quorum. Learned in PR 1, before anything writes it; reported from PR 2.
+  | 'COMMITTEE_BELOW_QUORUM';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -68,6 +71,9 @@ export interface SetupConditionSubject {
   adminName?: string | null;
   // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT: the empty required seats, in seat order.
   seats?: { id: string; labelEn: string; labelAr: string | null }[];
+  // ACC-307 — COMMITTEE_BELOW_QUORUM: the quorum, and the members who count toward it.
+  quorum?: number;
+  members?: number;
 }
 
 export interface SetupConditionDto {

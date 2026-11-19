@@ -53,18 +53,17 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     }
   });
 
-  // PR 1 §11.1 — a stage whose people decide together advances only by its
-  // approval path; a forward move off it would send the record on at the
-  // first press.
-  it('puts the one forward move of every All of them stage on the approval path', () => {
+  // PR 1 §11.1 — a stage whose people decide together has exactly ONE forward
+  // move. Since ACC-284 the move's kind makes it a vote (isApprovalPath, which
+  // used to mark it, is gone: ACC-294).
+  it('gives every All of them stage exactly one forward move', () => {
     let checked = 0;
     for (const workflow of SYSTEM_WORKFLOW_SEED) {
       for (const stage of workflow.stages.filter((s) => isVotingMove(s.who.mode, 'ADVANCE'))) {
         const advances = workflow.transitions.filter((t) => t.fromStageKey === stage.key && (t.kind ?? 'ADVANCE') === 'ADVANCE');
-        expect([`${workflow.objectType}.${stage.key}`, advances.length, advances.every((t) => t.isApprovalPath === true)]).toEqual([
+        expect([`${workflow.objectType}.${stage.key}`, advances.length]).toEqual([
           `${workflow.objectType}.${stage.key}`,
           1,
-          true,
         ]);
         checked++;
       }

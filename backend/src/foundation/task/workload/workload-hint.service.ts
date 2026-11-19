@@ -24,8 +24,8 @@ export const WORKLOAD_FEATURE = 'workload_balancing';
  *      record (ACC-101: 403 naming the permission before any read; 404 for a
  *      record that is not theirs). The counts are that list's.
  *   2. The target, through the picker's own lists — which apply the picker's
- *      own rule (tasks:create, or reassigning this task; committees:view for a
- *      committee). A committee role only on that committee's own record.
+ *      own rule (tasks:create, or reassigning this task; committees:view or, ACC-291,
+ *      an active member of the committee). A committee role only on that committee's own record.
  *   3. The chosen person is one of them — else 400.
  *   4. The counts and the threshold, recomputed here; the screen's "may
  *      suggest" is a reason to ask, never a fact. Not past it →

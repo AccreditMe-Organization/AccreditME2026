@@ -56,6 +56,9 @@ import {
 export type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
 /** ACC-239 — startInstance()'s reads, done before any transaction. */
+/** ACC-316 PR 5 — how many records prepareInstanceStarts() prepares at once when each needs its own. */
+const PREPARE_BATCH = 5;
+
 export interface PreparedInstanceStart {
   template: PrismaWorkflowTemplate;
   initialStage: PrismaWorkflowStage;
@@ -125,7 +128,7 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 // COMMITTEE_VOTE) the move's KIND (ACC-190) says what a press is — a vote for
 // that move, or an act at once (workflow-vote.ts). Each vote records its move,
 // and a move goes through when its own threshold is met. The old
-// WorkflowTransition.isApprovalPath is no longer read; it is dropped later.
+// WorkflowTransition.isApprovalPath was never read again, and ACC-294 removed it.
 //
 // ACC-271 PR 6a — who works a stage, who may move a record out of it and how
 // its votes decide come from the stage's pool and who mode only
@@ -221,6 +224,25 @@ export class WorkflowService {
   }
 
   /** The instance, its first entry and that entry's tasks, on the caller's transaction. */
+  /**
+   * ACC-316 PR 5 — the same prepare for many records of one type at once (a
+   * meeting series): the template, first stage and its clock are read ONCE.
+   * Shared when entering the stage creates no task and snapshots no quorum
+   * (both are per record); otherwise each record is prepared on its own.
+   */
+  async prepareInstanceStarts(objectType: string, objectIds: readonly string[], organizationId: string): Promise<PreparedInstanceStart[]> {
+    if (objectIds.length === 0) return [];
+    const first = await this.prepareInstanceStart(objectType, objectIds[0]!, organizationId);
+    if (first.entryTasks.tasks.length === 0 && first.quorumCount === null) return objectIds.map(() => first);
+    // Five at a time: a series' 52 reads at once would take the connection pool.
+    const out = [first];
+    const rest = objectIds.slice(1);
+    for (let i = 0; i < rest.length; i += PREPARE_BATCH) {
+      out.push(...(await Promise.all(rest.slice(i, i + PREPARE_BATCH).map((id) => this.prepareInstanceStart(objectType, id, organizationId, first.template.id)))));
+    }
+    return out;
+  }
+
   async insertInstanceStartInTx(
     tx: EngineTx,
     prepared: PreparedInstanceStart,

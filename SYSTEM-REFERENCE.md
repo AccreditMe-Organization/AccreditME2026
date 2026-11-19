@@ -2024,7 +2024,6 @@ model WorkflowTransition {
   triggerUserId      String?
   triggerRoleId      String?
   validatorConfig    Json?
-  isApprovalPath     Boolean                    @default(false)
 }
 ```
 
@@ -3872,6 +3871,9 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     permission or validator, so the stored values are left as they are.
   - **`isApprovalPath` is accepted on create** (it was update-only), so Add
     can set it.
+    Superseded (ACC-294): the API no longer accepts `isApprovalPath` (a sent
+    value is the whitelist's 400), and PR B dropped the column. See "A press on
+    a stage decided together" in §2.19.
   - **A move the app runs (`mover` APP) is read-only:** "Done by the app" /
     «يُنفّذها النظام» in the list, with no Edit and no ⋯; its name opens the
     panel showing the server's `appMove` line, "The app runs this move itself,
@@ -4170,9 +4172,26 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - return → its RETURN;
   - not exactly one → 409 `VOTE_MOVE_AMBIGUOUS`, naming the stage.
 - **`isApprovalPath` is no longer read** by anything that decides.
-  - The API still accepts, stores, returns and audits it (expand).
   - The transition panel no longer offers it, and the list no longer tags it.
-  - Lane B's follow-up ticket drops it (contract).
+  - **Removed by ACC-294, in two deploys (ACC-278's shape):**
+    - **PR A (no migration):** the column is `@ignore` in `schema.prisma`, so
+      it is out of the generated client and still in the database.
+      - A transition create or update that sends it is the global
+        whitelist's 400, "property isApprovalPath should not exist".
+      - The template read, the audits, the seed and the frontend models no
+        longer name it, and the unused `workflow.isApprovalPath` key is gone.
+      - `submitApproval()` never named it.
+      - Specs: `is-approval-path.client.spec.ts` and
+        `dto/is-approval-path.dto.spec.ts`, plus the template read and create
+        tests in `workflow-template.service.spec.ts`. Mutation-checked.
+    - **PR B, migration `20261119094215_acc294_drop_is_approval_path`:** one
+      statement, `ALTER TABLE "WorkflowTransition" DROP COLUMN
+      "isApprovalPath"`, and nothing else. The field is gone from
+      `schema.prisma`, and `is-approval-path.client.spec.ts` now pins it out of
+      the schema. It runs only after PR A has deployed. **Never roll Railway
+      back past PR A:** on a scratch
+      database with the column dropped, PR A's client made 9 real calls, all
+      OK, while the client before PR A made 2 of 9 (7 P2022).
 - **No backfill:** on the shared database (10 Nov), 0 stored moves change behaviour.
   Every seeded stage decided together already had its one ADVANCE marked.
 - **Specs:**
@@ -4219,6 +4238,8 @@ has and keeps no copy.
   affected.
   **Fixed (ACC-284):** the engine decides by the move's kind, so the seeded Approve
   is a vote on a stage decided together (§2.19, "A press on a stage decided together").
+  Superseded (ACC-294): `isApprovalPath` itself is gone, out of the client and the
+  API in PR A and dropped from the database in PR B.
 - **Specs:** `instance-access.spec.ts`; `pool-member-moves.db-spec.ts` (a pool member,
   a member outside the pool, a former member named directly, a `workflows:view`
   holder, a vote on an ALL stage, a change request, and another organisation's
@@ -5356,6 +5377,30 @@ NOT ungated — its permission check moved into the service (3.2).
   decides: 403 naming `tasks:create` when no task is named (ACC-101 clause a),
   the identical 404 otherwise (clause b). The committee variants also need
   `committees:view`, checked before anything is read.
+  - **ACC-291: the committee variants follow `create.types`' rule.**
+    - They admit `committees:view`, or an active member of THE committee named,
+      through the one membership rule (`common/services/committee-membership.ts`,
+      `isActiveMember()`).
+    - That is one indexed query inside the read, only for a caller without
+      `committees:view`. A holder pays nothing, and nothing runs on the
+      per-request path.
+    - A member sees only their own committee's seats. The catalogue with no
+      committee named (`?catalogue=true`, ACC-208's stage task definitions)
+      stays `committees:view` only.
+    - A refusal is today's 403 "Required permission: committees:view",
+      decided before anything else is read. It is the same for another
+      committee, another organisation's committee and an invented id.
+    - `POST /tasks` already applied the same rule, and is unchanged: the record
+      check admits a member, and a seat can be chosen only on the task's own
+      committee.
+    - **Not a seat action:** the ACC-283 plan (§17) keeps tasks out of
+      `seat-actions.ts`, so membership decides.
+    - **The picker** offers the committee route at once to a `committees:view`
+      holder. To anyone else it offers the route only after the server has
+      answered that committee's seats: one request per committee, and a refusal
+      leaves the route out. The screen keeps no copy of the rule.
+    - Specs: `task-assignment.member-seat.db-spec.ts` (real Postgres) and the
+      service and picker specs. Mutation-checked.
 
 **ACC-173 adds six more, again deliberately ungated** (`task.controller.spec.ts`
 asserts the absence). Every entitlement is knowable only from the row, so each
@@ -13282,6 +13327,13 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
       whose newest instance's stage is flagged IN_FORCE and not DISSOLVING.
     - **Below quorum:** in force, `quorumCount > 0`, and fewer active
       members than the quorum.
+    - **ACC-307: read through `committeesInForceStanding()`**
+      (`committee-seat-rules.ts`), still one query. "Active members" is the one
+      shared rule, an active membership of an ACTIVE user, which going live
+      (`activeMemberCount()`) and Setup health's "Committee below quorum" read
+      too (`activeMembersByCommittee()`, one SQL fragment). Before, Home counted
+      every active membership, so a deactivated member kept a committee at
+      quorum here while going live said it was not.
     - The server does not check the module; the screen draws the tile only
       while it is open.
   - **At most 7 queries, in one wave.** With no permission, none.
@@ -14567,6 +14619,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 | `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
+| `COMMITTEE_BELOW_QUORUM` (ACC-307) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`, the Fix "Add members"). One row per committee in force (`committeesInForceStanding()`: active, newest stage IN_FORCE and not DISSOLVING) whose active members who are ACTIVE users are fewer than a quorum above 0, naming the quorum and the members. PR 1 added the value deferred (the frontend learned it, nothing wrote it); **PR 2 detects and reports it** (`committeesBelowQuorum()`, one query per organisation; a failed check never clears a row). §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
@@ -16965,7 +17018,7 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
@@ -17450,3 +17503,81 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
   press its APP move.
 - `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
 - `WorkingCalendarService.previousWorkingDay()`.
+
+### 18.14 Series (PR 5)
+
+Plan §3.2, §3.10. Code: `meeting-series-dates.ts` (the pattern, plain rules),
+`meeting-series.service.ts`, `meeting-create.ts` (one meeting written, shared
+with `schedule()`).
+
+- **Who:** whoever schedules for the owner (`MEETING_SCHEDULERS`), as for one
+  meeting. A committee's series needs its stage to allow `schedule_meeting`.
+- **The pattern** (Gregorian, on days in the organisation's zone):
+  - weekly or every two weeks on a weekday;
+  - monthly, or every 3, 6 or 12 months, on a day of the month (a missing day
+    falls on the month's last) or on the first to fourth, or last, weekday.
+
+  Refused under the field: `MEETING_SERIES_PATTERN_INVALID`,
+  `MEETING_SERIES_END_REQUIRED` (exactly one of `endsOn` and `count`),
+  `MEETING_SERIES_TOO_LONG` (past twelve months from today, with `limit`),
+  `MEETING_SERIES_EMPTY`, `MEETING_SERIES_TIME_INVALID`.
+- **At most 53 meetings**, weekly for twelve months, both ends included.
+- **Each day is moved** to the next working day (`WorkingCalendarService`:
+  weekend and holidays), then past any day the owner already has a meeting that
+  isn't cancelled (one read of the owner's meetings, their stages in one batch).
+  The preview says `moved`: `NOT_WORKING_DAY` or `OWNER_MEETS`.
+- **Titles,** in the organisation's language: `subject · October 2026` for
+  monthly and longer, from the pattern's month; `subject · 22 Oct 2026` for
+  weekly, from the day held. Each is the meeting's own.
+- **`POST /meetings/series/preview`** gives the dates and their clashes, in one
+  batched query (`MeetingClashService`, cap 53), and writes nothing.
+- **The start is the wall-clock time in the organisation's zone** on each day
+  (`set({ hour, minute })`), so a clock change never moves a meeting by an hour.
+- **`POST /meetings/series`:**
+  - the series and every meeting are written in ONE transaction, each meeting
+    with its MEMBER invitees, its instance at Planned and its audit row;
+  - its engine reads come first and once: the template and first stage
+    (`WorkflowService.prepareInstanceStarts()`, shared while the stage creates
+    no task and snapshots no quorum; otherwise five records at a time). The
+    owner's invitees are read once, inside the transaction. The writes are
+    batched (`insertMeetingsInTx()`: the rows, the invitees, the agenda items and
+    the audit rows each in one write; the instances one by one);
+  - after the commit, each meeting's notices are sent on their own: one that
+    fails is logged, and the answer is still the series;
+  - the standing agenda is copied into each meeting as `standing` items, and a
+    presenter not yet invited becomes an organisation guest
+    (`addedAsPresenter`);
+  - the reads (each instance's prepare) come first, and the notices after the
+    commit.
+- **This only:** an edit or reschedule of a series meeting adds what it changed
+  to that meeting's `ownEdits`.
+- **This and all later** (`scope: THIS_AND_LATER`):
+  - it reaches this meeting and every later one of the series that hasn't
+    started and whose stage allows the action (Planned, Agenda Issued);
+  - each is locked in id order: its instance FOR SHARE, then its row FOR
+    UPDATE;
+  - a later meeting's own edit is kept, and the answer's `scope.kept` names it;
+  - an edit carries the type, duration, place, link and quorum, never the
+    title;
+  - a reschedule moves each by the anchor's move AS PEOPLE READ IT, in the
+    organisation's zone: the same number of calendar days and the same change
+    of wall-clock time, from its time read under its lock (never elapsed time,
+    so a clock change between two meetings keeps their hour). It then places it
+    as creation places a day: off a day that
+    isn't a working day, and past a day the owner already meets (a meeting not
+    moving and not cancelled). One `MeetingReschedule` (`THIS_AND_LATER`) each.
+    The invitees of each are told after the commit.
+  - an edit sends no notice, as a single meeting's edit sends none.
+- **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
+  - first, the caller must be in the pool of every later open meeting's stage
+    (Cancel Meeting is a person's move, both its stages this organisation's);
+    otherwise 403
+    `MEETING_SERIES_CANNOT_CANCEL`, naming them, and nothing is written;
+  - each later meeting still in Planned or Agenda Issued is cancelled by its
+    own Cancel Meeting, so each tells its invitees; one that fails is logged with
+    its id and code, named in `failed`, and the rest go on;
+  - `endedAt` and `endReason` are stamped only when nothing failed. A re-run
+    finishes what is left; on an ended series it writes nothing.
+- **Organisation scoping:** another organisation's series is
+  `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
+  `seriesId` filter lists nothing of theirs.
