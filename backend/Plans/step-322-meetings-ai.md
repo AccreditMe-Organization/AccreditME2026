@@ -12,6 +12,8 @@ absent members.
   lists the hooks that PRs 4–8 leave for this ticket.
 - **The code:** read against dev `5ae3667` (20 Nov), which has Meetings PRs 1
   to 7b (#343 to #376). PRs 7c, 7d, 8 and 9 are not merged yet.
+- **Revised after lane B's review of #383 (P225).** Section 9 lists what
+  changed.
 
 The four features in the ticket become **three AI calls**:
 - Action items are drafted in the same call as the minutes (design 6.2/6.3), so
@@ -23,12 +25,16 @@ The four features in the ticket become **three AI calls**:
 
 ## 0. What the design settles, and where it overrides the ticket
 
-- **Only the person who works the stage presses** (6.6): the Secretary in
-  Planned and in Minutes Draft, and whoever records the minutes on the
-  approved meeting. The ticket's wider wording ("whoever may open the
-  meeting") is replaced by the design.
-  - The Chair, members, guests and absent members never see a trigger, a
-    suggestion, the rough notes or an undecided count.
+- **Who presses (decided, P225):**
+  - **Suggest agenda items follows whoever may write the agenda**
+    (`meeting.may.manageAgenda`). The suggestion only adds what that person
+    could add by hand.
+  - **Draft minutes and Draft summary follow whoever records the minutes.**
+  - With the seeded seats, both are the Secretary, which is what 6.6 draws.
+  - The ticket's wider wording ("whoever may open the meeting") is replaced.
+  - Nobody else sees a trigger, a suggestion, the rough notes or an undecided
+    count. That covers the Chair, members, guests and absent members, unless
+    one of them also writes the agenda or records the minutes.
 - **The agenda never re-suggests the last meeting's open actions** (6.1). They
   already appear in the agenda's fixed first section. The ticket's "the last
   meeting's open action items" as a source is therefore an exclusion, not an
@@ -44,7 +50,7 @@ The four features in the ticket become **three AI calls**:
   - **M6:** vote counts are copied as stated and flagged, never changed.
   - **M7:** an outside guest is never suggested as an owner; the owner is left
     empty.
-  - **M8:** Draft again touches only items that are empty or undecided.
+  - **M8:** Draft again touches only what is empty or undecided.
   - **M9:** Draft minutes is not offered after Return for Correction.
   - **M10:** the trigger reads "Draft summary", with an aria-label.
 - **Build notes 1–4:**
@@ -59,83 +65,118 @@ The four features in the ticket become **three AI calls**:
 
 ### 1.0 Rules common to all three
 
-- **One gateway.** Every call goes through `AiService.run()` (ACC-194):
-  - credits are reserved first, then the call is made;
-  - a failed call, or an answer refused by `accept()`, is refunded into the
-    same period;
-  - the log keeps no customer text. Its description is written by our code,
-    ids and counts only (for example "Meeting cmv… minutes draft, 5 items").
-- **The model chooses; our code writes every word around the choice**, as
-  ACC-198 and ACC-199 do:
-  - **The answer is JSON**, and it refers to inputs only by the labels we sent
-    (`S1`, `A2`, `P3`).
-  - **Our code drops an unknown label**, a duplicate, or anything over its cap.
-  - **Our code writes:** every source line, reason line, date, link, recipient
-    list and refusal.
-  - **The model writes only:** the free text the design shows as AI text (an
-    agenda item's title and reason, an item's discussion and decisions, an
-    action's "what", and the summary).
-- **Language.** Each call is written in the presser's interface language.
-  - The request names it (`en` | `ar`), as ACC-193 does, and it is stored on
-    the suggestion.
-  - Names and codes stay as they are (design pattern note "Reader's
-    language"; Q8 in section 1 of the drawing).
-- **Names (ticket rule, and P224).**
-  - **Nothing from our records is sent:** no attendee name, owner, presenter,
-    author, seat holder, email or person id.
-  - **The rough notes are the Secretary's own text, and are sent.** Before
-    sending, our code replaces in the notes:
-    - every invitee's name (members, organisation guests, outside guests)
-      with a label `[P1]`, `[P2]`, …;
-    - the full name of every ACTIVE person in the organisation who is not an
-      invitee with a label as well;
-    - **every email address** with `[email]`.
-  - **The model answers with labels.** Our code maps each label back to a
-    person, and writes the names back into the suggestion text.
-    - So **an outside guest's name never reaches the model**, which is the
-      ticket's rule.
-    - And an owner is resolved exactly, by label, never by guessing at a
-      name.
-  - **How the replacement matches, in one file (`meeting-ai-names.ts`):**
-    - the full name, and each name word of three or more letters when it
-      belongs to exactly one invitee;
-    - whole words only, ignoring case;
-    - Arabic normalised: alef forms, alef maqsura and ya, ta marbuta and ha,
-      tatweel and diacritics;
-    - honorifics (Dr., Eng., د., م.) kept outside the label.
-  - **What it cannot catch:** a name the Secretary misspells, or a person who
-    is neither an invitee nor a user, stays as written. That is the
-    Secretary's own text about their own meeting, and the notes line says the
-    notes are used for drafting (Question 5).
-- **Who and when are read live on every press, and again inside the save
-  transaction** (§4).
-  - The screens render flags; they never re-derive a rule.
-  - **No access to the meeting:** the identical 404 a missing meeting gets
-    (`MeetingAccess.seeing`).
-  - **Access, but not the person who works the stage:** that write's existing
-    refusal (`MEETING_NOT_RECORDER`, or the agenda's writing refusal).
-  - **The wrong stage:** 409 `MEETING_AI_NOT_OFFERED`, with the stage's names.
-    The trigger is absent there anyway; this is the backstop.
-- **One run at a time per meeting and feature.**
-  - A claim row is taken with `INSERT … ON CONFLICT … WHERE` before any call,
-    and is stale after 3 minutes (ACC-198's shape).
-  - A second press is 409 `MEETING_AI_IN_PROGRESS`, before any credit is
-    reserved.
-- **Saving the answer.**
-  - The answer is saved in a transaction that takes the minutes' lock order:
-    the instance FOR SHARE, then the meeting row FOR UPDATE.
-  - That transaction re-checks the stage and the person.
-  - If the meeting moved on during the call, nothing is saved, the call is
-    still charged (the provider was paid, design Q2), and the refusal is
-    `MEETING_CHANGED`, which offers Reload.
-- **Leaving cancels.** The screen aborts the request when the person leaves
-  (design pattern "Leaving cancels"). A request the provider already answered
-  is charged and is not saved, as ACC-193 Q2.
+**One gateway.** Every call goes through `AiService.run()` (ACC-194):
+- credits are reserved first, then the call is made;
+- a failed call, or an answer refused by `accept()`, is refunded into the same
+  period;
+- the log keeps no customer text. Its description is written by our code, ids
+  and counts only (for example "Meeting cmv… minutes draft, 5 items").
+
+**The model chooses; our code writes every word around the choice**, as
+ACC-198 and ACC-199 do:
+- **The answer is JSON**, and it refers to inputs only by the labels we sent
+  (`S1`, `A2`, `P3`).
+- **Our code drops an unknown label**, a duplicate, or anything over its cap.
+- **Our code writes:** every source line, reason line, date, link, recipient
+  list and refusal.
+- **The model writes only:** the free text the design shows as AI text (an
+  agenda item's title and reason, an item's discussion and decisions, an
+  action's "what", and the summary).
+
+**Language.** Each call is written in the presser's interface language.
+- The request names it (`en` | `ar`), as ACC-193 does, and it is stored on the
+  suggestion.
+- Names and codes stay as they are (design pattern note "Reader's language";
+  Q8 in section 1 of the drawing).
+
+**Names (the ticket's rule, and P224, P225).** One file, `meeting-ai-names.ts`,
+runs over **every customer text sent in all three calls**, before sending:
+- the rough notes;
+- agenda item titles and descriptions;
+- task titles;
+- existing action item titles;
+- the approved minutes' discussions, decisions and actions.
+
+**What it replaces:**
+- **Every invitee's full name** (members, organisation guests, outside guests)
+  becomes a label: `[P1]`, `[P2]`, ….
+- **Each of an invitee's name words of three or more letters** becomes the same
+  label when it belongs to exactly one invitee.
+- **Every outside guest's name words of three or more letters ALWAYS become the
+  guest's label**, even when another person shares the word. Over-replacing is
+  the safe direction.
+- **The full name of every ACTIVE person in the organisation who is not an
+  invitee** becomes a label.
+- **Every email address** becomes `[email]`.
+
+**How it matches:**
+- whole words only, ignoring case;
+- Arabic normalised: alef forms, alef maqsura and ya, ta marbuta and ha,
+  tatweel and diacritics;
+- honorifics (Dr., Eng., د., م.) kept outside the label.
+
+**Nothing from our records is sent:** no attendee name, owner, presenter,
+author, seat holder, email or person id.
+
+**The model answers with labels.** Our code maps each label back to a person,
+and writes the names back into the suggestion text. So:
+- **An outside guest's name, as recorded on the meeting, never reaches the
+  model.**
+- An owner is resolved exactly, by label, never by guessing at a name.
+
+**What it cannot catch:** a name the matching doesn't recognise, such as a
+misspelling, or someone who is neither an invitee nor a user, is sent as
+written (Question 5).
+
+**Who and when are read live on every press, and again inside the save
+transaction** (§4).
+- The screens render flags; they never re-derive a rule.
+- **No access to the meeting:** the identical 404 a missing meeting gets
+  (`MeetingAccess.seeing`).
+- **Access, but not the person who writes the agenda or records the minutes:**
+  that write's existing refusal (`MEETING_NOT_RECORDER`, or the agenda's
+  writing refusal).
+- **The wrong stage:** 409 `MEETING_AI_NOT_OFFERED`, with the stage's names.
+  The trigger is absent there anyway; this is the backstop.
+
+**Fitting the input cap (P225).** The gateway estimates input as UTF-8 bytes
+divided by 3 (`estimateTokens()`), so an Arabic character costs about two
+thirds of a token.
+- **Each call has fixed caps** (below), and trims its longer texts with
+  `cutAtBoundary()` (`foundation/ai/text-cut.ts`) to fit the feature's
+  `inputTokenCap`.
+- **If it is still over, the call is refused before reserving anything:**
+  - 409 `MEETING_AI_TOO_LONG`, with `{ feature }`;
+  - said in both languages, one sentence per feature;
+  - no charge.
+- **Each call gets a worst-case Arabic spec, as `draft-answer.spec.ts` does:**
+  every field at its cap, in Arabic, estimated under the cap.
+
+**One run at a time per meeting and feature.**
+- A claim row is taken with `INSERT … ON CONFLICT … WHERE` before any call,
+  and is stale after 3 minutes (ACC-198's shape).
+- A second press is 409 `MEETING_AI_IN_PROGRESS`, before any credit is
+  reserved.
+- **The claim is released on every exit:** success, refusal, failure, or a
+  meeting that moved on. This is the briefing's `release()`, in a `finally`.
+
+**Saving the answer.**
+- The answer is saved in a transaction that takes the minutes' lock order: the
+  instance FOR SHARE, then the meeting row FOR UPDATE.
+- That transaction re-checks the stage and the person.
+- If the meeting moved on during the call, nothing is saved, the call is still
+  charged (the provider was paid, design Q2), and the refusal is
+  `MEETING_CHANGED`.
+
+**Leaving the page: charged AND saved (P225, as ACC-193 Q2).**
+- The server does not stop when the screen stops waiting. It finishes the
+  call and saves the suggestions.
+- The suggestions show when the person returns, and are counted as undecided.
 
 ### 1.1 Suggest agenda items (6.1)
 
 **Where and who:**
-- On the Agenda panel's header, for whoever may manage the agenda
+- On the Agenda panel's header, for whoever may write the agenda
   (`meeting.may.manageAgenda`), while the stage allows `manage_agenda` and is
   **not** flagged `AGENDA_ISSUED`.
   - That is Planned only (M1), read from flags, never a stage key.
@@ -149,23 +190,40 @@ The four features in the ticket become **three AI calls**:
      the committee's earlier meetings.
    - A unit meeting: tasks from the unit's earlier meetings.
 2. **Pending approvals:** the committee's open change request awaiting a
-   decision (a committee meeting only; ACC-281 already lets a member read it).
+   decision.
+   - A committee meeting only.
+   - Only after the presser's own read of the committee passes
+     (`ObjectVisibilityService.assertCanView('COMMITTEE', …, viewerId)`, with
+     ACC-281's member clause).
+   - If it fails, the source is left out, silently: the presser can't see it.
 3. **Excluded before sending:**
-   - every task already in "Open actions from the last meeting" (the same
-     `openActions()` read the agenda's fixed first section uses);
-   - anything already on this meeting's agenda, matched by task id.
-4. **A cap of 40 candidates:** overdue first, then by due date, then the
+   - every task already in "Open actions from the last meeting". It uses the
+     same read the agenda's fixed first section uses, `openActions()`, today
+     a private method of `MeetingMinutesService`, exported as a module
+     function in PR 3;
+   - anything already on this meeting's agenda, matched by the new
+     `AgendaItem.sourceTaskId` / `sourceChangeRequestId` (§2). Never read back
+     from audit rows.
+4. **A cap of 30 candidates:** overdue first, then by due date, then the
    newest.
 
 **Sent to the model:**
-- For each candidate: label `S1`–`S40`, its kind (task or change request), its
-  title, status, due date, whether it is overdue, and its origin's type and
-  date.
-- The current agenda's item titles, so it doesn't repeat them.
-- The meeting's title and type.
+- **For each task:** label `S1`–`S30`, its title (names replaced, cut to 120
+  characters), its status, its due date, whether it is overdue, and its
+  origin's type and date.
+- **For the change request:** exactly "Change request {n}" (its position in
+  this call), "awaiting a decision", and the names of the fields it changes
+  (for example "quorum, meeting frequency"). Our code writes those words in
+  the presser's language. No values, no requester, no reason text.
+- **The current agenda's item titles** (names replaced, each cut to 120
+  characters), so it doesn't repeat them.
+- The meeting's title (names replaced) and type.
 
-**Never sent:** assignee, creator, owner, requester, any person's name,
-evidence or descriptions.
+**Never sent:**
+- the assignee, creator, owner or requester;
+- any name from our records;
+- task descriptions or evidence;
+- a change request's values.
 
 **Answer:** `{ picks: [{ source: "S4", title, reason }] }`, at most 3.
 - The title is at most 80 characters, and the reason at most 140.
@@ -184,19 +242,27 @@ tasks and the panel says "Approvals couldn't be checked." (design outMeet).
 **Key, credits and effort:**
 - `meeting_agenda_generation`: 3 credits (CLAUDE.md's price list).
 - STANDARD tier, effort `low`, `maxTokens` 2,000, `inputTokenCap` 6,000.
+- **Worst case:** 30 Arabic titles at 120 characters, plus 20 agenda titles,
+  is about 3,300 tokens.
 
 **Refunded (not charged):**
-- **Before any call:** no candidate after the exclusions
-  (`MEETING_AI_NO_SOURCES`, "No open tasks or approvals to suggest from.").
+- **Before any call:**
+  - no candidate after the exclusions: `MEETING_AI_NO_SOURCES`, "No open
+    tasks or approvals to suggest from.";
+  - over the cap: `MEETING_AI_TOO_LONG`.
 - **Through `accept()`:** an empty, cut-short or unparseable answer, and an
   answer with no usable pick.
 
 **Accepted, edited or discarded:**
-- **Ticked, then "Add n items".** The added items are ordinary agenda items
-  with no AI marks:
-  - placed before the first of the agenda's trailing standing items (Any other
-    business, M4), in tick order;
-  - each audited CREATE with `aiDraft`.
+- **Ticked, then "Add n items".** This goes through
+  `MeetingAgendaService.addItems()`, beside the private `lockAgenda()` it
+  takes. The added items are ordinary agenda items with no AI marks:
+  - each carries its `sourceTaskId` or `sourceChangeRequestId`;
+  - each is audited CREATE with `aiDraft`;
+  - **"Before Any other business" is keyed on the agenda's trailing `standing`
+    items** (M4). They are placed before the first item of that trailing run,
+    in tick order, renumbered in the same transaction.
+  - **Outside a series there are no standing items**, so they append.
 - **Unticked suggestions are discarded with the add.**
 - **"Suggest again"** replaces every undecided agenda suggestion.
 - **Discard** removes one suggestion.
@@ -215,31 +281,45 @@ tasks and the panel says "Approvals couldn't be checked." (design outMeet).
   returned meeting in Minutes Draft always has `reviewRound ≥ 1`.
 
 **The rough notes:**
-- One box per writer, at most 30,000 characters.
-- Saved as they are typed (debounced) by
-  `PUT /meetings/:id/ai/notes`.
+- One box per writer, **at most 18,000 characters** (P225: about 12,000
+  tokens in Arabic).
+- Saved as they are typed (debounced) by `PUT /meetings/:id/ai/notes`.
+  - **That route has the Draft minutes gate** (the same person, stage and M9
+    check), so notes can't be written where no draft can be made.
 - Read only by their writer.
 
+**What is drafted, per item and per kind (M8, P225):**
+- **The first press** drafts every item, in agenda order.
+- **Afterwards, each item has two parts that are decided on their own:**
+  - **its minutes** (discussion and decisions) are drafted again only if the
+    item has no discussion and no decision, or still has an undecided minutes
+    suggestion;
+  - **its actions** are drafted again only if the item has undecided
+    action-item suggestions, or its minutes part is being drafted.
+  - An item whose minutes were accepted but whose actions are undecided is
+    sent, and gets **only actions back**: its minutes part is ignored.
+  - An item with nothing undecided and its minutes settled is not sent.
+- **At most 6 items per call.** The rest wait for Draft again, which continues
+  in agenda order (M8 makes that natural).
+
 **Sent to the model:**
-- The writer's notes, with names and emails replaced (§1.0), between markers,
-  as data and never as instructions (ACC-197's rule).
-- **The agenda items to draft,** as `A1`–`An`, each with its title and
-  description.
-  - **The first press** sends every item.
-  - **Draft again (M8)** sends only the items still empty (no discussion and
-    no decision) or with an undecided suggestion.
-  - Nothing else is touched.
-- **The titles of each item's action items already recorded**, so they are not
-  suggested twice.
-- **Today's date in the organisation's zone**, so the model can write a date
-  that the notes give relative to the meeting.
+- **The writer's notes,** with names replaced (§1.0), between markers, as data
+  and never as instructions (ACC-197's rule).
+- **The items to draft,** as `A1`–`A6`, each with:
+  - its title (cut to 120 characters);
+  - its description (cut to 300 characters);
+  - which parts are wanted: minutes, actions, or both.
+- **The titles of each item's action items already recorded** (each cut to
+  140 characters), so they are not suggested twice.
+- **The meeting's date and today's date,** both in the organisation's zone, so
+  the model can resolve "by next month" or "15 Sep".
 
 **Never sent:**
 - attendance;
 - seats;
 - the quorum;
 - any name from our records;
-- an outside guest's name, even when the Secretary typed it.
+- an outside guest's name, as recorded.
 
 **Answer:**
 
@@ -247,20 +327,31 @@ tasks and the panel says "Approvals couldn't be checked." (design outMeet).
 { "items": [{ "item": "A2",
     "discussion": "…" | null,
     "decisions": [{ "text": "…", "votes": { "for": 5, "against": 1, "abstain": 0 } | null }],
-    "actions": [{ "what": "…", "owner": "P3" | null, "due": "2026-11-30" | null }] }] }
+    "actions": [{ "what": "…", "owner": "P3" | null, "due": "2026-11-30" | null, "time": "14:00" | null }] }] }
 ```
 
 Caps:
-- the discussion is at most 1,500 characters;
-- at most 5 decisions, each at most 400 characters;
-- at most 6 actions per item, each "what" at most 140 characters.
+- the discussion is at most 1,200 characters;
+- at most 3 decisions, each at most 300 characters;
+- at most 4 actions per item, each "what" at most 140 characters.
+
+**The output budget (P225), stated:**
+- **The worst case:** 6 items × (1,200 + 3 × 300 + 4 × 140 = 2,660 Arabic
+  characters ≈ 1,780 tokens, plus about 120 tokens of JSON) is about 11,400
+  tokens.
+- **`maxTokens` is 16,000,** which leaves about 4,600 for thinking at effort
+  `medium` (thinking counts against `max_tokens`).
+- **An answer cut short** is refused by `accept()` and refunded.
+- **PR 1 measures thinking on the worst-case fixture.** If it doesn't fit, the
+  effort drops to `low` before items per call drop.
 
 **Our code, on the answer:**
-- **Votes are copied only when all three counts are present** (6.4).
-  - Otherwise the vote is empty, with "Vote: not in your notes · left empty".
-  - **Counts are never changed (M6).** Votes above the members present are
-    kept, and flagged by the minutes' own existing check
-    (`MEETING_VOTES_EXCEED_PRESENT` holds Distribute).
+- **Votes (6.4, M6):**
+  - **Copied only when all three counts are present.** Otherwise the vote is
+    empty, with "Vote: not in your notes · left empty".
+  - **Never changed.** A total above the members present is kept.
+  - **The suggestion shows the minutes' own flag before Accept** ("These add
+    up to 7, more than the 6 members present.").
   - "Taken without quorum" stays the attendance's, outside the suggestion.
 - **An owner label is mapped to its person.**
   - **An outside guest** (`OUTSIDE_GUEST`) gives an empty owner with build
@@ -269,33 +360,55 @@ Caps:
   - **A user who is not ACTIVE, an unknown label, or no owner** gives an empty
     owner with a reason (Question 4).
   - **An organisation guest** who is staff may own an action, as drawn.
-- **A due date in the past, or not a date,** gives an empty due date with "The
-  date in your notes, 15 Sep, has passed. Choose a due date." The date is
-  checked by the same rule as `futureDue()`.
+- **Due dates (P225):**
+  - The model's day, and its time when the notes state one, become an instant
+    **in the organisation's zone**, as the action-item dialog's
+    `meetingStart()` makes one.
+  - With no time stated, the time is the end of that day's working hours from
+    `WorkingCalendarService`. The inline Edit row shows it, and it can be
+    changed there.
+  - A day in the past, or not a day, gives an empty due date with "The date in
+    your notes, 15 Sep, has passed. Choose a due date." The date is checked by
+    `futureDue()`'s rule.
 - **An item answered as "nothing"** gives "Nothing in your notes for this
   item."
+- **An answer where EVERY item is "nothing"** is refused by `accept()` and
+  refunded. It is said as `MEETING_AI_NOTHING_SUGGESTED`: "AI couldn't
+  suggest anything from these notes. Add more detail and try again." This is
+  `DRAFT_NOTHING_TO_SUGGEST`'s shape, and the design's Empty outcome.
 
 **Key, credits and effort:**
 - `minutes_drafting`: 8 credits (CLAUDE.md's price list).
 - **The action items are part of this call and cost nothing extra.**
-- STANDARD tier, effort `medium`, `maxTokens` 8,000, `inputTokenCap` 20,000.
-- The 30,000-character notes cap keeps an Arabic note under the input cap.
+- STANDARD tier, effort `medium`, `maxTokens` 16,000, `inputTokenCap` 20,000.
+- **Worst-case input:** 18,000 Arabic characters of notes (about 12,000
+  tokens), plus 6 items and their actions (about 1,700), plus the system text,
+  is under 20,000. Longer agenda texts are cut first.
 
 **Refunded (not charged):**
 - **Before any call:**
   - no notes: `MEETING_AI_NO_NOTES`, "Add notes first.";
   - nothing left to draft under M8: `MEETING_AI_NOTHING_TO_DRAFT`. The trigger
-    is absent then; this is the backstop.
-- **Through `accept()`:** an empty, cut-short or unparseable answer, and an
-  answer with no usable item. A draft cut short is never shown half (design
-  "Partial").
+    is absent then; this is the backstop;
+  - over the cap: `MEETING_AI_TOO_LONG`.
+- **Through `accept()`:** an empty, cut-short or unparseable answer, an answer
+  with no usable item, and an all-"nothing" answer. A draft cut short is never
+  shown half (design "Partial").
 
 **Accepted, edited or discarded, one suggestion at a time:**
 - **The minutes suggestion for an item:**
-  - **Accept replaces the item's discussion and its decisions (M5),** in one
-    transaction. The line says what it replaces:
-    - "Accepting replaces the discussion you typed." (drawn);
-    - two new lines for decisions alone, and for both (§8).
+  - **Accept replaces the item's discussion and its decisions (M5),** in ONE
+    transaction, through `MeetingMinutesService.applyAiDraft()` (§3).
+    - **The line says what it replaces:** "Accepting replaces the discussion
+      you typed." (drawn), and two new lines for decisions alone and for both
+      (§8).
+    - **Votes: `applyAiDraft()` keeps `checkVotes()`'s all-three-or-none rule
+      and SKIPS its total-versus-present refusal.** That is M6's one exception
+      to the ordinary decision write, which refuses 409
+      `MEETING_VOTES_EXCEED_PRESENT`, even while attendance is unrecorded.
+    - **Distribute's readiness check then holds the minutes** with
+      `MEETING_VOTES_EXCEED_PRESENT` until the Secretary corrects the count,
+      as drawn.
   - **Edit does the same** and moves focus into the discussion field. Later
     changes are ordinary minutes writes.
   - **Discard** removes the suggestion.
@@ -305,20 +418,27 @@ Caps:
     Saving it accepts the suggestion with those values.
   - **What Accept checks:** the same rules as `addActionItem()`: a title, an
     owner who is a person in the organisation, and a due date in the future.
+    These are extracted into one function both call.
   - **Accept adds an ordinary draft action item** reading "Becomes a task when
     the minutes are approved". Approve Minutes makes the task, through
     `MINUTES_FINAL`'s existing effect.
   - **Discard** removes the suggestion.
-- **Draft again** replaces the undecided suggestions of the items it drafts.
-  It never touches accepted text, or an item that no longer has an undecided
-  suggestion (M8).
+- **Draft again** replaces only the undecided suggestions of the parts it
+  drafts. It never touches accepted text.
 - **The undecided count:**
   - It is shown in the minutes header and the Action items card (design).
   - It counts every undecided minutes suggestion and action-item suggestion.
-  - **At Distribute Minutes (M2):** the confirm says "3 AI suggestions
-    undecided will be discarded", and Distribute deletes them, inside its
-    `inTx`.
-  - The count never holds Distribute.
+  - **The minutes read answers it as `distribute.aiUndecided`.**
+- **At Distribute Minutes (M2):**
+  - The confirm says "3 AI suggestions undecided will be discarded".
+  - **Distribute's `inTx` deletes them, and the notes.** It counts the rows it
+    deletes in the same transaction as the delete, under the meeting row's
+    lock, and records that count on its audit row.
+  - **No suggestion can be saved after that:** a run's save re-checks the
+    stage inside the same lock.
+  - **The count never holds Distribute.**
+  - **PR 2 re-measures the confirm's 420 layout** with the line (the design's
+    M2 note: +21 EN, +24 AR).
 
 ### 1.3 Draft summary for absent members (6.5)
 
@@ -335,9 +455,9 @@ Caps:
   - each item's title, discussion and decisions, with votes and "taken without
     quorum";
   - its action items, with the owner as a label and the due date.
-- Names inside the minutes are replaced by labels, as in §1.0. The summary
-  goes to the meeting's own members, but the rule that no name from our
-  records is sent still holds.
+- **Every text has names replaced** (§1.0).
+- **Discussions are cut with `cutAtBoundary()`, longest first,** until the
+  input fits.
 
 **Never sent:** the recipients, the attendance, or any guest.
 
@@ -359,7 +479,9 @@ back to names by our code.
 - STANDARD tier, effort `low`, `maxTokens` 3,000, `inputTokenCap` 15,000.
 
 **Refunded (not charged):**
-- **Before any call:** nobody recorded absent (`MEETING_AI_NO_ABSENT`).
+- **Before any call:**
+  - nobody recorded absent: `MEETING_AI_NO_ABSENT`;
+  - still over the cap after cutting: `MEETING_AI_TOO_LONG`.
 - **Through `accept()`:** an empty, cut-short or unparseable answer.
 
 **Accepted, edited or discarded:**
@@ -368,9 +490,12 @@ back to names by our code.
   - It sends the text as shown, at most 2,000 characters.
   - The recipients are recomputed on the server from attendance: MEMBERS
     recorded Apologies or Absent who are ACTIVE users. Never guests.
-  - It goes as an in-app notification and an email, in the Secretary's
-    language, from the Secretary, with a link to the approved minutes and no
-    reply path (design Q9).
+  - **The notice (P225):**
+    - in-app and by email, with a link to the approved minutes and no reply
+      path (design Q9);
+    - **the title names the Secretary**, in both languages;
+    - **both bodies (`bodyEn` and `bodyAr`) carry the summary as written**, in
+      the Secretary's language. The body stays under 2,000 characters.
 - **Recorded on the meeting:**
   - `absentSummarySentAt` and `absentSummarySentById`;
   - one audit row naming the recipients' ids and `aiDraft`.
@@ -383,10 +508,19 @@ back to names by our code.
 
 ## 2. What is stored, and when it is deleted
 
-One migration, `acc322_meetings_ai`. It is **additive**: two new enums, three
-new tables, and two nullable columns. No existing enum gains a value, so
-ACC-173's rule is met by construction: no row exists before the code that
-reads it.
+**Two migrations, both additive:**
+- **PR 1's `acc322_meetings_ai`:**
+  - two new enums;
+  - three new tables;
+  - two nullable columns on `AgendaItem`: `sourceTaskId` and
+    `sourceChangeRequestId`, with an index on `(meetingId, sourceTaskId)`.
+- **PR 5's `acc322_absent_summary_sent`:** two nullable columns on `Meeting`,
+  `absentSummarySentAt` and `absentSummarySentById`. It ships with its only
+  reader.
+
+No existing enum gains a value, so ACC-173's rule is met by construction: no
+row exists before the code that reads it. **The agenda columns are written only
+by `addItems()`**, and read only by the agenda's exclusion.
 
 ```prisma
 enum MeetingAiKind {
@@ -443,7 +577,10 @@ model MeetingAiRun {
   @@index([organizationId])
 }
 
-// On Meeting, both nullable:
+// PR 1, on AgendaItem, both nullable:
+//   sourceTaskId          String?
+//   sourceChangeRequestId String?
+// PR 5, on Meeting, both nullable:
 //   absentSummarySentAt   DateTime?
 //   absentSummarySentById String?
 ```
@@ -453,10 +590,19 @@ row's id. Each relation to `Meeting` is `onDelete: Cascade`.
 
 **Why the suggestions are stored, not only shown:**
 - The undecided count must survive a reload, and reach Distribute's confirm.
+- A run the person left still saves (§1.0).
 - Accept reads the suggestion from the server. So the accepted text is the
-  text the model wrote, and `aiDraft` is proved by construction: the row
-  carries its `aiInteractionId`.
+  text the model wrote, and `aiDraft` is proved by construction: the row was
+  written by our code from a charged call.
 - This is stronger than ACC-197's claim check, which is not needed here.
+
+**`aiDraft` (nit, P225):**
+- It records `{ kind, interactionId }`.
+- `AiService` returns `interactionId: null` when its log row could not be
+  written. Then `aiDraft` records `interactionId: null`, and still records
+  that the text came from an AI suggestion, because the suggestion row is the
+  proof.
+- The history reads "drafted with AI, accepted by …" either way.
 
 **When each thing is deleted:**
 
@@ -466,12 +612,12 @@ row's id. Each relation to `Meeting` is `onDelete: Cascade`.
 | `ITEM_MINUTES` and `ACTION_ITEM` suggestions | On Accept or Discard; replaced by Draft again; at Distribute (counted in its confirm, M2); at cancel; with their agenda item |
 | `AGENDA_ITEM` suggestions | On "Add n items" (ticked and unticked), on Discard; replaced by Suggest again; on entering the `AGENDA_ISSUED` stage (the existing `agendaIssued` effect gains this part); at cancel |
 | `ABSENT_SUMMARY` suggestion | On Send or Discard; replaced by Draft again |
-| `MeetingAiRun` | Never; one small row per meeting and feature. A claim is stale after 3 minutes |
+| `MeetingAiRun` | Never; one small row per meeting and feature. A claim is released on every exit, and is stale after 3 minutes |
 
 **The record after Accept is the Meetings record.** The history keeps
 "drafted with AI, accepted by …" (M3, design Q10) through `minutesAudit()`'s
-`after.minutes.aiDraft = { interactionId, kind }`. The agenda's CREATE audit
-carries the same field. **No text is in the audit or the AI log.**
+`after.minutes.aiDraft`. The agenda's CREATE audit carries the same field.
+**No text is in the audit or the AI log.**
 
 ---
 
@@ -483,18 +629,22 @@ Read on dev `5ae3667`, against step-316 §6a.
 |---|---|---|---|
 | An item's discussion is replaced whole, never appended | **Yes** | `MeetingMinutesService.setItemMinutes()` (PR 4) | Accept replaces it (M5) |
 | Decisions are rows, written one at a time | **Yes** | `addDecision` / `updateDecision` / `removeDecision` (PR 4) | Accept replaces the item's rows in the same transaction |
-| A way to make several minutes writes in ONE transaction, with the lock order, the stage rule, the review-change record and one audit row | **Missing**: `write()` is private | `meeting-minutes.service.ts` | ACC-322 PR 1 adds `MeetingMinutesService.applyAiDraft()`, beside the writes it reuses, so the minutes keep one owner |
+| A way to make several minutes writes in ONE transaction, with the lock order, the stage rule, the review-change record and one audit row | **Missing**: `write()` is private | `meeting-minutes.service.ts` | PR 1 adds `MeetingMinutesService.applyAiDraft()`, beside the writes it reuses, so the minutes keep one owner |
+| `checkVotes()`'s total-versus-present refusal | **Yes**, and it refuses while attendance is unrecorded | `meeting-minutes.service.ts` (PR 4) | `applyAiDraft()` keeps the all-three-or-none check and skips this one (M6). Distribute's readiness check holds the minutes instead |
 | The action-item rules (a title, an owner who is a person, a future date) | **Yes**, but inside `addActionItem()` | PR 4 | Extracted to one function that `addActionItem()` and the AI accept both call |
 | `minutesAudit()` takes free `after` metadata | **Yes** | PR 4 | `aiDraft` is added there |
 | The minutes read's `distribute` block | **Yes**: `ready`, `blockedBy`, `defaultReviewBy` | PR 4, 7b | Gains `aiUndecided: number` |
-| Distribute's `inTx` | **Yes** | `MeetingReviewService.distribute()` (PR 4) | Deletes the notes and the undecided minutes suggestions |
-| The Distribute confirm | **Yes**, but with no extra line | `meeting-distribute-dialog` (PR 7b) | It already takes `minutes`, so it reads `distribute.aiUndecided` and adds the M2 line itself; no new input |
+| Distribute's `inTx` | **Yes** | `MeetingReviewService.distribute()` (PR 4) | Deletes the notes and the undecided minutes suggestions, counting what it deletes |
+| The Distribute confirm | **Yes**, but with no extra line | `meeting-distribute-dialog` (PR 7b) | It already takes `minutes`, so it reads `distribute.aiUndecided` and adds the M2 line itself; no new input. Its 420 layout is re-measured |
 | The entry effects for `AGENDA_ISSUED` and `MEETING_CANCELLED` | **Yes** | `meeting-effects.ts` | Each gains a delete |
 | Approve makes the tasks from the action items | **Yes** | `MINUTES_FINAL` effect | Unchanged: accepted AI drafts are ordinary action items |
-| "Open actions from the last meeting" | **Yes** | `MeetingMinutesService.openActions()` (PR 7b) | The agenda's exclusions |
-| An add that goes before Any other business | **Missing**: `create()` appends at `max(order) + 1` | `meeting-agenda.service.ts` | ACC-322 PR 3 adds `addItems(…, { beforeTrailingStanding })` in the agenda service, under `lockAgenda`, renumbering in the same transaction |
+| "Open actions from the last meeting" | **Yes**, but private | `MeetingMinutesService.openActions()` (PR 7b) | PR 3 exports it as a module function, so the minutes read and the agenda's exclusion read one rule |
+| The agenda's lock | **Yes**, but private | `MeetingAgendaService.lockAgenda()` | PR 3 adds `addItems()` to the same service, so it takes the lock where it lives |
+| An add that goes before Any other business | **Missing**: `create()` appends at `max(order) + 1` | `meeting-agenda.service.ts` | PR 3's `addItems()` places items before the trailing `standing` run, renumbering in the same transaction |
+| Which task or change request an agenda item came from | **Missing**: `AgendaItem` has no source column | `schema.prisma` | PR 1 adds `sourceTaskId` and `sourceChangeRequestId`; PR 3 writes them |
+| `MEETING_CHANGED` offers Reload | **Missing** from `RELOAD_CODES` (`frontend/…/meetings/meeting-refusal.ts`) | Coder 2's #380 adds it | PR 2 relies on #380 being merged first |
 | The meeting history screen that reads `aiDraft` | **Missing** (PR 7c or later) | — | The audit is written from PR 1; the "drafted with AI, accepted by …" line shows when the history screen exists |
-| The approved page: the locked line, Print minutes | **Missing** (PR 7c, PR 7d) | — | The summary (PRs 5–6) waits for 7d |
+| The approved page: the locked line, Print minutes | **Missing** (PR 7c, PR 7d) | — | The summary screen (PR 6) waits for 7d |
 | The phone pass | **Missing** (PR 7d) | — | Each ACC-322 screen PR lays its own panel out at 390, as the design draws |
 | Action items with an empty owner or due date | **Decided: not stored** (lane B, Prompt 164) | — | Kept in the suggestion's payload; Accept only once both are set. No migration on `MeetingActionItem` |
 
@@ -517,17 +667,20 @@ meeting row FOR UPDATE, then the agenda item.
   - the viewer's notes;
   - the undecided suggestions by kind;
   - `may: { suggestAgenda, draftMinutes, draftSummary }`;
-  - `available` per feature, from `openAiFeatures` (ACC-194), as ACC-193's
-    `available`;
+  - `available` per feature;
   - any run in progress.
-- **Everyone who sees the meeting gets an answer.** A viewer who works no
-  stage gets every flag false and no content: no error, like `mayRead: false`
-  (P206).
-- **At most 5 queries, whatever the size.** Nothing is added to the
-  per-request path (ACC-271's performance rule).
+- **Availability for all three features is read in one batch.**
+  `aiFeatureAvailability()` (`foundation/ai/ai-availability.ts`) gains a
+  batched form for several keys: one organisation read and one
+  `openAiFeatures`. The single-key form calls it.
+- **Everyone who sees the meeting gets an answer.** A viewer who neither
+  writes the agenda nor records the minutes gets every flag false and no
+  content: no error, like `mayRead: false` (P206).
+- **The number of queries is fixed, whatever the meeting's size.** Nothing is
+  added to the per-request path (ACC-271's performance rule).
 
 **Writes:**
-- `PUT /meetings/:id/ai/notes`
+- `PUT /meetings/:id/ai/notes`, with the Draft minutes gate
 - `POST /meetings/:id/ai/agenda`, `…/agenda/add`
 - `POST /meetings/:id/ai/minutes`
 - `POST /meetings/:id/ai/suggestions/:sid/accept` (action values in the body)
@@ -535,12 +688,18 @@ meeting row FOR UPDATE, then the agenda item.
 - `POST /meetings/:id/ai/summary` and `…/summary/send`
 
 **Refusal codes:**
-- **New codes:** `MEETING_AI_NOT_OFFERED`, `MEETING_AI_IN_PROGRESS`,
-  `MEETING_AI_NO_SOURCES`, `MEETING_AI_NO_NOTES`,
-  `MEETING_AI_NOTHING_TO_DRAFT`, `MEETING_AI_NO_ABSENT`, and
-  `MEETING_AI_SUGGESTION_GONE`.
-  - `MEETING_AI_SUGGESTION_GONE` is a suggestion already decided by someone
+- **New codes:**
+  - `MEETING_AI_NOT_OFFERED`
+  - `MEETING_AI_IN_PROGRESS`
+  - `MEETING_AI_NO_SOURCES`
+  - `MEETING_AI_NO_NOTES`
+  - `MEETING_AI_NOTHING_TO_DRAFT`
+  - `MEETING_AI_NOTHING_SUGGESTED`
+  - `MEETING_AI_NO_ABSENT`
+  - `MEETING_AI_TOO_LONG`
+  - `MEETING_AI_SUGGESTION_GONE`: a suggestion already decided by someone
     else, or replaced by Draft again. It is in `RELOAD_CODES`.
+- **`MEETING_CHANGED`'s Reload comes from #380** (§3).
 - **Each is said from its code, in both languages:**
   - through `meeting-refusal.ts` on the meetings screens;
   - through `core/ai/ai-refusal.ts` for the gateway's own refusals (credits,
@@ -551,24 +710,37 @@ tier).
 
 **Tests:**
 - **db-specs against the test Postgres for:**
-  - each stage gate and M9;
+  - each stage gate and M9, including `PUT /ai/notes`;
   - each 404 for another organisation;
   - Accept's one-transaction write;
-  - Draft again touching only empty or undecided items;
-  - Distribute discarding, with a count that matches the confirm;
+  - **votes above the members present:**
+    - Accept stores them through `applyAiDraft()`, even with attendance
+      unrecorded;
+    - the ordinary decision write still refuses them;
+    - Distribute then refuses `MEETING_VOTES_EXCEED_PRESENT`;
+  - Draft again by part: an item with accepted minutes gets only actions;
+  - Distribute discarding, with the deleted count on its audit row;
   - cancel and issue deleting;
-  - a claim refusing a second press;
-  - a meeting that moved on during a call: nothing saved, charged.
+  - a claim refusing a second press, and released after a failure;
+  - a meeting that moved on during a call: nothing saved, charged;
+  - a run the person left: saved, and counted;
+  - the agenda's exclusion by `sourceTaskId`;
+  - the change request left out for a presser who can't read the committee.
 - **Pure specs for:**
-  - the name replacement: Arabic normalisation, a shared first name, emails,
-    an outside guest;
-  - the answer parsers.
+  - the name replacement: Arabic normalisation, a shared first name, an
+    outside guest's shared word always replaced, emails;
+  - the answer parsers;
+  - the due-date instant in the organisation's zone;
+  - **the worst-case Arabic input for each call** under its cap, and the
+    minutes' worst-case answer under its `maxTokens` estimate.
 - **Mutation-checked:**
   - the M9 check;
+  - the M6 skip, restored so it refuses;
   - the outside-guest owner;
   - the past-date rule;
   - the Distribute delete;
-  - the writer-only notes read.
+  - the writer-only notes read;
+  - the batched availability.
 - **The live proof runs after the deploy and the seed,** on al-nakheel, with
   credits used staying used (ACC-236).
 
@@ -578,24 +750,26 @@ tier).
 
 **The suggested order holds: minutes draft and action items first.** The code
 agrees:
-- **Every hook it needs is on dev** (PR 4 and 7b). The only missing one,
-  `applyAiDraft()`, is an addition beside the writes it reuses.
+- **Almost every hook it needs is on dev** (PR 4 and 7b). The missing ones,
+  `applyAiDraft()` and the extracted action-item rules, are additions beside
+  the writes they reuse.
 - **It is the feature the design spends most on**, and the one with the most
   rules to prove (M2, M3, M5, M6, M7, M8, M9).
-- **The agenda suggestions come next.** They need one missing hook (insertion
-  before Any other business), and their screen exists (#374).
-- **The summary comes last, because it cannot come earlier.** It sits beside
-  Print minutes under the approved page's locked line, and both arrive with
+- **The agenda suggestions come next.** They need the new source columns
+  (PR 1's migration) and `addItems()`, and their screen exists (#374).
+- **The summary comes last.** Its backend needs nothing unmerged:
+  `MINUTES_FINAL` and attendance are on dev. Its screen sits beside Print
+  minutes under the approved page's locked line, and those arrive with
   Meetings PRs 7c and 7d.
 
 | PR | What | Waits for |
 |---|---|---|
-| **1. Minutes, backend** | The migration (§2); the notes; `minutes_drafting` in `ai.config.ts`; the seed line (seeded **after** the deploy); `GET /meetings/:id/ai`; the draft, accept and discard routes; `applyAiDraft()`; the extracted action-item rules; Distribute's discard and `aiUndecided`; the cancel effect's delete; SYSTEM-REFERENCE §17.12 and CLAUDE.md's ACC-322 entry | dev as it is |
-| **2. Minutes, screens** | The Rough notes box; Draft minutes and Draft again; the suggestion inside each item; the action-item suggestions and their inline Edit; the undecided count in the header and the Action items card; the Distribute confirm's M2 line; Arabic per build notes; phone 390 for this panel | PR 1 deployed |
-| **3. Agenda, backend** | `meeting_agenda_generation`; the sources and exclusions; the agenda add before Any other business; the `AGENDA_ISSUED` effect's delete | PR 1 (the tables) |
+| **1. Minutes, backend** | The migration (§2, including the `AgendaItem` source columns); the notes; `minutes_drafting` in `ai.config.ts`; the seed line (seeded **after** the deploy); `GET /meetings/:id/ai` with batched availability; the draft, accept and discard routes; `applyAiDraft()` with the M6 skip; the extracted action-item rules; Distribute's discard and `aiUndecided`; the cancel effect's delete; SYSTEM-REFERENCE §17.12 and CLAUDE.md's ACC-322 entry | dev as it is |
+| **2. Minutes, screens** | The Rough notes box; Draft minutes and Draft again; the suggestion inside each item, with the votes flag; the action-item suggestions and their inline Edit; the undecided count in the header and the Action items card; the Distribute confirm's M2 line, re-measured at 420; Arabic per build notes; phone 390 for this panel | PR 1 deployed, and #380 (`MEETING_CHANGED` in `RELOAD_CODES`) |
+| **3. Agenda, backend** | `meeting_agenda_generation`; the sources and exclusions; `openActions()` exported; `addItems()` with the source columns and the trailing-`standing` placement; the `AGENDA_ISSUED` effect's delete | PR 1 (the tables and columns) |
 | **4. Agenda, screen** | The trigger on the Agenda panel's header, the suggestions in flow, "Add n items", Suggest again, the "Approvals couldn't be checked." partial | PR 3 deployed |
-| **5. Summary, backend** | `absent_member_summary`; the draft and send routes; the two Meeting columns (a second additive migration, kept out of PR 1 so it ships with its only reader) | Meetings PR 7c |
-| **6. Summary, screen** | Draft summary beside Print minutes, the panel under the locked line, the Send confirm, the sent line | Meetings PR 7d |
+| **5. Summary, backend only** | `absent_member_summary`; the draft and send routes; the notice; the two `Meeting` columns in their own additive migration | PR 1 (the tables); not Meetings 7c |
+| **6. Summary, screen** | Draft summary beside Print minutes, the panel under the locked line, the Send confirm, the sent line | PR 5 deployed, and Meetings PR 7d |
 
 **Each PR deploys before the next. Every migration is expand only.** Each AI
 key's cost row is seeded after its PR deploys (`npm run
@@ -625,13 +799,17 @@ seed:ai-feature-costs`), never before. Each live proof follows its seed.
    design gives reasons only for an outside guest and for a past date. I
    suggest: "No one in the organisation matches “Omar”. Choose a person." /
    «لا يطابق أحدٌ في المنشأة «عمر». اختر شخصًا.»
-5. **Should the notes line say the notes are sent to the AI provider?** The
-   drawn line is "Seen only by whoever writes the minutes. Paste or type;
-   nothing here is in the minutes until you accept it." Our code removes
-   outside guests' names and emails before sending, but staff names the
-   Secretary types are sent as written. I suggest adding: "Draft minutes sends
-   these notes to AccreditMe's AI provider." / «ترسل «صياغة المحضر» هذه
-   الملاحظات إلى مزوّد الذكاء الاصطناعي لدى AccreditMe.»
+5. **Should the notes line say the notes are sent to the AI provider?**
+   - **The drawn line is:** "Seen only by whoever writes the minutes. Paste or
+     type; nothing here is in the minutes until you accept it."
+   - **What our code does before sending:** it replaces every name it knows
+     (the meeting's invitees, outside guests included, and the organisation's
+     active people) and every email address.
+   - **What it cannot catch:** a name it doesn't recognise, such as a
+     misspelling, is sent as typed.
+   - **I suggest adding:** "Draft minutes sends these notes to AccreditMe's AI
+     provider." / «ترسل «صياغة المحضر» هذه الملاحظات إلى مزوّد الذكاء
+     الاصطناعي لدى AccreditMe.»
 
 ---
 
@@ -644,19 +822,27 @@ seed:ai-feature-costs`), never before. Each live proof follows its seed.
 - **Suggestions are stored until decided,** and deleted when decided. The
   record after Accept is the minutes and the audit. No "accepted suggestions"
   table is kept.
+- **A run the person left is saved and charged** (ACC-193 Q2). A run whose
+  meeting moved on is charged and not saved (design Q2).
 - **No migration on `MeetingActionItem`.** An empty owner or due date lives in
   the suggestion (Prompt 164).
+- **An agenda item's source is a column, written at add.** It is never
+  reconstructed from audit rows (ACC-133's rule).
 
-**Names:**
-- **Names are replaced by labels on our side, both ways.** This is what keeps
-  an outside guest out of the model (the ticket's rule). It also makes an
+**Names and caps:**
+- **Names are replaced by labels on our side, in every text, both ways.** This
+  keeps an outside guest out of the model (the ticket's rule), and makes an
   owner exact.
+- **Inputs are cut to fit, then refused if they still don't,** before any
+  credit is reserved.
 
-**Accept:**
+**Accept and Draft again:**
 - **M5's "replace" covers the item's decisions too.** The line names what is
   replaced. Edit is the way to combine.
-- **M8 is decided per item:** an item is drafted again only if it has no
-  discussion and no decision, or has an undecided suggestion.
+- **M6 is the one place the minutes accept votes above the members present.**
+  Distribute holds them.
+- **M8 is decided per item and per part (minutes, actions),** at most 6 items
+  a call.
 
 **Detecting state:**
 - **M9 reads `reviewRound`.** No column: a returned meeting in Minutes Draft
@@ -664,10 +850,6 @@ seed:ai-feature-costs`), never before. Each live proof follows its seed.
 - **M1 reads the `AGENDA_ISSUED` flag,** never a stage key (ACC-255).
 - **The summary's "sent" state is a column on `Meeting`,** never read back from
   the audit trail (ACC-133's rule).
-
-**Charging:**
-- **A meeting that moves on during a call is charged and not saved.** The
-  provider was paid (design Q2).
 
 ---
 
@@ -679,7 +861,61 @@ The Arabic is neutral about a person, and uses «المنشأة».
   كتبته.»
 - "Accepting replaces the discussion and decisions you typed." / «القبول
   يستبدل النقاش والقرارات التي كتبتها.»
+- "AI couldn't suggest anything from these notes. Add more detail and try
+  again." / «تعذّر على الذكاء الاصطناعي اقتراح شيء من هذه الملاحظات. أضف
+  تفاصيل أكثر وحاول مجددًا.»
 - "Summary sent {date} to {n} members" / «أُرسل الملخص {date} إلى {n} أعضاء»,
   with plurals through `amCount`.
-- The refusal sentences for the seven codes in §4, written with PR 1 and PR 3.
+- The summary notice's title, naming the Secretary: "Summary of {meeting},
+  {date}, from {name}" / «ملخص {meeting}، {date}، من {name}».
+- The refusal sentences for the new codes in §4, written with the PR that
+  adds each. `MEETING_AI_TOO_LONG` has one sentence per feature.
 - Question 4's line and Question 5's line, if Ahmad agrees.
+
+---
+
+## 9. Changes after lane B's review (P225, 20 Nov)
+
+**Errors:**
+- **M6 against `checkVotes()`:** `applyAiDraft()` skips the
+  total-versus-present refusal. Distribute holds the minutes instead. A
+  db-spec covers it.
+- **Agenda exclusion:** the new `AgendaItem.sourceTaskId` and
+  `sourceChangeRequestId` columns, in PR 1's migration, written by
+  `addItems()`.
+- **The agenda trigger** follows `may.manageAgenda` (§0).
+- **§2 and §5 agree on the migrations:** PR 1 adds the enums, the tables and
+  the agenda columns; PR 5 adds the two `Meeting` columns.
+- **Input caps:**
+  - the notes are at most 18,000 characters;
+  - texts are cut with `cutAtBoundary()`;
+  - `MEETING_AI_TOO_LONG` refuses before any charge;
+  - each call has a worst-case Arabic spec.
+
+**Warnings:**
+- **The minutes output budget:** 6 items a call; `maxTokens` 16,000 against a
+  worst case of about 11,400.
+- **Draft again per part:** accepted minutes with undecided actions get only
+  actions back.
+- **Names:** replaced in every customer text of all three calls; an outside
+  guest's words are always replaced; "as recorded"; Question 5 agrees with
+  §1.0.
+- **The change request:** gated on the presser's own read of the committee,
+  and sent as "Change request {n}" with its field names.
+- **`GET /ai`:** batched availability; the number of queries is fixed.
+- **Due dates:** an instant in the organisation's zone; the meeting's date is
+  sent with today's.
+- **Leaving the page:** charged and saved.
+- **`MEETING_CHANGED`:** PR 2 relies on #380.
+
+**Nits:**
+- `openActions()` is exported, and `addItems()` sits beside `lockAgenda()`.
+- `aiDraft` with a null `interactionId`.
+- The summary notice's title and bodies.
+- The all-"nothing" answer is refunded.
+- The notes route has the Draft minutes gate.
+- The claim is released on every exit.
+- The Distribute count is read in the delete's own transaction, and its
+  confirm is re-measured.
+- "Before Any other business" is keyed on trailing `standing` items.
+- PR 5 is backend only, and doesn't wait for 7c.
