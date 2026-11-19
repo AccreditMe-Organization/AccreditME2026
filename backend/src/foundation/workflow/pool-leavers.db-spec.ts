@@ -89,7 +89,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     roles,
     tasks,
     organizations,
-    { invalidateUserSessions: async () => undefined } as unknown as AuthProvider,
+    {} as unknown as AuthProvider,
     {} as OrgUnitHeadService,
     {} as OrgPositionService,
     pools,

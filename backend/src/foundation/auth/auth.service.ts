@@ -805,8 +805,8 @@ export class AuthService {
     // carrying the CURRENT version and the forced logout would silently stop
     // working.
     //
-    // It did not bite today only by coincidence: invalidateUserSessions() has
-    // exactly one caller, UserService.deactivate(), which also flips status to
+    // It did not bite at first only by coincidence: the version was bumped in
+    // exactly one place, UserService.deactivate(), which also flips status to
     // INACTIVE, and the check above catches that. But tenant.guard.ts's own
     // comment says the mechanism is also meant to cover a password change, and
     // the first caller that bumps the version WITHOUT deactivating would have

@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { createHmac } from 'crypto';
-import { PrismaService } from '../../prisma/prisma.service';
 import { AuthProvider, AuthenticatedUser } from './auth.provider';
 
 interface JwtPayload {
@@ -44,8 +43,6 @@ function parseJwt(token: string, secret: string): JwtPayload | null {
 
 @Injectable()
 export class BetterAuthProvider implements AuthProvider {
-  constructor(private readonly prisma: PrismaService) {}
-
   async validateToken(token: string): Promise<AuthenticatedUser | null> {
     const secret = process.env['JWT_SECRET'];
     if (!secret) return null;
@@ -59,17 +56,5 @@ export class BetterAuthProvider implements AuthProvider {
       organizationId: payload.organizationId,
       tokenVersion: payload.tokenVersion,
     };
-  }
-
-  // Real implementation (Step 9) — bumping tokenVersion is what makes every
-  // previously-issued JWT for this user fail TenantGuard's tokenVersion
-  // check (see tenant.guard.ts, Commit 3) on its very next request, without
-  // waiting for natural expiry. Called by the departure flow (Commit 6) and,
-  // in a later step, on password change.
-  async invalidateUserSessions(userId: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { tokenVersion: { increment: 1 } },
-    });
   }
 }
