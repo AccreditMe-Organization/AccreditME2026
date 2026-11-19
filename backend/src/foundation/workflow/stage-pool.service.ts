@@ -75,6 +75,8 @@ type PoolClient = Pick<
   | 'committeeMember'
   | 'committee'
   | 'meeting'
+  // ACC-245 — a change request's committee and unit (stage-task-record-routes.ts).
+  | 'committeeChangeRequest'
   // ACC-316 — the meeting kinds' reads (meeting-authority.ts).
   | 'committeeSeatAction'
   | '$queryRaw'

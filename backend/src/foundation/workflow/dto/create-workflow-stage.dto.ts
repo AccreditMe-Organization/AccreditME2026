@@ -85,4 +85,12 @@ export class CreateWorkflowStageDto {
   @ValidateNested()
   @Type(() => StageWhoDto)
   who?: StageWhoDto;
+
+  // ACC-245 — on the committee change request workflow only: add a REVIEW stage
+  // after this one (Draft, or another review stage). Omitted: after the last
+  // review stage. The server sets its order; any other workflow ignores it.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  reviewAfterStageId?: string;
 }

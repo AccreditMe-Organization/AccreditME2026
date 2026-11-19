@@ -62,6 +62,11 @@ export type WorkflowRefusalCode =
   | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
   | 'DEFAULT_TEMPLATE_REQUIRED'
   | 'DEFAULT_TEMPLATE_INACTIVE'
+  // ACC-245 — added review stages on the change request workflow.
+  | 'REVIEW_STAGE_LIMIT'
+  | 'REVIEW_STAGE_POSITION'
+  | 'REVIEW_STAGE_ANY_ONE'
+  | 'REVIEW_STAGE_NO_CREATOR'
   // ACC-271 PR 3 — a stage's `who` refused; said in its slot (whoRefusal() below).
   | WhoRefusalCode;
 
@@ -182,6 +187,11 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   DEFAULT_TEMPLATE_TYPE_CHANGE: 'workflow.refusal.defaultTypeChange',
   DEFAULT_TEMPLATE_REQUIRED: 'workflow.refusal.defaultRequired',
   DEFAULT_TEMPLATE_INACTIVE: 'workflow.refusal.defaultInactive',
+  // ACC-245 — added review stages; said once PR 3's stages page adds them.
+  REVIEW_STAGE_LIMIT: 'workflow.refusal.reviewStageLimit',
+  REVIEW_STAGE_POSITION: 'workflow.refusal.reviewStagePosition',
+  REVIEW_STAGE_ANY_ONE: 'workflow.refusal.reviewStageAnyOne',
+  REVIEW_STAGE_NO_CREATOR: 'workflow.refusal.reviewStageNoCreator',
 };
 
 /**

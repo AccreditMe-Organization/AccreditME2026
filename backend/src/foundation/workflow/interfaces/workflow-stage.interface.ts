@@ -47,6 +47,11 @@ export interface IWorkflowStage {
   // registry order (record-registry.ts). Labels are the frontend's.
   actions: string[];
   flags: string[];
+  // ACC-245 — on the protected committee change request workflow: an added
+  // review stage (decided by its own people, between Draft and Under review),
+  // and the fields a save may change on it (its people among them).
+  reviewStage?: boolean;
+  editableFields?: string[];
   transitions?: IWorkflowTransition[];
   // ACC-190 — on a template read: how many tasks entering this stage creates,
   // and the longest one's due time in working hours (null when it creates none).
