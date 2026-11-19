@@ -28,7 +28,7 @@ import { seatValues } from '../committee-seat-rules';
 import { canonicalSeatActions, currentSeatActionMap, sameSeatActions, seatActionWanted, writeSeatActions } from '../seat-actions';
 import { assertMemberAction, memberActionsFor } from '../member-actions';
 import { awaitingDecisionGate, ChainResult, ChainStep, resolveDecisionChains } from './change-request-chain';
-import { chainCandidateIds, reviewCandidates, type ReviewCandidateScope } from './awaiting-decision-candidates';
+import { chainCandidates, reviewCandidates, type CandidateCursor, type ReviewCandidateScope } from './awaiting-decision-candidates';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
@@ -111,8 +111,10 @@ const OBJECT_TYPE = 'COMMITTEE_CHANGE_REQUEST' as const;
 
 /** ACC-281 — the most requests the awaiting-decision list returns, oldest submitted first. */
 export const AWAITING_DECISION_CAP = 200;
-/** ACC-245 PR 2 — at most this many review-arm pages are read to fill the cap (a warning when reached). */
-export const AWAITING_REVIEW_PAGES = 5;
+/** ACC-245 PR 2 (P203) — each arm reads its candidates this many at a time... */
+export const AWAITING_PAGE_SIZE = 200;
+/** ...and at most this many pages to fill the cap (a warning when reached). */
+export const AWAITING_PAGES = 5;
 /** ACC-245 PR 2 — the record id a stage's pool is resolved against to read only its fixed entries. */
 const NO_RECORD = 'no-record';
 const PAGE = 50;
@@ -304,6 +306,12 @@ const FINISH_TASK = { title: 'Finish or withdraw the change request', titleAr: '
 @Injectable()
 export class CommitteeChangeRequestService {
   private readonly logger = new Logger(CommitteeChangeRequestService.name);
+  /**
+   * ACC-245 PR 2 (P203) — the awaiting list's candidate page size. A field, not
+   * only the constant, so a real-database spec can page through a few rows
+   * instead of creating hundreds; nothing in the app sets it.
+   */
+  awaitingPageSize = AWAITING_PAGE_SIZE;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1013,9 +1021,13 @@ export class CommitteeChangeRequestService {
       gate.chain ? this.chainRowsDecidedBy(organizationId, viewer, now) : Promise.resolve(NO_ROWS),
       gate.review ? this.reviewRowsDecidedBy(organizationId, viewer, now) : Promise.resolve(NO_ROWS),
     ]);
-    const mine = [...chainPart.rows, ...reviewPart.rows]
-      .sort((a, b) => a.submittedAt!.getTime() - b.submittedAt!.getTime() || a.id.localeCompare(b.id))
-      .slice(0, AWAITING_DECISION_CAP);
+    const merged = [...chainPart.rows, ...reviewPart.rows].sort(
+      (a, b) => a.submittedAt!.getTime() - b.submittedAt!.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    if (merged.length > AWAITING_DECISION_CAP) {
+      this.logger.warn(`Awaiting decision cut ${merged.length} rows to its cap of ${AWAITING_DECISION_CAP}: organizationId=${organizationId}`);
+    }
+    const mine = merged.slice(0, AWAITING_DECISION_CAP);
     if (mine.length === 0) return [];
     // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
     const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(mine.map((r) => r.committeeId))]);
@@ -1025,23 +1037,60 @@ export class CommitteeChangeRequestService {
   }
 
   /**
-   * The chain arm: requests Under review (one capped query), then ONE chain
-   * resolution, kept where the viewer is a decider.
+   * The chain arm: requests Under review, a page at a time (keyset on
+   * submittedAt, id), each page's chains resolved in ONE batch and kept where the
+   * viewer is a decider, until the cap is filled; at most AWAITING_PAGES pages
+   * (P203: older requests the viewer does not decide never hide theirs).
    */
   private async chainRowsDecidedBy(organizationId: string, viewer: ChangeRequestViewer, now: Date): Promise<DecidedRows> {
-    const ids = await chainCandidateIds(this.prisma, organizationId, viewer.userId, AWAITING_DECISION_CAP);
-    if (ids.length === AWAITING_DECISION_CAP) {
-      this.logger.warn(`Awaiting decision (chain) reached its cap of ${AWAITING_DECISION_CAP}: organizationId=${organizationId}`);
-    }
-    if (ids.length === 0) return NO_ROWS;
-    const rows = await this.requestRowsInOrder(ids, organizationId);
-    const chains = await resolveDecisionChains(
-      this.prisma,
+    const kept: RequestRow[] = [];
+    const decisions = new Map<string, ChainResult>();
+    await this.pageCandidates(
+      'chain',
       organizationId,
-      rows.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
-      now,
+      (after) => chainCandidates(this.prisma, organizationId, viewer.userId, after, this.awaitingPageSize),
+      async (rows) => {
+        const chains = await resolveDecisionChains(
+          this.prisma,
+          organizationId,
+          rows.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
+          now,
+        );
+        for (const r of rows) {
+          const chain = chains.get(r.id);
+          if (!chain?.deciderIds.includes(viewer.userId) || kept.length >= AWAITING_DECISION_CAP) continue;
+          kept.push(r);
+          decisions.set(r.id, chain);
+        }
+        return kept.length;
+      },
     );
-    return { rows: rows.filter((r) => chains.get(r.id)?.deciderIds.includes(viewer.userId)), decisions: chains };
+    return { rows: kept, decisions };
+  }
+
+  /**
+   * ACC-245 PR 2 (P203) — one arm's paging, the same for both: read a page of
+   * candidates, load their rows (scoped by organisation, in order), let `keep`
+   * take the viewer's, and go on until the cap is filled, a page comes back
+   * short, or AWAITING_PAGES pages were read (a warning then: rows may be left).
+   */
+  private async pageCandidates(
+    arm: 'chain' | 'review',
+    organizationId: string,
+    read: (after: CandidateCursor) => Promise<{ id: string; submittedAt: Date }[]>,
+    keep: (rows: RequestRow[]) => Promise<number>,
+  ): Promise<void> {
+    let after: CandidateCursor = null;
+    for (let page = 0; page < AWAITING_PAGES; page++) {
+      const candidates = await read(after);
+      if (candidates.length === 0) return;
+      const rows = await this.requestRowsInOrder(candidates.map((c) => c.id), organizationId);
+      if ((await keep(rows)) >= AWAITING_DECISION_CAP) return;
+      if (candidates.length < this.awaitingPageSize) return;
+      const last = candidates[candidates.length - 1]!;
+      after = { submittedAt: last.submittedAt, id: last.id };
+    }
+    this.logger.warn(`Awaiting decision (${arm}) read ${AWAITING_PAGES} pages: organizationId=${organizationId}`);
   }
 
   /**
@@ -1061,7 +1110,7 @@ export class CommitteeChangeRequestService {
    * viewer cannot be asked never use the cap), a page at a time, each page
    * checked exactly (one batched pool read, one readableCommitteeIds() read):
    * kept where the viewer IS in the pool and may open the committee. Pages
-   * continue until the cap is filled, at most AWAITING_REVIEW_PAGES.
+   * continue until the cap is filled, at most AWAITING_PAGES (pageCandidates).
    */
   private async reviewRowsDecidedBy(organizationId: string, viewer: ChangeRequestViewer, now: Date): Promise<DecidedRows> {
     const stages = await this.prisma.workflowStage.findMany({
@@ -1100,29 +1149,25 @@ export class CommitteeChangeRequestService {
 
     const kept: RequestRow[] = [];
     const decisions = new Map<string, ChainResult>();
-    let after: { submittedAt: Date; id: string } | null = null;
-    for (let page = 0; page < AWAITING_REVIEW_PAGES && kept.length < AWAITING_DECISION_CAP; page++) {
-      const candidates = await reviewCandidates(this.prisma, organizationId, viewer.userId, scope, after, AWAITING_DECISION_CAP);
-      if (candidates.length === 0) break;
-      const rows = await this.requestRowsInOrder(candidates.map((c) => c.id), organizationId);
-      const stagesOf = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
-      const decided = await this.reviewDecisions(organizationId, rows, (id) => stagesOf.get(id), () => undefined);
-      const inPool = rows.filter((r) => decided.get(r.id)?.deciderIds.includes(viewer.userId));
-      const readable = inPool.length
-        ? await readableCommitteeIds(this.prisma, organizationId, asCommitteeViewer(viewer), inPool.map((r) => r.committeeId), now)
-        : new Set<string>();
-      for (const r of inPool) {
-        if (!readable.has(r.committeeId) || kept.length >= AWAITING_DECISION_CAP) continue;
-        kept.push(r);
-        decisions.set(r.id, decided.get(r.id)!);
-      }
-      if (candidates.length < AWAITING_DECISION_CAP) break;
-      const last = candidates[candidates.length - 1]!;
-      after = { submittedAt: last.submittedAt, id: last.id };
-      if (page === AWAITING_REVIEW_PAGES - 1) {
-        this.logger.warn(`Awaiting decision (review) read ${AWAITING_REVIEW_PAGES} pages: organizationId=${organizationId}`);
-      }
-    }
+    await this.pageCandidates(
+      'review',
+      organizationId,
+      (after) => reviewCandidates(this.prisma, organizationId, viewer.userId, scope, after, this.awaitingPageSize),
+      async (rows) => {
+        const stagesOf = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
+        const decided = await this.reviewDecisions(organizationId, rows, (id) => stagesOf.get(id), () => undefined);
+        const inPool = rows.filter((r) => decided.get(r.id)?.deciderIds.includes(viewer.userId));
+        const readable = inPool.length
+          ? await readableCommitteeIds(this.prisma, organizationId, asCommitteeViewer(viewer), inPool.map((r) => r.committeeId), now)
+          : new Set<string>();
+        for (const r of inPool) {
+          if (!readable.has(r.committeeId) || kept.length >= AWAITING_DECISION_CAP) continue;
+          kept.push(r);
+          decisions.set(r.id, decided.get(r.id)!);
+        }
+        return kept.length;
+      },
+    );
     return { rows: kept, decisions };
   }
 

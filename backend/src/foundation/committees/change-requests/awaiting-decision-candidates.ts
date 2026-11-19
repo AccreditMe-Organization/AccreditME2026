@@ -4,8 +4,8 @@ import { AWAITING_DECISION_KEYS } from './change-request-policy';
 
 /**
  * ACC-245 PR 2 — the two candidate reads of GET /committee-change-requests/
- * awaiting-decision, each its own capped query, so rows one arm cannot keep never
- * use up the other's cap (P200). Module functions so a real-database spec can
+ * awaiting-decision, each its own keyset-paged query, so rows one arm cannot keep
+ * never use up the other's cap (P200), nor its own (P203). Module functions so a real-database spec can
  * hold every organisation predicate in them load-bearing, against deliberately
  * corrupt cross-organisation links: each table is scoped by the organisation
  * itself, never only through another table that is.
@@ -31,14 +31,28 @@ function newestInstance(organizationId: string): Prisma.Sql {
     ) li ON TRUE`;
 }
 
+/** A keyset position: the last row of the previous page, by (submittedAt, id). */
+export type CandidateCursor = { submittedAt: Date; id: string } | null;
+
+function afterCursor(after: CandidateCursor): Prisma.Sql {
+  return after ? Prisma.sql`AND (r."submittedAt", r.id) > (${after.submittedAt}, ${after.id})` : Prisma.empty;
+}
+
 /**
- * The chain arm: requests whose newest instance stands in a stage awaiting the
- * chain's decision (the policy's keys: Under review), in a template of this
- * organisation. The chain then decides which of them are the viewer's.
+ * The chain arm, one page: requests whose newest instance stands in a stage
+ * awaiting the chain's decision (the policy's keys: Under review), in a template
+ * of this organisation, after `after`. The chain then decides which of them are
+ * the viewer's.
  */
-export async function chainCandidateIds(client: Client, organizationId: string, viewerId: string, cap: number): Promise<string[]> {
-  const rows = await client.$queryRaw<{ id: string }[]>`
-    SELECT r.id
+export async function chainCandidates(
+  client: Client,
+  organizationId: string,
+  viewerId: string,
+  after: CandidateCursor,
+  pageSize: number,
+): Promise<{ id: string; submittedAt: Date }[]> {
+  return client.$queryRaw<{ id: string; submittedAt: Date }[]>`
+    SELECT r.id, r."submittedAt"
     FROM "CommitteeChangeRequest" r
     ${newestInstance(organizationId)}
     JOIN "WorkflowStage" s ON s.id = li."currentStageId"
@@ -48,9 +62,9 @@ export async function chainCandidateIds(client: Client, organizationId: string, 
       AND r."requestedById" <> ${viewerId}
       AND li.status::text <> ${'CANCELLED'}
       AND s.key = ANY(${[...AWAITING_DECISION_KEYS]}::text[])
+      ${afterCursor(after)}
     ORDER BY r."submittedAt" ASC, r.id ASC
-    LIMIT ${cap}`;
-  return rows.map((r) => r.id);
+    LIMIT ${pageSize}`;
 }
 
 /**
@@ -78,10 +92,9 @@ export async function reviewCandidates(
   organizationId: string,
   viewerId: string,
   scope: ReviewCandidateScope,
-  after: { submittedAt: Date; id: string } | null,
-  cap: number,
+  after: CandidateCursor,
+  pageSize: number,
 ): Promise<{ id: string; submittedAt: Date }[]> {
-  const page = after ? Prisma.sql`AND (r."submittedAt", r.id) > (${after.submittedAt}, ${after.id})` : Prisma.empty;
   return client.$queryRaw<{ id: string; submittedAt: Date }[]>`
     SELECT r.id, r."submittedAt"
     FROM "CommitteeChangeRequest" r
@@ -96,7 +109,7 @@ export async function reviewCandidates(
         OR (li."currentStageId" = ANY(${scope.committeeStageIds}::text[]) AND r."committeeId" = ANY(${scope.committeeIds}::text[]))
         OR (li."currentStageId" = ANY(${scope.unitStageIds}::text[]) AND c."orgUnitId" = ANY(${scope.unitIds}::text[]))
       )
-      ${page}
+      ${afterCursor(after)}
     ORDER BY r."submittedAt" ASC, r.id ASC
-    LIMIT ${cap}`;
+    LIMIT ${pageSize}`;
 }
