@@ -7946,7 +7946,7 @@ recommendations before Ahmad confirmed them (P163). Each answer is one switch in
 - **How it is recorded.** Per seat:
   - **The membership row:** `leftAt` = the deactivation's time, and `isActive: false`.
   - **One `LEFT` event:** `CommitteeMembershipEvent` with `cause: DEACTIVATION` (a nullable column; null for every change a person makes), `approvedBy` = the person deactivating, and `reason: null`.
-  - **After commit:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`.
+  - **In the same transaction, batched:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`, so a rolled-back deactivation leaves no audit row for a seat it did not end (P167).
   - **On the person's own `deactivated` audit row:** `endedCommitteeSeats: n`.
 - **Never blocked.** The ending checks:
   - no stage rule;
@@ -7956,8 +7956,14 @@ recommendations before Ahmad confirmed them (P163). Each answer is one switch in
   Only the deactivation's existing refusals (account owner, last administrator, root unit's head) stop it, and the seats roll back with them.
 - **The hook** (`CommitteeSeatDepartureService`, the ACC-283 PR 2b shape):
   - **`prepare()`:** before the transaction, while the person is ACTIVE. One indexed query, scoped by organisation.
-  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal. It takes the committees' rows FOR UPDATE in one statement, in id order, re-reads the memberships still active (a seat removed by hand meanwhile is skipped), then makes one `updateMany` and one `createMany`.
-  - **`finish()`:** after commit. The audit rows and the notices; it never throws.
+  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal (P167):
+    - it re-reads the person's active seats on active committees by `userId`, so a seat added since `prepare()` is ended too;
+    - it takes EVERY committee involved (prepared, or added since) FOR UPDATE in one sorted statement;
+    - under the lock, it skips a committee that is now inactive;
+    - it reads the seats again (a seat removed by hand meanwhile is skipped);
+    - then one `updateMany` and one `createMany` each for the events and the audit rows.
+    - **The Dissolved check stays `prepare()`'s.** A committee that reaches Dissolved inside that window has its seats ended, because re-reading its stage there would take its workflow instance after its row, an edge no other path has.
+  - **`finish()`:** after commit. The officers' notices only; it never throws.
 - **Lock order.** After everything the deactivation already locks, each committee's **row** only, never its workflow instance (no stage rule is read). The other paths that lock these rows:
   - member writes: the instance FOR SHARE, then the row;
   - going live: the instance, then the row FOR SHARE;
