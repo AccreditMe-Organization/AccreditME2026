@@ -5,10 +5,12 @@ import {
   OnInit,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -95,7 +97,7 @@ type LoadState = 'loading' | 'ready' | 'error';
     StageTaskDefinitionFormComponent,
   ],
   template: `
-    <section class="am-stage-tasks" [attr.aria-label]="'workflow.stageTasks.title' | translate">
+    <section class="am-stage-tasks" tabindex="-1" [attr.aria-label]="'workflow.stageTasks.title' | translate">
       <div class="am-stage-tasks__head">
         <h3 class="am-stage-tasks__title">{{ 'workflow.stageTasks.title' | translate }}</h3>
         @if (canAdd() && rows().length > 0) {
@@ -159,6 +161,7 @@ type LoadState = 'loading' | 'ready' | 'error';
                 cdkDropListLockAxis="y"
                 [cdkDropListDisabled]="!canManage() || locked()"
                 (cdkDropListDropped)="onDrop($event)"
+                tabindex="-1"
                 data-stage-tasks-list
               >
                 @for (row of rows(); track row.id; let i = $index; let first = $first; let last = $last) {
@@ -175,7 +178,7 @@ type LoadState = 'loading' | 'ready' | 'error';
                         cdkDragHandle
                         [attr.data-handle]="row.id"
                         [label]="'workflow.stageTasks.reorderNamed' | translate: { position: i + 1, title: titleOf(row) }"
-                        [describedBy]="hintId"
+                        [describedBy]="lifted() ? null : hintId"
                         [pressed]="lifted()?.id === row.id"
                         [disabled]="busy()"
                         (keydown)="onHandleKey($event, row)"
@@ -666,15 +669,32 @@ export class StageTaskListComponent implements OnInit {
     });
   });
 
+  constructor() {
+    // ACC-212 — a row picked up from the keyboard is put back when the stage it
+    // belongs to, or the viewer's right to reorder, changes under it.
+    effect(() => {
+      this.stage();
+      this.canManage();
+      untracked(() => this.cancelLift(false));
+    });
+  }
+
   ngOnInit(): void {
     this.load();
   }
 
-  load(): void {
+  /** `settled` runs once the list has been redrawn from what was read (or failed to be). */
+  load(settled?: () => void): void {
     this.state.set('loading');
     this.templates.listStageTaskDefinitions(this.stage().id).subscribe({
-      next: (rows) => this.settle(rows),
-      error: () => this.state.set('error'),
+      next: (rows) => {
+        this.settle(rows);
+        settled?.();
+      },
+      error: () => {
+        this.state.set('error');
+        settled?.();
+      },
     });
   }
 
@@ -961,21 +981,35 @@ export class StageTaskListComponent implements OnInit {
         error: (err: unknown) => {
           this.reordering.set(false);
           this.rows.set(snapshot);
-          const key = refusalCode(err) === 'STAGE_TASK_ORDER_MISMATCH' ? plainWorkflowRefusalKey(err) : null;
-          this.actionError.set(key ?? 'workflow.stageTasks.orderNotSaved');
-          this.announcement.set(this.translate.instant(key ?? 'workflow.stageTasks.orderNotSaved'));
-          if (key) this.load();
-          this.refocusHandle(row.id);
+          // The refusal the arrows say, for every code it knows; else the plain line.
+          const key = plainWorkflowRefusalKey(err) ?? 'workflow.stageTasks.orderNotSaved';
+          this.actionError.set(key);
+          this.announcement.set(this.translate.instant(key));
+          if (refusalCode(err) === 'STAGE_TASK_ORDER_MISMATCH') {
+            // The list is re-read, which redraws it: focus waits for the new rows.
+            this.load(() => this.refocusHandle(row.id));
+          } else {
+            this.refocusHandle(row.id);
+          }
         },
       });
   }
 
-  /** Focus follows the row: its handle, once the list has re-rendered. */
+  /**
+   * Focus follows the row: its handle, once the list has re-rendered — or, when
+   * the row is no longer there (a list re-read without it), the list itself, or
+   * the section when the list is empty. Never the page body.
+   */
   private refocusHandle(id: string): void {
     this.relocating = true;
     afterNextRender(
       () => {
-        this.host.nativeElement.querySelector<HTMLElement>('[data-handle="' + id + '"] button')?.focus();
+        const root = this.host.nativeElement;
+        const target =
+          root.querySelector<HTMLElement>('[data-handle="' + id + '"] button') ??
+          root.querySelector<HTMLElement>('[data-stage-tasks-list]') ??
+          root.querySelector<HTMLElement>('.am-stage-tasks');
+        target?.focus();
         this.relocating = false;
       },
       { injector: this.injector },

@@ -34,14 +34,16 @@ import { Component, ViewEncapsulation, input } from '@angular/core';
         flex: none;
         display: inline-flex;
       }
+      /* Every size and colour is a token: the handle's box is the Stage Tasks
+         drawing's (--am-drag-handle-*), the rest the design system's. */
       .am-drag-handle {
-        inline-size: 22px;
-        block-size: 26px;
+        inline-size: var(--am-drag-handle-inline);
+        block-size: var(--am-drag-handle-block);
         display: inline-flex;
         align-items: center;
         justify-content: center;
         padding: 0;
-        border: 1px solid var(--am-control-border);
+        border: var(--am-rule-width) solid var(--am-control-border);
         border-radius: var(--am-radius-control);
         background: var(--am-surface-raised);
         color: var(--am-ink-500);
@@ -55,11 +57,14 @@ import { Component, ViewEncapsulation, input } from '@angular/core';
       }
       .am-drag-handle:focus-visible {
         outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: 2px;
+        outline-offset: var(--am-focus-ring-offset);
       }
+      /* Disabled as the design system draws a disabled icon button: the disabled
+         control border and the ink kept for disabled glyphs, not a fade. */
       .am-drag-handle:disabled {
         cursor: default;
-        opacity: 0.6;
+        border-color: var(--am-control-border-disabled);
+        color: var(--am-ink-300);
       }
       .am-drag-handle[aria-pressed='true'] {
         cursor: grabbing;
@@ -70,29 +75,28 @@ import { Component, ViewEncapsulation, input } from '@angular/core';
       /* The row picked up from the keyboard: a tint and a ring, the same in both directions. */
       .am-drag-row--lifted {
         background: var(--am-primary-50);
-        outline: 2px solid var(--am-primary-600);
-        outline-offset: -2px;
+        outline: var(--am-focus-ring-width) solid var(--am-primary-600);
+        outline-offset: calc(-1 * var(--am-focus-ring-width));
       }
-      .am-drag-row.cdk-drag-preview {
+      /* The preview sits inside the caller's list, where the caller's own row rule
+         (an encapsulated class plus attribute, also two selectors) would tie with
+         one ".am-drag-row.cdk-drag-preview" and could win the bottom edge. The
+         class is repeated to win that tie on every side. */
+      .am-drag-row.am-drag-row.cdk-drag-preview {
         list-style: none;
         background: var(--am-surface-raised);
-        border: 1px solid var(--am-border-strong);
+        border: var(--am-rule-width) solid var(--am-border-strong);
         border-radius: var(--am-radius-button);
         box-shadow: var(--am-shadow-overlay);
       }
-      .am-drag-row.cdk-drag-placeholder {
-        opacity: 0.35;
+      /* Where the row will land: an empty dashed slot of the row's own height. */
+      .am-drag-row.am-drag-row.cdk-drag-placeholder {
+        background: var(--am-primary-50);
+        outline: var(--am-rule-width) dashed var(--am-primary-600);
+        outline-offset: calc(-1 * var(--am-rule-width));
       }
-      /* The other rows slide aside. Not the preview: a caller may keep it inside
-         the list (to inherit the direction), and a transition on it would make
-         the CDK wait for it before the drop lands. */
-      .cdk-drop-list-dragging .am-drag-row:not(.cdk-drag-placeholder):not(.cdk-drag-preview) {
-        transition: transform 200ms ease;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .cdk-drop-list-dragging .am-drag-row:not(.cdk-drag-placeholder):not(.cdk-drag-preview) {
-          transition: none;
-        }
+      .am-drag-row.cdk-drag-placeholder > * {
+        visibility: hidden;
       }
     `,
   ],
