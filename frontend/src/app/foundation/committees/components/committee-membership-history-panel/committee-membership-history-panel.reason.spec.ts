@@ -117,21 +117,68 @@ describe('CommitteeMembershipHistoryPanelComponent — a removal’s reason (ACC
     }
   });
 
-  it('See all: the reason sits under the change, cut with its tooltip; a row without one has nothing', async () => {
-    const f = render('en', [LEFT, { ...LEFT, id: 'e-old', reason: null }]);
+  it('See all: the reason sits under the change and WRAPS, never cut, so keyboard and touch readers get all of it', async () => {
+    const long = `${REASON}, and three further absences during the accreditation survey preparation period this autumn`;
+    const f = render('en', [{ ...LEFT, reason: long }, { ...LEFT, id: 'e-old', reason: null }]);
     const rows = await openPopup(f);
     expect(rows.length).withContext('popup rows').toBe(2);
     const withReason = rows.find((r) => r.querySelector('[data-history-reason]'))!;
     const reason = withReason.querySelector<HTMLElement>('[data-history-reason]')!;
     expect(reason.getClientRects().length).withContext('the reason is drawn').toBeGreaterThan(0);
     expect(reason.getBoundingClientRect().width).withContext('the reason has a width').toBeGreaterThan(0);
-    expect(text(reason)).toBe(`Reason: ${REASON}`);
-    expect(reason.getAttribute('title')).toBe(REASON);
-    expect(reason.classList).toContain('am-cp-cut');
+    expect(text(reason)).toBe(`Reason: ${long}`);
+    expect(reason.classList).not.toContain('am-cp-cut');
+    const style = getComputedStyle(reason);
+    expect(style.whiteSpace).withContext('wraps').not.toBe('nowrap');
+    expect(style.textOverflow).withContext('never an ellipsis').not.toBe('ellipsis');
+    expect(reason.scrollWidth).withContext('nothing hidden sideways').toBeLessThanOrEqual(reason.clientWidth + 1);
     // Under the change: the same cell, after the change's own line.
     expect(reason.previousElementSibling?.hasAttribute('data-history-detail')).toBeTrue();
     expect(rows.filter((r) => r.querySelector('[data-history-reason]')).length).toBe(1);
   });
+
+  // P185 (Ahmad, 19 Nov) — the server withholds the reason from a reader who is not
+  // an overseer or the committee's Chairman or Secretary; the row says so.
+  for (const [lang, words] of [
+    ['en', 'Reason not shown'],
+    ['ar', 'السبب غير معروض'],
+  ] as const) {
+    it(`[${lang}] a withheld reason reads "${words}", in the panel and in See all; nothing when there was none`, async () => {
+      const f = render(lang, [
+        { ...LEFT, reason: null, reasonWithheld: true },
+        { ...LEFT, id: 'e-old', reason: null, reasonWithheld: false },
+      ]);
+      const withheld = panelRow(f, 'e-left').querySelector<HTMLElement>('[data-history-reason-withheld]');
+      expect(text(withheld)).toBe(words);
+      expect(panelRow(f, 'e-left').querySelector('[data-history-reason]')).toBeNull();
+      expect(panelRow(f, 'e-old').querySelector('[data-history-reason-withheld], [data-history-reason], .am-cmh__sep')).toBeNull();
+      const rows = await openPopup(f);
+      expect(rows.filter((r) => text(r.querySelector('[data-history-reason-withheld]')) === words).length).toBe(1);
+    });
+  }
+
+  it('a seat the app ended is never marked withheld, whatever the flag says', () => {
+    const f = render('en', [{ ...LEFT, cause: 'DEACTIVATION', reason: null, reasonWithheld: true }]);
+    expect(panelRow(f, 'e-left').querySelector('[data-history-reason-withheld]')).toBeNull();
+  });
+
+  // Review fix 2 — a reason in the other script, or mixed, takes ITS OWN direction
+  // (dir="auto" on its bdi), whatever the page's direction.
+  for (const [lang, reason, want] of [
+    ['en', 'انتقل إلى وحدة الصيدلة بعد مراجعة JCI', 'rtl'],
+    ['ar', 'Moved to Pharmacy after the CBAHI review — انتقال', 'ltr'],
+  ] as const) {
+    it(`[${lang}] a mixed-direction reason renders in its own direction (${want}), in the panel and in See all`, async () => {
+      const f = render(lang, [{ ...LEFT, reason }]);
+      const bdi = panelRow(f, 'e-left').querySelector<HTMLElement>('[data-history-reason] bdi')!;
+      expect(bdi.getAttribute('dir')).toBe('auto');
+      expect(getComputedStyle(bdi).direction).toBe(want);
+      const rows = await openPopup(f);
+      const inPopup = rows[0]!.querySelector<HTMLElement>('[data-history-reason] bdi')!;
+      expect(inPopup.getAttribute('dir')).toBe('auto');
+      expect(getComputedStyle(inPopup).direction).toBe(want);
+    });
+  }
 
   it('See all’s search finds a row by its reason', async () => {
     const f = render('en', [LEFT, { ...LEFT, id: 'e-old', reason: null }]);
