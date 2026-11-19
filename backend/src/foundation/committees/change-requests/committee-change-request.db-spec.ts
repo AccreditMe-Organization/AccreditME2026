@@ -1511,7 +1511,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
         departure,
         // ACC-306 — the real seat ending: these people hold no committee seat ended here.
-        new CommitteeSeatDepartureService(prisma, audit, new LookupService(prisma, audit), notifications),
+        new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
       );
       const signIn = (w: World, userId: string) =>
         prisma.refreshToken.create({

@@ -85,7 +85,7 @@ describe('A deactivated person’s committee seats end with the deactivation, on
   const pools = new StagePoolService(prisma);
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, pools);
   const committees = new CommitteesService(prisma, audit, workflow, new StageRulesService(prisma));
-  const seatDeparture = new CommitteeSeatDepartureService(prisma, audit, lookups, notifications);
+  const seatDeparture = new CommitteeSeatDepartureService(prisma, lookups, notifications);
   const users = new UserService(
     prisma,
     audit,
@@ -239,6 +239,59 @@ describe('A deactivated person’s committee seats end with the deactivation, on
     expect((await emptyRequiredSeats(prisma, o.id, live.id)).map((s) => s.key)).toEqual(['chairman', 'secretary']);
   });
 
+  // ── Between prepare() and the transaction (P167) ────────────────────────────
+
+  /** Runs `between` after the real prepare() has read, before the deactivation's transaction. */
+  function betweenPrepareAndTransaction(between: () => Promise<void>): jest.SpyInstance {
+    const real = seatDeparture.prepare.bind(seatDeparture);
+    return jest.spyOn(seatDeparture, 'prepare').mockImplementation(async (...args) => {
+      const prepared = await real(...args);
+      await between();
+      return prepared;
+    });
+  }
+
+  it('ends a seat added between prepare() and the transaction', async () => {
+    const o = await org();
+    const leaver = await o.person('Leaver');
+    const first = await o.committeeAt('active', { [leaver]: 'member' });
+    const later = await o.committeeAt('active', {});
+    let addedId = '';
+    const spy = betweenPrepareAndTransaction(async () => {
+      addedId = (
+        await prisma.committeeMember.create({
+          data: { organizationId: o.id, committeeId: later.id, userId: leaver, roleValueId: seat['member']!, isActive: true },
+        })
+      ).id;
+    });
+    try {
+      await users.deactivate(leaver, o.id, o.actorId);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await member(first.members[leaver]!)).isActive).toBe(false);
+    expect((await member(addedId)).isActive).toBe(false);
+    expect((await leftEvents(later.id, leaver)).map((e) => e.cause)).toEqual(['DEACTIVATION']);
+  });
+
+  it('leaves a committee deactivated between prepare() and the transaction untouched', async () => {
+    const o = await org();
+    const leaver = await o.person('Leaver');
+    const closing = await o.committeeAt('active', { [leaver]: 'member' });
+    const staying = await o.committeeAt('active', { [leaver]: 'member' });
+    const spy = betweenPrepareAndTransaction(async () => {
+      await prisma.committee.update({ where: { id: closing.id }, data: { isActive: false } });
+    });
+    try {
+      await users.deactivate(leaver, o.id, o.actorId);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await member(closing.members[leaver]!)).isActive).toBe(true);
+    expect(await leftEvents(closing.id, leaver)).toEqual([]);
+    expect((await member(staying.members[leaver]!)).isActive).toBe(false);
+  });
+
   // ── In the deactivation's transaction ───────────────────────────────────────
 
   it('a refused deactivation (the account owner) leaves every seat and writes no event', async () => {
@@ -269,6 +322,26 @@ describe('A deactivated person’s committee seats end with the deactivation, on
     expect((await prisma.user.findUniqueOrThrow({ where: { id: leaver } })).status).toBe('ACTIVE');
     expect((await member(live.members[leaver]!)).isActive).toBe(true);
     expect(await leftEvents(live.id, leaver)).toEqual([]);
+  });
+
+  it('rolls an ended seat’s audit row back with the transaction', async () => {
+    const o = await org();
+    const leaver = await o.person('Leaver');
+    const live = await o.committeeAt('active', { [leaver]: 'member' });
+    const real = seatDeparture.endSeatsInTx.bind(seatDeparture);
+    const spy = jest.spyOn(seatDeparture, 'endSeatsInTx').mockImplementation(async (tx, prepared) => {
+      await real(tx, prepared);
+      // The audit row exists inside the transaction…
+      expect(prepared.applied.map((s) => s.memberId)).toEqual([live.members[leaver]]);
+      throw new Error('after the seats');
+    });
+    try {
+      expect(await outcome(users.deactivate(leaver, o.id, o.actorId))).toBe('ERROR Error: after the seats');
+    } finally {
+      spy.mockRestore();
+    }
+    // …and none survives the rollback.
+    expect(await prisma.auditLog.count({ where: { organizationId: o.id, objectType: 'CommitteeMember', objectId: live.members[leaver] } })).toBe(0);
   });
 
   // ── The race, and the lock order ─────────────────────────────────────────────

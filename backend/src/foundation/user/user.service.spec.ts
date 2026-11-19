@@ -41,7 +41,7 @@ const noDepartures = () => ({
 });
 
 // ACC-306 — no committee seats to end unless a test gives some.
-const preparedNoSeats = (): PreparedSeatDeparture => ({ organizationId: '', leaverId: '', actorId: '', seats: [], applied: [] });
+const preparedNoSeats = (): PreparedSeatDeparture => ({ organizationId: '', leaverId: '', actorId: '', seats: [], keptCommitteeIds: [], applied: [] });
 const noSeatDepartures = () => ({
   prepare: jest.fn().mockImplementation(async () => preparedNoSeats()),
   endSeatsInTx: jest.fn().mockResolvedValue(undefined),
