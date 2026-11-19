@@ -72,8 +72,6 @@ describe('Deactivation ends every sign-in, against a real database (ACC-216, CC-
   const queue = { add: async () => undefined } as never;
   const pools = new StagePoolService(prisma);
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, pools);
-  // The old after-commit bump must not run any more: a spy that fails the spec if it does.
-  const invalidateUserSessions = jest.fn(async () => undefined);
   const users = new UserService(
     prisma,
     audit,
@@ -81,7 +79,7 @@ describe('Deactivation ends every sign-in, against a real database (ACC-216, CC-
     roles,
     tasks,
     organizations,
-    { invalidateUserSessions } as unknown as AuthProvider,
+    {} as unknown as AuthProvider,
     {} as OrgUnitHeadService,
     {} as OrgPositionService,
     pools,
@@ -149,14 +147,13 @@ describe('Deactivation ends every sign-in, against a real database (ACC-216, CC-
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: leaver } });
     expect(user.status).toBe('INACTIVE');
+    // One bump, inside the transaction, through endEverySessionInTx().
     expect(user.tokenVersion).toBe(before + 1);
     expect(await live(leaver, o.id)).toBe(0);
     expect(await prisma.authSession.count({ where: { userId: authUser.id } })).toBe(0);
     // An already-ended row keeps its own end time.
     const kept = await prisma.refreshToken.findUniqueOrThrow({ where: { id: alreadyEnded.id } });
     expect(kept.revokedAt).toEqual(alreadyEnded.revokedAt);
-    // One bump, inside the transaction: the old after-commit call is gone.
-    expect(invalidateUserSessions).not.toHaveBeenCalled();
   });
 
   it('a refusal later in the transaction (the last administrator) rolls the ending back with the flip', async () => {

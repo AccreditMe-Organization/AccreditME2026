@@ -87,7 +87,7 @@ describe('UserService', () => {
     grantRoleViaHeadAuthority: jest.Mock;
     revokeRoleViaHeadAuthority: jest.Mock;
   };
-  let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
+  let mockAuthProvider: { validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
   let mockOrganizationService: { refreshOrgUnitHeadVacancy: jest.Mock };
   let mockOrgUnitHeadService: {
@@ -189,7 +189,6 @@ describe('UserService', () => {
       revokeRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
     };
     mockAuthProvider = {
-      invalidateUserSessions: jest.fn().mockResolvedValue(undefined),
       validateToken: jest.fn(),
     };
     mockTaskService = {
@@ -3206,7 +3205,7 @@ describe('UserService', () => {
         response: { code: 'ACCOUNT_OWNER_PROTECTED', statusCode: 409 },
       });
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
       expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({
         where: { id: ORG_A },
@@ -3253,7 +3252,10 @@ describe('UserService', () => {
 
       expect(countWrites(writes, 'user.update')).toBe(1);
       expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      // The sessions ended through endEverySessionInTx(), inside the same
+      // transaction, so they roll back with the flip.
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(countWrites(writes, 'refreshToken.updateMany')).toBe(1);
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
       expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
@@ -3522,7 +3524,7 @@ describe('UserService', () => {
 
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
 
     it('bulk-reassigns open tasks to the actingUser and returns the real counts', async () => {
@@ -3590,6 +3592,7 @@ describe('UserService', () => {
     });
 
     it('blocks deactivating the organization\'s last active TENANT_ADMIN', async () => {
+      const writes = recordTransactionWrites(mockPrisma);
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -3603,10 +3606,11 @@ describe('UserService', () => {
       stageAdministratorsForDeparture(1);
 
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
-      // The side effects stay outside the transaction, so a refused
-      // deactivation must not have invalidated their sessions or moved their
-      // work on the way to being refused.
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      // The sessions end through endEverySessionInTx(), inside the refused
+      // transaction, so they roll back with it; the side effects stay outside
+      // it, so nothing moved their work on the way to being refused.
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(countWrites(writes, 'refreshToken.updateMany')).toBe(1);
       expect(mockNotification.create).not.toHaveBeenCalled();
     });
 
@@ -3666,7 +3670,6 @@ describe('UserService', () => {
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
       expect(callOrder).toEqual(['tx', 'tokenVersion {"tokenVersion":{"increment":1}}', 'commit', 'reassignAllForUser']);
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
     });
 
     describe('every sign-in ends with the flip (ACC-216, CC-301)', () => {
@@ -3754,7 +3757,6 @@ describe('UserService', () => {
         // (deactivation-ends-sessions.db-spec.ts proves it on Postgres).
         expect(refused).toBeInstanceOf(LastActiveAdministratorException);
         expect(order).toEqual(['baseline', 'revoke', 'after']);
-        expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
         expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
         // The ending ran only inside the refused transaction, never outside it.
         expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
@@ -4090,7 +4092,7 @@ describe('UserService', () => {
 
       await service.revokeInvitation('user-9', ORG_A, ACTOR);
 
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
       expect(mockNotification.create).not.toHaveBeenCalled();
@@ -4339,7 +4341,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
     const realMockAuditLog = { log: jest.fn() };
     const realMockNotification = { create: jest.fn() };
     const realMockTaskService = { reassignAllForUser: jest.fn() };
-    const realMockAuthProvider = { invalidateUserSessions: jest.fn(), validateToken: jest.fn() };
+    const realMockAuthProvider = { validateToken: jest.fn() };
     const realMockOrgPositionService = {
       listAvailablePositionsForUser: jest.fn(),
       // Post-review fix — validateUnitHeadUniqueness() (reached via

@@ -201,12 +201,12 @@ export async function verifySessionIdentity(
 
   // tokenVersion check (Step 9) — a mismatch means this token was issued
   // before the stored value was bumped. Since ACC-216 (CC-301) every bump goes
-  // through endEverySessionInTx() (session-revocation.ts): deactivation,
-  // password reset and the administrator's two-step reset;
-  // AuthProvider.invalidateUserSessions() has no caller.
+  // through endEverySessionInTx() (session-revocation.ts), the one way to end
+  // every session: deactivation, password reset and the administrator's
+  // two-step reset.
   // Reject rather than trust a stale token until it naturally expires.
   // Role/permission changes do NOT bump tokenVersion (role.service.ts has
-  // zero tokenVersion/invalidateUserSessions references), so a user whose
+  // zero tokenVersion/endEverySessionInTx references), so a user whose
   // role changes is NOT signed out — their session stays valid until the
   // token expires.
   //
