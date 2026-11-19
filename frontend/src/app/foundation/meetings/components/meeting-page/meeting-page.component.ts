@@ -23,6 +23,7 @@ import {
   type MeetingFilesDto,
   type MeetingMinutesDto,
   type MeetingOpenActionsDto,
+  type MeetingSuggestionDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
 import { meetingRefusalKey } from '../../meeting-refusal';
@@ -35,6 +36,11 @@ import { MeetingAttendanceComponent } from '../meeting-attendance/meeting-attend
 import { MeetingActionDialogComponent } from '../meeting-action-dialog/meeting-action-dialog.component';
 import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/meeting-distribute-dialog.component';
 import { MinutesWriteOrder } from '../../minutes-write-order';
+import { MeetingReviewBannerComponent } from '../meeting-review-banner/meeting-review-banner.component';
+import { MeetingReviewCardComponent } from '../meeting-review-card/meeting-review-card.component';
+import { MeetingSuggestDialogComponent } from '../meeting-suggest-dialog/meeting-suggest-dialog.component';
+import { MeetingDeclineDialogComponent } from '../meeting-decline-dialog/meeting-decline-dialog.component';
+import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-return-dialog.component';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -64,6 +70,11 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
     MeetingAttendanceComponent,
     MeetingActionDialogComponent,
     MeetingDistributeDialogComponent,
+    MeetingReviewBannerComponent,
+    MeetingReviewCardComponent,
+    MeetingSuggestDialogComponent,
+    MeetingDeclineDialogComponent,
+    MeetingReturnDialogComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -102,6 +113,9 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
             }
             @if (minutes()?.may?.distribute) {
               <p-button size="small" [label]="'meeting.distribute.open' | translate" data-testid="meeting-distribute" (onClick)="distributeOpen.set(true)" />
+            }
+            @if (minutes()?.may?.returnForCorrection) {
+              <p-button size="small" severity="secondary" [label]="'meeting.return.open' | translate" data-testid="meeting-return" (onClick)="returnOpen.set(true)" />
             }
             @if (instance(); as inst) {
               <app-workflow-transition-actions
@@ -178,6 +192,11 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
           </section>
         }
 
+        <!-- PR 7c-1 — the review banner, for a present member while corrections are taken (may.review). -->
+        @if (minutes(); as mm) {
+          <am-meeting-review-banner [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (suggest)="openSuggest(null)" (answered)="afterReview()" />
+        }
+
         <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
           <div class="flex min-w-0 flex-col gap-3">
             <!-- The agenda, its editor and its papers (PR 7). -->
@@ -196,6 +215,8 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
               [openActions]="openActions()"
               (minutesChange)="minutes.set($event)"
               (raiseAction)="actionItem.set($event)"
+              (declineSuggestion)="declining.set($event)"
+              (suggestionApplied)="afterReview()"
             />
             <!-- General attachments: absent while empty for someone who may not add one. -->
             @if (m.may.manageAgenda || files().attachments.length > 0) {
@@ -219,7 +240,13 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
 
           @if (minutes(); as mm) {
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
-            <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+            <div class="flex min-w-0 flex-col gap-3">
+              <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+              <am-meeting-review-card [minutes]="mm" (apply)="applyWhole($event)" (decline)="declining.set($event)" />
+              @if (reviewError()) {
+                <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-review-action-error">{{ reviewError()! | translate }}</p>
+              }
+            </div>
           } @else {
           <!-- Invitees -->
           <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
@@ -293,6 +320,30 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
         (distributed)="load()"
         (refreshMinutes)="refreshMinutes()"
       />
+      <app-meeting-suggest-dialog
+        [visible]="suggestOpen()"
+        (visibleChange)="suggestOpen.set($event)"
+        [meetingId]="m.id"
+        [items]="minutes()?.items ?? []"
+        [about]="suggestAbout()"
+        (sent)="afterReview()"
+      />
+      <app-meeting-decline-dialog
+        [visible]="declining() !== null"
+        (visibleChange)="$event ? null : declining.set(null)"
+        [meetingId]="m.id"
+        [suggestion]="declining()"
+        [itemOrder]="declineItemOrder()"
+        (declined)="afterReview()"
+      />
+      <app-meeting-return-dialog
+        [visible]="returnOpen()"
+        (visibleChange)="returnOpen.set($event)"
+        [meetingId]="m.id"
+        [context]="m.title"
+        [minutes]="minutes()"
+        (returned)="load()"
+      />
     }
   `,
   styles: [
@@ -360,6 +411,17 @@ export class MeetingPageComponent {
   /** The agenda item "Raise action item" was pressed on, while its dialog is open. */
   readonly actionItem = signal<{ id: string; order: number; title: string } | null>(null);
   readonly distributeOpen = signal(false);
+  // PR 7c-1 — the review.
+  readonly suggestOpen = signal(false);
+  readonly suggestAbout = signal<string | null>(null);
+  readonly declining = signal<MeetingSuggestionDto | null>(null);
+  readonly returnOpen = signal(false);
+  readonly reviewError = signal<string | null>(null);
+  /** The place of the item the suggestion being declined is about. */
+  readonly declineItemOrder = computed(() => {
+    const s = this.declining();
+    return s?.agendaItemId ? (this.minutes()?.items.find((i) => i.id === s.agendaItemId)?.order ?? null) : null;
+  });
   readonly guestOpen = signal(false);
   readonly answering = signal<MeetingAnswer | null>(null);
   readonly answerError = signal<string | null>(null);
@@ -478,6 +540,26 @@ export class MeetingPageComponent {
         if (this.readFailed() === 'files') this.readFailed.set(null);
       },
       error: () => this.readFailed.set('files'),
+    });
+  }
+
+  openSuggest(about: string | null): void {
+    this.suggestAbout.set(about);
+    this.suggestOpen.set(true);
+  }
+
+  /** A review answer, suggestion, apply or decline: the minutes are read again. */
+  afterReview(): void {
+    this.reviewError.set(null);
+    this.refreshMinutes();
+  }
+
+  /** Mark applied on a suggestion about the minutes as a whole: there is no item to edit. */
+  applyWhole(s: MeetingSuggestionDto): void {
+    this.reviewError.set(null);
+    this.meetings.applySuggestion(this.id, s.id).subscribe({
+      next: () => this.afterReview(),
+      error: (err: unknown) => this.reviewError.set(meetingRefusalKey(err) ?? 'meeting.review.applyFailed'),
     });
   }
 

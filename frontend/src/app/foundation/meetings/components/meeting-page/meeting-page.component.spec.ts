@@ -359,4 +359,29 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       expect(c.minutes()!.attendance[0]!.attendance).toBe('PRESENT');
     });
   });
+
+  describe('the review (PR 7c-1)', () => {
+    const inReview = (may: Partial<MeetingMinutesDto['may']>) =>
+      aMinutes({
+        phase: 'review',
+        review: { round: 1, reviewBy: '2027-03-25', datePassed: false, closed: false, reviewers: [], suggestions: [], changes: [], mine: null },
+        may: { ...aMinutes().may, recordAttendance: false, recordMinutes: false, distribute: false, ...may },
+      });
+
+    it('the banner follows may.review, the Review card shows in review, and Return follows may.returnForCorrection', () => {
+      minutesRead = () => of(inReview({ review: true, returnForCorrection: true }));
+      const { el } = create();
+      expect(q(el, 'meeting-review-banner')).not.toBeNull();
+      expect(q(el, 'meeting-review-card')).not.toBeNull();
+      expect(q(el, 'meeting-return')).not.toBeNull();
+    });
+
+    it('without those flags: no banner and no Return, and the card still shows to whoever reads the minutes', () => {
+      minutesRead = () => of(inReview({ review: false, returnForCorrection: false }));
+      const { el } = create();
+      expect(q(el, 'meeting-review-banner')).toBeNull();
+      expect(q(el, 'meeting-return')).toBeNull();
+      expect(q(el, 'meeting-review-card')).not.toBeNull();
+    });
+  });
 });

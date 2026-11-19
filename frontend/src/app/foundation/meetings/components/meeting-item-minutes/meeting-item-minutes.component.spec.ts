@@ -26,6 +26,7 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
       updateDecision: jasmine.createSpy('updateDecision').and.returnValue(of(aMinutes())),
       removeDecision: jasmine.createSpy('removeDecision').and.returnValue(of(aMinutes())),
       removeAction: jasmine.createSpy('removeAction').and.returnValue(of(aMinutes())),
+      applySuggestion: jasmine.createSpy('applySuggestion').and.returnValue(of(undefined)),
     };
     asked = [];
     TestBed.configureTestingModule({
@@ -219,6 +220,79 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
       el.querySelector<HTMLElement>('[data-decision-save] button')!.click();
       fixture.detectChanges();
       expect(el.querySelector('[data-item-minutes-error]')?.textContent?.trim()).toBe('6 votes, but only 4 present members.');
+    });
+  });
+
+  describe('suggestions and Edit to apply (PR 7c-1)', () => {
+    const SUGG = { id: 's-1', round: 1, agendaItemId: 'i-1', author: { id: 'u-3', name: 'Dr. Sara' }, text: 'Name room 5.', status: 'OPEN' as const, reply: null, createdAt: '2027-03-19T08:00:00.000Z', decidedAt: null };
+    function inReview(canApply: boolean) {
+      const made = create(aMinutesItem({ discussion: 'Room 3 is closed.' }), false);
+      made.fixture.componentRef.setInput('suggestions', [SUGG]);
+      made.fixture.componentRef.setInput('canApply', canApply);
+      made.fixture.detectChanges();
+      return made;
+    }
+
+    it("a reader sees the suggestion and no action, and the item's text stays read-only", () => {
+      const { el } = inReview(false);
+      expect(el.querySelector('[data-suggestion="s-1"]')?.textContent).toContain('Name room 5.');
+      expect(el.querySelector('[data-suggestion-edit="s-1"]')).toBeNull();
+      expect(el.querySelector('[data-item-discussion]')).toBeNull();
+    });
+
+    it('Edit to apply opens the editors; the save is written FIRST, then the suggestion marked applied', async () => {
+      const { el, fixture, c } = inReview(true);
+      const applied = jasmine.createSpy('applied');
+      c.applied.subscribe(applied);
+      el.querySelector<HTMLElement>('[data-suggestion-edit="s-1"] button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const box = el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!;
+      type(box, 'Room 3 is closed; patients go to room 5.');
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-item-discussion-save] button')!.click();
+      expect(svc['saveDiscussion']).toHaveBeenCalledTimes(1);
+      expect(svc['applySuggestion']).toHaveBeenCalledOnceWith('m-1', 's-1');
+      expect(applied).toHaveBeenCalledTimes(1);
+    });
+
+    it('a write that fails applies nothing', async () => {
+      const { el, fixture } = inReview(true);
+      svc['saveDiscussion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'STAGE_ACTION_NOT_ALLOWED' } })));
+      el.querySelector<HTMLElement>('[data-suggestion-edit="s-1"] button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      type(el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!, 'Changed.');
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-item-discussion-save] button')!.click();
+      expect(svc['applySuggestion']).not.toHaveBeenCalled();
+    });
+
+    it('if apply fails, the line says the edit was saved, and Retry applies it alone', async () => {
+      const { el, fixture } = inReview(true);
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      el.querySelector<HTMLElement>('[data-suggestion-edit="s-1"] button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      type(el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!, 'Changed.');
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-item-discussion-save] button')!.click();
+      fixture.detectChanges();
+      expect(el.querySelector('[data-apply-error]')?.textContent).toContain('Your edit was saved');
+      svc['applySuggestion']!.and.returnValue(of(undefined));
+      el.querySelector<HTMLElement>('[data-apply-retry] button')!.click();
+      fixture.detectChanges();
+      expect(svc['saveDiscussion']).toHaveBeenCalledTimes(1);
+      expect(svc['applySuggestion']).toHaveBeenCalledTimes(2);
+      expect(el.querySelector('[data-apply-error]')).toBeNull();
+    });
+
+    it('Decline… asks the page', () => {
+      const { el, c } = inReview(true);
+      const decline = jasmine.createSpy('decline');
+      c.decline.subscribe(decline);
+      el.querySelector<HTMLElement>('[data-suggestion-decline="s-1"] button')!.click();
+      expect(decline.calls.mostRecent().args[0].id).toBe('s-1');
     });
   });
 });
