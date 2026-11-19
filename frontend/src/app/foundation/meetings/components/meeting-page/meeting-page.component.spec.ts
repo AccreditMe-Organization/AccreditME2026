@@ -13,12 +13,14 @@ import { WorkflowService, type WorkflowMoveDto } from '../../../workflow/service
 import { aMeeting, anAttendee } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingAttendeeDto, type MeetingDto } from '../../services/meeting.service';
 import { MeetingPageComponent } from './meeting-page.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-316 PR 6 — the meeting page renders the server's rules and adds none:
 // each control is there exactly when the read's `may` says so, members are
 // never offered for removal, a refusal is said from its code, and the moves'
 // confirms follow what the server says about each move.
 describe('MeetingPageComponent (ACC-316 PR 6)', () => {
+  preserveDocumentLanguage();
   let meeting: () => Observable<MeetingDto>;
   let attendees: MeetingAttendeeDto[];
   let answer: jasmine.Spy;
