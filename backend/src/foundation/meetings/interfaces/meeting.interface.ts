@@ -198,6 +198,21 @@ export interface IMeetingOpenAction {
   note: string | null;
 }
 
+/** An open action as the agenda shows it: linked to its task only where the task page would open it. */
+export interface IMeetingOpenActionRow extends IMeetingOpenAction {
+  mayOpen: boolean;
+}
+
+/**
+ * ACC-316 PR 7b — "Open actions from the last meeting" for the agenda. Rows
+ * only for whoever may read the LAST meeting's approved minutes; anyone else
+ * who sees this meeting gets `mayRead: false` and no rows.
+ */
+export interface IMeetingOpenActions {
+  mayRead: boolean;
+  rows: IMeetingOpenActionRow[];
+}
+
 export interface IMeetingSuggestion {
   id: string;
   round: number;
@@ -232,7 +247,12 @@ export interface IMeetingMinutes {
   openActions: IMeetingOpenAction[];
   review: IMeetingReview;
   /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
-  distribute: { ready: boolean; blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null } | null;
+  distribute: {
+    ready: boolean;
+    blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null;
+    /** yyyy-MM-dd: the review date when none is chosen (PR 7b). */
+    defaultReviewBy: string;
+  } | null;
   approvedAt: Date | null;
   may: {
     recordAttendance: boolean;

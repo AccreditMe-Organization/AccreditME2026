@@ -17,12 +17,14 @@ import { MeetingMinutesService } from './meeting-minutes.service';
 import { MeetingReviewService } from './meeting-review.service';
 import { MeetingSeriesService } from './meeting-series.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
+import { TaskModule } from '../task/task.module';
 
 // ACC-316 PR 3a — one meeting's record. TenantModule for ObjectVisibilityService
 // (forwardRef, as CommitteesModule takes it); WorkflowModule for the instance
 // start and the stage rules. NotificationService is @Global (NotificationModule).
 @Module({
-  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule],
+  // ACC-316 PR 7b — TaskModule for TaskAdmissionService (the open actions' task links).
+  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule, forwardRef(() => TaskModule)],
   controllers: [MeetingsController, MeetingMinutesController],
   providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingMinutesService, MeetingReviewService, MeetingSeriesService, MeetingFormChoicesService],
   exports: [MeetingsService],

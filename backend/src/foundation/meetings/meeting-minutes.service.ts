@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { isActiveMember } from '../../common/services/committee-membership';
@@ -16,6 +16,7 @@ import {
   quorumLine,
   reviewClosed,
   reviewDatePassed,
+  reviewDayDefaults,
   reviewers,
   unrecordedAttendance,
   type MinutesPhase,
@@ -28,7 +29,8 @@ import type {
   RecordAttendanceDto,
   UpdateActionItemDto,
 } from './dto/meeting.dto';
-import type { IMeetingMinutes, IMeetingOpenAction } from './interfaces/meeting.interface';
+import type { IMeetingMinutes, IMeetingOpenAction, IMeetingOpenActions } from './interfaces/meeting.interface';
+import { TaskAdmissionService } from '../task/task-admission.service';
 
 /** What a minutes write needs its stage to allow. */
 type MinutesNeed = 'attendance' | 'minutes' | 'actions' | 'actionDates';
@@ -64,6 +66,7 @@ export class MeetingMinutesService {
     private readonly stageRules: StageRulesService,
     private readonly workflow: WorkflowService,
     private readonly calendar: WorkingCalendarService,
+    private readonly taskAdmission: TaskAdmissionService,
   ) {
     this.access = new MeetingAccess(prisma, visibility);
   }
@@ -72,14 +75,10 @@ export class MeetingMinutesService {
 
   async getMinutes(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingMinutes> {
     const owner = await this.access.seeing(id, organizationId, viewer, now);
-    const [rules, recorder] = await Promise.all([
-      this.stageRules.currentStageRules('MEETING', id, organizationId),
-      this.isRecorder(owner, organizationId, viewer.id, now),
-    ]);
-    const phase = minutesPhase(rules);
+    const { rules, recorder, phase, readable } = await this.minutesAccess(id, owner, organizationId, viewer, now);
     // Distribute Minutes leaves the stage where the minutes are written.
     const writing = rules.actions[MEETING_ACTIONS.RECORD_MINUTES] === true;
-    if (!phase || !(await this.mayRead(phase, owner, id, organizationId, viewer.id, recorder, now))) {
+    if (!phase || !readable) {
       throw new MeetingRefusal('MEETING_MINUTES_NOT_OPEN');
     }
 
@@ -215,7 +214,14 @@ export class MeetingMinutesService {
         changes,
         mine: myStatus,
       },
-      distribute: writing ? { ready: blocked.length === 0, blockedBy: blocked.length ? { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: blocked } : null } : null,
+      distribute: writing
+        ? {
+            ready: blocked.length === 0,
+            blockedBy: blocked.length ? { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: blocked } : null,
+            // PR 7b — the review date Distribute uses when none is chosen (the screen offers it).
+            defaultReviewBy: (await reviewDayDefaults(this.calendar, organizationId, now)).defaultDay,
+          }
+        : null,
       approvedAt: meeting.minutesApprovedAt,
       may: {
         recordAttendance: recorder && meeting.scheduledAt <= now && rules.actions[MEETING_ACTIONS.RECORD_ATTENDANCE] === true,
@@ -227,6 +233,58 @@ export class MeetingMinutesService {
         changeActionDates: recorder && rules.actions[MEETING_ACTIONS.CHANGE_ACTION_DATES] === true,
       },
     };
+  }
+
+  /**
+   * ACC-316 PR 7b — "Open actions from the last meeting", the agenda's fixed
+   * first section, for anyone who sees this meeting (P202):
+   *
+   * 1. This meeting's own visibility first: anyone else gets the identical 404
+   *    a missing meeting gets.
+   * 2. The rows come from the LAST meeting, so they are shown only to whoever
+   *    may read ITS approved minutes, by the same rule as its minutes read
+   *    (minutesAccess()); an organisation guest of this meeting only does not.
+   *    Anyone else gets `{ mayRead: false, rows: [] }`: no error, and nothing
+   *    says a section is hidden.
+   * 3. Each row's task is linked only where the task page would open it, asked
+   *    for every row at once (TaskAdmissionService.admittedIds()).
+   */
+  async getOpenActions(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingOpenActions> {
+    await this.access.seeing(id, organizationId, viewer, now);
+    const last = await this.lastApprovedMeeting(this.prisma, id, organizationId);
+    if (!last) return { mayRead: true, rows: [] };
+    let lastOwner: MeetingOwner;
+    try {
+      lastOwner = await this.access.seeing(last.id, organizationId, viewer, now);
+    } catch (error) {
+      if (error instanceof NotFoundException) return { mayRead: false, rows: [] };
+      throw error;
+    }
+    const { readable } = await this.minutesAccess(last.id, lastOwner, organizationId, viewer, now);
+    if (!readable) return { mayRead: false, rows: [] };
+    const rows = await this.openActions(this.prisma, id, organizationId, last);
+    const admitted = await this.taskAdmission.admittedIds(
+      rows.map((r) => r.taskId),
+      viewer,
+      organizationId,
+      now,
+    );
+    return { mayRead: true, rows: rows.map((r) => ({ ...r, mayOpen: admitted.has(r.taskId) })) };
+  }
+
+  /**
+   * §4.1 for one meeting, the one place it is asked: its phase, whether the
+   * viewer records its minutes, and whether they may read them. This meeting's
+   * minutes read and the next meeting's open actions both call it.
+   */
+  private async minutesAccess(id: string, owner: MeetingOwner, organizationId: string, viewer: MeetingViewer, now: Date) {
+    const [rules, recorder] = await Promise.all([
+      this.stageRules.currentStageRules('MEETING', id, organizationId),
+      this.isRecorder(owner, organizationId, viewer.id, now),
+    ]);
+    const phase = minutesPhase(rules);
+    const readable = !!phase && (await this.mayRead(phase, owner, id, organizationId, viewer.id, recorder, now));
+    return { rules, recorder, phase, readable };
   }
 
   /**
@@ -278,23 +336,9 @@ export class MeetingMinutesService {
     client: Pick<PrismaService, 'meeting' | 'meetingActionItem' | 'meetingOpenActionNote'>,
     id: string,
     organizationId: string,
+    known?: { id: string },
   ): Promise<IMeetingOpenAction[]> {
-    const meeting = await client.meeting.findFirst({
-      where: { id, organizationId },
-      select: { scheduledAt: true, committeeId: true, orgUnitId: true },
-    });
-    if (!meeting) return [];
-    const last = await client.meeting.findFirst({
-      where: {
-        organizationId,
-        id: { not: id },
-        ...(meeting.committeeId ? { committeeId: meeting.committeeId } : { committeeId: null, orgUnitId: meeting.orgUnitId }),
-        scheduledAt: { lt: meeting.scheduledAt },
-        minutesApprovedAt: { not: null },
-      },
-      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
-      select: { id: true },
-    });
+    const last = known ?? (await this.lastApprovedMeeting(client, id, organizationId));
     if (!last) return [];
     const [items, notes] = await Promise.all([
       client.meetingActionItem.findMany({
@@ -316,6 +360,26 @@ export class MeetingMinutesService {
         fromMeetingId: last.id,
         note: noteOf.get(i.task!.id) ?? null,
       }));
+  }
+
+  /** The newest earlier meeting of the same committee or unit whose minutes were approved, or null. */
+  private async lastApprovedMeeting(client: Pick<PrismaService, 'meeting'>, id: string, organizationId: string): Promise<{ id: string } | null> {
+    const meeting = await client.meeting.findFirst({
+      where: { id, organizationId },
+      select: { scheduledAt: true, committeeId: true, orgUnitId: true },
+    });
+    if (!meeting) return null;
+    return client.meeting.findFirst({
+      where: {
+        organizationId,
+        id: { not: id },
+        ...(meeting.committeeId ? { committeeId: meeting.committeeId } : { committeeId: null, orgUnitId: meeting.orgUnitId }),
+        scheduledAt: { lt: meeting.scheduledAt },
+        minutesApprovedAt: { not: null },
+      },
+      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
   }
 
   // ── Attendance ──────────────────────────────────────────────────────────────

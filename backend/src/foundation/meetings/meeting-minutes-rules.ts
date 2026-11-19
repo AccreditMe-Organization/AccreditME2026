@@ -195,3 +195,21 @@ export async function meetingMinutesFinalPrecondition(
 }
 
 export type MeetingApprovalRefusal = 'MEETING_REVIEW_OPEN' | 'MEETING_SUGGESTION_OPEN' | 'MEETING_ACTION_PAST_DUE' | 'MEETING_ACTION_PAST_SLA_LIMIT';
+
+/** Distribute Minutes' review date when none is chosen: this many working days after today. */
+export const REVIEW_WORKING_DAYS = 5;
+
+/**
+ * Today in the organisation's zone, and the default review date (yyyy-MM-dd,
+ * REVIEW_WORKING_DAYS working days ahead). The one home of the default: the
+ * Distribute move uses it when no date is sent, and the minutes read offers it
+ * to the screen, which does no working-day arithmetic of its own.
+ */
+export async function reviewDayDefaults(
+  calendar: { getEffectiveTimeZone(organizationId: string): Promise<string>; addWorkingDays(from: string, days: number, organizationId: string): Promise<string> },
+  organizationId: string,
+  now: Date,
+): Promise<{ today: string; defaultDay: string }> {
+  const today = DateTime.fromJSDate(now).setZone(await calendar.getEffectiveTimeZone(organizationId)).toISODate()!;
+  return { today, defaultDay: await calendar.addWorkingDays(today, REVIEW_WORKING_DAYS, organizationId) };
+}
