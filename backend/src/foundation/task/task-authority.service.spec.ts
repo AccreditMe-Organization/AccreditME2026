@@ -265,11 +265,12 @@ describe('TaskAuthorityService (ACC-173)', () => {
       prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: 'unit-1' }]);
 
       const ids = await service.creatorsCoveredBy('viewer', ORG_A, NOW);
-      // The reverse lookup, at the explicit NOW, ABSENCE covers only.
+      // The reverse lookup, at the explicit NOW, ABSENCE covers only, its person ACTIVE (ACC-245 PR 2).
       expect(prisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith({
         where: {
           organizationId: ORG_A,
           userId: 'viewer',
+          user: { status: 'ACTIVE' },
           kind: 'ACTING',
           endedAt: null,
           validFrom: { lte: NOW },

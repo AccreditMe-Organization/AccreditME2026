@@ -19,12 +19,16 @@ import {
   assertMaySeeCommittee,
   assertMayWriteCommittee,
   committeeReadersAmong,
+  activeSeatWhere,
   mayReadCommittee,
+  readableCommitteeIds,
 } from '../../../common/services/committee-membership';
+import { findUnitsLedBy } from '../../organization/unit-headship';
 import { seatValues } from '../committee-seat-rules';
 import { canonicalSeatActions, currentSeatActionMap, sameSeatActions, seatActionWanted, writeSeatActions } from '../seat-actions';
 import { assertMemberAction, memberActionsFor } from '../member-actions';
-import { ChainResult, ChainStep, mayDecideAnyChangeRequest, resolveDecisionChains } from './change-request-chain';
+import { awaitingDecisionGate, ChainResult, ChainStep, resolveDecisionChains } from './change-request-chain';
+import { chainCandidates, reviewCandidates, type CandidateCursor, type ReviewCandidateScope } from './awaiting-decision-candidates';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
@@ -107,6 +111,12 @@ const OBJECT_TYPE = 'COMMITTEE_CHANGE_REQUEST' as const;
 
 /** ACC-281 — the most requests the awaiting-decision list returns, oldest submitted first. */
 export const AWAITING_DECISION_CAP = 200;
+/** ACC-245 PR 2 (P203) — each arm reads its candidates this many at a time... */
+export const AWAITING_PAGE_SIZE = 200;
+/** ...and at most this many pages to fill the cap (a warning when reached). */
+export const AWAITING_PAGES = 5;
+/** ACC-245 PR 2 — the record id a stage's pool is resolved against to read only its fixed entries. */
+const NO_RECORD = 'no-record';
 const PAGE = 50;
 const STAGE_ORDER = new Map<string, number>(CHANGE_REQUEST_STAGE_KEYS.map((k, i) => [k, i]));
 
@@ -163,7 +173,16 @@ export type AwaitingDecisionBy =
       committee: { id: string; nameEn: string; nameAr: string | null };
       seats: { id: string; labelEn: string; labelAr: string | null }[];
     }
-  | { kind: 'UNIT_HEAD'; unit: { id: string; nameEn: string; nameAr: string | null } };
+  | { kind: 'UNIT_HEAD'; unit: { id: string; nameEn: string; nameAr: string | null } }
+  /** ACC-245 PR 2 — an added review stage, decided by its own people: named by the stage, never a person. */
+  | { kind: 'REVIEW_STAGE'; stage: { id: string; nameEn: string; nameAr: string | null } };
+
+/** ACC-245 PR 2 — one arm of the awaiting list: the rows the viewer decides, and their decisions. */
+interface DecidedRows {
+  rows: RequestRow[];
+  decisions: Map<string, ChainResult>;
+}
+const NO_ROWS: DecidedRows = { rows: [], decisions: new Map() };
 
 /** ACC-283 PR 2 — the decision's authority, on its audit row (ids only). */
 type DecisionAuthority =
@@ -217,7 +236,7 @@ export interface IChangeRequest {
   actions: ChangeRequestActions;
   /** ACC-240 — names for the ids in `changes` and `fromValues`. */
   labels: ChangeRequestLabels;
-  /** ACC-283 PR 2 — under review only: who decides it now, by step. Null otherwise. */
+  /** ACC-283 PR 2 — under review, or (ACC-245 PR 2) in an added review stage: who decides it now, by step. Null otherwise. */
   awaitingDecisionBy: AwaitingDecisionBy | null;
   /** ACC-283 PR 2 (Q8) — the requester's "Finish or withdraw" task, while one exists. */
   finishTaskId: string | null;
@@ -287,6 +306,12 @@ const FINISH_TASK = { title: 'Finish or withdraw the change request', titleAr: '
 @Injectable()
 export class CommitteeChangeRequestService {
   private readonly logger = new Logger(CommitteeChangeRequestService.name);
+  /**
+   * ACC-245 PR 2 (P203) — the awaiting list's candidate page size. A field, not
+   * only the constant, so a real-database spec can page through a few rows
+   * instead of creating hundreds; nothing in the app sets it.
+   */
+  awaitingPageSize = AWAITING_PAGE_SIZE;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -974,67 +999,184 @@ export class CommitteeChangeRequestService {
   }
 
   /**
-   * Every request under review that the viewer decides now (ACC-283 PR 2: by the
-   * chain, never committees:view or committees:approve; the route has no gate).
+   * Every request awaiting a decision that the viewer makes now: Under review, by
+   * the chain (ACC-283 PR 2: never committees:view or committees:approve; the
+   * route has no gate), and, since ACC-245 PR 2, an added review stage, by that
+   * stage's people (its pool, never the requester) who may open the committee.
    *
-   * CHEAP FIRST, three reads at once: the unit the viewer heads, the units they
-   * cover, and whether they hold a seat that decides reporting changes. Nobody who
-   * holds none of those can be in any chain: an empty list, three queries. Anyone
-   * else: the requests under review (SQL, capped), then ONE chain resolution for
-   * all of them, kept where the viewer is a decider.
+   * COST (Ahmad's performance rule), not on the per-request path:
+   * - ONE query first (awaitingDecisionGate): the chain's three arms, and whether
+   *   any request stands in an added review stage. Neither: [] after it.
+   * - EACH ARM ITS OWN CAPPED READ (chainRowsDecidedBy, reviewRowsDecidedBy), so
+   *   rows one arm cannot keep never use up the other's cap; the two are merged,
+   *   oldest submitted first, and capped again.
+   * - The review arm costs a non-reviewer a small fixed number of queries and no
+   *   list read: see reviewRowsDecidedBy. The query counts are pinned by
+   *   committee-change-request.db-spec.ts ("PR 2 cost").
    */
   async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer, now: Date = new Date()): Promise<IChangeRequest[]> {
-    // Prompt 85 — ONE indexed query: someone who heads, covers and holds no deciding
-    // seat has nothing waiting, so nothing else is read.
-    if (!(await mayDecideAnyChangeRequest(this.prisma, organizationId, viewer.userId, now))) return [];
-
-    // ACC-281 — filtered IN THE QUERY: the ids of the requests whose NEWEST
-    // instance stands in a stage awaiting a decision (the policy's own keys),
-    // oldest submitted first, capped. Every table is scoped by organisation.
-    const ids = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT r.id
-      FROM "CommitteeChangeRequest" r
-      JOIN LATERAL (
-        SELECT wi."currentStageId"
-        FROM "WorkflowInstance" wi
-        WHERE wi."organizationId" = ${organizationId}
-          AND wi."objectType"::text = ${OBJECT_TYPE}
-          AND wi."objectId" = r.id
-        ORDER BY wi."createdAt" DESC
-        LIMIT 1
-      ) li ON TRUE
-      JOIN "WorkflowStage" s ON s.id = li."currentStageId"
-      JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
-      WHERE r."organizationId" = ${organizationId}
-        AND r."submittedAt" IS NOT NULL
-        AND r."requestedById" <> ${viewer.userId}
-        AND s.key = ANY(${[...AWAITING_DECISION_KEYS]}::text[])
-      ORDER BY r."submittedAt" ASC, r.id ASC
-      LIMIT ${AWAITING_DECISION_CAP}`;
-    if (ids.length === AWAITING_DECISION_CAP) {
-      this.logger.warn(`Awaiting decision reached its cap of ${AWAITING_DECISION_CAP}: organizationId=${organizationId}`);
-    }
-    if (ids.length === 0) return [];
-    const order = new Map(ids.map((r, i) => [r.id, i]));
-    const rows = (
-      await this.prisma.committeeChangeRequest.findMany({
-        where: { id: { in: ids.map((r) => r.id) }, organizationId },
-        include: REQUEST_INCLUDE,
-      })
-    ).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-    const chains = await resolveDecisionChains(
-      this.prisma,
-      organizationId,
-      rows.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
-      now,
+    const gate = await awaitingDecisionGate(this.prisma, organizationId, viewer.userId, now);
+    if (!gate.chain && !gate.review) return [];
+    const [chainPart, reviewPart] = await Promise.all([
+      gate.chain ? this.chainRowsDecidedBy(organizationId, viewer, now) : Promise.resolve(NO_ROWS),
+      gate.review ? this.reviewRowsDecidedBy(organizationId, viewer, now) : Promise.resolve(NO_ROWS),
+    ]);
+    const merged = [...chainPart.rows, ...reviewPart.rows].sort(
+      (a, b) => a.submittedAt!.getTime() - b.submittedAt!.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
-    const mine = rows.filter((r) => chains.get(r.id)?.deciderIds.includes(viewer.userId));
+    if (merged.length > AWAITING_DECISION_CAP) {
+      this.logger.warn(`Awaiting decision cut ${merged.length} rows to its cap of ${AWAITING_DECISION_CAP}: organizationId=${organizationId}`);
+    }
+    const mine = merged.slice(0, AWAITING_DECISION_CAP);
     if (mine.length === 0) return [];
     // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
     const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(mine.map((r) => r.committeeId))]);
-    const dtos = await this.toDtos(mine, organizationId, viewer, (id) => committeeStages.get(id) ?? NO_STAGE, chains);
-    // A second guard that changes nothing while the query is right (a spec holds the two equal).
+    const dtos = await this.toDtos(mine, organizationId, viewer, (id) => committeeStages.get(id) ?? NO_STAGE, chainPart.decisions, reviewPart.decisions);
+    // A second guard that changes nothing while the queries are right (a spec holds the two equal).
     return dtos.filter((d) => awaitsDecision(d.status));
+  }
+
+  /**
+   * The chain arm: requests Under review, a page at a time (keyset on
+   * submittedAt, id), each page's chains resolved in ONE batch and kept where the
+   * viewer is a decider, until the cap is filled; at most AWAITING_PAGES pages
+   * (P203: older requests the viewer does not decide never hide theirs).
+   */
+  private async chainRowsDecidedBy(organizationId: string, viewer: ChangeRequestViewer, now: Date): Promise<DecidedRows> {
+    const kept: RequestRow[] = [];
+    const decisions = new Map<string, ChainResult>();
+    await this.pageCandidates(
+      'chain',
+      organizationId,
+      (after) => chainCandidates(this.prisma, organizationId, viewer.userId, after, this.awaitingPageSize),
+      async (rows) => {
+        const chains = await resolveDecisionChains(
+          this.prisma,
+          organizationId,
+          rows.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
+          now,
+        );
+        for (const r of rows) {
+          const chain = chains.get(r.id);
+          if (!chain?.deciderIds.includes(viewer.userId) || kept.length >= AWAITING_DECISION_CAP) continue;
+          kept.push(r);
+          decisions.set(r.id, chain);
+        }
+        return kept.length;
+      },
+    );
+    return { rows: kept, decisions };
+  }
+
+  /**
+   * ACC-245 PR 2 (P203) — one arm's paging, the same for both: read a page of
+   * candidates, load their rows (scoped by organisation, in order), let `keep`
+   * take the viewer's, and go on until the cap is filled, a page comes back
+   * short, or AWAITING_PAGES pages were read (a warning then: rows may be left).
+   */
+  private async pageCandidates(
+    arm: 'chain' | 'review',
+    organizationId: string,
+    read: (after: CandidateCursor) => Promise<{ id: string; submittedAt: Date }[]>,
+    keep: (rows: RequestRow[]) => Promise<number>,
+  ): Promise<void> {
+    let after: CandidateCursor = null;
+    for (let page = 0; page < AWAITING_PAGES; page++) {
+      const candidates = await read(after);
+      if (candidates.length === 0) return;
+      const rows = await this.requestRowsInOrder(candidates.map((c) => c.id), organizationId);
+      if ((await keep(rows)) >= AWAITING_DECISION_CAP) return;
+      if (candidates.length < this.awaitingPageSize) return;
+      const last = candidates[candidates.length - 1]!;
+      after = { submittedAt: last.submittedAt, id: last.id };
+    }
+    this.logger.warn(`Awaiting decision (${arm}) read ${AWAITING_PAGES} pages: organizationId=${organizationId}`);
+  }
+
+  /**
+   * ACC-245 PR 2 — the review arm. FIRST where the viewer can be in a pool at
+   * all, without reading a single request:
+   * 1. the organisation's added review stages and their entries (one query);
+   * 2. each stage's pool resolved WITHOUT a record (StagePoolService, batched:
+   *    one query per kind present, at most 9 stages): the record-independent
+   *    entries (a person, a position in a unit, a named unit's head, a named
+   *    committee's seats), out-of-office routed;
+   * 3. only if a stage names the request's committee or the request's unit's
+   *    head: whom the viewer covers while they are away (one query), then the
+   *    committees those people sit on and the units they lead (two reads, run
+   *    together).
+   * Nothing found: [] here. Otherwise the requests standing where the viewer may
+   * be in the pool (reviewCandidates, filtered by that scope IN SQL, so rows the
+   * viewer cannot be asked never use the cap), a page at a time, each page
+   * checked exactly (one batched pool read, one readableCommitteeIds() read):
+   * kept where the viewer IS in the pool and may open the committee. Pages
+   * continue until the cap is filled, at most AWAITING_PAGES (pageCandidates).
+   */
+  private async reviewRowsDecidedBy(organizationId: string, viewer: ChangeRequestViewer, now: Date): Promise<DecidedRows> {
+    const stages = await this.prisma.workflowStage.findMany({
+      where: { key: null, isInitial: false, isFinal: false, workflowTemplate: { organizationId, objectType: OBJECT_TYPE } },
+      select: { id: true, assignees: { where: { organizationId }, select: { kind: true, orgUnitId: true, committeeId: true } } },
+    });
+    if (stages.length === 0) return NO_ROWS;
+    const fixed = await this.workflow.stagePoolMembers(
+      organizationId,
+      stages.map((st) => ({ key: st.id, stageId: st.id, instance: { id: NO_RECORD, objectType: OBJECT_TYPE, objectId: NO_RECORD } })),
+    );
+    const scope: ReviewCandidateScope = {
+      stageIds: stages.filter((st) => fixed.get(st.id)?.includes(viewer.userId)).map((st) => st.id),
+      committeeStageIds: stages.filter((st) => st.assignees.some((a) => a.kind === 'COMMITTEE' && !a.committeeId)).map((st) => st.id),
+      committeeIds: [],
+      unitStageIds: stages.filter((st) => st.assignees.some((a) => a.kind === 'ORG_UNIT_HEAD' && !a.orgUnitId)).map((st) => st.id),
+      unitIds: [],
+    };
+    if (scope.committeeStageIds.length > 0 || scope.unitStageIds.length > 0) {
+      // The viewer stands in for whoever they cover while that person is away (the pool's out-of-office routing).
+      const covered = await this.prisma.user.findMany({
+        where: { organizationId, actingUserId: viewer.userId, status: 'ACTIVE', outOfOfficeFrom: { lte: now }, outOfOfficeTo: { gte: now } },
+        select: { id: true },
+      });
+      const people = [viewer.userId, ...covered.map((u) => u.id)];
+      const [seats, units] = await Promise.all([
+        scope.committeeStageIds.length > 0
+          ? this.prisma.committeeMember.findMany({ where: { userId: { in: people }, ...activeSeatWhere(organizationId) }, select: { committeeId: true } })
+          : Promise.resolve([] as { committeeId: string }[]),
+        scope.unitStageIds.length > 0 ? findUnitsLedBy(this.prisma, organizationId, people, now) : Promise.resolve([] as string[]),
+      ]);
+      scope.committeeIds = [...new Set(seats.map((m) => m.committeeId))];
+      scope.unitIds = units;
+    }
+    if (scope.stageIds.length === 0 && scope.committeeIds.length === 0 && scope.unitIds.length === 0) return NO_ROWS;
+
+    const kept: RequestRow[] = [];
+    const decisions = new Map<string, ChainResult>();
+    await this.pageCandidates(
+      'review',
+      organizationId,
+      (after) => reviewCandidates(this.prisma, organizationId, viewer.userId, scope, after, this.awaitingPageSize),
+      async (rows) => {
+        const stagesOf = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
+        const decided = await this.reviewDecisions(organizationId, rows, (id) => stagesOf.get(id), () => undefined);
+        const inPool = rows.filter((r) => decided.get(r.id)?.deciderIds.includes(viewer.userId));
+        const readable = inPool.length
+          ? await readableCommitteeIds(this.prisma, organizationId, asCommitteeViewer(viewer), inPool.map((r) => r.committeeId), now)
+          : new Set<string>();
+        for (const r of inPool) {
+          if (!readable.has(r.committeeId) || kept.length >= AWAITING_DECISION_CAP) continue;
+          kept.push(r);
+          decisions.set(r.id, decided.get(r.id)!);
+        }
+        return kept.length;
+      },
+    );
+    return { rows: kept, decisions };
+  }
+
+  /** These requests, in the order of `ids`, scoped by organisation. */
+  private async requestRowsInOrder(ids: string[], organizationId: string): Promise<RequestRow[]> {
+    const order = new Map(ids.map((id, i) => [id, i]));
+    return (
+      await this.prisma.committeeChangeRequest.findMany({ where: { id: { in: ids }, organizationId }, include: REQUEST_INCLUDE })
+    ).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
@@ -1336,6 +1478,8 @@ export class CommitteeChangeRequestService {
     viewer: ChangeRequestViewer,
     committeeStageOf: (committeeId: string) => CommitteeStageRules,
     known?: Map<string, ChainResult>,
+    /** ACC-245 PR 2 — review stage decisions the caller already resolved (the awaiting list). */
+    knownReview?: Map<string, ChainResult>,
   ): Promise<IChangeRequest[]> {
     if (rows.length === 0) return [];
     const [stages, extras] = await Promise.all([
@@ -1346,7 +1490,8 @@ export class CommitteeChangeRequestService {
       const state = stages.get(r.id);
       return isOpen(state) && (awaitsDecision(state?.key) || r.requestedById === viewer.userId);
     });
-    const missing = needsChain.filter((r) => !known?.has(r.id));
+    // ACC-245 PR 2 — rows whose review decision the caller already holds need no chain batch.
+    const missing = needsChain.filter((r) => !known?.has(r.id) && !knownReview?.has(r.id));
     const resolved = missing.length
       ? await resolveDecisionChains(
           this.prisma,
@@ -1356,7 +1501,8 @@ export class CommitteeChangeRequestService {
       : new Map<string, ChainResult>();
     const chainOnly = (id: string) => known?.get(id) ?? resolved.get(id);
     // ACC-245 — a request in an added review stage is decided by that stage's people.
-    const review = await this.reviewDecisions(organizationId, needsChain, (id) => stages.get(id), chainOnly);
+    const unresolved = knownReview ? needsChain.filter((r) => !knownReview.has(r.id)) : needsChain;
+    const review = new Map([...(knownReview ?? []), ...(await this.reviewDecisions(organizationId, unresolved, (id) => stages.get(id), chainOnly))]);
     const chainFor = (id: string) => review.get(id) ?? chainOnly(id);
     const underReview = needsChain.filter((r) => awaitsDecision(stages.get(r.id)?.key));
     const named = await this.nameSteps(
@@ -1395,6 +1541,7 @@ export class CommitteeChangeRequestService {
   private async nameSteps(chains: ChainResult[], organizationId: string): Promise<(step: ChainStep) => AwaitingDecisionBy | null> {
     const committeeIds = new Set<string>();
     const unitIds = new Set<string>();
+    const stageIds = new Set<string>();
     let seatsNeeded = false;
     for (const { step } of chains) {
       if (step.kind === 'REPORTS_TO_SEAT') {
@@ -1402,8 +1549,9 @@ export class CommitteeChangeRequestService {
         seatsNeeded = true;
       }
       if (step.kind === 'UNIT_HEAD') unitIds.add(step.unitId);
+      if (step.kind === 'REVIEW_STAGE') stageIds.add(step.stageId);
     }
-    const [committees, units, seats] = await Promise.all([
+    const [committees, units, seats, stages] = await Promise.all([
       committeeIds.size
         ? this.prisma.committee.findMany({ where: { id: { in: [...committeeIds] }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
         : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
@@ -1411,7 +1559,16 @@ export class CommitteeChangeRequestService {
         ? this.prisma.orgUnit.findMany({ where: { id: { in: [...unitIds] }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
         : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
       seatsNeeded ? seatValues(this.prisma, organizationId) : Promise.resolve([]),
+      // ACC-245 PR 2 — added review stages, by name: the stage belongs to this
+      // organisation's template.
+      stageIds.size
+        ? this.prisma.workflowStage.findMany({
+            where: { id: { in: [...stageIds] }, workflowTemplate: { organizationId } },
+            select: { id: true, nameEn: true, nameAr: true },
+          })
+        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
     ]);
+    const stageById = new Map(stages.map((st) => [st.id, st]));
     const committeeById = new Map(committees.map((c) => [c.id, c]));
     const unitById = new Map(units.map((u) => [u.id, u]));
     const seatById = new Map(seats.map((v) => [v.id, v]));
@@ -1431,6 +1588,10 @@ export class CommitteeChangeRequestService {
       if (step.kind === 'UNIT_HEAD') {
         const unit = unitById.get(step.unitId);
         return unit ? { kind: 'UNIT_HEAD', unit } : null;
+      }
+      if (step.kind === 'REVIEW_STAGE') {
+        const stage = stageById.get(step.stageId);
+        return stage ? { kind: 'REVIEW_STAGE', stage } : null;
       }
       return null;
     };
