@@ -3083,6 +3083,26 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
     re-reads the template, which is ACC-55's trap.
   - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
     focus moves to the row's other arrow.
+  - **ACC-212 — and a drag handle on each row** (the drawing's ⣿, a 22 × 26
+    button named "Reorder task n: title"), through Angular CDK drag-drop:
+    - **Pointer:** drag the row by its handle. The preview stays inside the
+      list (`cdkDragPreviewContainer="parent"`), so it inherits the page's
+      direction in Arabic.
+    - **Keyboard, on the same handle:** Space lifts the row, ↑ / ↓ move it
+      (shown, not saved), Space or Enter drops it, and Escape (or focus
+      leaving the handle) puts it back. While a row is lifted, the arrows,
+      Edit and Delete wait.
+    - **Announced** in the arrows' live line: picked up, each position, the
+      drop, a cancel. Focus stays on the row's handle.
+    - **Saving:** both paths use the same order endpoint as the arrows, and
+      the new order shows at once.
+      - A failed save puts the rows back and says so ("The new order
+        couldn't be saved…").
+      - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+    - **The ↑ / ↓ buttons stay.**
+    - **Specs:** `stage-task-list.drag.spec.ts` and
+      `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
+      px, both languages). Mutation-checked.
 - **`StageTaskDefinitionFormComponent`** is the two-step dialog.
   - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
   - The other routes are one or two selects.
