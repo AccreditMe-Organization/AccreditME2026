@@ -15,6 +15,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 import { StageTaskDefinitionListItemDto, WorkflowStageDto, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { StageTaskListComponent } from './stage-task-list.component';
+import { DragHandleComponent } from '../../../../shared/components/drag-handle/drag-handle.component';
 
 // ACC-212 — the drag handle on each "Tasks on entry" row (drawing section 1):
 // a pointer drag through Angular CDK, and keyboard pick-up on the same handle
@@ -108,7 +109,13 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
   let http: HttpTestingController;
   let fixture: ComponentFixture<HostComponent>;
 
-  async function setup(language: 'en' | 'ar' = 'en') {
+  /**
+   * `handleStylesFirst`: create an am-drag-handle before the list, so its
+   * unencapsulated styles are inserted BEFORE the list's. In that order a tie on
+   * specificity goes to the list's own row rule, which is how the preview's
+   * bottom border was lost on a page that had shown a handle first.
+   */
+  async function setup(language: 'en' | 'ar' = 'en', options: { handleStylesFirst?: boolean } = {}) {
     TestBed.configureTestingModule({
       imports: [HostComponent],
       providers: [
@@ -126,6 +133,11 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
     TestBed.inject(LanguageService).use(language);
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     http = TestBed.inject(HttpTestingController);
+    if (options.handleStylesFirst) {
+      const first = TestBed.createComponent(DragHandleComponent);
+      first.componentRef.setInput('label', 'first');
+      first.detectChanges();
+    }
     fixture = TestBed.createComponent(HostComponent);
     document.body.appendChild(fixture.nativeElement);
     fixture.detectChanges();
@@ -496,8 +508,8 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
       http.expectNone(ORDER);
     });
 
-    it('the drag preview carries the strong border on every side (no tie lost to the list row rule)', async () => {
-      const { el, handle } = await setup();
+    it('the drag preview carries the strong border on every side, even with the handle styles loaded first (no tie lost to the list row rule)', async () => {
+      const { el, handle } = await setup('en', { handleStylesFirst: true });
       const h = handle('def-1');
       const r = h.getBoundingClientRect();
       const y = r.top + r.height / 2;
