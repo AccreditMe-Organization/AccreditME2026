@@ -13197,6 +13197,13 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
       whose newest instance's stage is flagged IN_FORCE and not DISSOLVING.
     - **Below quorum:** in force, `quorumCount > 0`, and fewer active
       members than the quorum.
+    - **ACC-307: read through `committeesInForceStanding()`**
+      (`committee-seat-rules.ts`), still one query. "Active members" is the one
+      shared rule, an active membership of an ACTIVE user, which going live
+      (`activeMemberCount()`) and Setup health's "Committee below quorum" read
+      too (`activeMembersByCommittee()`, one SQL fragment). Before, Home counted
+      every active membership, so a deactivated member kept a committee at
+      quorum here while going live said it was not.
     - The server does not check the module; the screen draws the tile only
       while it is open.
   - **At most 7 queries, in one wave.** With no permission, none.
@@ -14482,6 +14489,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 | `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
+| `COMMITTEE_BELOW_QUORUM` (ACC-307) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`, the Fix "Add members"). One row per committee in force (`committeesInForceStanding()`: active, newest stage IN_FORCE and not DISSOLVING) whose active members who are ACTIVE users are fewer than a quorum above 0, naming the quorum and the members. **PR 1 adds the value deferred** (the frontend learns it, nothing writes it); PR 2 detects and reports it. |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
