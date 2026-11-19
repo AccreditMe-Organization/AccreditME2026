@@ -35,6 +35,8 @@ export type MeetingRefusalCode =
   | 'MEETING_STARTED'
   | 'MEETING_AGENDA_ITEM_NOT_FOUND'
   | 'MEETING_AGENDA_ORDER_MISMATCH'
+  /** The agenda's order is not the one the person reordered from (P198). */
+  | 'MEETING_AGENDA_CHANGED'
   | 'MEETING_PRESENTER_NOT_FOUND'
   | 'MEETING_CLASH_OWNER_REQUIRED'
   | 'MEETING_CLASH_TOO_MANY_TIMES'
@@ -90,6 +92,7 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_STARTED: HttpStatus.CONFLICT,
   MEETING_AGENDA_ITEM_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEETING_AGENDA_ORDER_MISMATCH: HttpStatus.BAD_REQUEST,
+  MEETING_AGENDA_CHANGED: HttpStatus.CONFLICT,
   MEETING_PRESENTER_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEETING_CLASH_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
   MEETING_CLASH_TOO_MANY_TIMES: HttpStatus.BAD_REQUEST,
@@ -144,6 +147,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_STARTED: 'This meeting has started.',
   MEETING_AGENDA_ITEM_NOT_FOUND: 'Agenda item not found.',
   MEETING_AGENDA_ORDER_MISMATCH: 'The order must list every agenda item once. Reload the agenda and try again.',
+  MEETING_AGENDA_CHANGED: 'The agenda changed since you opened it. Reload the meeting and try again.',
   MEETING_PRESENTER_NOT_FOUND: 'Presenter not found.',
   MEETING_CLASH_OWNER_REQUIRED: 'Name the committee, the unit or the meeting to check.',
   MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 53 times at once.',

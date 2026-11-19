@@ -878,6 +878,33 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   });
 
   describe('agenda (PR 3b)', () => {
+    it('two reorders from the same agenda race: one moves it, the other is MEETING_AGENDA_CHANGED and moves nothing (P198)', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      for (const title of ['Minutes', 'Budget', 'Any other business']) await agenda.create(m.id, { title } as never, w.orgId, as(w, 'secretary'), now);
+      const seen = (await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.id);
+      const [first, second, third] = seen as [string, string, string];
+      // Both people reorder from the agenda they saw, at once.
+      const results = await Promise.allSettled([
+        agenda.order(m.id, { itemIds: [second, first, third], expectedItemIds: seen } as never, w.orgId, as(w, 'secretary'), now),
+        agenda.order(m.id, { itemIds: [first, third, second], expectedItemIds: seen } as never, w.orgId, as(w, 'chair'), now),
+      ]);
+      const won = results.filter((r) => r.status === 'fulfilled');
+      expect(won.length).toBe(1);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(await code(Promise.reject(lost.reason))).toBe('MEETING_AGENDA_CHANGED');
+      // The agenda is exactly the winner's order: the loser moved nothing.
+      const winner = results[0]!.status === 'fulfilled' ? [second, first, third] : [first, third, second];
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.id)).toEqual(winner);
+
+      // An item added since is a change too; the order as it stands now is accepted.
+      const now2 = (await agenda.create(m.id, { title: 'Late item' } as never, w.orgId, as(w, 'secretary'), now)).map((i) => i.id);
+      expect(await code(agenda.order(m.id, { itemIds: [...now2].reverse(), expectedItemIds: winner } as never, w.orgId, as(w, 'secretary'), now))).toBe('MEETING_AGENDA_CHANGED');
+      const done = await agenda.order(m.id, { itemIds: [...now2].reverse(), expectedItemIds: now2 } as never, w.orgId, as(w, 'secretary'), now);
+      expect(done.map((i) => i.id)).toEqual([...now2].reverse());
+    });
+
     it("ordered items; a presenter who isn't invited is added as a guest; after issue the invited are told what changed", async () => {
       const w = await world();
       const now = new Date();
