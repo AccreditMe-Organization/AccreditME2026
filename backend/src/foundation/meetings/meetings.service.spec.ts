@@ -7,6 +7,13 @@ import type { WorkflowService } from '../workflow/workflow.service';
 import type { StageRulesService } from '../workflow/stage-rules.service';
 import type { NotificationService } from '../notification/notification.service';
 import type { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import type { StoredFileService } from '../file-storage/stored-file.service';
+import type { AuditLogService } from '../../common/services/audit-log.service';
+import { MeetingPeopleService } from './meeting-people.service';
+import { MeetingAgendaService } from './meeting-agenda.service';
+import { MeetingFilesService } from './meeting-files.service';
+import { MeetingClashService } from './meeting-clash.service';
+import { MeetingRefusal } from './meeting-refusal';
 
 // The oversight read is meeting-membership's own (proved in meetings.db-spec.ts):
 // here, nobody heads anything.
@@ -77,5 +84,69 @@ describe('MeetingsService — tenant scoping (ACC-316 PR 3a)', () => {
     const meetingQueries = calls.filter((c) => (c[0] as readonly string[]).join('?').includes('FROM "Meeting" m'));
     expect(meetingQueries.length).toBe(2);
     for (const c of meetingQueries) expect(c.slice(1).flatMap((v) => (v && typeof v === 'object' && 'values' in v ? (v as { values: unknown[] }).values : [v]))).toContain(ORG_A);
+  });
+});
+
+/**
+ * ACC-316 PR 3b — the people, agenda, files and clash routes: another
+ * organisation's meeting is the same 404 at the first check, and nothing is
+ * written or read past it. Proved against a real Postgres in meetings.db-spec.ts.
+ */
+describe('Meeting people, agenda, files and clashes — tenant scoping (ACC-316 PR 3b)', () => {
+  const ORG_A = 'org-a';
+  const ORG_B = 'org-b';
+  const THEIRS = 'meeting-of-b';
+  const viewer = { id: 'viewer-a', permissions: ['meetings:view'] };
+
+  function build() {
+    const owned = (where: { id?: string; organizationId?: string }) => where.id === THEIRS && where.organizationId === ORG_B;
+    const prisma = {
+      meeting: { findFirst: jest.fn(async ({ where }: { where: { id?: string; organizationId?: string } }) => (owned(where) ? { id: THEIRS } : null)) },
+      committee: { findFirst: jest.fn(async ({ where }: { where: { id?: string; organizationId?: string } }) => (where.organizationId === ORG_B ? { id: where.id } : null)) },
+      meetingAttendee: { create: jest.fn(), findMany: jest.fn(async () => []) },
+      agendaItem: { findMany: jest.fn(async () => []) },
+      storedFile: { findFirst: jest.fn(), findMany: jest.fn(async () => []) },
+      $transaction: jest.fn(),
+      $queryRaw: jest.fn(async () => []),
+    };
+    const visibility = {
+      assertCanViewOrNotFound: jest.fn(async (_type: string, id: string, organizationId: string) => {
+        if (!owned({ id, organizationId })) throw new NotFoundException('Meeting not found');
+      }),
+    } as unknown as ObjectVisibilityService;
+    const p = prisma as unknown as PrismaService;
+    return {
+      prisma,
+      people: new MeetingPeopleService(p, visibility, {} as StageRulesService, {} as NotificationService, {} as WorkingCalendarService),
+      agenda: new MeetingAgendaService(p, visibility, {} as StageRulesService, {} as NotificationService, {} as WorkingCalendarService, {} as StoredFileService),
+      files: new MeetingFilesService(p, visibility, {} as StageRulesService, {} as StoredFileService, {} as AuditLogService),
+      clashes: new MeetingClashService(p, visibility),
+    };
+  }
+
+  itEnforcesTenantIsolation("MeetingPeopleService — another organisation's meeting is not found, and no invitee is written", async () => {
+    const { people, prisma } = build();
+    await expect(people.attendees(THEIRS, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    await expect(people.addGuest(THEIRS, { userId: 'person-a' } as never, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    await expect(people.answer(THEIRS, { answer: 'ATTENDING' } as never, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.meetingAttendee.create).not.toHaveBeenCalled();
+  });
+
+  itEnforcesTenantIsolation("MeetingAgendaService and MeetingFilesService — another organisation's meeting is not found, and no file is read", async () => {
+    const { agenda, files, prisma } = build();
+    await expect(agenda.list(THEIRS, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    await expect(agenda.create(THEIRS, { title: 'X' } as never, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    await expect(files.list(THEIRS, ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    await expect(files.openView(THEIRS, 'file-b', ORG_A, viewer)).rejects.toThrow('Meeting not found');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.storedFile.findFirst).not.toHaveBeenCalled();
+  });
+
+  itEnforcesTenantIsolation("MeetingClashService — another organisation's committee is not found, and no clash is read", async () => {
+    const { clashes, prisma } = build();
+    await expect(clashes.check({ committeeId: 'committee-b', times: [] } as never, ORG_A, viewer)).rejects.toThrow(MeetingRefusal);
+    expect(prisma.committee.findFirst.mock.calls[0]?.[0]).toMatchObject({ where: { organizationId: ORG_A } });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });

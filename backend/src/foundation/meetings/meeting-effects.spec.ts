@@ -29,9 +29,18 @@ describe('Meeting transition effects — notices', () => {
           sent.push(dto.userId);
           return { id: dto.userId };
         }),
+        sendOutsideEmail: jest.fn(async () => undefined),
       },
     } as unknown as TransitionEffectDeps;
-    const prepared = { title: 'Monthly review', startsAt: new Date(Date.UTC(2026, 10, 25, 9, 0)), userIds: ['first', 'second', 'third'] };
+    const prepared = {
+      title: 'Monthly review',
+      startsAt: new Date(Date.UTC(2026, 10, 25, 9, 0)),
+      location: 'Room 4',
+      meetingUrl: null,
+      organisation: { en: 'Al Nakheel', ar: 'النخيل' },
+      userIds: ['first', 'second', 'third'],
+      outsideEmails: [],
+    };
 
     await expect(effect.finish!(deps, ctx, prepared)).resolves.toBeUndefined();
     expect(sent).toEqual(['second', 'third']);

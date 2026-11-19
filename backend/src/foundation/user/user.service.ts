@@ -7,7 +7,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { MeetingInviteeSyncService, refreshMeetingInvitees } from '../meetings/invitees/meeting-invitee-sync.service';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { counted } from '../../common/i18n/plural';
@@ -195,6 +197,10 @@ export class UserService {
     private readonly committeeTransferNotice: CommitteeTransferNoticeService,
     // ACC-283 PR 2b — the leaver's unfinished change requests (lane B).
     private readonly changeRequestDeparture: ChangeRequestDepartureService,
+    // ACC-316 PR 3b — a meeting's MEMBER invitees follow this change (after the
+    // commit, never failing it; the SLA sweep is the backstop). Optional so a
+    // service built by hand in a spec needs no sync.
+    @Optional() private readonly meetingInvitees?: MeetingInviteeSyncService,
   ) {}
 
   // ACC-78 — counts per status for the list's filter chips.
@@ -710,6 +716,7 @@ export class UserService {
         `Committee transfer notice not scheduled (${errorKind(err)}): organisation ${organizationId}, user ${user.id}.`,
       );
     }
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a transfer', (s) => s.forUser(organizationId, user.id));
 
     // Step 7 — refresh vacancy for both source and destination units.
     // Destination skipped when isPromotion — assignHead() (step 11)
@@ -1227,6 +1234,9 @@ export class UserService {
     // leaving and the one they're joining (the same unit, deduplicated via
     // Set, when this is an in-place position change within one unit).
     // Refreshed after the mutation commits, using before/after state.
+    if (isAdmin && dto.primaryOrgUnitId !== undefined && dto.primaryOrgUnitId !== existing.primaryOrgUnitId) {
+      await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a change of unit', (s) => s.forUser(organizationId, id));
+    }
     if (isAdmin && (dto.positionId !== undefined || dto.primaryOrgUnitId !== undefined)) {
       const affectedOrgUnitIds = new Set(
         [existing.primaryOrgUnitId, user.primaryOrgUnitId].filter((v): v is string => !!v),
@@ -1589,6 +1599,7 @@ export class UserService {
         `Change request departure follow-up failed: organizationId=${organizationId} userId=${id} (${(err as Error).name})`,
       );
     }
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a deactivation', (s) => s.forUser(organizationId, id));
 
     // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct
     // Head-position holder; the status flip above already excludes them
@@ -1720,6 +1731,7 @@ export class UserService {
       where: { id },
       data: { status: 'ACTIVE', ...(managerCleared ? { managerId: null } : {}) },
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a reactivation', (s) => s.forUser(organizationId, id));
 
     // THE MIRROR CALL, and the subtlest thing in this change.
     //
