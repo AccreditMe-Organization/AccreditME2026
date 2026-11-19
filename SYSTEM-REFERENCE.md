@@ -14460,7 +14460,7 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 
 **A person's sign-ins, and ending them (ACC-216 Sessions, PR 1, the backend).**
 `UserSessionsService` (`foundation/user/sessions/`); plan and Ahmad's answers (17
-Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
+Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is "Signed-in devices", below.
 - **A sign-in is a chain of `RefreshToken` rows** (each renewal revokes one row and
   writes the next, copying `sessionStartedAt`); the row listed is its one live row.
   **Live** (`liveSessionWhere()`): not revoked, not expired, under 12 hours from its
