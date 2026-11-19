@@ -5304,7 +5304,11 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   (`awaitingDecisionGate()`).
   `awaitingDecisionBy` gains `REVIEW_STAGE`. A cover gives reach only while its
   person is ACTIVE (`findUnitsCoveredBy()`, `findUnitLeadersAmong()`).
-- **No migration.** The screens are PR 3.
+- **PR 3a: what the screens read.** `reviewStages` on the protected
+  template's read (whether one more fits, where it may go, who may decide one),
+  from the rules the save refuses by, never a copy; an app-move line for every
+  review-stage move (`REVIEW_STAGE_MOVE_KEY`).
+- **No migration.** The screens are PR 3b.
 
 ## Open / Deferred Items
 

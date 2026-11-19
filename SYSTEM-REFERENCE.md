@@ -7041,6 +7041,14 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   `awaiting-me` never lists a review stage (app moves only), so nothing counts
   twice. `awaitingDecisionBy` gains `REVIEW_STAGE` (the stage's names), in the
   list, a read and the NOT_DECIDER refusal. The screens are PR 3.
+- **What the screens read (PR 3a).** The protected template's read carries
+  `reviewStages` (`canAdd`, `max`, `count`, `after`, `who`), built by
+  `reviewStagesRead()` from the rules the save refuses by
+  (`reviewStageFits()`, `REVIEW_STAGE_WHO_MODES`,
+  `REVIEW_STAGE_REFUSED_KINDS`); absent on every other template. Every
+  review-stage move has an app-move line: the read keys an added stage as
+  `REVIEW_STAGE_MOVE_KEY`. An empty added stage is flagged on entry and listed
+  by `STAGE_WITHOUT_ASSIGNEE` (unchanged, now pinned).
 - **A cover gives reach only while its person is ACTIVE** (PR 2):
   `findUnitsCoveredBy()`, `findUnitLeadersAmong()` and the gate's cover arm;
   `findRunningActingCoversForUnits()` (what a unit's cover IS) is unchanged.
