@@ -9288,15 +9288,23 @@ is a current head holder, or a cover in force whose person is ACTIVE:
 it, so deactivating the root's only active cover is refused
 `ROOT_UNIT_NEEDS_HEAD` inside the deactivation's own transaction (the
 baseline, the person turned INACTIVE, the assertion); a root covered only by
-a deactivated person is already headless (logged, never refused). The vacancy
-flag reads the same rule: both recomputers (`refreshOrgUnitHeadVacancy()`,
-the SLA sweep's `recomputeOrgUnitVacancies()`) and the escalation step
-(`resolveActingHeadForOrgUnit()`) use the period table, never the
-`actingHeadUserId` cache, so Setup health's `ORG_UNIT_WITHOUT_HEAD` lists such
-a root as blocking work. A cover arranged for later, or one that lapsed on its
+a deactivated person is already headless (logged, never refused). Every
+reader that DECIDES from a unit's cover reads this rule, never the
+`actingHeadUserId` cache:
+  - the root-unit invariant (`isHeaded`);
+  - the vacancy flag's two recomputers (`refreshOrgUnitHeadVacancy()`, the SLA
+    sweep's `recomputeOrgUnitVacancies()`) and its escalation step
+    (`resolveActingHeadForOrgUnit()`), so Setup health's
+    `ORG_UNIT_WITHOUT_HEAD` lists such a root as blocking work;
+  - `OrgUnitHeadService.hasDirectOrActingHead()` (invite, promote, transfer);
+  - `OrgPositionService.resolveHeadEscalationTargets()` (a task's Head tier);
+  - a promotion's new manager in `UserService.transferUser()`.
+The cache is left to what it records and shows: `clearActingHead()` ends the
+cover it names, `getHeadStatus()` returns it, and two screens show it (the
+transfer wizard's manager preview, the headship panel's End cover). A cover arranged for later, or one that lapsed on its
 own date, no longer keeps a unit off the list either. `findRunningActingCover()`
 is unchanged: it shows the cover on record. Measured before shipping (read
-only, 20 Nov): no unit on the shared database has an acting head, cached or in
+only, 19 Nov): no unit on the shared database has an acting head, cached or in
 the period table, so the change moves no flag there.
 
 ---

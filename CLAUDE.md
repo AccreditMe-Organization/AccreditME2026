@@ -4868,10 +4868,13 @@ SYSTEM-REFERENCE.md §5.15.6. Briefly:
 - **Screens say it from the code** (`root-unit-refusal.ts`), one key pair,
   nothing disabled before the click.
 - **ACC-324 — a cover heads a unit only while its person is ACTIVE**
-  (`findActiveCoversForUnits()`, `ACTIVE_COVER_PERSON`): the invariant, the
-  vacancy flag's two recomputers and its escalation step read the period
-  table, never the `actingHeadUserId` cache. `findRunningActingCover()` still
-  shows the cover on record.
+  (`findActiveCoversForUnits()`, `ACTIVE_COVER_PERSON`). Every reader that
+  decides from a cover reads it, never the `actingHeadUserId` cache: the
+  invariant, the vacancy flag's two recomputers and escalation step,
+  `hasDirectOrActingHead()`, `resolveHeadEscalationTargets()` and a
+  promotion's new manager. The cache only records and shows
+  (`clearActingHead()`, `getHeadStatus()`, two screens);
+  `findRunningActingCover()` shows the cover on record.
 - **No migration.**
 
 ## Key Architecture Decisions (ACC-292)
