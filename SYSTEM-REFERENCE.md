@@ -17612,6 +17612,14 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     approved;
   - its action items whose task is still open;
   - a note on each (`PUT …/open-actions/:taskId/note`).
+  - **For the agenda (PR 7b):** `GET /meetings/:id/open-actions` answers
+    `{ mayRead, rows }`, each row with `mayOpen`. This meeting's own visibility
+    first (the identical 404); then rows only for whoever may read the LAST
+    meeting's minutes, asked by the same `minutesAccess()` the minutes read
+    uses (an organisation guest of this meeting only reads none, and gets
+    `mayRead: false`, no error); then each row's task linked only where the task
+    page would open it, by `TaskAdmissionService.admittedIds()`, one query for
+    every row. A fixed number of queries for any number of rows (db-spec).
 - **Distribute (`POST /meetings/:id/distribute`, the app's move into Minutes
   Review):**
   - only Minutes Draft's pool may press it;
@@ -17619,7 +17627,10 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`), checked inside the move
     under the meeting row's lock, so nothing is written;
   - the review date (`reviewBy`, a day after today, default 5 working days) and
-    the round (`reviewRound` + 1) are written with the move (`inTx`);
+    the round (`reviewRound` + 1) are written with the move (`inTx`). The
+    default is `reviewDayDefaults()` (`meeting-minutes-rules.ts`), its one home;
+    the minutes read offers it as `distribute.defaultReviewBy` (PR 7b), so the
+    screen does no working-day arithmetic;
   - the members recorded present are told after the commit.
 - **Return (`POST /meetings/:id/return`, the app's move back to Minutes
   Draft):**
@@ -17938,3 +17949,59 @@ languages, each keeping 20px:
 | Filled, a presenter found by name, or refused | 309 / 312 at 1280; 326 / 329 at 390 |
 
 The design measured 301 / 322. Only the description scrolls, inside itself.
+
+### 18.17 The screens, part 2b: the meeting held and its minutes drafted (PR 7b)
+
+Plan §6.7. Frontend under `foundation/meetings/`; the reads and writes of
+§18.13.
+
+**What the page reads, besides PR 6's:** `GET /meetings/:id/minutes` and `GET
+/meetings/:id/open-actions`, alongside the meeting. A 403 or 404 on either is
+"not for you" (nothing drawn); any other failure is said in the agenda panel's
+line, with Retry, never swallowed. Every minutes write answers with the whole
+minutes, which the page shows.
+
+**Attendance** (`am-meeting-attendance`) takes the invitees' place once there
+are minutes:
+
+- Present / Apologies / Absent per invitee, a radiogroup saved on each tap (one
+  row, `PUT …/attendance`), with a "Saved" tick on the row; Mark all present
+  sends everyone not yet present in one write. Arrow keys move in reading
+  direction. Under a coarse pointer the segments are 44px tall, 72px wide.
+- The quorum line counts MEMBERS present: met, or not met with how many more are
+  needed. Guests don't count, which the panel says.
+- `may.recordAttendance` decides the controls. Before the start, in the draft,
+  the panel says when attendance opens (`MEETING_NOT_STARTED` stays as built);
+  anyone else reads what was recorded.
+
+**"Open actions from the last meeting"** (`am-meeting-open-actions`) is the
+agenda's fixed first section, not an agenda item: never moved, edited or
+removed, no papers. Drawn only with rows. A title links to its task only with
+`mayOpen`; the status is the task's. Whoever records the minutes notes each row
+in Minutes Draft (`may.recordMinutes`); anyone else reads the note.
+
+**Each agenda item's minutes** (`am-meeting-item-minutes`), under the item:
+
+- the discussion (saved whole, trimmed, an emptied one null);
+- decisions with votes, all three counts or none, "Taken without quorum" on
+  each decision taken below it;
+- the action item drafts: owner and due date, marked a draft (no task until the
+  minutes are approved), removable while a draft.
+
+**Raise action item** (`app-meeting-action-dialog`): What, an Owner from the
+invitees who are people of the organisation (never an outside guest, who has no
+user), and a Due date and time on the tenant's wall clock (due dates are always
+date-time, ACC-94), with the meeting's day-and-time field.
+
+**Distribute Minutes** (`app-meeting-distribute-dialog`, a confirm), beside the
+moves for `may.distribute`: opens on `distribute.defaultReviewBy` and sends a
+date only when the person changes it. While attendance is incomplete it names
+who is missing and offers no Distribute.
+
+**The dialogs**, measured under the 420px cap at 1280 and 390, in both
+languages, each keeping 20px:
+
+| Dialog | Tallest body (en / ar) |
+|---|---|
+| Raise action item (empty, every error, filled, refused) | 288 / 285 at 390; 271 / 285 at 1280 |
+| Distribute Minutes (ready, refused, five missing) | 177 / 190 |

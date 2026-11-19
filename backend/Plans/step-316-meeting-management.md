@@ -1650,6 +1650,15 @@ them together with their resolver.
      - the minutes: each item's discussion, decisions with votes, action item
        drafts (Raise action item);
      - Distribute Minutes, with what still holds it.
+     - **As built (P202, 19 Nov):** SYSTEM-REFERENCE §18.17.
+       - **Open actions read:** `GET /meetings/:id/open-actions`, rows only for
+         whoever may read the last meeting's minutes (the same rule), each task
+         linked only where its page would open it (batched).
+       - **`distribute.defaultReviewBy`** on the minutes read, so the screen
+         does no working-day arithmetic; one helper, `reviewDayDefaults()`.
+       - **Departures:** Distribute's confirm leaves out the design's "Told: 3
+         others · 1 guest" (the server tells only the present members); the
+         Action items summary card and the review card are 7c's.
    - **PR 7c, review and approval:** the review banner (No corrections /
      Suggest a correction), suggestions applied or declined, the Review card,
      Return for Correction, Approve Minutes with "Can't move to Minutes
