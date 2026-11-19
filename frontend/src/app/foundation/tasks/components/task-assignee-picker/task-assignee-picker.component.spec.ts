@@ -288,6 +288,36 @@ describe('TaskAssigneePickerComponent (ACC-167)', () => {
       expect(picker().offersCommittee()).toBeFalse();
     });
 
+    // P178 — committee A's answer never opens the route for committee B. Two guards:
+    // the request for A is cancelled the moment the source moves to B (switchMap),
+    // so a late answer for A cannot land; and an answer that did land for one
+    // committee is compared with the committee shown now.
+    it('without committees:view, an answer for committee A never opens the route for committee B', () => {
+      const { fixture, picker } = setup({ committee: true, permissions: ['committees:create_tasks'] });
+      const forA = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(forA.request.params.get('committeeId')).toBe('committee-1');
+
+      // A's question is still in flight when the source moves to B.
+      fixture.componentInstance.sourceId.set('committee-2');
+      fixture.detectChanges();
+      expect(forA.cancelled).withContext('A’s late answer cannot land').toBeTrue();
+      const forB = http.expectOne((r) => r.url === `${API}/assignment/committee-roles`);
+      expect(forB.request.params.get('committeeId')).toBe('committee-2');
+      expect(picker().offersCommittee()).withContext('B unanswered').toBeFalse();
+
+      // B opens; then the source moves to C, whose question is still in flight:
+      // B's answer must not open the route for C.
+      forB.flush([]);
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('B answered').toBeTrue();
+      fixture.componentInstance.sourceId.set('committee-3');
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('C in flight: B’s answer is not C’s').toBeFalse();
+      http.expectOne((r) => r.url === `${API}/assignment/committee-roles`).flush({ message: 'Required permission: committees:view' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+      expect(picker().offersCommittee()).withContext('C refused').toBeFalse();
+    });
+
     it('is not offered on a task from anywhere else', () => {
       const { picker } = setup({ permissions: ['committees:view'] });
       expect(picker().scopeOptions().map((o) => o.value)).not.toContain(COMMITTEE_SCOPE);

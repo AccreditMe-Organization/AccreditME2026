@@ -68,6 +68,7 @@ describe('A committee member chooses a seat on their own committee, on a real da
   let own = '';
   let other = '';
   let foreign = '';
+  let inactive = '';
   let secretary = '';
   let member = '';
   const people = { keyedMember: '', colleague: '', otherMember: '', viewer: '', leaver: '' };
@@ -98,6 +99,8 @@ describe('A committee member chooses a seat on their own committee, on a real da
     own = (await prisma.committee.create({ data: { organizationId: org, nameEn: 'Quality Committee', typeValueId: 'type', orgUnitId: unit } })).id;
     other = (await prisma.committee.create({ data: { organizationId: org, nameEn: 'Safety Committee', typeValueId: 'type', orgUnitId: unit } })).id;
     foreign = (await prisma.committee.create({ data: { organizationId: otherOrg, nameEn: 'Board', typeValueId: 'type', orgUnitId: foreignUnit } })).id;
+    // P178 — an INACTIVE committee on which the member still holds an active seat.
+    inactive = (await prisma.committee.create({ data: { organizationId: org, nameEn: 'Old Committee', typeValueId: 'type', orgUnitId: unit, isActive: false } })).id;
 
     for (const name of Object.keys(people) as (keyof typeof people)[]) {
       people[name] = (await prisma.user.create({ data: { organizationId: org, email: `${slug}-${name}@example.test`, name, status: 'ACTIVE' } })).id;
@@ -109,6 +112,8 @@ describe('A committee member chooses a seat on their own committee, on a real da
         data: { organizationId, committeeId, userId, roleValueId, isActive, ...(isActive ? {} : { leftAt: new Date() }) },
       });
     await seatOn(org, own, people.keyedMember, member);
+    await seatOn(org, inactive, people.keyedMember, secretary);
+    await seatOn(org, inactive, people.colleague, member);
     await seatOn(org, own, people.colleague, secretary);
     await seatOn(org, own, people.leaver, member, false);
     await seatOn(org, other, people.otherMember, secretary);
@@ -161,6 +166,16 @@ describe('A committee member chooses a seat on their own committee, on a real da
 
   it('the same member is refused the whole catalogue with no committee named: only their own seats', async () => {
     expect(await catalogue(keyedMember(), undefined)).toBe(REFUSED);
+  });
+
+  // P178 — the membership rule counts an ACTIVE seat on an ACTIVE committee only.
+  // The member's seat on the inactive committee is still active, so only the
+  // committee's own isActive refuses them: the same 403 on all three routes.
+  it('a member of an INACTIVE committee is refused on all three routes, with the same 403', async () => {
+    expect(await prisma.committeeMember.count({ where: { committeeId: inactive, userId: people.keyedMember, isActive: true } })).toBe(1); // non-vacuity
+    expect(await roles(keyedMember(), inactive)).toBe(REFUSED);
+    expect(await holders(keyedMember(), inactive, member)).toBe(REFUSED);
+    expect(await catalogue(keyedMember(), inactive)).toBe(REFUSED);
   });
 
   it('a member who has left is refused, on the next request', async () => {
