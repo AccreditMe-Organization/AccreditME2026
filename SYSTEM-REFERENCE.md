@@ -7841,6 +7841,55 @@ merge in the defaults each turn a spec red.
 **One additive migration:** `20261116120000_acc283_committee_seat_actions` (the
 table).
 
+### 3.21.6 A deactivated person's committee seats end (ACC-306)
+
+Plan, the readers' inventory and the open business answers:
+`backend/Plans/step-306-committee-seats-on-deactivation.md`. Built on the plan's
+recommendations before Ahmad confirmed them (P163). Each answer is one switch in
+`SEAT_DEPARTURE_POLICY` (`committees/departure/committee-seat-departure.service.ts`).
+
+- **What ends.** `UserService.deactivate()` ends every active membership the
+  person holds on an **active** committee, whatever its stage (Formation, Terms
+  Review, Active, Suspended, Dissolution Pending). This happens inside the
+  deactivation's own transaction.
+  - **Left as they were:**
+    - a committee whose current stage is **final and DISSOLVING** (Dissolved), because its roster is a closed record (ACC-255 Q-A);
+    - an inactive committee;
+    - a seat already left.
+- **How it is recorded.** Per seat:
+  - **The membership row:** `leftAt` = the deactivation's time, and `isActive: false`.
+  - **One `LEFT` event:** `CommitteeMembershipEvent` with `cause: DEACTIVATION` (a nullable column; null for every change a person makes), `approvedBy` = the person deactivating, and `reason: null`.
+  - **After commit:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`.
+  - **On the person's own `deactivated` audit row:** `endedCommitteeSeats: n`.
+- **Never blocked.** The ending checks:
+  - no stage rule;
+  - no ACC-286 rule 3 (the last Chairman of a committee in force still ends; Setup health's "missing a required seat" then lists it, as it already did for an inactive holder);
+  - no quorum.
+
+  Only the deactivation's existing refusals (account owner, last administrator, root unit's head) stop it, and the seats roll back with them.
+- **The hook** (`CommitteeSeatDepartureService`, the ACC-283 PR 2b shape):
+  - **`prepare()`:** before the transaction, while the person is ACTIVE. One indexed query, scoped by organisation.
+  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal. It takes the committees' rows FOR UPDATE in one statement, in id order, re-reads the memberships still active (a seat removed by hand meanwhile is skipped), then makes one `updateMany` and one `createMany`.
+  - **`finish()`:** after commit. The audit rows and the notices; it never throws.
+- **Lock order.** After everything the deactivation already locks, each committee's **row** only, never its workflow instance (no stage rule is read). The other paths that lock these rows:
+  - member writes: the instance FOR SHARE, then the row;
+  - going live: the instance, then the row FOR SHARE;
+  - change-request approve: the request's instance, the committee's, then its row.
+
+  So no cycle is closed. This is proved against a real database with all four running at once (`committee-seat-departure.db-spec.ts`).
+- **Who is told.**
+  - **Each committee's officers**, by ACC-297's rule, now one shared function (`committees/committee-audience.ts`: `committeeAudiences()`, `committeeReaders()`, with `recipientsByCommittee()`). That means the chair and secretary, and the owning unit's head (or the cover in force instead). Never the leaver or the actor, and ACTIVE people only.
+  - **How:** one in-app notice per recipient (`departureNoticeText()`, both languages, gender-neutral Arabic), after commit. A committee is named and linked only for a reader who may open it.
+  - **The other admins' departure notice** gains a counted clause: "3 committee seats ended." / «انتهت 3 عضويات في اللجان.»
+- **Reactivation restores nothing.** `addMember()` reuses the row (ACC-32) with a `JOINED` event.
+- **The transfer notice** (3.21.3) reads `cause`: a seat a deactivation ended reads "the Secretary seat ended when the account was deactivated", never "removed as part of the transfer".
+- **Membership history** returns `cause` on each event. The screen's wording is PR 2.
+- **What it changes for the readers** (plan §1.2): the readers that already ignore an inactive member are unchanged. These stop showing the person:
+  - the Members panel and the committee list counts;
+  - Home's below-quorum count;
+  - the person's own Committees panel.
+- **Existing data:** 0 active seats held by an inactive person on the shared database (19 Nov), so there is no backfill. One additive migration (`acc306_membership_event_cause`).
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
