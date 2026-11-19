@@ -236,6 +236,20 @@ export interface MeetingOpenActionsDto {
   rows: MeetingOpenActionRowDto[];
 }
 
+/** A correction a present member suggested in a review round (PR 7c-1). */
+export interface MeetingSuggestionDto {
+  id: string;
+  round: number;
+  /** The agenda item it is about, or null for the minutes as a whole. */
+  agendaItemId: string | null;
+  author: { id: string; name: string };
+  text: string;
+  status: 'OPEN' | 'APPLIED' | 'DECLINED';
+  reply: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 export interface MeetingMinutesDto {
   phase: MinutesPhase;
   attendance: MeetingAttendanceRowDto[];
@@ -248,7 +262,7 @@ export interface MeetingMinutesDto {
     datePassed: boolean;
     closed: boolean;
     reviewers: { userId: string; name: string; answered: boolean }[];
-    suggestions: unknown[];
+    suggestions: MeetingSuggestionDto[];
     changes: { round: number; agendaItemId: string | null; what: string }[];
     mine: 'NO_CORRECTIONS' | 'SUGGESTED' | null;
   };
@@ -439,6 +453,29 @@ export class MeetingService {
 
   saveOpenActionNote(id: string, taskId: string, note: string | null): Observable<MeetingMinutesDto> {
     return this.http.put<MeetingMinutesDto>(`${this.base}/${id}/open-actions/${taskId}/note`, { note });
+  }
+
+  // ── Review (PR 7c-1): these writes answer with nothing; the page reads the minutes again ──
+
+  noCorrections(id: string): Observable<void> {
+    return this.http.put<void>(`${this.base}/${id}/review/no-corrections`, {});
+  }
+
+  suggest(id: string, body: { agendaItemId: string | null; text: string }): Observable<{ id: string }> {
+    return this.http.post<{ id: string }>(`${this.base}/${id}/review/suggestions`, body);
+  }
+
+  applySuggestion(id: string, suggestionId: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/review/suggestions/${suggestionId}/apply`, {});
+  }
+
+  declineSuggestion(id: string, suggestionId: string, reply: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/review/suggestions/${suggestionId}/decline`, { reply });
+  }
+
+  /** Return for Correction: back to Minutes Draft, with an optional reason the present members read. */
+  returnMinutes(id: string, reason: string | null): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/return`, { reason });
   }
 
   /** The app's move into Minutes Review; `reviewBy` (yyyy-MM-dd) only when the person changed the default. */

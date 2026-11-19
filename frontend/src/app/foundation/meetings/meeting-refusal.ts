@@ -45,6 +45,13 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_OPEN_ACTION_NOT_FOUND: 'meeting.refusal.openActionNotFound',
   MEETING_ATTENDANCE_INCOMPLETE: 'meeting.refusal.attendanceIncomplete',
   MEETING_REVIEW_DATE_INVALID: 'meeting.refusal.reviewDateInvalid',
+  // PR 7c-1 — the review.
+  MEETING_NOT_REVIEWER: 'meeting.refusal.notReviewer',
+  MEETING_REVIEW_SUGGESTED: 'meeting.refusal.reviewSuggested',
+  MEETING_SUGGESTION_NOT_FOUND: 'meeting.refusal.suggestionNotFound',
+  MEETING_SUGGESTION_DECIDED: 'meeting.refusal.suggestionDecided',
+  MEETING_SUGGESTION_TEXT_REQUIRED: 'meeting.refusal.suggestionTextRequired',
+  MEETING_SUGGESTION_REPLY_REQUIRED: 'meeting.refusal.suggestionReplyRequired',
   MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
 };
 
