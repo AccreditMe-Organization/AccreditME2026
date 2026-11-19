@@ -359,6 +359,17 @@ export class OrderAgendaDto {
   @ArrayMaxSize(200)
   @IsString({ each: true })
   itemIds!: string[];
+
+  /**
+   * The order the person reordered FROM (P198). When it is not the agenda's
+   * current order, the reorder is refused (MEETING_AGENDA_CHANGED) and nothing
+   * moves, so a second reorder never silently undoes a first.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  expectedItemIds?: string[];
 }
 
 /** One time to check: a start (an instant) and how long. */

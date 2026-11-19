@@ -82,7 +82,7 @@ describe('Add a guest dialog — layout, measured (ACC-316 PR 6)', () => {
         layout.check('outside, refused', language, width, 560);
 
         // Issued: the line says the invitation goes now.
-        layout.fixture.componentInstance.meeting.set(aMeeting({ stage: { id: 's-issued', nameEn: 'Agenda Issued', nameAr: 'صدرت الأجندة', flags: ['AGENDA_ISSUED'] } }));
+        layout.fixture.componentInstance.meeting.set(aMeeting({ stage: { id: 's-issued', nameEn: 'Agenda Issued', nameAr: 'الأجندة مُصدَرة', flags: ['AGENDA_ISSUED'] } }));
         await layout.settle();
         expect(document.querySelector('[data-testid="guest-outside-when"]')?.textContent?.trim().length).toBeGreaterThan(0);
         layout.check('outside, issued', language, width, 560);

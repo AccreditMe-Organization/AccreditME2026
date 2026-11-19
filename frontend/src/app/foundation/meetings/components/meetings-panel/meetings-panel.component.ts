@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { forkJoin } from 'rxjs';
@@ -34,7 +34,7 @@ const HELD = 2;
       [state]="state()"
       [total]="total()"
       [shown]="rows().length"
-      [offersSeeAll]="false"
+      (seeAll)="seeAll()"
       [loadingText]="'meeting.panel.loading' | translate"
       [errorText]="'meeting.panel.error' | translate"
       [emptyText]="'meeting.panel.empty' | translate"
@@ -61,6 +61,7 @@ export class MeetingsPanelComponent {
   private readonly meetings = inject(MeetingService);
   private readonly language = inject(LanguageService);
   readonly format = inject(FormatService);
+  private readonly router = inject(Router);
 
   readonly owner = input.required<ScheduleOwner>();
 
@@ -101,6 +102,15 @@ export class MeetingsPanelComponent {
         this.state.set('ready');
       },
       error: () => this.state.set('error'),
+    });
+  }
+
+  /** "Showing 5 of 14 · See all": the meetings list, filtered to this committee or unit. */
+  seeAll(): void {
+    const owner = this.owner();
+    void this.router.navigate(['/meetings'], {
+      queryParams: owner.kind === 'COMMITTEE' ? { committeeId: owner.id } : { orgUnitId: owner.id },
+      state: { ownerName: owner.name },
     });
   }
 

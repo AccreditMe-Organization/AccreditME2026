@@ -406,9 +406,11 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         (await meetings.list({ view, ...extra } as never, w.orgId, viewer, now)).items.map((i) => i.id);
 
       expect(await ids('mine', as(w, 'chair'))).toEqual([upcomingCommittee]);
-      // Clinical's scheduler: their unit's meeting, and (Ahmad, 19 Nov) the meeting of
-      // the committee Clinical owns, which they may schedule though not a member.
-      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical, upcomingCommittee]);
+      // Clinical's scheduler: Mine is invited or organiser (P189), so their unit's
+      // meeting only; the meeting of the committee Clinical owns, which they may
+      // schedule and so see (Ahmad, 19 Nov), is in their Upcoming, not their Mine.
+      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical]);
+      expect(await ids('upcoming', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical, upcomingCommittee]);
       expect(await ids('mine', as(w, 'outsider'))).toEqual([]);
       expect(await ids('past', as(w, 'member'))).toEqual([pastCommittee]);
       // Root's head sees every past meeting below by oversight, latest first.
@@ -876,6 +878,33 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   });
 
   describe('agenda (PR 3b)', () => {
+    it('two reorders from the same agenda race: one moves it, the other is MEETING_AGENDA_CHANGED and moves nothing (P198)', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      for (const title of ['Minutes', 'Budget', 'Any other business']) await agenda.create(m.id, { title } as never, w.orgId, as(w, 'secretary'), now);
+      const seen = (await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.id);
+      const [first, second, third] = seen as [string, string, string];
+      // Both people reorder from the agenda they saw, at once.
+      const results = await Promise.allSettled([
+        agenda.order(m.id, { itemIds: [second, first, third], expectedItemIds: seen } as never, w.orgId, as(w, 'secretary'), now),
+        agenda.order(m.id, { itemIds: [first, third, second], expectedItemIds: seen } as never, w.orgId, as(w, 'chair'), now),
+      ]);
+      const won = results.filter((r) => r.status === 'fulfilled');
+      expect(won.length).toBe(1);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(await code(Promise.reject(lost.reason))).toBe('MEETING_AGENDA_CHANGED');
+      // The agenda is exactly the winner's order: the loser moved nothing.
+      const winner = results[0]!.status === 'fulfilled' ? [second, first, third] : [first, third, second];
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.id)).toEqual(winner);
+
+      // An item added since is a change too; the order as it stands now is accepted.
+      const now2 = (await agenda.create(m.id, { title: 'Late item' } as never, w.orgId, as(w, 'secretary'), now)).map((i) => i.id);
+      expect(await code(agenda.order(m.id, { itemIds: [...now2].reverse(), expectedItemIds: winner } as never, w.orgId, as(w, 'secretary'), now))).toBe('MEETING_AGENDA_CHANGED');
+      const done = await agenda.order(m.id, { itemIds: [...now2].reverse(), expectedItemIds: now2 } as never, w.orgId, as(w, 'secretary'), now);
+      expect(done.map((i) => i.id)).toEqual([...now2].reverse());
+    });
+
     it("ordered items; a presenter who isn't invited is added as a guest; after issue the invited are told what changed", async () => {
       const w = await world();
       const now = new Date();
@@ -1270,7 +1299,14 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(m.title).toBe('Scheduled by the unit');
       expect(m.may).toMatchObject({ edit: true, reschedule: true, manageGuests: true });
       expect(await outcome(meetings.getForViewer(m.id, w.orgId, scheduler, now))).toBe('OK');
+      // Organised by them, so in their Mine.
       expect((await meetings.list({ view: 'mine' } as never, w.orgId, scheduler, now)).items.map((i) => i.id)).toContain(m.id);
+      // One the Chair schedules is not theirs to answer: not in Mine (invited or
+      // organiser, P189), but it opens and is in Upcoming.
+      const chairs = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Scheduled by the chair' }), w.orgId, as(w, 'chair'), now);
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, scheduler, now)).items.map((i) => i.id)).not.toContain(chairs.id);
+      expect((await meetings.list({ view: 'upcoming' } as never, w.orgId, scheduler, now)).items.map((i) => i.id)).toContain(chairs.id);
+      expect(await outcome(meetings.getForViewer(chairs.id, w.orgId, scheduler, now))).toBe('OK');
       // The writes a scheduler passes, and no more: reschedule, guests.
       expect(await outcome(meetings.reschedule(m.id, { scheduledAt: later(9, now).toISOString(), reason: 'Moved', expectedUpdatedAt: m.updatedAt } as never, w.orgId, scheduler, now))).toBe('OK');
       expect(await outcome(people.addGuest(m.id, { userId: w.people['outsider'] } as never, w.orgId, scheduler, now))).toBe('OK');
@@ -1284,6 +1320,35 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(await outcome(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe('OK');
       await prisma.role.updateMany({ where: { organizationId: w.orgId, userRoles: { some: { userId: plain.id } } }, data: { isActive: false } });
       expect(await code(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe(404);
+    });
+
+    it("the scheduler clause reads the viewer's unit ONCE per query (an InitPlan), never once per meeting row", async () => {
+      const w = await world();
+      const now = new Date();
+      await meetingRow(w, { orgUnitId: w.units.clinical }, later(2, now), w.people['clinicalScheduler']!);
+      await meetingRow(w, { committeeId: w.committeeId }, later(3, now), w.people['chair']!);
+      await meetingRow(w, { orgUnitId: w.units.ward }, later(-4, now), w.people['rootHead']!);
+      // The plan is RUN (ANALYZE), so each node says how many times it was executed.
+      const plan = await prisma.$queryRaw<{ 'QUERY PLAN': unknown }[]>`
+        EXPLAIN (ANALYZE, FORMAT JSON) SELECT m.id FROM "Meeting" m
+        WHERE m."organizationId" = ${w.orgId} AND ${meetingMembership.meetingMemberSql('m', w.people['clinicalScheduler']!)}`;
+      type Node = { 'Node Type': string; 'Relation Name'?: string; Alias?: string; 'Actual Rows'?: number; 'Rows Removed by Filter'?: number; 'Actual Loops'?: number; Plans?: Node[] };
+      // Each node with the most times it, or anything above it, was executed.
+      const nodes: (Node & { runs: number })[] = [];
+      const walk = (n: Node, above: number) => {
+        const runs = Math.max(above, n['Actual Loops'] ?? 0);
+        nodes.push({ ...n, runs });
+        for (const c of n.Plans ?? []) walk(c, runs);
+      };
+      walk((plan[0]!['QUERY PLAN'] as { Plan: Node }[])[0]!.Plan, 0);
+      const meetingScans = nodes.filter((n) => n['Relation Name'] === 'Meeting' && n.Alias === 'm');
+      // The scheduler clause's "User" reads (Postgres names a repeated alias su_1, su_2, …).
+      const viewerUser = nodes.filter((n) => n['Relation Name'] === 'User' && /^su(_\d+)?$/.test(n.Alias ?? ''));
+      // Non-vacuity: every meeting row is read (kept or filtered out), and the viewer's row is in the plan.
+      expect(meetingScans.reduce((sum, n) => sum + ((n['Actual Rows'] ?? 0) + (n['Rows Removed by Filter'] ?? 0)) * (n['Actual Loops'] ?? 0), 0)).toBeGreaterThanOrEqual(3);
+      expect(viewerUser.length).toBeGreaterThan(0);
+      // Read once for the whole query: neither the read nor anything holding it runs once per meeting row.
+      for (const n of viewerUser) expect(n.runs).toBeLessThanOrEqual(1);
     });
 
     itEnforcesTenantIsolation("a scheduler of another organisation gets the identical 404 for this organisation's meeting", async () => {

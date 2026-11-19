@@ -17249,6 +17249,12 @@ write a second copy.
   owning unit and who holds `meetings:schedule` through an active role. It is
   in MEMBER's SQL (`meetingMemberSql`), so the parent rule, every list, the
   clash check and the task registry read it, live, with no query per row.
+  **Uncorrelated (PR 7):** the viewer's scheduling unit is one scalar subquery
+  (`viewerScheduledUnitSql`), which Postgres runs once per query as an InitPlan,
+  compared with each meeting's owning unit under `COALESCE(…, FALSE)`, so a
+  viewer who schedules nowhere reads FALSE, never NULL (a NULL under `NOT`
+  dropped Sub-units rows). The db-spec reads the plan to prove it.
+  `meetingInviteeSql` is MEMBER without this clause; only Mine uses it.
 
 Anyone else gets the identical 404 "Meeting not found". It is the same for a
 real meeting, a missing one and another organisation's.
@@ -17306,7 +17312,8 @@ then reads the page's meetings and their stages in one batch each.
 
 | `view` | Rows |
 |---|---|
-| `mine` (default) | meetings the viewer is a member of or organised; upcoming, soonest first |
+| `mine` (default) | meetings the viewer is invited to (a member by seat, unit or invitation) or organised; upcoming, soonest first. The SCHEDULER clause does not count here (PR 7): a scheduler's unit's meetings are in `upcoming`, not Mine |
+| `upcoming` | every meeting the viewer sees that has not started; soonest first |
 | `past` | every meeting the viewer sees that has started; latest first |
 | `minutes` | meetings whose minutes the viewer records: a seat with `record_minutes`, or `meetings:record_minutes` in the unit |
 | `all` | every meeting; `meetings:view` only, else 403 |
@@ -17497,6 +17504,10 @@ answer reads its deadline's clock after the locks.
   - `MEETING_AGENDA_TITLE_REQUIRED` 400;
   - `MEETING_AGENDA_ITEM_NOT_FOUND` 404;
   - `MEETING_AGENDA_ORDER_MISMATCH` 400;
+  - `MEETING_AGENDA_CHANGED` 409 (PR 7, P198): the order sent with
+    `expectedItemIds`, the order the person reordered FROM, is not the agenda's
+    order now (another reorder, an item added or removed meanwhile). Compared
+    under the agenda's locks; nothing moves. A db-spec races two reorders.
   - `MEETING_PRESENTER_NOT_FOUND` 404.
 - **"Open actions from the last meeting"** reads the previous meeting's action
   items. That arrives with the minutes (PR 4).
@@ -17862,3 +17873,90 @@ a day and a time, then HH:mm.
 **Test support:** `meeting-fixtures.testing.ts` (`aMeeting`, `anAttendee`) and
 `meeting-dialog-layout.testing.ts` (open, wait for the motion, measure), imported
 by specs only.
+
+### 18.16 The screens, part 2: the agenda editor (PR 7)
+
+Plan §6.6 lists the departures. Frontend under `foundation/meetings/`, on the
+routes of §18.10.
+
+**The agenda panel** (`am-meeting-agenda-panel`, on `/meetings/:id`):
+
+- **The header** counts the items and the minutes planned
+  (`plural.meeting.minutesPlanned`).
+- **Each row:** its place, title, "Presenter · seat · n min", its papers
+  (`am-meeting-file-list`) and, for a scheduler, Edit.
+- **Reorder:** drag by the handle, or the handle's ArrowUp / ArrowDown. Either
+  sends the whole order with the order seen (`PUT …/agenda/order`,
+  `expectedItemIds`); the new place is said aloud (`aria-live`), and a refusal
+  is said from its code. While a move saves, the handle is `aria-disabled`,
+  never disabled, so it keeps focus and its keys are ignored; after the move,
+  focus is put back on the moved item's handle.
+- **Reload, never Retry:** `MEETING_AGENDA_ITEM_NOT_FOUND`,
+  `MEETING_AGENDA_ORDER_MISMATCH` and `MEETING_AGENDA_CHANGED`
+  (`meetingNeedsReload()`) show "Reload the meeting", in the panel's line and in
+  the item dialog in Save's place; it closes the dialog and runs the page's
+  `load()`.
+- **A re-read that fails** after a write (the invitees after an agenda change,
+  the files after a paper or attachment) is said in the panel's line, with
+  Retry for that read.
+- **`canManage`** is the read's `may.manageAgenda`. Without it the panel is
+  read-only: no Add item, no Edit, no handle, no paper buttons. Absent, never
+  disabled.
+
+**The item dialog** (`app-meeting-agenda-item-dialog`, `app-edit-dialog`): Title
+(required), Description, then Presenter and Duration on one row.
+
+- **Presenter** lists the invitees (sent as `attendeeId`), or a person found by
+  name through the guest candidates (sent as `userId`, so the server adds them
+  as a guest, §18.10); a line under the field says so. The search is offered
+  only with `may.manageGuests`, since it adds a guest.
+- **An edit sends only the fields the person changed** (P198), so it never
+  writes back someone else's newer value for a field left alone. Save with
+  nothing changed sends nothing. Two people changing the SAME field is ACC-323.
+- **Duration** is 5 to 120 minutes, or Not set.
+- **Remove item** (editing only) asks first, and says the item's papers go to
+  the recycle bin.
+- **Every write answers with the whole agenda**, which replaces the panel's,
+  and the page then reads the invitees again (a presenter may have been added).
+- **A refusal** is said in the footer from its code; any other failure with the
+  dialog's own sentence.
+
+**Papers and attachments** (`am-meeting-file-list`): a chip per file opens the
+in-app viewer (`FileViewerService`); a scheduler also gets an add button (a
+hidden file input) and a remove icon that asks first. A refused upload is said
+from the storage layer's code (`FilesService.refusal()`), then the meeting's,
+never the server's words. The page's Attachments section shows when the viewer
+may manage the agenda or attachments exist.
+
+**The page, after the PR 6 review:**
+
+- **The answer** is three buttons with `aria-pressed`; the plain answer line
+  shows only once answering has closed. The note box is filled from
+  `myAnswer.note` when the page loads.
+- **The invitees' summary** reads "Members: …". Each row ends with its answer
+  as a status (`meeting.invitees.attending` / `cantAttend`: «حضور», «اعتذار»;
+  the answer buttons keep «سأحضر» and «لا يمكنني الحضور»),
+  the note under it, and a scheduler's remove is a muted icon named "Remove
+  {{name}}".
+- **The panel's See all** opens `/meetings?committeeId=` or `?orgUnitId=`, the
+  owner's name passed in the navigation's state (else read from the first row).
+  The list then offers Upcoming and Past for that owner only, names it, and
+  links back to every meeting.
+
+**The tenant's wall clock, a skipped hour:** `FormatService.instantAt()` reads
+a time a clock change repeats as its first occurrence, and a time it skips as
+the same moment one hour later (02:30 on 8 Mar 2026 in New York, or on 29 Mar
+2026 in Berlin, is 03:30). Its two candidates take the zone's offset a day
+before and a day after, so both sides of a change are tried east and west of
+UTC (P198: east of UTC, a repeated time had read as its second occurrence). The
+earliest day Schedule and Reschedule offer is read again each time they open.
+
+**The dialog**, measured under the 420px cap at 1280 and 390, in both
+languages, each keeping 20px:
+
+| Agenda item | Body (en / ar) |
+|---|---|
+| Empty, with its title error, or an item edited | 292 / 312 |
+| Filled, a presenter found by name, or refused | 309 / 312 at 1280; 326 / 329 at 390 |
+
+The design measured 301 / 322. Only the description scrolls, inside itself.
