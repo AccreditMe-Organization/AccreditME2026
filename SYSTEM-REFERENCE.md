@@ -16946,12 +16946,13 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5, 6)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
 2's (§1, §2.18, §2.19, §3.16). PR 3b added invitees, guests, answers, the agenda,
-files and the clash check (§18.8–§18.12); PR 4 the minutes.
+files and the clash check (§18.8–§18.12); PR 4 the minutes; PR 5 the series
+(§18.14); PR 6 the first screens (§18.15).
 
 ### 18.1 The routes
 
@@ -16965,6 +16966,9 @@ files and the clash check (§18.8–§18.12); PR 4 the minutes.
 | `POST /meetings` | schedule: `committeeId` or `orgUnitId` (exactly one), title, `typeValueId` (a `meeting_type` value), `scheduledAt`, `durationMinutes` 5–1440, `location` and/or `meetingUrl`, `unitQuorum` (unit meetings only) |
 | `PATCH /meetings/:id` | edit those fields except the owner and the time; `expectedUpdatedAt` |
 | `POST /meetings/:id/reschedule` | a new time and a reason, both required |
+| `GET /meetings/form-choices` | PR 6: the organisation's meeting types, as `getValues('meeting_type')` offers them (no permission, as the committee form's choices) |
+| `GET /meetings/may-schedule?committeeId=\|orgUnitId=` | PR 6: `{ may }`, whether Schedule meeting is offered (§18.15) |
+| `GET /meetings/:id/guest-candidates?q=&skip=&take=` | PR 6: ACTIVE people not invited, name, unit and position only, for whoever may write the meeting; `take` up to 50 |
 
 Cancel is the workflow's own move (`POST /workflows/instances/:id/transition`,
 with a comment), not a meetings route.
@@ -17509,3 +17513,73 @@ with `schedule()`).
 - **Organisation scoping:** another organisation's series is
   `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
   `seriesId` filter lists nothing of theirs.
+### 18.15 The screens, part 1 (PR 6)
+
+Plan §6.5 lists the departures. Frontend under `foundation/meetings/`, plus two
+shared pieces in `foundation/workflow/`.
+
+**Where meetings appear:**
+
+- **The rail:** "Meetings", `/meetings`, `moduleKey: 'meetings'`, no permission
+  of its own (members open their own meetings; the server decides each view).
+- **`/meetings`:** `app-data-list` with the views Mine, Past, Minutes I record,
+  All meetings (only with `meetings:view`) and Sub-units' meetings, a title
+  search (`q`) and server paging. Headers are plain: the list takes no sort.
+- **The committee and unit pages:** `app-meetings-panel` (`am-capped-panel`),
+  the next three meetings then the last two held. Both pages show it only while
+  `isNavModuleOpen('meetings')`. Schedule meeting follows `GET
+  /meetings/may-schedule`.
+- **`/meetings/:id`:** the header, the stage indicator, the move buttons, the
+  relations strip, the person's own answer, the agenda (read-only) and the
+  invitees. A 404 or 403 reads "You can't open this meeting."
+- **Links:** `recordPageLink('MEETING')`, so a task's meeting and the bell's
+  meeting notices open the page.
+
+**Every rule is the server's:**
+
+- the read's `may` (`reschedule`, `manageGuests`, `answer`) decides each control;
+  absent, never disabled;
+- the moves are the moves list's; Cancel's reason is its `needsReason`, Issue
+  Agenda's confirm its `toStageFlags` (`AGENDA_ISSUED`);
+- refusals are said from their codes (`meeting-refusal.ts`), with a screen's own
+  generic sentence for any other failure, never the server's words.
+
+**May-schedule** (`MeetingsService.maySchedule()`) is true exactly when
+`schedule()` would make a meeting the person can open, three reads at once:
+
+- SCHEDULERS (`meeting-authority.ts`), as `schedule()` checks;
+- for a committee, its stage allows `schedule_meeting`;
+- `meetings:view`, or `wouldSeeNewMeeting()` (`meeting-membership.ts`, beside
+  the rule's one copy): a member of the active committee, a person of the unit,
+  or a head of the owning unit or a unit above.
+
+The db-spec proves it against `schedule()` for every person and owner. A person
+of a committee's owning unit with `meetings:schedule` and no membership is
+refused here: `schedule()` would create the meeting and then answer 404 (an
+open question, plan §6.5).
+
+**The move confirm** (`MoveConfirmDialogComponent`): `app-workflow-transition-actions`
+takes `confirmFor(move)`, a record's own words for a move, or null to press at
+once. A move with `needsReason` always opens it, with generic words if the
+record gives none, and sends the reason as the press's comment.
+
+**The dialogs** are `app-edit-dialog`, measured under the 420px cap at 1280 and
+390, in both languages, each keeping 20px:
+
+| Dialog | Tallest body (en / ar) |
+|---|---|
+| Schedule meeting, a unit with every error | 380 / 390 at 1280; 397 / 390 at 390 |
+| Schedule meeting, a committee | 363 / 373 |
+| Reschedule | 248 / 266 refused; 218 / 234 otherwise |
+| Add a guest, an outside guest, issued | 333 / 330 at 1280; 369 / 350 at 390 |
+| Cancel (move confirm, with its reason) | 178 / 171 at 1280; 178 / 195 at 390 |
+
+The start (`am-meeting-when-field`) is New task's day-and-time control: the day
+as words with its calendar toggle (the calendar swaps the body), the time typed
+HH:mm at 112px on PrimeNG's INNER input. Sized on the host only, that input was
+305px and ran the body sideways. Its validator (`meetingTimeValidator`) requires
+a day and a time, then HH:mm.
+
+**Test support:** `meeting-fixtures.testing.ts` (`aMeeting`, `anAttendee`) and
+`meeting-dialog-layout.testing.ts` (open, wait for the motion, measure), imported
+by specs only.

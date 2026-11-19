@@ -1546,6 +1546,41 @@ them together with their resolver.
      buttons), the bell and record links.
    - **Live after:** a meeting can be scheduled, answered, its agenda issued,
      and the meeting cancelled.
+   - **6.5 PR 6 as built (19 Nov):** SYSTEM-REFERENCE §18.15.
+     - **Backend, read-only additions:**
+       - `GET /meetings/form-choices` (the organisation's `meeting_type`
+         values, as `getValues()` offers them);
+       - `GET /meetings/may-schedule?committeeId=|orgUnitId=`;
+       - `GET /meetings/:id/guest-candidates?q=&skip=&take=`;
+       - the list's `q` (the title, LIKE's wildcards matched literally);
+       - each move in the moves list carries `toStageFlags`.
+     - **Departures from the plan and the design:**
+       - **May-schedule is stricter than SCHEDULERS.** It also asks the
+         committee's stage (`schedule_meeting`) and whether the person would
+         see the meeting. A person of a committee's owning unit holding
+         `meetings:schedule` is a scheduler by §4.2, but not a viewer by §4.1
+         unless a member, so `schedule()` creates the meeting and then answers
+         404. Schedule is not offered to them; which rule gives way is open.
+       - **The panels follow the meetings module** (`isNavModuleOpen`,
+         ACC-279's rule), like the rail item. With the module off, the committee
+         page keeps its old placeholder and the unit page has no panel.
+       - **Schedule opens only from a panel**, with the owner fixed. /meetings
+         has no Schedule: no read lists the owners a person may schedule for.
+         One button, Schedule; "Next: repeats" is PR 8's.
+       - **Optional fields are unmarked**, as everywhere in the app (required
+         ones carry the asterisk): the design's " · optional" suffixes are not
+         drawn.
+       - **Schedule's save error is in the footer**, as the design draws it.
+         Duration, Location and Online link declare `message="none"`.
+       - **The list** has the views and a title search only: no Attendance or
+         Minutes column, no groups, no row menu, no filters. The list read
+         carries none of it.
+       - **The page's agenda is read-only**, with no papers. Editing the agenda,
+         papers, "Presents item" and the attachments panel are not built.
+       - **Not built:** "Who works this stage" (no read names it), the panel's
+         restricted line and "All N meetings", the clash line.
+       - **Issue Agenda's confirm** says the design's lead without the counts
+         ("Sent to: …", "Papers: …"), which no read gives.
 7. **PR 7: screens, part 2.**
    - Attendance (tablet), minutes, votes, action item drafts, open actions, the
      review banner and suggestions, the Review card, Approve and Return, Home's
