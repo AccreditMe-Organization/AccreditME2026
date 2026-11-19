@@ -7,6 +7,7 @@ import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 import { CommitteeMembershipEventDto } from '../../services/committee.service';
 import { CommitteeMembershipHistoryPanelComponent } from './committee-membership-history-panel.component';
 
@@ -18,6 +19,7 @@ import { CommitteeMembershipHistoryPanelComponent } from './committee-membership
  * row never show a stored reason.
  */
 describe('CommitteeMembershipHistoryPanelComponent — a removal’s reason (ACC-301)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   const REASON = 'Moved to the Pharmacy unit after the restructure';
