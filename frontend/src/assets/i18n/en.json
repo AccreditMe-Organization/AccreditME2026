@@ -1372,6 +1372,7 @@
     "addMember": "Add Member",
     "approvedBy": "by {{name}}",
     "leftDeactivated": "Left — account deactivated",
+    "historyReason": "Reason:",
     "changeRoleFor": "Change role for {{name}}",
     "confirmRemoveMember": "Remove {{name}} from this committee?",
     "confirmRemoveMemberMessage": "Their membership ends today and stays in the committee's history.",

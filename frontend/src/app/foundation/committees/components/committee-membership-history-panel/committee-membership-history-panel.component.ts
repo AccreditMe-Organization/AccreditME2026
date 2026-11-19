@@ -53,7 +53,15 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
             <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
             <span class="am-cmh__date">{{ format.date(e.effectiveDate) }}</span>
           </span>
-          <span class="am-cp-l2"><span class="am-cp-cut" [title]="detail(e)">{{ detail(e) }}</span></span>
+          <span class="am-cp-l2">
+            <span class="am-cp-cut am-cmh__detail" [class.am-cmh__detail--shared]="!!reason(e)" [title]="detail(e)" data-history-detail>{{ detail(e) }}</span>
+            @if (reason(e); as r) {
+              <span class="am-cmh__sep" aria-hidden="true">&nbsp;·&nbsp;</span>
+              <span class="am-cp-cut am-cmh__reason" [title]="r" data-history-reason
+                >{{ 'committee.historyReason' | translate }} <bdi>{{ r }}</bdi></span
+              >
+            }
+          </span>
         </li>
       }
     </am-capped-panel>
@@ -63,7 +71,14 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
         <span class="am-cmh__dot" [style.background]="color(e.action)" aria-hidden="true"></span>
         <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
       </span>
-      <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)">{{ detail(e) }}</span>
+      <span class="flex flex-col min-w-0">
+        <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)" data-history-detail>{{ detail(e) }}</span>
+        @if (reason(e); as r) {
+          <span class="am-cp-cut am-cmh__reason-line" [title]="r" data-history-reason
+            >{{ 'committee.historyReason' | translate }} <bdi>{{ r }}</bdi></span
+          >
+        }
+      </span>
       <span class="text-[var(--am-ink-700)] whitespace-nowrap" data-history-date>{{ format.date(e.effectiveDate) }}</span>
     </ng-template>
     <ng-template #popupBody>
@@ -96,6 +111,15 @@ const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
       .am-cmh__dot{flex:none;inline-size:7px;block-size:7px;border-radius:999px}
       .am-cmh__name{font-weight:500;color:var(--am-ink-900)}
       .am-cmh__date{flex:none;margin-inline-start:auto;padding-inline-start:var(--am-space-8);font-size:12px;color:var(--am-ink-700);white-space:nowrap;unicode-bidi:isolate}
+      /* ACC-301 — the removal's reason shares line 2 with the change: the row's
+         two lines are fixed (am-capped-panel), so a third line would push the
+         fifth row out of the body. The change keeps up to 55%, the reason takes
+         the rest; each is cut on its own, with its whole text in a tooltip. */
+      .am-cmh__detail{flex:0 1 auto}
+      .am-cmh__detail--shared{max-inline-size:55%}
+      .am-cmh__sep{flex:none;white-space:pre}
+      .am-cmh__reason{flex:1 1 0}
+      .am-cmh__reason-line{font-size:12px;color:var(--am-ink-500)}
     `,
   ],
 })
@@ -131,7 +155,9 @@ export class CommitteeMembershipHistoryPanelComponent {
   readonly loadPage = (query: SimpleListQuery) => {
     const all = this.events();
     const q = (query.q ?? '').trim().toLocaleLowerCase();
-    const matching = q ? all.filter((e) => `${this.name(e)} ${this.detail(e)}`.toLocaleLowerCase().includes(q)) : all;
+    const matching = q
+      ? all.filter((e) => `${this.name(e)} ${this.detail(e)} ${this.reason(e) ?? ''}`.toLocaleLowerCase().includes(q))
+      : all;
     const dir = query.dir === 'asc' ? 1 : -1;
     const sorted = [...matching].sort((a, b) =>
       query.sort === 'person'
@@ -169,6 +195,19 @@ export class CommitteeMembershipHistoryPanelComponent {
     const parts = causeKey ? [action, seatName] : [`${action} — ${seatName}`];
     if (approver) parts.push(this.translate.instant('committee.approvedBy', { name: approver }) as string);
     return parts.join(' · ');
+  }
+
+  /**
+   * ACC-301 — the reason a person gave for a removal (required since ACC-298),
+   * from the history read itself: no second read. Only on a LEFT event with NO
+   * cause: a seat the app ended (ACC-306, any cause, known or not) is said from
+   * its cause, never from a stored reason. A removal from before ACC-298 has no
+   * reason, and the row shows nothing extra. Shown to everyone who may see the
+   * history, as the read returns it (the ticket's default).
+   */
+  reason(e: CommitteeMembershipEventDto): string | null {
+    if (e.action !== 'LEFT' || e.cause) return null;
+    return e.reason?.trim() || null;
   }
 
   // JOINED reads as gain, LEFT as loss, ROLE_CHANGED as neither — semantic
