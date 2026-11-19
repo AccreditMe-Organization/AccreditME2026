@@ -31,9 +31,6 @@ export interface SeedTransition {
   // Written with the transition. PR 6b — the only people field a move has.
   mover: 'PERSON' | 'APP';
   validatorConfig?: Record<string, unknown>;
-  // On an "All of them" stage, marks which outgoing move submitApproval()
-  // fires once every member has approved. Defaults to false (schema default).
-  isApprovalPath?: boolean;
   // ACC-190 — RETURN (send back) and EXIT (end the record) are never held by
   // the stage's mandatory tasks; ADVANCE, the default, is. Stage order cannot
   // tell them apart (Reject goes to a higher-order final stage, Reactivate to a
@@ -145,11 +142,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     ],
     transitions: [
       { fromStageKey: 'drafting', toStageKey: 'owners_review', labelEn: 'Submit for Review', labelAr: 'إرسال للمراجعة', mover: 'PERSON', validatorConfig: { requiredFields: ['title', 'content'] }, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'owners_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'stakeholders_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'final_approval', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'publish_approval', toStageKey: 'published', labelEn: 'Publish', labelAr: 'نشر', mover: 'PERSON', actions: [{ actionType: 'GENERATE_PDF', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'publish_approval', toStageKey: 'drafting', labelEn: 'Reject Publication', labelAr: 'رفض النشر', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },

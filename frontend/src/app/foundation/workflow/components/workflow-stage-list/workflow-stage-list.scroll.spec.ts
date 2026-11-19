@@ -112,7 +112,6 @@ const stage = (i: number): Record<string, unknown> => ({
             labelEn: `Move to ${NAMES[i + 1]![0]}`,
             labelAr: `نقل إلى ${NAMES[i + 1]![1]}`,
             validatorConfig: null,
-            isApprovalPath: false,
             kind: 'ADVANCE',
             mover: 'PERSON',
             actions: [{ id: `a-${i}`, workflowTransitionId: `t-${i}`, actionType: 'LOG_AUDIT', order: 10, isEnabled: true, configJson: null }],

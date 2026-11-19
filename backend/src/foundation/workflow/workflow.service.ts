@@ -128,7 +128,7 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 // COMMITTEE_VOTE) the move's KIND (ACC-190) says what a press is — a vote for
 // that move, or an act at once (workflow-vote.ts). Each vote records its move,
 // and a move goes through when its own threshold is met. The old
-// WorkflowTransition.isApprovalPath is no longer read; it is dropped later.
+// WorkflowTransition.isApprovalPath was never read again, and ACC-294 removed it.
 //
 // ACC-271 PR 6a — who works a stage, who may move a record out of it and how
 // its votes decide come from the stage's pool and who mode only

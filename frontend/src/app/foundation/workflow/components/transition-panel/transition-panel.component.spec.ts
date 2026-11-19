@@ -36,7 +36,6 @@ const PERSON: WorkflowTransitionDto = {
   labelAr: 'إرسال إلى المراجعة القانونية',
   // Stored values a save must leave alone: the panel never sends them.
   validatorConfig: { minimumAttachments: 1 },
-  isApprovalPath: false,
   kind: 'ADVANCE',
   mover: 'PERSON',
   actions: [

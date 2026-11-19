@@ -222,7 +222,7 @@ describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const appMove = { id: 'move-app', fromStageId: 's-draft', toStageId: 's-review', labelEn: 'Submit', labelAr: null, validatorConfig: null, isApprovalPath: false, kind: 'ADVANCE', mover: 'APP', actions: [] };
+      const appMove = { id: 'move-app', fromStageId: 's-draft', toStageId: 's-review', labelEn: 'Submit', labelAr: null, validatorConfig: null, kind: 'ADVANCE', mover: 'APP', actions: [] };
       prisma.workflowStage.findMany.mockResolvedValue([
         { ...STAGE, id: 's-draft', key: 'draft', whoMode: 'ANY_ONE', transitionsFrom: [appMove], assignees: [{ ...STARTING, stageId: 's-draft' }] },
         { ...STAGE, id: 's-review', key: 'under_review', whoMode: null, transitionsFrom: [], assignees: [] },

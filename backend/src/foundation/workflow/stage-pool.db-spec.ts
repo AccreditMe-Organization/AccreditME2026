@@ -88,7 +88,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     roles,
     tasks,
     organizations,
-    { invalidateUserSessions: async () => undefined } as unknown as AuthProvider,
+    {} as unknown as AuthProvider,
     {} as OrgUnitHeadService,
     {} as OrgPositionService,
     pools,
@@ -250,7 +250,6 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     const approve = await prisma.workflowTransition.findFirstOrThrow({
       where: { fromStageId: stageId, toStage: { key: 'active' } },
     });
-    await prisma.workflowTransition.update({ where: { id: approve.id }, data: { isApprovalPath: true } });
     const c = await o.committeeAt('terms_review', stays);
 
     // Before: one approval of two is not enough.

@@ -1395,7 +1395,6 @@ model WorkflowTransition {
   labelEn         String
   labelAr         String?
   validatorConfig Json?
-  isApprovalPath  Boolean                @default(false)
   kind            WorkflowTransitionKind @default(ADVANCE) // ACC-190
   // ACC-271 — who moves the record along it (transitionMover() in
   // workflow-pool.ts). NOT NULL since ACC-278 PR B, which dropped the old
