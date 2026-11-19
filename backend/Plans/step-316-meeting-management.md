@@ -1514,14 +1514,24 @@ them together with their resolver.
        - **"This and all later" never carries the title:** a title is each
          meeting's own (§3.2), so it changes only the meeting edited.
        - **A "this and all later" reschedule shifts each later meeting by the
-         same amount.** One that lands off the working week moves to the next
-         working day at the same time. It does not look for a day the owner
-         already meets, as creation does.
+         same amount,** from its time read under its lock, then places it as
+         creation does (off the working week, past a day the owner already
+         meets), at the same time of day.
        - **End series cancels each meeting by its own Cancel Meeting** (the
-         reason rule and its notices), one after another, then stamps
-         `endedAt`. One that can't be cancelled is named in `failed` and the
-         rest go on. Running it again cancels what is left and keeps the first
-         reason.
+         reason rule and its notices), one after another. Before anything, the
+         caller must be able to press Cancel on every one, or the call is
+         refused (`MEETING_SERIES_CANNOT_CANCEL`). One that still fails is
+         named in `failed`, and the series is ended only when none did.
+         Running it again finishes what is left; on an ended series it writes
+         nothing.
+       - **Lane B's review of #360 (Prompt 170), all built:**
+         - the wall-clock start across a clock change;
+         - End's pre-check and conditional stamp;
+         - create's notices after the commit, each on its own;
+         - the create transaction's reads done once, and its writes batched;
+         - the cancel move read scoped by organisation;
+         - the reschedule's placement.
+         - An edit sends no notice, as one meeting's edit sends none.
        - **The standing agenda is copied at creation.** Changing it later on
          the series reaches no meeting already made (every meeting is made at
          once).
