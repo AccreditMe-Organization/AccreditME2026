@@ -21,8 +21,8 @@ type GuestKind = 'person' | 'outside';
  * the organisation, picked from the server's candidates (people not already
  * invited; never an email), or an outside guest with a name and an email. Once
  * the agenda is issued (the stage's AGENDA_ISSUED flag) the server invites the
- * guest at once, and the button and the sentence say so. "Presents item" waits
- * for the agenda editor (the design question on its 420px fit is open).
+ * guest at once, and the button and the sentence say so. There is no "Presents
+ * item" field: PR 7 sets a presenter from the agenda item's own Presenter field.
  */
 @Component({
   selector: 'app-meeting-add-guest-dialog',
