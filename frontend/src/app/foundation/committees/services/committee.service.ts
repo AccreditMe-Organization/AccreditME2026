@@ -185,6 +185,12 @@ export interface CommitteeMembershipEventDto {
    * value this screen does not know reads as a plain "Left".
    */
   cause?: string | null;
+  /**
+   * ACC-301 (Ahmad, 19 Nov) — the row has a reason this viewer may not read (only
+   * overseers and the committee's Chairman and Secretary do): `reason` is null
+   * and the panel says "Reason not shown". Decided by the server.
+   */
+  reasonWithheld?: boolean;
   createdAt: string;
   /** ACC-281 — named by the read, so the panel needs no users or lookups read. */
   userName?: string | null;
