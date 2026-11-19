@@ -12,7 +12,7 @@ import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } 
 import { MeetingRefusal } from './meeting-refusal';
 import { agendaChangedNotice, invitationNotice } from './meeting-notices';
 import { notifyUsers } from './meeting-send';
-import type { AgendaPresenterDto, CreateAgendaItemDto, OrderAgendaDto, UpdateAgendaItemDto } from './dto/meeting.dto';
+import type { AgendaItemExpectedDto, AgendaPresenterDto, CreateAgendaItemDto, OrderAgendaDto, UpdateAgendaItemDto } from './dto/meeting.dto';
 import type { IMeetingAgendaItem } from './interfaces/meeting.interface';
 
 /** What an agenda write changed, for the notice the invited get after issue. */
@@ -109,6 +109,11 @@ export class MeetingAgendaService {
         select: { title: true, description: true, duration: true, standing: true, presenterAttendeeId: true },
       });
       if (!current) throw new MeetingRefusal('MEETING_AGENDA_ITEM_NOT_FOUND');
+      // ACC-323 — a stale save: a field the editor changes no longer holds what
+      // they saw (someone else saved it meanwhile). Compared here, under the
+      // agenda lock (stage rules, then the meeting row), so a save in flight
+      // has committed or not started; refused with nothing written.
+      if (dto.expected && isStale(dto.expected, current)) throw new MeetingRefusal('MEETING_AGENDA_CHANGED');
       const presenter =
         dto.presenter === undefined
           ? undefined
@@ -321,4 +326,21 @@ export class MeetingAgendaService {
       },
     });
   }
+}
+
+/**
+ * ACC-323 — does any field in `expected` differ from the stored row? Only the
+ * fields sent are compared, as stored: the presenter by attendee id (null is
+ * none), the duration as a number, the description null and empty alike.
+ */
+function isStale(
+  expected: AgendaItemExpectedDto,
+  current: { title: string; description: string | null; duration: number | null; standing: boolean; presenterAttendeeId: string | null },
+): boolean {
+  if (expected.title !== undefined && expected.title !== current.title) return true;
+  if (expected.description !== undefined && (expected.description || null) !== (current.description || null)) return true;
+  if (expected.durationMinutes !== undefined && (expected.durationMinutes ?? null) !== (current.duration ?? null)) return true;
+  if (expected.presenterAttendeeId !== undefined && (expected.presenterAttendeeId ?? null) !== (current.presenterAttendeeId ?? null)) return true;
+  if (expected.standing !== undefined && expected.standing !== current.standing) return true;
+  return false;
 }

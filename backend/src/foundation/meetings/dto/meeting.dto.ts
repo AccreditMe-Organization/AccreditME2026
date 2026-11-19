@@ -323,6 +323,39 @@ export class CreateAgendaItemDto {
   standing?: boolean;
 }
 
+/**
+ * ACC-323 — what the editor saw, for the fields it changes: each one's value as
+ * the dialog loaded it. A field here whose stored value differs now is a stale
+ * save, refused MEETING_AGENDA_CHANGED with nothing written. Values as stored:
+ * the presenter by its attendee id (guests are attendees too; null is none),
+ * the duration as a number, the description null and empty alike (trimmed).
+ */
+export class AgendaItemExpectedDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  title?: string;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  description?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  durationMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  presenterAttendeeId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  standing?: boolean;
+}
+
 /** Every field optional; `presenter: null` clears the presenter. */
 export class UpdateAgendaItemDto {
   @IsOptional()
@@ -351,6 +384,15 @@ export class UpdateAgendaItemDto {
   @IsOptional()
   @IsBoolean()
   standing?: boolean;
+
+  /**
+   * ACC-323 — optional: with none sent, the save behaves as before (so either
+   * side may deploy first). A field absent from it is not compared.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgendaItemExpectedDto)
+  expected?: AgendaItemExpectedDto;
 }
 
 /** The agenda's new order: every item's id, once. */

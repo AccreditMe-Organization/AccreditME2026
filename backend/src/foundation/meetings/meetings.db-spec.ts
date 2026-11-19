@@ -905,6 +905,77 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(done.map((i) => i.id)).toEqual([...now2].reverse());
     });
 
+    // ── ACC-323: a stale save of the SAME field is refused; different fields and a reorder are not ──
+    const updateAudits = (itemId: string) => prisma.auditLog.count({ where: { objectId: itemId, action: 'UPDATE' } });
+
+    it('ACC-323: two edits race on the same field from what they saw: one lands, the other is MEETING_AGENDA_CHANGED and writes nothing', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const [item] = await agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'secretary'), now);
+      const results = await Promise.allSettled([
+        agenda.update(m.id, item!.id, { title: 'Budget 2027', expected: { title: 'Budget' } } as never, w.orgId, as(w, 'secretary'), now),
+        agenda.update(m.id, item!.id, { title: 'Budget review', expected: { title: 'Budget' } } as never, w.orgId, as(w, 'chair'), now),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(await code(Promise.reject(lost.reason))).toBe('MEETING_AGENDA_CHANGED');
+      const winner = results[0]!.status === 'fulfilled' ? 'Budget 2027' : 'Budget review';
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now))[0]!.title).toBe(winner);
+      expect(await updateAudits(item!.id)).toBe(1); // only the winner's audit row
+
+      // Sequentially too: an edit from a value that is no longer there is refused, the row unchanged.
+      expect(await code(agenda.update(m.id, item!.id, { title: 'Other', expected: { title: 'Budget' } } as never, w.orgId, as(w, 'secretary'), now))).toBe(
+        'MEETING_AGENDA_CHANGED',
+      );
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now))[0]!.title).toBe(winner);
+      expect(await updateAudits(item!.id)).toBe(1);
+    });
+
+    it('ACC-323: two edits to different fields from the same view both land; null and empty description compare alike', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const [item] = await agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'secretary'), now);
+      await agenda.update(m.id, item!.id, { title: 'Budget 2027', expected: { title: 'Budget' } } as never, w.orgId, as(w, 'secretary'), now);
+      await agenda.update(m.id, item!.id, { durationMinutes: 20, expected: { durationMinutes: null } } as never, w.orgId, as(w, 'chair'), now);
+      // The description was never set (null); the editor saw it empty.
+      await agenda.update(m.id, item!.id, { description: 'Figures attached', expected: { description: '' } } as never, w.orgId, as(w, 'chair'), now);
+      const [after] = await agenda.list(m.id, w.orgId, as(w, 'secretary'), now);
+      expect([after!.title, after!.durationMinutes, after!.description]).toEqual(['Budget 2027', 20, 'Figures attached']);
+    });
+
+    it('ACC-323: a reorder between loading and saving does not make an edit stale', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      for (const title of ['Minutes', 'Budget']) await agenda.create(m.id, { title } as never, w.orgId, as(w, 'secretary'), now);
+      const seen = (await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.id);
+      await agenda.order(m.id, { itemIds: [...seen].reverse(), expectedItemIds: seen } as never, w.orgId, as(w, 'chair'), now);
+      await agenda.update(m.id, seen[1]!, { title: 'Budget 2027', expected: { title: 'Budget' } } as never, w.orgId, as(w, 'secretary'), now);
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now)).map((i) => i.title)).toEqual(['Budget 2027', 'Minutes']);
+    });
+
+    it('ACC-323: the presenter is compared by attendee id; with no `expected`, the last save wins as before', async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const [item] = await agenda.create(m.id, { title: 'Budget' } as never, w.orgId, as(w, 'secretary'), now);
+      // Someone sets a presenter (a guest, added as an invitee); an editor who saw none is stale.
+      const withPresenter = await agenda.update(m.id, item!.id, { presenter: { userId: w.people['wardPerson'] }, expected: { presenterAttendeeId: null } } as never, w.orgId, as(w, 'chair'), now);
+      const attendeeId = withPresenter[0]!.presenter!.attendeeId;
+      expect(await code(agenda.update(m.id, item!.id, { presenter: null, expected: { presenterAttendeeId: null } } as never, w.orgId, as(w, 'secretary'), now))).toBe(
+        'MEETING_AGENDA_CHANGED',
+      );
+      // From what is there now, it lands.
+      await agenda.update(m.id, item!.id, { presenter: null, expected: { presenterAttendeeId: attendeeId } } as never, w.orgId, as(w, 'secretary'), now);
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now))[0]!.presenter).toBeNull();
+      // No `expected`: today's behaviour, last save wins.
+      await agenda.update(m.id, item!.id, { title: 'Budget A' } as never, w.orgId, as(w, 'secretary'), now);
+      await agenda.update(m.id, item!.id, { title: 'Budget B' } as never, w.orgId, as(w, 'chair'), now);
+      expect((await agenda.list(m.id, w.orgId, as(w, 'secretary'), now))[0]!.title).toBe('Budget B');
+    });
+
     it("ordered items; a presenter who isn't invited is added as a guest; after issue the invited are told what changed", async () => {
       const w = await world();
       const now = new Date();
