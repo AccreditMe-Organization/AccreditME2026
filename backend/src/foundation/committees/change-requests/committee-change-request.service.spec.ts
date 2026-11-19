@@ -67,12 +67,15 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
     // ACC-283 PR 2 (Prompt 85) — a viewer who may decide something gets past the one-query check.
     prisma.$queryRaw.mockResolvedValueOnce([{ decides: true }]);
     await service.awaitingDecision(ORG_A, viewer);
-    // The check: ONE query, its three arms (head, cover, seat) each in the organisation.
+    // The check: ONE query, its three arms (head, cover, seat) and, since ACC-245 PR 2,
+    // the cover's ACTIVE person and the review-stage arm, each in the organisation.
     const [checkStrings, ...checkValues] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
     const check = checkStrings.join('?');
-    for (const table of ['"User"', '"OrgPosition"', '"OrgUnitHeadAssignment"', '"Committee"', '"CommitteeMember"', '"CommitteeSeatAction"']) expect(check).toContain(table);
-    expect(check.match(/"organizationId" = ?/g)).toHaveLength(6);
-    expect(checkValues.filter((v) => v === ORG_A)).toHaveLength(6);
+    for (const table of ['"User"', '"OrgPosition"', '"OrgUnitHeadAssignment"', '"Committee"', '"CommitteeMember"', '"CommitteeSeatAction"', '"WorkflowInstance"']) {
+      expect(check).toContain(table);
+    }
+    expect(check.match(/"organizationId" = ?/g)).toHaveLength(8);
+    expect(checkValues.filter((v) => v === ORG_A)).toHaveLength(8);
     expect(checkValues.filter((v) => v === 'user-1')).toHaveLength(3);
     expect(checkValues).not.toContain(ORG_B);
     // ACC-281 — then the candidates, filtered in ONE query: every table is scoped by

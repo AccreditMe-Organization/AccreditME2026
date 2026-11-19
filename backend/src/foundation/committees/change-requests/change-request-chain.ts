@@ -277,7 +277,8 @@ function unique(ids: string[]): string[] {
  * put a seat's member and its seat action in one query. change-request-chain
  * .spec.ts pins both rules' Prisma shape, and the db-spec checks this query
  * against findUnitHeadedBy / findUnitsCoveredBy person by person, so a change on
- * either side fails a spec.
+ * either side fails a spec. ACC-245 PR 2: arm 2 needs the cover's person ACTIVE,
+ * as findUnitsCoveredBy() now does.
  */
 export async function mayDecideAnyChangeRequest(
   client: Pick<PrismaService, '$queryRaw'>,
@@ -285,7 +286,26 @@ export async function mayDecideAnyChangeRequest(
   userId: string,
   now: Date,
 ): Promise<boolean> {
-  const [row] = await client.$queryRaw<{ decides: boolean }[]>`
+  return (await awaitingDecisionGate(client, organizationId, userId, now)).chain;
+}
+
+/**
+ * ACC-245 PR 2 — the awaiting list's gate, still ONE query: `chain` is
+ * mayDecideAnyChangeRequest()'s answer (the three arms above); `review` is
+ * whether any request in the organisation stands in an added review stage (an
+ * instance not cancelled, its current stage unkeyed, neither first nor final:
+ * isReviewStage(), in SQL). Both false: nothing can be waiting for this person,
+ * and nothing else is read. `review` may say true for a request whose pool the
+ * person is not in (or an older instance); it is only a pre-check, and the list's
+ * own query and the pool decide.
+ */
+export async function awaitingDecisionGate(
+  client: Pick<PrismaService, '$queryRaw'>,
+  organizationId: string,
+  userId: string,
+  now: Date,
+): Promise<{ chain: boolean; review: boolean }> {
+  const [row] = await client.$queryRaw<{ decides: boolean; review: boolean }[]>`
     SELECT
       EXISTS (
         SELECT 1
@@ -298,6 +318,7 @@ export async function mayDecideAnyChangeRequest(
       OR EXISTS (
         SELECT 1
         FROM "OrgUnitHeadAssignment" a
+        JOIN "User" cu ON cu.id = a."userId" AND cu."organizationId" = ${organizationId} AND cu.status::text = ${'ACTIVE'}
         WHERE a."userId" = ${userId} AND a."organizationId" = ${organizationId}
           AND a.kind::text = ${'ACTING'} AND a."endedAt" IS NULL
           AND a."validFrom" <= ${now} AND (a."validTo" IS NULL OR a."validTo" > ${now})
@@ -310,6 +331,15 @@ export async function mayDecideAnyChangeRequest(
           ON sa."committeeId" = cm."committeeId" AND sa."roleValueId" = cm."roleValueId"
          AND sa."organizationId" = ${organizationId} AND sa."actionKey" = ${SEAT_ACTIONS.DECIDE_REPORTING_CHANGES}
         WHERE cm."userId" = ${userId} AND cm."organizationId" = ${organizationId} AND cm."isActive"
-      ) AS decides`;
-  return row?.decides === true;
+      ) AS decides,
+      EXISTS (
+        SELECT 1
+        FROM "WorkflowInstance" wi
+        JOIN "WorkflowStage" s ON s.id = wi."currentStageId"
+        WHERE wi."organizationId" = ${organizationId}
+          AND wi."objectType"::text = ${'COMMITTEE_CHANGE_REQUEST'}
+          AND wi.status::text <> ${'CANCELLED'}
+          AND s.key IS NULL AND NOT s."isInitial" AND NOT s."isFinal"
+      ) AS review`;
+  return { chain: row?.decides === true, review: row?.review === true };
 }
