@@ -324,9 +324,11 @@ export class FormatService {
   /**
    * ACC-316 PR 6 — the instant whose wall clock in the TENANT's zone reads
    * this date and time: what a typed start means, whatever the browser's zone.
-   * The zone's offset is read at the guess and again at the answer, so a time
-   * near a clock change lands on the right side of it; a time the change skips
-   * moves on by the gap.
+   * Two candidates, from the zone's offset before and after the time: one that
+   * reads back as the time typed wins (a time the clocks repeat when they go
+   * back is its first, earlier, occurrence). A time the clocks SKIP when they go
+   * forward has none, and moves FORWARD by the gap: 02:30 on a night New York
+   * jumps from 02:00 to 03:00 is 03:30, never 01:30.
    */
   instantAt(wall: WallClock): Date {
     const guess = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute);
@@ -334,9 +336,14 @@ export class FormatService {
       const w = this.wallClock(new Date(t))!;
       return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute) - t;
     };
+    const reads = (t: number): boolean => offsetAt(t) + t === guess;
     const first = guess - offsetAt(guess);
     const second = guess - offsetAt(first);
-    return new Date(second);
+    if (reads(first) && reads(second)) return new Date(Math.min(first, second));
+    if (reads(second)) return new Date(second);
+    if (reads(first)) return new Date(first);
+    // In the gap: the later candidate is the time typed, carried past the jump.
+    return new Date(Math.max(first, second));
   }
 
   private gregorianDate(at: Date, language: DisplayLanguage, timeZone: string): string {
