@@ -1,11 +1,21 @@
-import { ChangeDetectionStrategy, Component, ViewEncapsulation, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, inject, input, output } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
+import { ButtonModule } from 'primeng/button';
+import { MessageModule } from 'primeng/message';
 import { FormatService } from '../../../core/formatting';
+import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 
 /** The panel shows at most this many rows; "See all" is the only full view. */
 export const CAPPED_PANEL_ROWS = 5;
 
 export type CappedPanelState = 'loading' | 'error' | 'ready';
+
+/**
+ * The body's fixed height, by direction (`.am-cp__body` below). A panel that
+ * sits beside a capped panel in one row reads this to give its body the same
+ * height (the record-panel rule: equal heights in a row).
+ */
+export const CAPPED_PANEL_BODY_PX = { ltr: 294, rtl: 328 } as const;
 
 /**
  * `am-capped-panel` — a record page's list panel, CAPPED (ACC-230, from the
@@ -30,6 +40,10 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
  * - `emptyBody`: the drawing's empty state for a section that has never held
  *   anything (Compact List Panel, "No meetings recorded"): a small dashed
  *   marker, `emptyText` as its title and this as the line under it, centred.
+ * - `outcome`: the shared request outcome (core/request-outcome). Bound, the
+ *   error state is the record panel's own (artboard 8): the message, the error
+ *   id when the server sent one, and the small outlined "Retry" (common.retry).
+ *   Unbound, the error is the line and the "Try again" link, as before.
  * - **Filling its grid cell**: inside an element marked `data-fill-panels`,
  *   the panel takes its cell's full height, so panels in a row share their top
  *   and bottom edges. The body keeps its fixed height and never scrolls.
@@ -37,7 +51,7 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
 @Component({
   selector: 'am-capped-panel',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, ButtonModule, MessageModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="am-cp" [attr.aria-labelledby]="headingId" [attr.data-testid]="testIdPrefix() + '-panel'">
@@ -57,10 +71,22 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
             }
           }
           @case ('error') {
-            <div class="am-cp__state" role="alert" [attr.data-testid]="testIdPrefix() + '-error'">
-              <p class="m-0">{{ errorText() }}</p>
-              <button type="button" class="am-cp__link" (click)="retry.emit()">{{ 'list.retry' | translate }}</button>
-            </div>
+            @if (outcome()) {
+              <div class="am-cp__state am-cp__state--outcome" role="alert" [attr.data-testid]="testIdPrefix() + '-error'">
+                <p-message severity="error" [text]="errorText()" />
+                @if (errorId(); as id) {
+                  <span dir="ltr" class="am-cp__error-id" [attr.data-testid]="testIdPrefix() + '-error-id'">
+                    {{ 'recordPanel.errorId' | translate: { id } }}
+                  </span>
+                }
+                <p-button size="small" [outlined]="true" [label]="'common.retry' | translate" (onClick)="retry.emit()" />
+              </div>
+            } @else {
+              <div class="am-cp__state" role="alert" [attr.data-testid]="testIdPrefix() + '-error'">
+                <p class="m-0">{{ errorText() }}</p>
+                <button type="button" class="am-cp__link" (click)="retry.emit()">{{ 'list.retry' | translate }}</button>
+              </div>
+            }
           }
           @default {
             @if (shown() === 0 && emptyBody()) {
@@ -107,6 +133,8 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
       .am-cp__link{font:inherit;padding:0;border:0;background:none;color:var(--am-primary-700);font-weight:600;cursor:pointer}
       .am-cp__link:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
       .am-cp__state{margin:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;font-size:13px;color:var(--am-ink-700)}
+      .am-cp__state--outcome{gap:8px}
+      .am-cp__error-id{font-size:12px;color:var(--am-ink-500);unicode-bidi:isolate}
       .am-cp__empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1 1 auto;padding:26px 20px;text-align:center}
       .am-cp__empty-mark{inline-size:30px;block-size:30px;border-radius:7px;border:1px dashed var(--am-control-border);background:var(--am-surface);margin-block-end:5px}
       .am-cp__empty-title{margin:0;font-size:13px;font-weight:600;color:var(--am-ink-900)}
@@ -148,6 +176,12 @@ export class CappedPanelComponent {
    * "Showing 0 of 3 · See all" for rows they can't open. Opt-in; default true.
    */
   readonly offersSeeAll = input(true);
+  /** Opt-in: the shared request outcome, for the record panel's error state (see above). */
+  readonly outcome = input<RequestOutcome<unknown> | null>(null);
+  protected readonly errorId = computed(() => {
+    const o = this.outcome();
+    return o?.status === 'error' ? (o.errorId ?? null) : null;
+  });
   readonly retry = output<void>();
   readonly seeAll = output<void>();
 

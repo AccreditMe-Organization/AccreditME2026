@@ -61,6 +61,8 @@ import { MeetingPeopleService } from './meeting-people.service';
 import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
+import { MeetingFormChoicesService } from './meeting-form-choices.service';
+import * as meetingMembership from '../../common/services/meeting-membership';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { RecycleBinService } from '../file-storage/recycle-bin.service';
 import { StorageResolverService } from '../file-storage/storage-resolver.service';
@@ -127,6 +129,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const agenda = new MeetingAgendaService(prisma, visibility, stageRules, notifications, calendar, storedFiles);
   const files = new MeetingFilesService(prisma, visibility, stageRules, storedFiles, audit);
   const clashes = new MeetingClashService(prisma, visibility);
+  const formChoices = new MeetingFormChoicesService(lookupService);
   const recycleBin = new RecycleBinService(
     prisma,
     { removeBytes: () => Promise.resolve(), reviewWarning: () => Promise.resolve() } as unknown as StoredFileService,
@@ -403,7 +406,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         (await meetings.list({ view, ...extra } as never, w.orgId, viewer, now)).items.map((i) => i.id);
 
       expect(await ids('mine', as(w, 'chair'))).toEqual([upcomingCommittee]);
-      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical]);
+      // Clinical's scheduler: their unit's meeting, and (Ahmad, 19 Nov) the meeting of
+      // the committee Clinical owns, which they may schedule though not a member.
+      expect(await ids('mine', as(w, 'clinicalScheduler'))).toEqual([upcomingClinical, upcomingCommittee]);
       expect(await ids('mine', as(w, 'outsider'))).toEqual([]);
       expect(await ids('past', as(w, 'member'))).toEqual([pastCommittee]);
       // Root's head sees every past meeting below by oversight, latest first.
@@ -1219,6 +1224,213 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(head.meetings.map((x) => [x.id, x.title])).toEqual([[null, null]]);
       expect(head.meetings[0]!.startsAt).toEqual(start);
       expect(ward.id).toBeTruthy();
+    });
+  });
+
+  // ACC-316 PR 6 — the reads the screens need: whether Schedule meeting is
+  // offered, Add a guest's people, Schedule's types, and the list's search.
+  describe('the screens\' reads (PR 6)', () => {
+    it("may-schedule answers exactly as schedule() does, for every person and owner", async () => {
+      const w = await world();
+      const now = new Date();
+      const owners = [
+        { committeeId: w.committeeId },
+        { committeeId: w.dissolvedCommitteeId },
+        { orgUnitId: w.units.clinical },
+        { orgUnitId: w.units.ward },
+      ];
+      const seen = new Set<boolean>();
+      for (const name of Object.keys(w.people)) {
+        for (const owner of owners) {
+          const may = (await meetings.maySchedule(owner, w.orgId, as(w, name), now)).may;
+          const result = await outcome(meetings.schedule(scheduleDto(now, owner), w.orgId, as(w, name), now));
+          const accepted = result === 'OK';
+          expect([name, owner, may, result]).toEqual([name, owner, accepted, result]);
+          seen.add(may);
+        }
+      }
+      // Non-vacuity: some people may and some may not.
+      expect(seen).toEqual(new Set([true, false]));
+      // The chair schedules for their committee; a plain member does not.
+      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'chair'), now)).may).toBe(true);
+      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'member'), now)).may).toBe(false);
+      expect(await code(meetings.maySchedule({}, w.orgId, as(w, 'chair'), now))).toBe('MEETING_OWNER_REQUIRED');
+      // A Dissolved committee schedules nothing, whoever asks (its stage).
+      expect((await meetings.maySchedule({ committeeId: w.dissolvedCommitteeId }, w.orgId, as(w, 'chair'), now)).may).toBe(false);
+      // Clinical's scheduler schedules for the committee Clinical owns, though not
+      // a member, and sees what they schedule (Ahmad, 19 Nov): Schedule is offered.
+      expect((await meetings.maySchedule({ committeeId: w.committeeId }, w.orgId, as(w, 'clinicalScheduler'), now)).may).toBe(true);
+    });
+
+    it("a scheduler who is not a member schedules, gets the meeting, opens it and lists it; a person of the unit without the key sees nothing", async () => {
+      const w = await world();
+      const now = new Date();
+      const scheduler = as(w, 'clinicalScheduler');
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { title: 'Scheduled by the unit' }), w.orgId, scheduler, now);
+      expect(m.title).toBe('Scheduled by the unit');
+      expect(m.may).toMatchObject({ edit: true, reschedule: true, manageGuests: true });
+      expect(await outcome(meetings.getForViewer(m.id, w.orgId, scheduler, now))).toBe('OK');
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, scheduler, now)).items.map((i) => i.id)).toContain(m.id);
+      // The writes a scheduler passes, and no more: reschedule, guests.
+      expect(await outcome(meetings.reschedule(m.id, { scheduledAt: later(9, now).toISOString(), reason: 'Moved', expectedUpdatedAt: m.updatedAt } as never, w.orgId, scheduler, now))).toBe('OK');
+      expect(await outcome(people.addGuest(m.id, { userId: w.people['outsider'] } as never, w.orgId, scheduler, now))).toBe('OK');
+
+      // Non-vacuity: a person of Clinical WITHOUT meetings:schedule is not a member and sees nothing.
+      const plain = await prisma.user.create({ data: { organizationId: w.orgId, email: `plain-${randomUUID().slice(0, 6)}@example.test`, name: 'plain', status: 'ACTIVE', primaryOrgUnitId: w.units.clinical } });
+      expect(await code(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe(404);
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, { id: plain.id, permissions: [] }, now)).items).toEqual([]);
+      // ... and the key through an INACTIVE role counts for nothing.
+      await prisma.userRole.create({ data: { userId: plain.id, roleId: await role(w.orgId, [MEETINGS_PERMISSIONS.SCHEDULE]) } });
+      expect(await outcome(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe('OK');
+      await prisma.role.updateMany({ where: { organizationId: w.orgId, userRoles: { some: { userId: plain.id } } }, data: { isActive: false } });
+      expect(await code(meetings.getForViewer(m.id, w.orgId, { id: plain.id, permissions: [] }, now))).toBe(404);
+    });
+
+    itEnforcesTenantIsolation("a scheduler of another organisation gets the identical 404 for this organisation's meeting", async () => {
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'clinicalScheduler'), now);
+      // B's scheduler holds meetings:schedule in B: in A's organisation the meeting is the same 404 as a missing one.
+      const theirs = await code(meetings.getForViewer(m.id, a.orgId, as(b, 'clinicalScheduler'), now));
+      expect(theirs).toBe(404);
+      expect(theirs).toEqual(await code(meetings.getForViewer('no-such-meeting', a.orgId, as(b, 'clinicalScheduler'), now)));
+      expect(await code(meetings.getForViewer(m.id, b.orgId, as(b, 'clinicalScheduler'), now))).toBe(404);
+      expect((await meetings.list({ view: 'mine' } as never, b.orgId, as(b, 'clinicalScheduler'), now)).items.map((i) => i.id)).not.toContain(m.id);
+    });
+
+    it('schedule() refuses BEFORE writing when its scheduler would not see the meeting: no meeting, no instance', async () => {
+      const w = await world();
+      const now = new Date();
+      const before = [await prisma.meeting.count({ where: { organizationId: w.orgId } }), await prisma.workflowInstance.count({ where: { organizationId: w.orgId, objectType: 'MEETING' } })];
+      // Force the rules apart: the parent rule says no, as it did before 19 Nov.
+      const spy = jest.spyOn(meetingMembership, 'wouldSeeNewMeeting').mockResolvedValue(false);
+      try {
+        expect(await code(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now))).toBe('MEETING_NOT_ALLOWED');
+        expect(spy).toHaveBeenCalled();
+        // meetings:view sees everything, so it is never asked for them.
+        spy.mockClear();
+        expect(await outcome(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair', [MEETINGS_PERMISSIONS.VIEW]), now))).toBe('OK');
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+      const after = [await prisma.meeting.count({ where: { organizationId: w.orgId } }), await prisma.workflowInstance.count({ where: { organizationId: w.orgId, objectType: 'MEETING' } })];
+      // Only the meetings:view press wrote anything: one meeting, one instance.
+      expect(after).toEqual([before[0]! + 1, before[1]! + 1]);
+    });
+
+    it("upcoming lists every meeting the viewer may see that has not started, soonest first; a head and a meetings:view holder see a committee's next meetings", async () => {
+      const w = await world();
+      const now = new Date();
+      const soon = await meetingRow(w, { committeeId: w.committeeId }, later(2, now), w.people['chair']!);
+      const next = await meetingRow(w, { committeeId: w.committeeId }, later(5, now), w.people['chair']!);
+      await meetingRow(w, { committeeId: w.committeeId }, later(-2, now), w.people['chair']!);
+      const upcoming = async (viewer: MeetingViewer) => meetings.list({ view: 'upcoming', committeeId: w.committeeId } as never, w.orgId, viewer, now);
+      // Clinical's head oversees, is no member: nothing in Mine, both in upcoming.
+      expect((await meetings.list({ view: 'mine', committeeId: w.committeeId } as never, w.orgId, as(w, 'clinicalHead'), now)).items).toEqual([]);
+      expect((await upcoming(as(w, 'clinicalHead'))).items.map((i) => i.id)).toEqual([soon, next]);
+      expect((await upcoming(as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW]))).items.map((i) => i.id)).toEqual([soon, next]);
+      expect((await upcoming(as(w, 'member'))).total).toBe(2);
+      expect((await upcoming(as(w, 'outsider'))).items).toEqual([]);
+    });
+
+    it('the list says whether All meetings is offered, from meetings:view', async () => {
+      const now = new Date();
+      expect((await meetings.list({ view: 'mine' } as never, a.orgId, as(a, 'chair'), now)).canSeeAll).toBe(false);
+      expect((await meetings.list({ view: 'mine' } as never, a.orgId, as(a, 'chair', [MEETINGS_PERMISSIONS.VIEW]), now)).canSeeAll).toBe(true);
+    });
+
+    itEnforcesTenantIsolation("may-schedule — another organisation's committee or unit is MEETING_OWNER_NOT_FOUND, as schedule() answers", async () => {
+      const now = new Date();
+      expect(await code(meetings.maySchedule({ committeeId: b.committeeId }, a.orgId, as(a, 'chair'), now))).toBe('MEETING_OWNER_NOT_FOUND');
+      expect(await code(meetings.maySchedule({ orgUnitId: b.units.clinical }, a.orgId, as(a, 'clinicalScheduler'), now))).toBe('MEETING_OWNER_NOT_FOUND');
+      expect(await code(meetings.maySchedule({ committeeId: 'no-such-committee' }, a.orgId, as(a, 'chair'), now))).toBe('MEETING_OWNER_NOT_FOUND');
+    });
+
+    it("guest candidates: active people not invited, searched and paged by name, never an email; only for whoever may write the meeting", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      await people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now);
+      await prisma.user.update({ where: { id: w.people['wardPerson']! }, data: { status: 'INACTIVE' } });
+      const all = await people.guestCandidates(m.id, { take: 50 }, w.orgId, as(w, 'chair'), now);
+      const names = all.items.map((i) => i.name);
+      // Members and the guest are invited already; the inactive person is never offered.
+      expect(names).toEqual(['clinicalHead', 'clinicalScheduler', 'outsider', 'rootHead']);
+      expect(all.total).toBe(4);
+      expect(all.matching).toBe(4);
+      expect(Object.keys(all.items[0]!).sort()).toEqual(['id', 'name', 'position', 'unit']);
+      expect(all.items.find((i) => i.name === 'clinicalScheduler')!.unit).toEqual({ nameEn: 'Clinical', nameAr: null });
+
+      const searched = await people.guestCandidates(m.id, { q: '  CLINICAL ', take: 50 }, w.orgId, as(w, 'chair'), now);
+      expect(searched.items.map((i) => i.name)).toEqual(['clinicalHead', 'clinicalScheduler']);
+      expect([searched.total, searched.matching]).toEqual([4, 2]);
+
+      const pages = [];
+      for (let skip = 0; skip < 4; skip++) pages.push(...(await people.guestCandidates(m.id, { skip, take: 1 }, w.orgId, as(w, 'chair'), now)).items.map((i) => i.name));
+      expect(pages).toEqual(names);
+      expect((await people.guestCandidates(m.id, { take: 500 }, w.orgId, as(w, 'chair'), now)).items.length).toBe(4);
+
+      expect(await code(people.guestCandidates(m.id, {}, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(people.guestCandidates(m.id, {}, w.orgId, as(w, 'outsider'), now))).toBe(404);
+    });
+
+    itEnforcesTenantIsolation("guest candidates — another organisation's meeting is the same 404, and its people are never offered", async () => {
+      const now = new Date();
+      const theirs = await meetings.schedule(scheduleDto(now, { committeeId: b.committeeId }), b.orgId, as(b, 'chair'), now);
+      const mine = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
+      expect(await code(people.guestCandidates(theirs.id, {}, a.orgId, as(a, 'chair'), now))).toEqual(await code(people.guestCandidates('no-such-meeting', {}, a.orgId, as(a, 'chair'), now)));
+      expect(await code(people.guestCandidates(theirs.id, {}, a.orgId, as(a, 'chair'), now))).toBe(404);
+      const offered = (await people.guestCandidates(mine.id, { take: 50 }, a.orgId, as(a, 'chair'), now)).items.map((i) => i.id);
+      expect(offered.length).toBeGreaterThan(0);
+      expect(offered.filter((id) => Object.values(b.people).includes(id))).toEqual([]);
+    });
+
+    it("form choices: the meeting types the organisation offers, each one schedule() accepts; a hidden one is neither", async () => {
+      const w = await world();
+      const now = new Date();
+      const shared = await prisma.lookupValue.findMany({ where: { organizationId: null, isActive: true, category: { key: 'meeting_type', organizationId: null } } });
+      expect(shared.length).toBeGreaterThan(1);
+      const hidden = shared[shared.length - 1]!;
+      await prisma.lookupValue.create({ data: { organizationId: w.orgId, categoryId: hidden.categoryId, key: hidden.key, labelEn: hidden.labelEn, layer: 'TENANT', isHidden: true } });
+
+      const { types } = await formChoices.forOrganization(w.orgId);
+      expect(types.map((t) => t.id)).not.toContain(hidden.id);
+      expect(types.length).toBe(shared.length - 1);
+      for (const t of types) {
+        expect(await outcome(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { typeValueId: t.id, title: `Type ${t.labelEn}` }), w.orgId, as(w, 'chair'), now))).toBe('OK');
+      }
+      expect(await code(meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }, { typeValueId: hidden.id }), w.orgId, as(w, 'chair'), now))).toBe('MEETING_TYPE_UNKNOWN');
+    });
+
+    itEnforcesTenantIsolation("form choices — another organisation's own meeting type is never offered", async () => {
+      const category = await prisma.lookupCategory.findFirstOrThrow({ where: { key: 'meeting_type', organizationId: null } });
+      const theirs = await prisma.lookupValue.create({ data: { organizationId: b.orgId, categoryId: category.id, key: `theirs-${randomUUID().slice(0, 6)}`, labelEn: 'Their type', layer: 'TENANT' } });
+      expect((await formChoices.forOrganization(b.orgId)).types.map((t) => t.id)).toContain(theirs.id);
+      expect((await formChoices.forOrganization(a.orgId)).types.map((t) => t.id)).not.toContain(theirs.id);
+    });
+
+    it("the list's search matches the title, any case, with LIKE's own wildcards taken literally", async () => {
+      const w = await world();
+      const now = new Date();
+      const viewer = as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW]);
+      const titled = async (title: string) => {
+        const id = await meetingRow(w, { committeeId: w.committeeId }, later(2, now), w.people['chair']!);
+        await prisma.meeting.update({ where: { id }, data: { title } });
+        return id;
+      };
+      const pharmacy = await titled('Pharmacy review');
+      const percent = await titled('100% attendance check');
+      const underscore = await titled('Room_4 handover');
+      await titled('Quality board');
+      const ids = async (q: string) => (await meetings.list({ view: 'all', q } as never, w.orgId, viewer, now)).items.map((i) => i.id);
+
+      expect(await ids('PHARMACY')).toEqual([pharmacy]);
+      expect(await ids('  review  ')).toEqual([pharmacy]);
+      expect(await ids('%')).toEqual([percent]);
+      expect(await ids('_')).toEqual([underscore]);
+      expect(await ids('Room_4')).toEqual([underscore]);
+      expect((await ids('')).length).toBe(4);
+      expect((await meetings.list({ view: 'all', q: 'review' } as never, w.orgId, viewer, now)).total).toBe(1);
     });
   });
 

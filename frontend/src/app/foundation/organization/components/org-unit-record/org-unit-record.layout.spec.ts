@@ -133,7 +133,7 @@ describe('OrgUnitRecord — layout (ACC-120 slice 11, PR D)', () => {
         provideFormatTesting(),
         ConfirmationService,
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: () => true } },
         { provide: OrgUnitService, useValue: { getSummary: () => of(SUMMARY), getHistory: () => of(HISTORY) } },
       ],
     });

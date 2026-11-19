@@ -17,6 +17,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { LanguageService } from '../../../../core/services/language.service';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { IUserDto } from '../../services/user.service';
+import { UserSessionsPanelComponent } from './user-sessions-panel.component';
 
 // ACC-120 slice 5 — the user record page. Numbered tests are the plan's
 // (backend/Plans/step-120-5-user-record.md); each was seen to fail under its
@@ -470,9 +471,10 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
 
   // ── Test 14 (D1) ────────────────────────────────────────────────────────
   // ACC-216: Committees is absent here because ADMIN holds no committees:view
-  // (test 16 covers it with the key); Tasks and Sessions have no read yet.
-  // Access history (part 2) is present, on its own frame (test 18).
-  it('14 · without committees:view, Committees, Tasks and Sessions are absent — not empty, not disabled', () => {
+  // (test 16 covers it with the key); Tasks has no panel yet. Access history
+  // (part 2, test 18) and Signed-in devices (Sessions, test 19) are present,
+  // each on its own frame.
+  it('14 · without committees:view, Committees and Tasks are absent — not empty, not disabled', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ADMIN });
     flushUser(ctx, record({ id: ME }));
     ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}/roles`)).flush([]);
@@ -481,7 +483,7 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     const panels = Array.from(ctx.el.querySelectorAll('app-record-panel')).map((p) => p.getAttribute('data-panel'));
     expect(panels).toEqual(['roles', 'twoStep']);
     const text = ctx.el.textContent!;
-    for (const absent of ['Committees', 'Sessions', 'Tasks']) {
+    for (const absent of ['Committees', 'Tasks']) {
       expect(text).not.toContain(absent);
     }
   });
@@ -515,6 +517,38 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(panel).not.toBeNull();
     expect(panel.textContent).toContain('Access history');
     expect(panel.textContent).toContain('Account deactivated');
+  });
+
+  // ── Test 19 (ACC-216 Sessions) ──────────────────────────────────────────
+  // Yourself ('own'), or users:view + users:manage_sessions ('admin'): the
+  // endpoint's own rule. Anyone else gets NO panel and NO request.
+  it('19 · ACC-216 · Signed-in devices: yours, or with users:view + users:manage_sessions; absent and never requested otherwise', () => {
+    const sessionRequests = (ctx: ReturnType<typeof render>) => urls(ctx.http).filter((u) => u.includes('/sessions'));
+    const modeOf = (ctx: ReturnType<typeof render>) => {
+      const host = ctx.fixture.debugElement.query((d) => d.componentInstance instanceof UserSessionsPanelComponent);
+      return host ? (host.componentInstance as UserSessionsPanelComponent).mode() : null;
+    };
+
+    for (const permissions of [[], ['users:view'], ['users:manage_sessions'], ADMIN]) {
+      const ctx = render({ viewer: ME, recordId: OTHER, permissions });
+      flushUser(ctx, record());
+      expect({ permissions, panel: ctx.el.querySelector('app-user-sessions-panel') }).toEqual({ permissions, panel: null });
+      expect(sessionRequests(ctx)).toEqual([]);
+    }
+
+    const own = render({ viewer: ME, recordId: ME, permissions: [] });
+    flushUser(own, record({ id: ME }));
+    expect(modeOf(own)).toBe('own');
+    const ownRequests = sessionRequests(own);
+    expect(ownRequests.length).toBe(1);
+    expect(ownRequests[0]).toContain(`/users/${ME}/sessions`);
+
+    const admin = render({ viewer: ME, recordId: OTHER, permissions: ['users:view', 'users:manage_sessions'] });
+    flushUser(admin, record());
+    expect(modeOf(admin)).toBe('admin');
+    admin.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/sessions`)).flush({ total: 0, rows: [] });
+    admin.fixture.detectChanges();
+    expect(admin.el.querySelector('[data-testid="sessions-panel"]')!.textContent).toContain('Signed-in devices');
   });
 
   // ── Test 16 (ACC-216) ───────────────────────────────────────────────────
