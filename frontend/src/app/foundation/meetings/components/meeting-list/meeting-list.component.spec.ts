@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
@@ -17,8 +17,8 @@ import { MeetingListComponent } from './meeting-list.component';
 describe('MeetingListComponent (ACC-316 PR 6)', () => {
   let list: jasmine.Spy;
 
-  function create(permissions: string[], canSeeAll = false) {
-    list = jasmine.createSpy('list').and.returnValue(of({ items: [], total: 0, canSeeAll }));
+  function create(permissions: string[], canSeeAll = false, query: Record<string, string> = {}, items: unknown[] = []) {
+    list = jasmine.createSpy('list').and.returnValue(of({ items, total: items.length, canSeeAll }));
     TestBed.configureTestingModule({
       imports: [MeetingListComponent],
       providers: [
@@ -29,6 +29,7 @@ describe('MeetingListComponent (ACC-316 PR 6)', () => {
         providePrimeNG({}),
         { provide: MeetingService, useValue: { list } },
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.includes(p), isModuleEnabled: () => true } },
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(query)), snapshot: { queryParams: query, queryParamMap: convertToParamMap(query) } } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -69,5 +70,34 @@ describe('MeetingListComponent (ACC-316 PR 6)', () => {
     const c = create([]);
     await firstValueFrom(c.source({ page: 1, pageSize: 25 } as Parameters<typeof c.source>[0]));
     expect(list).toHaveBeenCalledWith({ view: 'mine', q: undefined, skip: 0, take: 25 });
+  });
+
+  // P189 e — opened from a committee's or unit's Meetings panel (See all).
+  describe("one committee's or unit's meetings (?committeeId= / ?orgUnitId=)", () => {
+    const row = { id: 'm-1', title: 'Review', scheduledAt: '2027-03-18T10:00:00Z', durationMinutes: 60, location: null, meetingUrl: null, stage: { id: 's', nameEn: 'Planned', nameAr: 'مجدول', flags: [] }, owner: { kind: 'COMMITTEE', id: 'c-1', nameEn: 'Medication Safety Committee', nameAr: 'لجنة سلامة الأدوية' } };
+
+    it("offers that owner's Upcoming and Past, and asks the server for that owner only", async () => {
+      const c = create([], true, { committeeId: 'c-1' }, [row]);
+      expect(c.scopes().map((s) => s.key)).toEqual(['upcoming', 'past']);
+      await firstValueFrom(c.source({ page: 1, pageSize: 25 } as Parameters<typeof c.source>[0]));
+      expect(list).toHaveBeenCalledWith({ view: 'upcoming', q: undefined, committeeId: 'c-1', skip: 0, take: 25 });
+      // All meetings is never offered while one owner is shown, whatever canSeeAll says.
+      expect(c.scopes().map((s) => s.key)).toEqual(['upcoming', 'past']);
+    });
+
+    it('names the owner from the first row when the panel passed no name', async () => {
+      const c = create([], false, { committeeId: 'c-1' }, [row]);
+      expect(c.ownerLabel()).toBe(en.meeting.list.oneOwner);
+      await firstValueFrom(c.source({ page: 1, pageSize: 25 } as Parameters<typeof c.source>[0]));
+      expect(c.ownerLabel()).toBe('Medication Safety Committee');
+    });
+
+    it('a unit filters by orgUnitId; with neither, the usual views', async () => {
+      const c = create([], false, { orgUnitId: 'u-1' });
+      await firstValueFrom(c.source({ page: 1, pageSize: 25 } as Parameters<typeof c.source>[0]));
+      expect(list).toHaveBeenCalledWith(jasmine.objectContaining({ orgUnitId: 'u-1', view: 'upcoming' }));
+      TestBed.resetTestingModule();
+      expect(create([]).scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'subunits']);
+    });
   });
 });

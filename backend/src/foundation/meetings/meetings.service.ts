@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import {
+  meetingInviteeSql,
   meetingMemberSql,
   meetingOversightUnitIds,
   meetingOverseenSql,
@@ -261,7 +262,8 @@ export class MeetingsService {
    * last, so a page never repeats or skips. Two queries, then the page's
    * owners, types and stages in batches.
    *
-   *   mine      meetings the viewer is a member of, or organised; upcoming, soonest first
+   *   mine      meetings the viewer is invited to (a member, a person of the unit, an
+   *             invitee) or organised; upcoming, soonest first. Not as a scheduler.
    *
    * Every view keeps the visibility rule in its WHERE, so a listed row always
    * opens: an organiser who has since left the unit or committee no longer
@@ -287,7 +289,8 @@ export class MeetingsService {
     let order: Prisma.Sql;
     switch (view) {
       case 'mine':
-        where = Prisma.sql`${visible} AND (${member} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
+        // Invited or organiser (P189): the MEMBER clause without SCHEDULER.
+        where = Prisma.sql`${visible} AND (${meetingInviteeSql('m', viewer.id)} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
         order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
         break;
       case 'upcoming':

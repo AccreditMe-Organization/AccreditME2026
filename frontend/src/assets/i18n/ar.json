@@ -4339,6 +4339,14 @@
         "few": "{{count}} أشخاص",
         "many": "{{count}} شخصًا",
         "other": "{{count}} شخص"
+      },
+      "minutesPlanned": {
+        "zero": "{{planned}} من {{count}} دقيقة مخطط لها",
+        "one": "{{planned}} من {{count}} دقيقة مخطط لها",
+        "two": "{{planned}} من {{count}} دقيقة مخطط لها",
+        "few": "{{planned}} من {{count}} دقائق مخطط لها",
+        "many": "{{planned}} من {{count}} دقيقة مخطط لها",
+        "other": "{{planned}} من {{count}} دقيقة مخطط لها"
       }
     }
   },
@@ -5543,8 +5551,12 @@
         "past": "السابقة",
         "minutes": "محاضر أسجّلها",
         "all": "كل الاجتماعات",
-        "subunits": "اجتماعات الوحدات الفرعية"
-      }
+        "subunits": "اجتماعات الوحدات الفرعية",
+        "upcoming": "القادمة"
+      },
+      "ownerFilter": "اجتماعات {{owner}}",
+      "oneOwner": "لجنة أو وحدة واحدة",
+      "clearOwner": "عرض كل الاجتماعات"
     },
     "page": {
       "loading": "جارٍ تحميل الاجتماع…",
@@ -5570,7 +5582,14 @@
     "agenda": {
       "title": "الأجندة",
       "empty": "لا بنود بعد.",
-      "standing": "ثابت"
+      "standing": "ثابت",
+      "add": "إضافة بند",
+      "edit": "تعديل",
+      "editNamed": "تعديل {{title}}",
+      "reorder": "إعادة ترتيب البند {{n}}، {{title}}: استخدم مفتاحَي السهم للأعلى وللأسفل",
+      "moved": "أصبح «{{title}}» البند {{n}}.",
+      "orderError": "تعذّرت إعادة ترتيب الأجندة.",
+      "reload": "إعادة تحميل الاجتماع"
     },
     "invitees": {
       "title": "المدعوون",
@@ -5579,7 +5598,12 @@
       "outsideGuest": "ضيف من الخارج",
       "guestsNoQuorum": "لا يُحتسب الضيوف في النصاب.",
       "removeGuest": "إزالة {{name}}",
-      "removeError": "تعذّرت إزالة الضيف."
+      "removeError": "تعذّرت إزالة الضيف.",
+      "membersSummary": "الأعضاء · {{counts}}",
+      "attending": "حضور",
+      "cantAttend": "اعتذار",
+      "noAnswer": "بلا رد",
+      "loadFailed": "تعذّر تحميل المدعوين."
     },
     "cancel": {
       "title": "إلغاء هذا الاجتماع؟",
@@ -5622,7 +5646,7 @@
       "error": "تعذّرت جدولة الاجتماع.",
       "quorumNumber": "اكتب عددًا صحيحًا لا يقل عن 1، أو اتركه فارغًا.",
       "typesError": "تعذّر تحميل أنواع الاجتماعات.",
-      "maybeScheduled": "تحقّق من القائمة قبل المحاولة مرة أخرى، فربما تمت الجدولة."
+      "maybeScheduled": "ربما تمت جدولته. تحقّق من القائمة قبل المحاولة مرة أخرى."
     },
     "when": {
       "back": "→ العودة إلى التفاصيل",
@@ -5693,7 +5717,49 @@
       "guestPresents": "يقدّم هذا الضيف بندًا في الأجندة. اختر مقدّمًا آخر أولًا.",
       "notInvited": "لا توجد لك دعوة إلى هذا الاجتماع.",
       "started": "بدأ هذا الاجتماع.",
-      "stageActionNotAllowed": "مرحلة هذا الاجتماع لا تسمح بذلك الآن."
+      "stageActionNotAllowed": "مرحلة هذا الاجتماع لا تسمح بذلك الآن.",
+      "agendaTitleRequired": "اكتب عنوان البند.",
+      "agendaItemNotFound": "لم يعد هذا البند في الأجندة. أعد تحميل الاجتماع.",
+      "agendaOrderMismatch": "تغيّرت الأجندة منذ أن فتحتها. أعد تحميل الاجتماع وحاول مرة أخرى.",
+      "agendaChanged": "تغيّرت الأجندة منذ أن فتحتها. أعد تحميل الاجتماع وحاول مرة أخرى.",
+      "presenterNotFound": "لم يعد هذا الشخص متاحًا للتقديم."
+    },
+    "agendaItem": {
+      "addTitle": "إضافة بند إلى الأجندة",
+      "editTitle": "بند الأجندة",
+      "context": "{{meeting}} · البند {{n}}",
+      "title": "العنوان",
+      "titleRequired": "اكتب عنوان البند.",
+      "description": "الوصف",
+      "presenter": "المقدِّم",
+      "noPresenter": "بلا مقدِّم",
+      "member": "عضو",
+      "notInvited": "بلا دعوة بعد",
+      "findPerson": "البحث عن شخص في المنشأة",
+      "pickerTitle": "اختيار مقدِّم",
+      "addedAsGuest": "هذا الشخص غير مدعو بعد، لذا يُضاف بصفة ضيف ويتمكّن من فتح الاجتماع.",
+      "duration": "المدة",
+      "noDuration": "غير محددة",
+      "save": "حفظ البند",
+      "remove": "حذف البند",
+      "removeTitle": "حذف هذا البند؟",
+      "removeLead": "يُحذف «{{title}}» من الأجندة، وتنتقل أوراقه إلى سلة المحذوفات لمدة 30 يومًا.",
+      "error": "تعذّر حفظ البند."
+    },
+    "files": {
+      "attachments": "المرفقات",
+      "addPaper": "إضافة ورقة",
+      "addAttachment": "إضافة مرفق",
+      "remove": "حذف {{name}}",
+      "removeTitle": "حذف هذا الملف؟",
+      "removeLead": "ينتقل {{name}} إلى سلة المحذوفات لمدة 30 يومًا.",
+      "removeConfirm": "حذف الملف",
+      "uploading": "جارٍ رفع {{name}}…",
+      "uploadError": "تعذّرت إضافة الملف.",
+      "openError": "تعذّر فتح الملف.",
+      "removeError": "تعذّر حذف الملف.",
+      "viewerContext": "من {{name}}",
+      "loadFailed": "تعذّر تحميل الملفات."
     }
   }
 }

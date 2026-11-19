@@ -25,9 +25,11 @@ import { MEETING_KIND_RULES } from '../../foundation/workflow/meeting-authority'
  *             member and its head path an overseer, so the clause adds its
  *             own-unit path: an ACTIVE person whose own unit is the OWNING
  *             unit and who holds meetings:schedule through an active role, as
- *             holdingKeyWhere() reads it. In MEMBER's SQL, so every reader
+ *             holdingKeyWhere() reads it. In meetingMemberSql, so every reader
  *             (the parent rule, the lists, the clash check, the task registry)
- *             gets it, live, with no query per row.
+ *             gets it, live: the viewer's unit is one scalar subquery per
+ *             query, never one per meeting row. Mine alone reads the MEMBER
+ *             clause without it (meetingInviteeSql).
  *
  * Every query is scoped by organisation; the SQL forms take the meeting row's
  * alias, so a list puts the rule in its WHERE before LIMIT.
@@ -42,16 +44,19 @@ export function meetingOwningUnitSql(alias: string): Prisma.Sql {
 }
 
 /**
- * The SCHEDULER clause as SQL: `viewerId` is an ACTIVE person of the
- * organisation whose own unit is `unitSql` and who holds MEETING_SCHEDULERS'
- * own-unit key through an active role of the organisation.
+ * The unit whose meetings `viewerId` schedules as one of its own people: their
+ * own unit, when they are ACTIVE and hold MEETING_SCHEDULERS' own-unit key
+ * through an active role of their organisation; else NULL. A SCALAR subquery
+ * that names no meeting column, so Postgres runs it ONCE per query (an
+ * InitPlan), never once per meeting row. It needs no organisation: a unit's id
+ * belongs to one organisation, so it can only ever equal the owning unit of
+ * that organisation's meetings.
  */
-function ownUnitSchedulerSql(unitSql: Prisma.Sql, organizationIdSql: Prisma.Sql, viewerId: string): Prisma.Sql {
+function viewerScheduledUnitSql(viewerId: string): Prisma.Sql {
   const [module, action] = MEETING_KIND_RULES.MEETING_SCHEDULERS.ownUnitKey.split(':') as [string, string];
-  return Prisma.sql`EXISTS (
-      SELECT 1 FROM "User" su
-      WHERE su.id = ${viewerId} AND su."organizationId" = ${organizationIdSql} AND su.status = 'ACTIVE'
-        AND su."primaryOrgUnitId" IS NOT NULL AND su."primaryOrgUnitId" = ${unitSql}
+  return Prisma.sql`(
+      SELECT su."primaryOrgUnitId" FROM "User" su
+      WHERE su.id = ${viewerId} AND su.status = 'ACTIVE' AND su."primaryOrgUnitId" IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM "UserRole" ur
           JOIN "Role" r ON r.id = ur."roleId" AND r."organizationId" = su."organizationId" AND r."isActive"
@@ -60,8 +65,29 @@ function ownUnitSchedulerSql(unitSql: Prisma.Sql, organizationIdSql: Prisma.Sql,
           WHERE ur."userId" = su.id AND p.module = ${module} AND p.action = ${action}))`;
 }
 
-/** The MEMBER clause (with SCHEDULER) as SQL, over the meeting row `alias`, for this viewer. */
+/** The SCHEDULER clause as SQL: the owning unit `unitSql` is the one the viewer schedules for (once per query). */
+function ownUnitSchedulerSql(unitSql: Prisma.Sql, viewerId: string): Prisma.Sql {
+  // COALESCE: no scheduled unit is NULL, and `= NULL` would be NULL, not false,
+  // which a NOT (Sub-units' view) would turn into a dropped row.
+  return Prisma.sql`COALESCE(${unitSql} = ${viewerScheduledUnitSql(viewerId)}, FALSE)`;
+}
+
+/**
+ * The visibility rule's MEMBER and SCHEDULER clauses as SQL, over the meeting
+ * row `alias`, for this viewer: who may see the meeting without meetings:view
+ * or oversight.
+ */
 export function meetingMemberSql(alias: string, viewerId: string): Prisma.Sql {
+  return Prisma.sql`(${meetingInviteeSql(alias, viewerId)} OR ${ownUnitSchedulerSql(meetingOwningUnitSql(alias), viewerId)})`;
+}
+
+/**
+ * The MEMBER clause alone: a member of the meeting's committee, a person of its
+ * unit, or an invited attendee. Mine reads this (invited or organiser,
+ * P189), not the SCHEDULER clause: a scheduler who is none of those sees the
+ * meeting in Past, Sub-units' and the panels, never in their own Mine.
+ */
+export function meetingInviteeSql(alias: string, viewerId: string): Prisma.Sql {
   const m = Prisma.raw(alias);
   return Prisma.sql`(
     (${m}."committeeId" IS NOT NULL AND EXISTS (
@@ -77,7 +103,6 @@ export function meetingMemberSql(alias: string, viewerId: string): Prisma.Sql {
       SELECT 1 FROM "MeetingAttendee" a
       WHERE a."meetingId" = ${m}.id AND a."organizationId" = ${m}."organizationId" AND a."userId" = ${viewerId}
         AND a."invitedAt" IS NOT NULL)
-    OR ${ownUnitSchedulerSql(meetingOwningUnitSql(alias), Prisma.sql`${m}."organizationId"`, viewerId)}
   )`;
 }
 
@@ -129,7 +154,7 @@ export async function wouldSeeNewMeeting(
   if (member.length > 0) return true;
   if (!owner.unitId) return false;
   const [scheduler, oversight] = await Promise.all([
-    client.$queryRaw<{ ok: boolean }[]>`SELECT TRUE AS ok WHERE ${ownUnitSchedulerSql(Prisma.sql`${owner.unitId}`, Prisma.sql`${organizationId}`, viewerId)}`,
+    client.$queryRaw<{ ok: boolean }[]>`SELECT TRUE AS ok WHERE ${ownUnitSchedulerSql(Prisma.sql`${owner.unitId}`, viewerId)}`,
     meetingOversightUnitIds(client, organizationId, viewerId, now),
   ]);
   return scheduler.length > 0 || oversight.has(owner.unitId);

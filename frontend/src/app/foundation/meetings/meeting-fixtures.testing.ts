@@ -33,7 +33,7 @@ export function anAttendee(overrides: Partial<MeetingAttendeeDto> = {}): Meeting
     kind: 'MEMBER',
     userId: 'u-1',
     name: 'Dr. Nora Al-Otaibi',
-    seat: { id: 'seat-chair', labelEn: 'Chairman', labelAr: 'الرئيس' },
+    seat: { id: 'seat-chair', labelEn: 'Chairman', labelAr: 'رئيس اللجنة' },
     outsideOrganisation: null,
     outsideRole: null,
     outsideEmail: null,

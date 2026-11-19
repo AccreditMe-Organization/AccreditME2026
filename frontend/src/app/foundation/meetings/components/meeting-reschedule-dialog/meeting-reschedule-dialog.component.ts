@@ -35,7 +35,7 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
       @if (dateView()) {
         <div class="flex flex-col gap-2" data-testid="reschedule-date-view">
           <button type="button" class="am-backlink self-start" (click)="dateView.set(false)">{{ 'meeting.when.back' | translate }}</button>
-          <am-inline-calendar [value]="day()" (valueChange)="pickDay($event)" [minDate]="minDay" />
+          <am-inline-calendar [value]="day()" (valueChange)="pickDay($event)" [minDate]="minDay()" />
         </div>
       } @else {
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
@@ -100,7 +100,8 @@ export class MeetingRescheduleDialogComponent {
   readonly showErrors = signal(false);
   readonly dateView = signal(false);
   readonly day = signal<Date | null>(null);
-  readonly minDay = meetingToday(this.format);
+  /** Today in the tenant's zone, read again each time the dialog opens (it may stay on the page past midnight). */
+  readonly minDay = signal(meetingToday(this.format));
   private readonly reasonInput = viewChild<ElementRef<HTMLTextAreaElement>>('reasonInput');
 
   readonly form = this.fb.group({
@@ -122,6 +123,7 @@ export class MeetingRescheduleDialogComponent {
         this.error.set(null);
         this.showErrors.set(false);
         this.dateView.set(false);
+        this.minDay.set(meetingToday(this.format));
       });
     });
   }
