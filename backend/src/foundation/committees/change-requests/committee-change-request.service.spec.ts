@@ -1,3 +1,4 @@
+import { Prisma } from '../../../../generated/prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogService } from '../../../common/services/audit-log.service';
@@ -67,18 +68,26 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
     // ACC-283 PR 2 (Prompt 85) — a viewer who may decide something gets past the one-query check.
     prisma.$queryRaw.mockResolvedValueOnce([{ decides: true }]);
     await service.awaitingDecision(ORG_A, viewer);
-    // The check: ONE query, its three arms (head, cover, seat) each in the organisation.
+    // The check: ONE query, its three arms (head, cover, seat) and, since ACC-245 PR 2,
+    // the cover's ACTIVE person and the review-stage arm (the request and its newest
+    // instance), each in the organisation.
     const [checkStrings, ...checkValues] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
     const check = checkStrings.join('?');
-    for (const table of ['"User"', '"OrgPosition"', '"OrgUnitHeadAssignment"', '"Committee"', '"CommitteeMember"', '"CommitteeSeatAction"']) expect(check).toContain(table);
-    expect(check.match(/"organizationId" = ?/g)).toHaveLength(6);
-    expect(checkValues.filter((v) => v === ORG_A)).toHaveLength(6);
+    for (const table of ['"User"', '"OrgPosition"', '"OrgUnitHeadAssignment"', '"Committee"', '"CommitteeMember"', '"CommitteeSeatAction"', '"WorkflowInstance"', '"CommitteeChangeRequest"']) {
+      expect(check).toContain(table);
+    }
+    expect(check.match(/"organizationId" = ?/g)).toHaveLength(9);
+    expect(checkValues.filter((v) => v === ORG_A)).toHaveLength(9);
     expect(checkValues.filter((v) => v === 'user-1')).toHaveLength(3);
     expect(checkValues).not.toContain(ORG_B);
     // ACC-281 — then the candidates, filtered in ONE query: every table is scoped by
     // the organisation, the viewer's own requests are out, and it is capped.
-    const [strings, ...values] = prisma.$queryRaw.mock.calls[1] as [TemplateStringsArray, ...unknown[]];
-    const sql = strings.join('?');
+    // ACC-245 PR 2 — the chain arm's own query (chainCandidateIds), flattened: its
+    // newest-instance join is a Prisma.sql fragment.
+    const [rawStrings, ...rawValues] = prisma.$queryRaw.mock.calls[1] as [TemplateStringsArray, ...unknown[]];
+    const flat = new Prisma.Sql(rawStrings, rawValues as never[]);
+    const sql = flat.strings.join('?');
+    const values = flat.values;
     expect(sql.match(/"organizationId" = ?/g)).toHaveLength(3);
     expect(sql).toContain('"requestedById" <> ?');
     expect(sql).toContain('LIMIT ?');
