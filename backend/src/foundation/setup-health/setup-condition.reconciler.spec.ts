@@ -228,6 +228,7 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       STORAGE_SECRET_EXPIRING: jest.fn().mockResolvedValue([]),
       STAGE_ON_STARTING_ASSIGNMENT: jest.fn().mockResolvedValue([]),
       COMMITTEE_MISSING_REQUIRED_SEAT: jest.fn().mockResolvedValue([]),
+      COMMITTEE_BELOW_QUORUM: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -525,6 +526,8 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['STAGE_ON_STARTING_ASSIGNMENT', 'SUCCEEDED'],
         // ACC-286 PR 2.
         ['COMMITTEE_MISSING_REQUIRED_SEAT', 'SUCCEEDED'],
+        // ACC-307 PR 2.
+        ['COMMITTEE_BELOW_QUORUM', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
         expect.objectContaining({ objectId: 'task-1' }),

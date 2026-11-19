@@ -13,7 +13,8 @@ import type { CheckMeetingClashesDto } from './dto/meeting.dto';
 import type { IMeetingClash } from './interfaces/meeting.interface';
 
 /** A series' cap: the most times one check takes. */
-export const CLASH_TIMES_CAP = 52;
+// ACC-316 PR 5 — a series' most meetings (weekly for twelve months, both ends included).
+export const CLASH_TIMES_CAP = 53;
 /** A meeting saved before durations were required is taken as an hour. */
 const DEFAULT_MINUTES = 60;
 /** The longest a meeting may last (ScheduleMeetingDto): how far before a time another meeting may start and still overlap it. */

@@ -56,6 +56,7 @@ import { MeetingReviewReminderService } from './meeting-review-reminder.service'
 import type { MeetingViewer } from './meeting-access';
 import { draftActionItems, reviewers, unrecordedAttendance } from './meeting-minutes-rules';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffects } from '../workflow/transition-effects';
 
@@ -370,12 +371,18 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       expect(await code(review.distribute(m.id, {}, a.orgId, as(a, 'chair')))).toBe('NOT_IN_STAGE_POOL');
       expect(await code(review.distribute(m.id, { reviewBy: '2020-01-01' }, a.orgId, as(a, 'secretary')))).toBe('MEETING_REVIEW_DATE_INVALID');
 
-      await review.distribute(m.id, {}, a.orgId, as(a, 'secretary'));
+      // The default review date is five working days after the tenant's day, not the UTC day.
+      useFixedClock(new Date('2027-02-08T22:30:00.000Z')); // Tuesday 01:30 in Riyadh, still Monday in UTC
+      try {
+        await review.distribute(m.id, {}, a.orgId, as(a, 'secretary'));
+      } finally {
+        jest.useRealTimers();
+      }
       expect(await stageKey(m.id)).toBe('minutes_review');
       const row = await prisma.meeting.findFirstOrThrow({ where: { id: m.id } });
       expect(row.reviewRound).toBe(1);
-      const today = new Date().toISOString().slice(0, 10);
-      expect(row.reviewBy!.toISOString().slice(0, 10) > today).toBe(true);
+      // Tuesday 9 Feb + 5 working days (Sun–Thu) = Tuesday 16 Feb.
+      expect(row.reviewBy!.toISOString().slice(0, 10)).toBe('2027-02-16');
       // The present MEMBERS, never the actor, never the guest.
       expect(notices.filter((n) => n.titleEn === 'Review the minutes').map((n) => n.userId).sort()).toEqual([a.people['chair'], a.people['member']].sort());
     });
@@ -469,32 +476,50 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
   });
 
   describe('the reminder and Home', () => {
-    it('never reminds on the day the minutes went out; then once per round, on the working day before the date', async () => {
-      const m = await inReview(a);
-      await review.noCorrections(m.id, a.orgId, as(a, 'chair'));
-      const tzToday = new Intl.DateTimeFormat('en-CA', { timeZone: await calendar.getEffectiveTimeZone(a.orgId) }).format(new Date());
-      await prisma.meeting.update({ where: { id: m.id }, data: { reviewBy: new Date(`${await calendar.addWorkingDays(tzToday, 1, a.orgId)}T00:00:00.000Z`) } });
-      // Distributed today: the Distribute notice has just told them.
-      await reminders.sweep();
-      expect(notices.filter((n) => n.titleEn === 'The minutes review closes soon')).toEqual([]);
-      // As if distributed two days ago.
-      await prisma.workflowInstanceStage.updateMany({ where: { workflowInstanceId: m.instanceId, exitedAt: null }, data: { enteredAt: new Date(Date.now() - 2 * DAY) } });
-      const tz = await calendar.getEffectiveTimeZone(a.orgId);
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
-      // The review date: the next working day, so today is the day before it.
-      const next = await calendar.addWorkingDays(today, 1, a.orgId);
-      await prisma.meeting.update({ where: { id: m.id }, data: { reviewBy: new Date(`${next}T00:00:00.000Z`) } });
-      const isDayBefore = (await calendar.previousWorkingDay(next, a.orgId)) <= today;
+    /**
+     * ACC-248: the clock is held, on a working day in the tenant's zone, so the
+     * day "today" is the same however and whenever this runs. Monday 8 Feb
+     * 2027, 10:00 in Riyadh (the default calendar: Sunday to Thursday).
+     */
+    const MONDAY = new Date('2027-02-08T07:00:00.000Z');
+    const reminded = () => notices.filter((n) => n.titleEn === 'The minutes review closes soon').map((n) => n.userId);
+    /** Ids compared as sets: a query's or a sweep's order is not a fact under test. */
+    const sorted = (ids: readonly (string | undefined)[]) => [...ids].sort();
 
-      await reminders.sweep();
-      const first = notices.filter((n) => n.titleEn === 'The minutes review closes soon').map((n) => n.userId);
-      await reminders.sweep();
-      const second = notices.filter((n) => n.titleEn === 'The minutes review closes soon').map((n) => n.userId);
-      if (isDayBefore) {
-        expect(first.sort()).toEqual([a.people['member'], a.people['secretary']].sort());
-        expect(second).toEqual(first);
-      } else {
-        expect(first).toEqual([]);
+    it('never reminds on the day the minutes went out; then once per round, on the working day before the date', async () => {
+      useFixedClock(MONDAY);
+      try {
+        const m = await inReview(a);
+        await review.noCorrections(m.id, a.orgId, as(a, 'chair'));
+        // The review date is Tuesday, the next working day: Monday is the day before it.
+        await prisma.meeting.update({ where: { id: m.id }, data: { reviewBy: new Date('2027-02-09T00:00:00.000Z') } });
+
+        // Distributed today: the Distribute notice has just told them.
+        await reminders.sweep(MONDAY);
+        expect(reminded()).toEqual([]);
+
+        // As if distributed on Friday: the two members recorded present who haven't answered, once.
+        await prisma.workflowInstanceStage.updateMany({ where: { workflowInstanceId: m.instanceId, exitedAt: null }, data: { enteredAt: new Date('2027-02-05T07:00:00.000Z') } });
+        await reminders.sweep(MONDAY);
+        expect(sorted(reminded())).toEqual(sorted([a.people['member'], a.people['secretary']]));
+        await reminders.sweep(MONDAY);
+        expect(sorted(reminded())).toEqual(sorted([a.people['member'], a.people['secretary']]));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('sends no reminder while the review date is two working days out', async () => {
+      useFixedClock(MONDAY);
+      try {
+        const m = await inReview(a);
+        await prisma.workflowInstanceStage.updateMany({ where: { workflowInstanceId: m.instanceId, exitedAt: null }, data: { enteredAt: new Date('2027-02-05T07:00:00.000Z') } });
+        // Wednesday: Tuesday is the day before it, not Monday.
+        await prisma.meeting.update({ where: { id: m.id }, data: { reviewBy: new Date('2027-02-10T00:00:00.000Z') } });
+        await reminders.sweep(MONDAY);
+        expect(reminded()).toEqual([]);
+      } finally {
+        jest.useRealTimers();
       }
     });
 

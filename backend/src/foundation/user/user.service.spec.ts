@@ -28,6 +28,8 @@ import type { ChangeRequestDepartureService, PreparedDeparture } from '../commit
 import * as rootHead from '../organization/root-unit-head.invariant';
 import { RootUnitNeedsHeadRefusal } from '../organization/org-unit-refusals';
 import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
+import type { CommitteeSeatDepartureService, PreparedSeatDeparture } from '../committees/departure/committee-seat-departure.service';
+import { DEPARTURE_SUMMARY_COMMITTEE_SEATS } from '../committees/departure/committee-seat-departure-notice';
 
 // ACC-271 — deactivation reads the stage pools a person leaves; none here.
 // ACC-283 PR 2b — a leaver with no unfinished change request: nothing withdrawn.
@@ -35,6 +37,14 @@ const preparedNone = (): PreparedDeparture => ({ organizationId: 'org', leaverId
 const noDepartures = () => ({
   prepare: jest.fn().mockImplementation(async () => preparedNone()),
   withdrawInTx: jest.fn().mockResolvedValue(undefined),
+  finish: jest.fn().mockResolvedValue(undefined),
+});
+
+// ACC-306 — no committee seats to end unless a test gives some.
+const preparedNoSeats = (): PreparedSeatDeparture => ({ organizationId: '', leaverId: '', actorId: '', seats: [], keptCommitteeIds: [], applied: [] });
+const noSeatDepartures = () => ({
+  prepare: jest.fn().mockImplementation(async () => preparedNoSeats()),
+  endSeatsInTx: jest.fn().mockResolvedValue(undefined),
   finish: jest.fn().mockResolvedValue(undefined),
 });
 
@@ -77,7 +87,7 @@ describe('UserService', () => {
     grantRoleViaHeadAuthority: jest.Mock;
     revokeRoleViaHeadAuthority: jest.Mock;
   };
-  let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
+  let mockAuthProvider: { validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
   let mockOrganizationService: { refreshOrgUnitHeadVacancy: jest.Mock };
   let mockOrgUnitHeadService: {
@@ -90,6 +100,7 @@ describe('UserService', () => {
   // ACC-297 — the committee notice a transfer schedules after its commit.
   let mockCommitteeTransferNotice: { schedule: jest.Mock };
   let mockDeparture: ReturnType<typeof noDepartures>;
+  let mockSeatDeparture: ReturnType<typeof noSeatDepartures>;
   let mockOrgPositionService: {
     listAvailablePositionsForUser: jest.Mock;
     hasAnyHeadConferringHolder: jest.Mock;
@@ -178,7 +189,6 @@ describe('UserService', () => {
       revokeRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
     };
     mockAuthProvider = {
-      invalidateUserSessions: jest.fn().mockResolvedValue(undefined),
       validateToken: jest.fn(),
     };
     mockTaskService = {
@@ -218,6 +228,7 @@ describe('UserService', () => {
     mockStagePool = { openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() };
     mockCommitteeTransferNotice = { schedule: jest.fn().mockResolvedValue(undefined) };
     mockDeparture = noDepartures();
+    mockSeatDeparture = noSeatDepartures();
     service = new UserService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
@@ -231,6 +242,7 @@ describe('UserService', () => {
       mockStagePool as unknown as StagePoolService,
       mockCommitteeTransferNotice as unknown as CommitteeTransferNoticeService,
       mockDeparture as unknown as ChangeRequestDepartureService,
+      mockSeatDeparture as unknown as CommitteeSeatDepartureService,
     );
   });
 
@@ -2576,6 +2588,22 @@ describe('UserService', () => {
       expect(counted(n, DEPARTURE_SUMMARY_REASSIGNED)).toEqual({ en: reEn, ar: reAr });
       expect(counted(n, DEPARTURE_SUMMARY_UNASSIGNED)).toEqual({ en: unEn, ar: unAr });
     });
+
+    // ACC-306 — the seats a deactivation ended, counted in every form, left out at zero.
+    it.each([
+      [1, '1 committee seat ended.', 'انتهت عضوية واحدة في لجنة.'],
+      [2, '2 committee seats ended.', 'انتهت عضويتان في اللجان.'],
+      [3, '3 committee seats ended.', 'انتهت 3 عضويات في اللجان.'],
+      [11, '11 committee seats ended.', 'انتهت 11 عضوية في اللجان.'],
+      [100, '100 committee seats ended.', 'انتهت 100 عضوية في اللجان.'],
+    ])('counts %i ended committee seats in both languages', (n, en, ar) => {
+      expect(counted(n, DEPARTURE_SUMMARY_COMMITTEE_SEATS)).toEqual({ en, ar });
+    });
+
+    it('leaves the committee-seat clause out at zero', async () => {
+      await notify(0, 0);
+      expect(sent()['bodyEn']).not.toContain('committee');
+    });
   });
 
   // ACC-40 Section 2.4 — remediation report, not a data migration.
@@ -3177,7 +3205,7 @@ describe('UserService', () => {
         response: { code: 'ACCOUNT_OWNER_PROTECTED', statusCode: 409 },
       });
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
       expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({
         where: { id: ORG_A },
@@ -3224,7 +3252,10 @@ describe('UserService', () => {
 
       expect(countWrites(writes, 'user.update')).toBe(1);
       expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      // The sessions ended through endEverySessionInTx(), inside the same
+      // transaction, so they roll back with the flip.
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(countWrites(writes, 'refreshToken.updateMany')).toBe(1);
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
       expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
@@ -3364,6 +3395,65 @@ describe('UserService', () => {
       });
     });
 
+    // ACC-306 — the leaver's committee seats: prepared before the transaction,
+    // ended INSIDE it last (after the change-request withdrawal), finished after
+    // commit; the count is what the transaction ended.
+    describe('the committee seat departure (ACC-306)', () => {
+      beforeEach(() => {
+        mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
+      });
+
+      it('prepares before the transaction, ends the seats inside it LAST, and finishes after commit', async () => {
+        const order: string[] = [];
+        const prepared = preparedNoSeats();
+        mockSeatDeparture.prepare.mockImplementation(async () => (order.push('prepare seats'), prepared));
+        mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+          order.push('tx');
+          const out = await cb(mockPrisma);
+          order.push('commit');
+          return out;
+        });
+        mockPrisma.user.update.mockImplementation(async () => (order.push('flip'), {}));
+        mockDeparture.withdrawInTx.mockImplementation(async () => order.push('withdraw'));
+        mockSeatDeparture.endSeatsInTx.mockImplementation(async (tx: unknown, p: unknown) => {
+          order.push('end seats');
+          expect(tx).toBe(mockPrisma);
+          expect(p).toBe(prepared);
+        });
+        mockSeatDeparture.finish.mockImplementation(async () => order.push('finish seats'));
+        mockTaskService.reassignAllForUser.mockImplementation(async () => (order.push('reassign'), { reassignedCount: 0, unassignedCount: 0 }));
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(mockSeatDeparture.prepare).toHaveBeenCalledWith(ORG_A, 'user-1', 'admin-1');
+        expect(order).toEqual(['prepare seats', 'tx', 'flip', 'withdraw', 'end seats', 'commit', 'finish seats', 'reassign']);
+      });
+
+      it('records how many seats the transaction ENDED, on the audit row and in the admins’ notice', async () => {
+        mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+        mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-2' }]);
+        mockSeatDeparture.endSeatsInTx.mockImplementation(async (_tx: unknown, p: PreparedSeatDeparture) => {
+          p.applied = [{}, {}, {}] as unknown as PreparedSeatDeparture['applied'];
+        });
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({ objectType: 'User', metadata: expect.objectContaining({ event: 'deactivated', endedCommitteeSeats: 3 }) }),
+        );
+        const notice = (mockNotification.create.mock.calls[0] as [Record<string, string>])[0];
+        expect(notice['bodyEn']).toContain('3 committee seats ended.');
+        expect(notice['bodyAr']).toContain('انتهت 3 عضويات في اللجان.');
+      });
+
+      it('a refused deactivation ends no seat and finishes nothing', async () => {
+        mockPrisma.user.update.mockRejectedValue(new ConflictException('refused'));
+        await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow('refused');
+        expect(mockSeatDeparture.endSeatsInTx).not.toHaveBeenCalled();
+        expect(mockSeatDeparture.finish).not.toHaveBeenCalled();
+      });
+    });
+
     // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring.
 
     it('refreshes the departing user\'s own primary org unit after the status flip', async () => {
@@ -3434,7 +3524,7 @@ describe('UserService', () => {
 
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
 
     it('bulk-reassigns open tasks to the actingUser and returns the real counts', async () => {
@@ -3502,6 +3592,7 @@ describe('UserService', () => {
     });
 
     it('blocks deactivating the organization\'s last active TENANT_ADMIN', async () => {
+      const writes = recordTransactionWrites(mockPrisma);
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -3515,10 +3606,11 @@ describe('UserService', () => {
       stageAdministratorsForDeparture(1);
 
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
-      // The side effects stay outside the transaction, so a refused
-      // deactivation must not have invalidated their sessions or moved their
-      // work on the way to being refused.
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      // The sessions end through endEverySessionInTx(), inside the refused
+      // transaction, so they roll back with it; the side effects stay outside
+      // it, so nothing moved their work on the way to being refused.
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(countWrites(writes, 'refreshToken.updateMany')).toBe(1);
       expect(mockNotification.create).not.toHaveBeenCalled();
     });
 
@@ -3578,7 +3670,6 @@ describe('UserService', () => {
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
       expect(callOrder).toEqual(['tx', 'tokenVersion {"tokenVersion":{"increment":1}}', 'commit', 'reassignAllForUser']);
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
     });
 
     describe('every sign-in ends with the flip (ACC-216, CC-301)', () => {
@@ -3666,7 +3757,6 @@ describe('UserService', () => {
         // (deactivation-ends-sessions.db-spec.ts proves it on Postgres).
         expect(refused).toBeInstanceOf(LastActiveAdministratorException);
         expect(order).toEqual(['baseline', 'revoke', 'after']);
-        expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
         expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
         // The ending ran only inside the refused transaction, never outside it.
         expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
@@ -4002,7 +4092,7 @@ describe('UserService', () => {
 
       await service.revokeInvitation('user-9', ORG_A, ACTOR);
 
-      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
       expect(mockNotification.create).not.toHaveBeenCalled();
@@ -4251,7 +4341,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
     const realMockAuditLog = { log: jest.fn() };
     const realMockNotification = { create: jest.fn() };
     const realMockTaskService = { reassignAllForUser: jest.fn() };
-    const realMockAuthProvider = { invalidateUserSessions: jest.fn(), validateToken: jest.fn() };
+    const realMockAuthProvider = { validateToken: jest.fn() };
     const realMockOrgPositionService = {
       listAvailablePositionsForUser: jest.fn(),
       // Post-review fix — validateUnitHeadUniqueness() (reached via
@@ -4290,6 +4380,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       noStagePools(),
       { schedule: jest.fn().mockResolvedValue(undefined) } as unknown as CommitteeTransferNoticeService,
       noDepartures() as unknown as ChangeRequestDepartureService,
+      noSeatDepartures() as unknown as CommitteeSeatDepartureService,
     );
     const realOrgUnitHeadService = new OrgUnitHeadService(
       realMockPrisma as unknown as PrismaService,

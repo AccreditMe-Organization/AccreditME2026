@@ -264,6 +264,10 @@ enum SetupConditionType {
   // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
   // reader; PR 2's detector is the first writer.
   COMMITTEE_MISSING_REQUIRED_SEAT
+  // ACC-307 — a committee in force with fewer active members (ACTIVE users)
+  // than its quorum. Expand first: PR 2's detector writes it, never before this
+  // value is deployed (ACC-173's rule).
+  COMMITTEE_BELOW_QUORUM
   // ACC-261 — the organisation has not confirmed where its files go
   // (storageConfirmedAt null), so every upload is refused. Written only by the
   // detector that deploys with it, never before (ACC-173's rule).
@@ -1391,7 +1395,6 @@ model WorkflowTransition {
   labelEn         String
   labelAr         String?
   validatorConfig Json?
-  isApprovalPath  Boolean                @default(false)
   kind            WorkflowTransitionKind @default(ADVANCE) // ACC-190
   // ACC-271 — who moves the record along it (transitionMover() in
   // workflow-pool.ts). NOT NULL since ACC-278 PR B, which dropped the old
@@ -2120,6 +2123,10 @@ model CommitteeMembershipEvent {
   effectiveDate  DateTime
   reason         String?
   approvedBy     String? // userId — nullable, not every event needs approval
+  // ACC-306 — why a seat ended when it was not ended by hand. null = a person
+  // changed it (add, remove, reseat); DEACTIVATION = the holder's account was
+  // deactivated, which ends every seat they held (CommitteeSeatDepartureService).
+  cause          CommitteeMembershipCause?
   createdAt      DateTime                  @default(now())
 
   committee Committee @relation(fields: [committeeId], references: [id])
@@ -2181,6 +2188,11 @@ enum CommitteeMembershipAction {
   JOINED
   LEFT
   ROLE_CHANGED
+}
+
+// ACC-306 — what ended a seat other than a person's own change (null on the event).
+enum CommitteeMembershipCause {
+  DEACTIVATION
 }
 
 // ---------------------------------------------------------------------------

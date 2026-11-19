@@ -63,7 +63,6 @@ const TRANSITION: WorkflowTransitionDto = {
   labelEn: 'Submit',
   labelAr: 'إرسال',
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE',
 };
 

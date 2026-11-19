@@ -74,6 +74,9 @@ export function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         permissions: ['committees:manage_tasks'],
       };
     case 'COMMITTEE_MISSING_REQUIRED_SEAT':
+    // ACC-307 — below quorum is fixed the same way: on the committee's own page,
+    // by adding members.
+    case 'COMMITTEE_BELOW_QUORUM':
       // ACC-286 — the committee's own page, where Add member is. The route needs
       // committees:view; the save needs committees:add_member.
       return {
@@ -270,6 +273,11 @@ export class SetupConditionRows {
             (s.seats ?? [])
               .map((seat) => this.language.bilingual(seat.labelEn, seat.labelAr))
               .join(this.translate.instant('common.listSeparator')) || '—',
+        });
+      case 'COMMITTEE_BELOW_QUORUM':
+        // ACC-307 — counted on the quorum, in every plural form the language has.
+        return this.format.count('setupHealth.committeeBelowQuorum', s.quorum ?? null, {
+          members: this.format.number(s.members ?? 0),
         });
     }
   }

@@ -179,6 +179,12 @@ export interface CommitteeMembershipEventDto {
   effectiveDate: string;
   reason: string | null;
   approvedBy: string | null;
+  /**
+   * ACC-306 — why a seat ended when no person ended it: 'DEACTIVATION' when the
+   * holder's account was deactivated; null for every change a person made. A
+   * value this screen does not know reads as a plain "Left".
+   */
+  cause?: string | null;
   createdAt: string;
   /** ACC-281 — named by the read, so the panel needs no users or lookups read. */
   userName?: string | null;

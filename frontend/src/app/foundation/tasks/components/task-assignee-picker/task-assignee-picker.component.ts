@@ -1,9 +1,9 @@
 import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MessageModule } from 'primeng/message';
-import { EMPTY, Observable, catchError, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
+import { EMPTY, Observable, catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } from 'rxjs';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FormatService } from '../../../../core/formatting';
@@ -541,10 +541,29 @@ export class TaskAssigneePickerComponent implements OnInit {
     return this.translate.instant(key);
   }
 
-  // The committee route needs committees:view on the server (its member
-  // roles name the committee's members), so it is offered only with it.
-  readonly offersCommittee = computed(
-    () => this.sourceType() === 'COMMITTEE' && !!this.sourceId() && this.access.hasPermission('committees:view'),
+  // The committee route needs, on the server, committees:view or (ACC-291) an
+  // active member of THIS committee: its member roles name the committee's
+  // members. With committees:view it is offered at once; without it, only once
+  // the server has answered this committee's seats (memberProbe), so the screen
+  // keeps no copy of the membership rule.
+  readonly offersCommittee = computed(() => {
+    const committeeId = this.sourceId();
+    if (this.sourceType() !== 'COMMITTEE' || !committeeId) return false;
+    return this.access.hasPermission('committees:view') || this.committeeOpenFor() === committeeId;
+  });
+
+  /** ACC-291 — the committee whose seats the server opened to this caller without committees:view. */
+  private readonly committeeOpenFor = signal<string | null>(null);
+
+  /**
+   * ACC-291 — the committee to ask about: the task's committee, only for a caller
+   * without committees:view (a holder asks nothing extra). One request per
+   * committee, whose answer is the server's rule; a refusal leaves the route out.
+   */
+  private readonly memberProbe = toObservable(
+    computed(() =>
+      this.sourceType() === 'COMMITTEE' && !this.access.hasPermission('committees:view') ? (this.sourceId() ?? null) : null,
+    ),
   );
 
   readonly scopeOptions = computed<UnitOption[]>(() => {
@@ -678,6 +697,21 @@ export class TaskAssigneePickerComponent implements OnInit {
 
   ngOnInit(): void {
     const { scope, target, userId } = this.group().controls;
+
+    this.memberProbe
+      .pipe(
+        distinctUntilChanged(),
+        switchMap((committeeId) =>
+          committeeId
+            ? this.taskService.getAssignableCommitteeRoles(committeeId, this.taskId()).pipe(
+                map(() => committeeId),
+                catchError(() => of(null)),
+              )
+            : of(null),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((open) => this.committeeOpenFor.set(open));
 
     this.taskService
       .getAssignableUnits(this.taskId())

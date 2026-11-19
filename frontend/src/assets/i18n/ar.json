@@ -1034,7 +1034,6 @@
     "errorLoad": "فشل تحميل بيانات سير العمل.",
     "errorTransition": "تعذر إتمام هذا الإجراء.",
     "escalation": "التصعيد",
-    "isApprovalPath": "هذا هو مسار الاعتماد (يُقدّم سير العمل)",
     "isDefault": "افتراضي",
     "isFinal": "المرحلة النهائية",
     "isInitial": "المرحلة الابتدائية",
@@ -1371,6 +1370,7 @@
     "addCommittee": "إضافة لجنة",
     "addMember": "إضافة عضو",
     "approvedBy": "بواسطة {{name}}",
+    "leftDeactivated": "مغادرة — إلغاء تفعيل الحساب",
     "changeRoleFor": "تغيير دور {{name}}",
     "confirmRemoveMember": "إزالة {{name}} من هذه اللجنة؟",
     "confirmRemoveMemberMessage": "تنتهي العضوية اليوم وتبقى في سجل اللجنة.",
@@ -2638,6 +2638,7 @@
     },
     "types": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "لجنة ينقصها مقعد مطلوب",
+      "COMMITTEE_BELOW_QUORUM": "لجنة دون النصاب",
       "ORG_UNIT_WITHOUT_HEAD": "وحدة تنظيمية بلا رئيس",
       "ORG_UNIT_WITHOUT_TYPE": "وحدة تنظيمية بلا نوع",
       "STAGE_WITHOUT_ASSIGNEE": "مرحلة سير عمل بلا مسؤول",
@@ -2686,6 +2687,7 @@
     },
     "fix": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "تعيين أعضاء",
+      "COMMITTEE_BELOW_QUORUM": "إضافة أعضاء",
       "ORG_UNIT_WITHOUT_HEAD": "تعيين رئيس",
       "ORG_UNIT_WITHOUT_TYPE": "تحديد النوع",
       "STAGE_WITHOUT_ASSIGNEE": "مراجعة المرحلة",
@@ -2699,6 +2701,7 @@
     },
     "fixNeeds": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "إصلاح هذا يتطلب صلاحية إضافة أعضاء إلى اللجان.",
+      "COMMITTEE_BELOW_QUORUM": "إصلاح هذا يتطلب صلاحية إضافة أعضاء إلى اللجان.",
       "ORG_UNIT_WITHOUT_HEAD": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
       "ORG_UNIT_WITHOUT_TYPE": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
       "STAGE_WITHOUT_ASSIGNEE": "إصلاح هذا يتطلب صلاحية إدارة سير العمل.",
@@ -3497,6 +3500,14 @@
       }
     },
     "setupHealth": {
+      "committeeBelowQuorum": {
+        "zero": "لا يتطلب النصاب أي عضو، وعدد الأعضاء النشطين في اللجنة {{members}}.",
+        "one": "يتطلب النصاب عضوًا واحدًا، وعدد الأعضاء النشطين في اللجنة {{members}}.",
+        "two": "يتطلب النصاب عضوين، وعدد الأعضاء النشطين في اللجنة {{members}}.",
+        "few": "يتطلب النصاب {{count}} أعضاء، وعدد الأعضاء النشطين في اللجنة {{members}}.",
+        "many": "يتطلب النصاب {{count}} عضوًا، وعدد الأعضاء النشطين في اللجنة {{members}}.",
+        "other": "يتطلب النصاب {{count}} عضو، وعدد الأعضاء النشطين في اللجنة {{members}}."
+      },
       "stageItemsBlocked": {
         "zero": "لا عناصر مفتوحة متوقفة: لا أحد يستطيع التصرف في هذه المرحلة.",
         "one": "عنصر مفتوح واحد لا يمكنه التقدم: لا أحد يستطيع التصرف في هذه المرحلة.",

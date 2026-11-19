@@ -210,7 +210,7 @@ describe('ACC-316 backfills against a real database', () => {
       await move(planned.id, cancelled.id, 'Cancel Meeting', 'إلغاء الاجتماع', { kind: 'EXIT' });
       await move(agenda.id, draft.id, 'Record Minutes', 'تسجيل المحضر');
       const distribute = await move(draft.id, review.id, 'Distribute Minutes', 'توزيع المحضر');
-      await move(review.id, approved.id, 'Approve Minutes', 'اعتماد المحضر', { isApprovalPath: true });
+      await move(review.id, approved.id, 'Approve Minutes', 'اعتماد المحضر');
       const ret = await move(review.id, draft.id, 'Return for Correction', 'إعادة للتصحيح', { kind: 'RETURN' });
       const loop = await move(draft.id, draft.id, 'Return for Correction', 'إعادة للتصحيح', { kind: 'RETURN' });
       await prisma.workflowTransitionAction.create({ data: { workflowTransitionId: loop.id, actionType: 'LOG_AUDIT', order: 20 } });

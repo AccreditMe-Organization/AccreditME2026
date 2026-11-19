@@ -1196,7 +1196,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');
-      expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(53).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
+      expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(54).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
         'MEETING_CLASH_TOO_MANY_TIMES',
       );
     });

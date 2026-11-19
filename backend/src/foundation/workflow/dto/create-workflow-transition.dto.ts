@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
@@ -41,10 +41,6 @@ export class CreateWorkflowTransitionDto {
   @IsOptional()
   kind?: (typeof WORKFLOW_TRANSITION_KINDS)[number];
 
-  // ACC-271 PR 5b — accepted on create too: the transition panel shows
-  // "Approval path" when adding a move, not only once it exists. Omitted means
-  // false (the schema default).
-  @IsBoolean()
-  @IsOptional()
-  isApprovalPath?: boolean;
+  // ACC-294 — isApprovalPath is gone (nothing read it since ACC-284): one sent
+  // is the global whitelist's 400, "property isApprovalPath should not exist".
 }

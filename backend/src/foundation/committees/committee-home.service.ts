@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LookupService } from '../lookup/lookup.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { committeesInForceStanding, isBelowQuorum } from './committee-seat-rules';
 import { seatOrderedMemberships } from './committee-memberships';
 import { overseesAnyCommittee, seesEveryCommittee } from '../../common/services/committee-membership';
 import { ICommitteeHomeCounts, IMyCommitteeRow, IMyCommittees } from './interfaces/committee.interface';
@@ -92,40 +93,16 @@ export class CommitteeHomeService {
   /**
    * Committees in force, and how many of them are below quorum, in ONE query.
    *
-   * The status rule is committeeListStatus()'s (ACC-256): an inactive committee is out,
-   * DISSOLVING is read before IN_FORCE, and a committee's stage is that of its NEWEST
-   * workflow instance (committeeStagesAndCounts' rule). Below quorum means in force, a
-   * quorum above 0, and fewer active members than it. Every table is scoped by
-   * organisation in its own right, and every value is bound.
+   * ACC-307 — read through committeesInForceStanding() (committee-seat-rules.ts):
+   * the in-force rule is committeeListStatus()'s (active, the newest instance's
+   * stage IN_FORCE and not DISSOLVING), and the member count is the one going
+   * live and Setup health's "Committee below quorum" read — only active members
+   * who are ACTIVE users count. Before, this counted every active membership, so
+   * a deactivated member kept a committee at quorum here while going live said
+   * it was not (ACC-306, P161).
    */
   async homeCounts(organizationId: string): Promise<ICommitteeHomeCounts> {
-    const rows = await this.prisma.$queryRaw<{ in_force: bigint; below_quorum: bigint }[]>`
-      WITH latest AS (
-        SELECT DISTINCT ON (wi."objectId") wi."objectId", wi."currentStageId"
-        FROM "WorkflowInstance" wi
-        WHERE wi."organizationId" = ${organizationId} AND wi."objectType"::text = 'COMMITTEE'
-        ORDER BY wi."objectId", wi."createdAt" DESC
-      ), members AS (
-        SELECT cm."committeeId", count(*) AS n
-        FROM "CommitteeMember" cm
-        WHERE cm."organizationId" = ${organizationId} AND cm."isActive"
-        GROUP BY cm."committeeId"
-      ), standing AS (
-        SELECT c."quorumCount" AS quorum, COALESCE(m.n, 0) AS members,
-               (${STAGE_FLAG.IN_FORCE} = ANY(s.flags) AND NOT ${STAGE_FLAG.DISSOLVING} = ANY(s.flags)) AS in_force
-        FROM "Committee" c
-        JOIN latest l ON l."objectId" = c.id
-        JOIN "WorkflowStage" s ON s.id = l."currentStageId"
-        JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
-        LEFT JOIN members m ON m."committeeId" = c.id
-        WHERE c."organizationId" = ${organizationId} AND c."isActive"
-      )
-      SELECT count(*) FILTER (WHERE in_force)::bigint AS in_force,
-             count(*) FILTER (WHERE in_force AND quorum > 0 AND members < quorum)::bigint AS below_quorum
-      FROM standing`;
-    return {
-      inForce: Number(rows[0]?.in_force ?? 0),
-      belowQuorum: Number(rows[0]?.below_quorum ?? 0),
-    };
+    const standing = await committeesInForceStanding(this.prisma, organizationId);
+    return { inForce: standing.length, belowQuorum: standing.filter(isBelowQuorum).length };
   }
 }

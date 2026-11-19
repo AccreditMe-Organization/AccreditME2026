@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupService } from '../lookup/lookup.service';
 import { CommitteeHomeService } from './committee-home.service';
+import { activeMemberCount, committeesInForceStanding } from './committee-seat-rules';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -37,7 +38,15 @@ describe('Home committee counts against a real database (ACC-279)', () => {
     organizationId: string;
     committee: (
       name: string,
-      opts: { quorum?: number; isActive?: boolean; members?: number; departed?: number; stages: ('inForce' | 'formation' | 'dissolving')[] },
+      opts: {
+        quorum?: number;
+        isActive?: boolean;
+        members?: number;
+        departed?: number;
+        /** ACC-307 — active memberships held by people whose account is INACTIVE. */
+        inactivePeople?: number;
+        stages: ('inForce' | 'formation' | 'dissolving')[];
+      },
     ) => Promise<string>;
   }
 
@@ -81,9 +90,9 @@ describe('Home committee counts against a real database (ACC-279)', () => {
           },
         });
       }
-      const seat = async (active: boolean) => {
+      const seat = async (active: boolean, status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE') => {
         const u = await prisma.user.create({
-          data: { organizationId: o.id, email: `${slug}-${people++}@example.test`, name: 'Member', status: 'ACTIVE' },
+          data: { organizationId: o.id, email: `${slug}-${people++}@example.test`, name: 'Member', status },
         });
         await prisma.committeeMember.create({
           data: {
@@ -98,6 +107,7 @@ describe('Home committee counts against a real database (ACC-279)', () => {
       };
       for (let i = 0; i < (opts.members ?? 0); i++) await seat(true);
       for (let i = 0; i < (opts.departed ?? 0); i++) await seat(false);
+      for (let i = 0; i < (opts.inactivePeople ?? 0); i++) await seat(true, 'INACTIVE');
       return c.id;
     };
     return { organizationId: o.id, committee };
@@ -129,6 +139,18 @@ describe('Home committee counts against a real database (ACC-279)', () => {
     await standardSet(f);
 
     expect(await home.homeCounts(f.organizationId)).toEqual({ inForce: 4, belowQuorum: 2 });
+  });
+
+  // ACC-307 — the count is the shared rule (committee-seat-rules.ts): a seat held
+  // by someone whose account is inactive does not count, as going live says.
+  it('does not count a seat held by an inactive person, and agrees with going live’s count', async () => {
+    const f = await fixture();
+    const id = await f.committee('J in force, 1 active and 1 inactive of 2', { quorum: 2, members: 1, inactivePeople: 1, stages: ['inForce'] });
+
+    expect(await home.homeCounts(f.organizationId)).toEqual({ inForce: 1, belowQuorum: 1 });
+    const standing = await committeesInForceStanding(prisma, f.organizationId);
+    expect(standing.map((c) => [c.committeeId, c.quorum, c.members])).toEqual([[id, 2, 1]]);
+    expect(await activeMemberCount(prisma, f.organizationId, id)).toBe(1);
   });
 
   it('an organisation with no committees reads zero, not an error', async () => {

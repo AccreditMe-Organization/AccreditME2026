@@ -56,7 +56,6 @@ const MOCK_TRANSITION: IWorkflowTransition = {
   labelEn: 'Submit',
   labelAr: 'إرسال',
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE',
   mover: 'PERSON',
 };
