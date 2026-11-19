@@ -4182,8 +4182,12 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
       - Specs: `is-approval-path.client.spec.ts` and
         `dto/is-approval-path.dto.spec.ts`, plus the template read and create
         tests in `workflow-template.service.spec.ts`. Mutation-checked.
-    - **PR B:** one contracting migration drops the column. It runs only after
-      PR A has deployed. **Never roll Railway back past PR A:** on a scratch
+    - **PR B, migration `20261119094215_acc294_drop_is_approval_path`:** one
+      statement, `ALTER TABLE "WorkflowTransition" DROP COLUMN
+      "isApprovalPath"`, and nothing else. The field is gone from
+      `schema.prisma`, and `is-approval-path.client.spec.ts` now pins it out of
+      the schema. It runs only after PR A has deployed. **Never roll Railway
+      back past PR A:** on a scratch
       database with the column dropped, PR A's client made 9 real calls, all
       OK, while the client before PR A made 2 of 9 (7 P2022).
 - **No backfill:** on the shared database (10 Nov), 0 stored moves change behaviour.
