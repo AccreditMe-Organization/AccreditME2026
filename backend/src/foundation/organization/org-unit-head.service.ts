@@ -15,7 +15,7 @@ import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
 import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
-import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
+import { findActiveCoversForUnits, findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline, reportRootUnitHeadBreach } from './root-unit-head.invariant';
 import { RoleInactiveException } from '../roles/role-active';
 
@@ -229,11 +229,14 @@ export class OrgUnitHeadService {
   // boolean-only case, not a refactor of getHeadStatus() itself (its own
   // callers still need the fuller holders/name/positionId select).
   async hasDirectOrActingHead(orgUnitId: string, organizationId: string): Promise<boolean> {
-    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    await this.getOrgUnitOrThrow(orgUnitId, organizationId); // the unit exists in this organisation (the 404)
     const directHolderCount = await this.prisma.user.count({
       where: { organizationId, primaryOrgUnitId: orgUnitId, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
     });
-    return directHolderCount > 0 || !!orgUnit.actingHeadUserId;
+    if (directHolderCount > 0) return true;
+    // ACC-324 — an acting Head counts only as a cover in force whose person is
+    // ACTIVE (the root-unit invariant's rule), never the `actingHeadUserId` cache.
+    return (await findActiveCoversForUnits(this.prisma, organizationId, [orgUnitId], new Date())).has(orgUnitId);
   }
 
   async declareHandover(

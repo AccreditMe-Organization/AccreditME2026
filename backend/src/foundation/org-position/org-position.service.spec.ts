@@ -54,6 +54,8 @@ const mockPrisma = {
   organization: { findFirst: jest.fn() },
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
+  // ACC-324 — the covers in force whose person is ACTIVE (findActiveCoversForUnits).
+  orgUnitHeadAssignment: { findMany: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -63,6 +65,7 @@ describe('OrgPositionService', () => {
   let service: OrgPositionService;
 
   beforeEach(async () => {
+    mockPrisma.orgUnitHeadAssignment.findMany.mockReset().mockResolvedValue([]); // ACC-324 — no covers unless a test says
     jest.clearAllMocks();
     // Safe default for deactivatePosition()'s own holder lookup — tests
     // exercising that lookup specifically override this per-case.
@@ -728,14 +731,26 @@ describe('OrgPositionService', () => {
       expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled(); // short-circuited — no fallback needed
     });
 
-    it('falls back to OrgUnit.actingHeadUserId when no direct holder exists (PD#9)', async () => {
+    it('falls back to the unit\'s acting Head when no direct holder exists (PD#9): the cover in force whose person is ACTIVE', async () => {
       mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: 'unit-1' }]);
       mockPrisma.user.findFirst.mockResolvedValue(null); // no direct holder
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-1', actingHeadUserId: 'acting-1' });
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: 'unit-1', userId: 'acting-1' }]);
 
       const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
 
       expect(result).toEqual(['acting-1']);
+      expect(mockPrisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, orgUnitId: 'unit-1', user: { status: 'ACTIVE' }, kind: 'ACTING', endedAt: null }) }),
+      );
+    });
+
+    it('ACC-324 — a cached acting Head with no ACTIVE cover in force is no escalation target', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: 'unit-1' }]);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-1', actingHeadUserId: 'deactivated-cover' });
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
+
+      expect(await service.resolveHeadEscalationTargets(['u1'], ORG_A)).toEqual([]);
     });
 
     it('returns an empty array, does not throw, when neither a direct holder nor an Acting Head exists', async () => {

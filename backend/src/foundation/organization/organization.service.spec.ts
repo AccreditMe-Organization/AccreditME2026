@@ -70,6 +70,10 @@ const mockPrisma = {
   lookupValue: {
     findMany: jest.fn(),
   },
+  // ACC-324 — the covers in force whose person is ACTIVE (findActiveCoversForUnits).
+  orgUnitHeadAssignment: {
+    findMany: jest.fn(),
+  },
 };
 
 // ACC-137 — the SYSTEM 'department' value, as buildTypeResolver() sees it.
@@ -93,6 +97,7 @@ describe('OrganizationService', () => {
   let service: OrganizationService;
 
   beforeEach(async () => {
+    mockPrisma.orgUnitHeadAssignment.findMany.mockReset().mockResolvedValue([]); // ACC-324 — no covers unless a test says
     jest.clearAllMocks();
 
     // ACC-137 — a working lookup by default, so tests that are not about the
@@ -971,13 +976,31 @@ describe('OrganizationService', () => {
 
     it("falls through to the unit's own Acting Head when vacant, without walking to the parent", async () => {
       mockPrisma.user.findMany.mockResolvedValue([]); // unit-1 has no direct holder
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: 'acting-1', parentId: 'parent-1' });
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ parentId: 'parent-1' });
+      // ACC-324 — the Acting Head is the cover in force whose person is ACTIVE, from the period table.
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: 'unit-1', userId: 'acting-1' }]);
 
       const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
 
       expect(result).toEqual(['acting-1']);
       expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1); // never reaches parent-1
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, orgUnitId: 'unit-1', user: { status: 'ACTIVE' }, kind: 'ACTING', endedAt: null }) }),
+      );
+    });
+
+    it("ACC-324 — a cached acting head whose cover is not in force with an ACTIVE person does not cover the unit: the walk goes on", async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
+      );
+      // The cache still names someone; the period table has no active cover.
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'unit-1' ? { actingHeadUserId: 'deactivated-cover', parentId: 'parent-1' } : null),
+      );
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
+
+      expect(await service.resolveActingHeadForOrgUnit('unit-1', ORG_A)).toEqual(['parent-holder']);
     });
 
     it("escalates to the parent's holder when the unit is vacant with no Acting Head of its own", async () => {
@@ -986,7 +1009,7 @@ describe('OrganizationService', () => {
       );
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(
-          where.id === 'unit-1' ? { actingHeadUserId: null, parentId: 'parent-1' } : null,
+          where.id === 'unit-1' ? { parentId: 'parent-1' } : null,
         ),
       );
 
@@ -1011,8 +1034,8 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(
           where.id === 'unit-1'
-            ? { actingHeadUserId: null, parentId: 'parent-1' }
-            : { actingHeadUserId: null, parentId: null }, // parent-1: root, chain ends here
+            ? { parentId: 'parent-1' }
+            : { parentId: null }, // parent-1: root, chain ends here
         ),
       );
 
@@ -1124,7 +1147,7 @@ describe('OrganizationService', () => {
     it('on a false→true transition with ancestor coverage (partial), sets isHeadFullyUnresolved false', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: 'parent-1' }); // resolver: unit-1 walk step — never reaches a 3rd call, since parent-1 has a direct holder
+        .mockResolvedValueOnce({ parentId: 'parent-1' }); // resolver: unit-1 walk step — never reaches a 3rd call, since parent-1 has a direct holder
       mockPrisma.user.count.mockResolvedValue(0); // no direct holder on unit-1
       mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
         Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
@@ -1147,7 +1170,7 @@ describe('OrganizationService', () => {
     it('on a false→true transition fully exhausted, sets isHeadFullyUnresolved true and looks up no admins to notify', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+        .mockResolvedValueOnce({ parentId: null }); // resolver: root, chain ends
       mockPrisma.user.count.mockResolvedValue(0);
       mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
 
@@ -1174,7 +1197,7 @@ describe('OrganizationService', () => {
     it('filters the direct-holder count by status: ACTIVE — an INVITED holder still counts the unit as vacant', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+        .mockResolvedValueOnce({ parentId: null }); // resolver: root, chain ends
       mockPrisma.user.count.mockResolvedValue(0); // the ACTIVE-only filter excludes the INVITED holder
       mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
 

@@ -9289,6 +9289,32 @@ flag off on save). Nothing is disabled before the click: the server decides.
 Measured before shipping (read only, 10 Nov): al-manara and al-nakheel each
 have one root, headed by one holder, with no cover. No root was headless.
 
+**ACC-324 — a cover heads a unit only while its person is ACTIVE.** "Headed"
+is a current head holder, or a cover in force whose person is ACTIVE:
+`findActiveCoversForUnits()` in `unit-headship.ts` (`ACTIVE_COVER_PERSON`,
+`runningActingCoverWhere(now)`, from the period table). The invariant reads
+it, so deactivating the root's only active cover is refused
+`ROOT_UNIT_NEEDS_HEAD` inside the deactivation's own transaction (the
+baseline, the person turned INACTIVE, the assertion); a root covered only by
+a deactivated person is already headless (logged, never refused). Every
+reader that DECIDES from a unit's cover reads this rule, never the
+`actingHeadUserId` cache:
+  - the root-unit invariant (`isHeaded`);
+  - the vacancy flag's two recomputers (`refreshOrgUnitHeadVacancy()`, the SLA
+    sweep's `recomputeOrgUnitVacancies()`) and its escalation step
+    (`resolveActingHeadForOrgUnit()`), so Setup health's
+    `ORG_UNIT_WITHOUT_HEAD` lists such a root as blocking work;
+  - `OrgUnitHeadService.hasDirectOrActingHead()` (invite, promote, transfer);
+  - `OrgPositionService.resolveHeadEscalationTargets()` (a task's Head tier);
+  - a promotion's new manager in `UserService.transferUser()`.
+The cache is left to what it records and shows: `clearActingHead()` ends the
+cover it names, `getHeadStatus()` returns it, and two screens show it (the
+transfer wizard's manager preview, the headship panel's End cover). A cover arranged for later, or one that lapsed on its
+own date, no longer keeps a unit off the list either. `findRunningActingCover()`
+is unchanged: it shows the cover on record. Measured before shipping (read
+only, 19 Nov): no unit on the shared database has an acting head, cached or in
+the period table, so the change moves no flag there.
+
 ---
 
 ## 6. Lookup System

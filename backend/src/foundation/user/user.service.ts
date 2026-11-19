@@ -67,6 +67,7 @@ import {
 } from '../roles/tenant-administrator.invariant';
 import { assertNotAccountOwner } from '../roles/account-owner';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
+import { findActiveCoversForUnits } from '../organization/unit-headship';
 import { AccountOwnerProtectedException } from '../roles/role-permission-refusal';
 import { RoleInactiveException } from '../roles/role-active';
 import { ITransferContext } from './interfaces/transfer-context.interface';
@@ -602,7 +603,10 @@ export class UserService {
           destinationUnit.parentId,
           organizationId,
         );
-        const parentManagerId = parentHeadStatus.holders[0]?.id ?? parentHeadStatus.actingHeadUserId;
+        // ACC-324 — the acting Head is the cover in force whose person is ACTIVE, never the cache.
+        const parentManagerId =
+          parentHeadStatus.holders[0]?.id ??
+          (await findActiveCoversForUnits(this.prisma, organizationId, [destinationUnit.parentId], new Date())).get(destinationUnit.parentId);
         // Defensive — hasDirectOrActingHead() just confirmed one of these
         // must be truthy; should be unreachable in practice.
         if (!parentManagerId) {
