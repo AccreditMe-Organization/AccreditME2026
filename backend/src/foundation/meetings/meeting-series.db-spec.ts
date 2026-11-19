@@ -120,7 +120,7 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
     zone: string;
   }
 
-  async function world(): Promise<World> {
+  async function world(timezone?: string): Promise<World> {
     const slug = `acc316s-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED, MEETING_SEED]);
@@ -152,6 +152,7 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
     }
     await prisma.$transaction((tx) => copyDefaultSeatActions(tx, o.id, c.id));
     await calendar.getOrCreate(o.id);
+    if (timezone) await prisma.workingCalendar.update({ where: { organizationId: o.id }, data: { timezone } });
     return { orgId: o.id, people, committeeId: c.id, zone: await calendar.getEffectiveTimeZone(o.id) };
   }
 
@@ -362,11 +363,123 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
     });
   });
 
+  describe('review findings (Prompt 170)', () => {
+    /** The series service with some of the engine's calls made to fail. */
+    const withWorkflow = (overrides: Partial<WorkflowService>) => {
+      const wrapped = Object.assign(Object.create(workflow) as WorkflowService, overrides);
+      return new MeetingSeriesService(prisma, visibility, wrapped, stageRules, calendar, meetings, clashes);
+    };
+
+    it('a series across a clock change keeps its wall-clock start (Europe/London, 28 Mar 2027)', async () => {
+      const london = await world('Europe/London');
+      const r = await series.create(weekly(london, { weekday: 7, firstDate: '2027-03-21', count: 2, startTime: '08:00' }), london.orgId, as(london, 'chair'));
+      const rows = await seriesMeetings(r.seriesId);
+      expect(rows.map((m) => DateTime.fromJSDate(m.scheduledAt).setZone('Europe/London').toFormat('yyyy-MM-dd HH:mm'))).toEqual(['2027-03-21 08:00', '2027-03-28 08:00']);
+      // Non-vacuity: the two are 08:00 GMT and 07:00 UTC (BST).
+      expect(rows.map((m) => m.scheduledAt.toISOString().slice(11, 16))).toEqual(['08:00', '07:00']);
+    });
+
+    it("End refuses the whole call, writing nothing, when the caller can't cancel every meeting", async () => {
+      const c = await world();
+      const r = await series.create(weekly(c, { count: 2 }), c.orgId, as(c, 'chair'));
+      // Planned is reconfigured to be worked by the admin alone: the Chair schedules but can't press Cancel Meeting.
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: c.orgId, objectType: 'MEETING', isDefault: true } });
+      const planned = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'planned' } });
+      await prisma.workflowStageAssignee.deleteMany({ where: { stageId: planned.id } });
+      await prisma.workflowStageAssignee.create({ data: { organizationId: c.orgId, stageId: planned.id, order: 1, kind: 'SPECIFIC_USER', userId: c.people['admin']! } });
+      const audits = () => prisma.auditLog.count({ where: { objectType: 'MeetingSeries', objectId: r.seriesId, action: 'UPDATE' } });
+
+      expect(await outcome(series.end(r.seriesId, { reason: 'Stop' }, c.orgId, as(c, 'chair')))).toMatchObject({ code: 'MEETING_SERIES_CANNOT_CANCEL', meetings: r.meetingIds });
+      for (const id of r.meetingIds) expect(await stageKey(id)).toBe('planned');
+      expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).toBeNull();
+      expect(await audits()).toBe(0);
+    });
+
+    it('a partial failure leaves the series open; a re-run finishes it; a run on an ended series writes nothing', async () => {
+      const r = await series.create(weekly(a, { weekday: 4, firstDate: nextWeekday(a, 4), count: 3 }), a.orgId, as(a, 'chair'));
+      let calls = 0;
+      const flaky = withWorkflow({
+        triggerTransition: (...args: Parameters<WorkflowService['triggerTransition']>) => {
+          calls += 1;
+          if (calls === 2) return Promise.reject(new Error('cancel failed'));
+          return workflow.triggerTransition(...args);
+        },
+      });
+      const first = await flaky.end(r.seriesId, { reason: 'Merged' }, a.orgId, as(a, 'chair'));
+      expect(first.failed).toEqual([r.meetingIds[1]]);
+      expect(first.cancelled).toEqual([r.meetingIds[0], r.meetingIds[2]]);
+      expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).toBeNull();
+
+      expect(await series.end(r.seriesId, { reason: 'Merged' }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [r.meetingIds[1]], failed: [] });
+      expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).not.toBeNull();
+      const audits = () => prisma.auditLog.count({ where: { objectType: 'MeetingSeries', objectId: r.seriesId, action: 'UPDATE' } });
+      const before = await audits();
+      expect(await series.end(r.seriesId, { reason: 'Again' }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [], failed: [] });
+      expect(await audits()).toBe(before);
+    });
+
+    it("one meeting's failing notices after the commit still answer the series, and the others' still go", async () => {
+      let calls = 0;
+      const finished: string[] = [];
+      const flaky = withWorkflow({
+        finishInstanceStart: (...args: Parameters<WorkflowService['finishInstanceStart']>) => {
+          calls += 1;
+          if (calls === 1) return Promise.reject(new Error('notice failed'));
+          finished.push(args[1].instance.objectId);
+          return workflow.finishInstanceStart(...args);
+        },
+      });
+      const r = await flaky.create(weekly(a, { weekday: 1, firstDate: nextWeekday(a, 1), count: 3, location: 'Room 7' }), a.orgId, as(a, 'chair'));
+      expect(r.meetingIds).toHaveLength(3);
+      expect(calls).toBe(3);
+      expect(finished).toEqual(r.meetingIds.slice(1));
+      expect(await prisma.meetingSeries.count({ where: { id: r.seriesId } })).toBe(1);
+    });
+
+    it("reads the engine's first stage once for the whole series", async () => {
+      let prepares = 0;
+      const counting = withWorkflow({
+        prepareInstanceStart: (...args: Parameters<WorkflowService['prepareInstanceStart']>) => {
+          prepares += 1;
+          return workflow.prepareInstanceStart(...args);
+        },
+      });
+      const r = await counting.create(weekly(a, { weekday: 2, firstDate: nextWeekday(a, 2), count: 4, location: 'Room 8' }), a.orgId, as(a, 'chair'));
+      expect(r.meetingIds).toHaveLength(4);
+      expect(prepares).toBe(1);
+    });
+
+    it('a this-and-later reschedule moves a later meeting past a day the owner already meets', async () => {
+      const d = await world();
+      const r = await series.create(weekly(d, { weekday: 1, firstDate: nextWeekday(d, 1), count: 2 }), d.orgId, as(d, 'chair'));
+      const [first, second] = await seriesMeetings(r.seriesId);
+      // The committee already meets the day after the second meeting.
+      const busy = new Date(second!.scheduledAt.getTime() + 86_400_000);
+      const other = await prisma.meeting.create({
+        data: { organizationId: d.orgId, organizerId: d.people['chair']!, title: 'Other', typeValueId: meetingType, scheduledAt: busy, durationMinutes: 60, location: 'Room 1', committeeId: d.committeeId },
+      });
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: d.orgId, objectType: 'MEETING', isDefault: true } });
+      const planned = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'planned' } });
+      const inst = await prisma.workflowInstance.create({ data: { organizationId: d.orgId, workflowTemplateId: template.id, objectType: 'MEETING', objectId: other.id, status: 'IN_PROGRESS', currentStageId: planned.id } });
+      await prisma.workflowInstanceStage.create({ data: { workflowInstanceId: inst.id, stageId: planned.id, enteredAt: new Date() } });
+
+      await series.rescheduleLater(first!.id, { scheduledAt: new Date(first!.scheduledAt.getTime() + 86_400_000).toISOString(), reason: 'A day later' }, d.orgId, as(d, 'chair'));
+      const moved = await prisma.meeting.findFirstOrThrow({ where: { id: second!.id } });
+      const day = (x: Date) => DateTime.fromJSDate(x).setZone(d.zone).toISODate();
+      expect(day(moved.scheduledAt)).not.toBe(day(busy));
+      expect(moved.scheduledAt > busy).toBe(true);
+      expect(DateTime.fromJSDate(moved.scheduledAt).setZone(d.zone).toFormat('HH:mm')).toBe('10:00');
+    });
+  });
+
   describe('another organisation', () => {
     itEnforcesTenantIsolation("a series and its meetings are out of another organisation's reach", async () => {
       const r = await series.create(weekly(a, { count: 2, weekday: 1, firstDate: nextWeekday(a, 1) }), a.orgId, as(a, 'chair'));
       const other = as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
       expect(await code(series.end(r.seriesId, { reason: 'x' }, b.orgId, other))).toBe('MEETING_SERIES_NOT_FOUND');
+      // Another organisation's committee is no owner of a series made here.
+      expect(await code(series.preview(weekly(a, { count: 1 }), b.orgId, other))).toBe('MEETING_OWNER_NOT_FOUND');
+      expect(await code(series.create(weekly(a, { count: 1 }), b.orgId, other))).toBe('MEETING_OWNER_NOT_FOUND');
       expect(await code(series.updateLater(r.meetingIds[0]!, { location: 'X' }, b.orgId, other))).toBe(404);
       expect(await code(series.rescheduleLater(r.meetingIds[0]!, { scheduledAt: new Date(Date.now() + 9e8).toISOString(), reason: 'x' }, b.orgId, other))).toBe(404);
       expect((await meetings.list({ view: 'all', seriesId: r.seriesId }, b.orgId, other)).total).toBe(0);
