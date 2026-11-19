@@ -2033,6 +2033,20 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       }) as never);
       return spy;
     }
+    /**
+     * Waits, by turns, until a session of this database waits on a lock (pg_stat_activity; ACC-248:
+     * count turns, never milliseconds). Throws if nothing ever does.
+     */
+    async function untilSomeoneWaitsOnALock(): Promise<void> {
+      for (let turn = 0; turn < 2_000; turn++) {
+        const [row] = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        if ((row?.n ?? 0) > 0) return;
+        await new Promise((r) => setImmediate(r));
+      }
+      throw new Error('Nothing waited on a lock');
+    }
     /** Calls `act` first, for its decider check to read the stage, then lets `other` run before its move. */
     function raceAfterLoad(method: 'triggerSystemAdvance' | 'triggerSystemTransition', other: () => Promise<unknown>) {
       const real = (workflow[method] as (...a: unknown[]) => Promise<unknown>).bind(workflow);
@@ -2077,6 +2091,23 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       raceAfterLoad('triggerSystemTransition', () => requests.approve(r.id, w.org, { userId: a, permissions: [VIEW] }));
       expect(await outcome(requests.reject(r.id, { reason: 'x' }, w.org, { userId: b, permissions: [VIEW] }))).toBe('CHANGE_REQUEST_CHANGED');
       expect(await stageNow(w, r.id)).toBe(r2.id);
+    });
+
+    it('B1: a decider admitted on one visit to R1 cannot decide on the next (Return, then Submit again): same stage, new entry', async () => {
+      const w = await world();
+      const [a, b] = [await person(w, 'A'), await person(w, 'B')];
+      const r1 = await addReview(w, 'R1', [a, b]);
+      const r = await submitted(w);
+      // B is admitted in R1. Before B's move: A returns it, and the requester submits it again.
+      raceAfterLoad('triggerSystemAdvance', async () => {
+        await requests.returnForChanges(r.id, { note: 'Say why' }, w.org, { userId: a, permissions: [VIEW] });
+        await requests.submit(r.id, w.org, w.requester);
+      });
+      expect(await outcome(requests.approve(r.id, w.org, { userId: b, permissions: [VIEW] }))).toBe('CHANGE_REQUEST_CHANGED');
+      expect(await stageNow(w, r.id)).toBe(r1.id); // back in R1, and still there
+      // Having read the request again, B decides it.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: b, permissions: [VIEW] }))).toBe('OK');
+      expect(await statusOf(w, r.id)).toBe('under_review');
     });
 
     it('B2: a review notice goes only to the stage’s people who may open the committee', async () => {
@@ -2132,7 +2163,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await inside; // the Submit holds the request's instance lock
       let addDone = false;
       const add = outcome(addReview(w, 'Zeroth', [b], (await shape(w)).byKey('draft').id)).then((o) => ((addDone = true), o));
-      await new Promise((r) => setTimeout(r, 400));
+      await untilSomeoneWaitsOnALock();
       expect(addDone).toBe(false); // waiting on the request's lock, not deadlocked
       release();
       expect(await submit).toBe('OK');
@@ -2160,7 +2191,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await inside; // the request is moving into First, its entry not yet committed
       let removeDone = false;
       const remove = outcome(templates.removeStage(first.id, w.org, w.approver.userId)).then((o) => ((removeDone = true), o));
-      await new Promise((r) => setTimeout(r, 400));
+      await untilSomeoneWaitsOnALock();
       expect(removeDone).toBe(false);
       release();
       expect(await submit).toBe('OK');
