@@ -98,6 +98,50 @@ describe('FormatService (ACC-94)', () => {
     });
   });
 
+  // ACC-316 PR 6 — a typed start on the tenant's wall clock, and back.
+  describe("wallClock and instantAt — a start typed on the tenant's wall clock", () => {
+    const at = (year: number, month: number, day: number, hour: number, minute: number) => format.instantAt({ year, month, day, hour, minute }).toISOString();
+
+    it('an ordinary time reads back as typed', () => {
+      context.zone.set('America/New_York');
+      expect(at(2026, 9, 15, 10, 0)).toBe('2026-09-15T14:00:00.000Z');
+      expect(format.wallClock('2026-09-15T14:00:00Z')).toEqual({ year: 2026, month: 9, day: 15, hour: 10, minute: 0 });
+      context.zone.set('Asia/Riyadh');
+      expect(at(2026, 9, 15, 10, 0)).toBe('2026-09-15T07:00:00.000Z');
+    });
+
+    it('a time the clocks skip moves FORWARD by the gap: 02:30 on 8 Mar 2026 in New York is 03:30', () => {
+      context.zone.set('America/New_York');
+      const iso = at(2026, 3, 8, 2, 30);
+      expect(iso).toBe('2026-03-08T07:30:00.000Z');
+      expect(format.wallClock(iso)).toEqual({ year: 2026, month: 3, day: 8, hour: 3, minute: 30 });
+      // Either side of the gap is untouched.
+      expect(at(2026, 3, 8, 1, 30)).toBe('2026-03-08T06:30:00.000Z');
+      expect(at(2026, 3, 8, 3, 30)).toBe('2026-03-08T07:30:00.000Z');
+    });
+
+    it('a time the clocks repeat is its first occurrence: 01:30 on 1 Nov 2026 in New York is 01:30 EDT', () => {
+      context.zone.set('America/New_York');
+      expect(at(2026, 11, 1, 1, 30)).toBe('2026-11-01T05:30:00.000Z');
+    });
+
+    // P198 — a zone EAST of UTC, where the offset grows across the gap. The Gulf
+    // zones keep no daylight saving, but the platform screens use the session's.
+    it('a skipped time moves forward east of UTC too: 02:30 on 29 Mar 2026 in Berlin is 03:30 CEST', () => {
+      context.zone.set('Europe/Berlin');
+      const iso = at(2026, 3, 29, 2, 30);
+      expect(iso).toBe('2026-03-29T01:30:00.000Z');
+      expect(format.wallClock(iso)).toEqual({ year: 2026, month: 3, day: 29, hour: 3, minute: 30 });
+      expect(at(2026, 3, 29, 1, 30)).toBe('2026-03-29T00:30:00.000Z');
+      expect(at(2026, 3, 29, 3, 30)).toBe('2026-03-29T01:30:00.000Z');
+    });
+
+    it('a repeated time east of UTC is its first occurrence: 02:30 on 25 Oct 2026 in Berlin is 02:30 CEST', () => {
+      context.zone.set('Europe/Berlin');
+      expect(at(2026, 10, 25, 2, 30)).toBe('2026-10-25T00:30:00.000Z');
+    });
+  });
+
   describe('the empty value — owned by the layer', () => {
     it('renders — for a missing value, in every format', () => {
       for (const missing of [null, undefined, '']) {

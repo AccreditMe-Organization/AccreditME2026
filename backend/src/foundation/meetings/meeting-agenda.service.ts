@@ -169,13 +169,22 @@ export class MeetingAgendaService {
     return this.items(this.prisma, meetingId, organizationId);
   }
 
-  /** The new order: every item's id, once (MEETING_AGENDA_ORDER_MISMATCH otherwise). */
+  /**
+   * The new order: every item's id, once (MEETING_AGENDA_ORDER_MISMATCH
+   * otherwise). With `expectedItemIds`, the order the person saw, it is
+   * compared under the locks with the agenda's order now: any difference (a
+   * reorder, an item added or removed meanwhile) is MEETING_AGENDA_CHANGED, and
+   * nothing moves.
+   */
   async order(meetingId: string, dto: OrderAgendaDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingAgendaItem[]> {
     await this.access.writing(meetingId, organizationId, viewer, now);
     const done = await this.prisma
       .$transaction(async (tx) => {
       const issued = await this.lockAgenda(tx, meetingId, organizationId);
-      const items = await tx.agendaItem.findMany({ where: { organizationId, meetingId }, select: { id: true, order: true } });
+      const items = await tx.agendaItem.findMany({ where: { organizationId, meetingId }, orderBy: [{ order: 'asc' }, { id: 'asc' }], select: { id: true, order: true } });
+      if (dto.expectedItemIds && (dto.expectedItemIds.length !== items.length || dto.expectedItemIds.some((id, i) => items[i]!.id !== id))) {
+        throw new MeetingRefusal('MEETING_AGENDA_CHANGED');
+      }
       const known = new Set(items.map((i) => i.id));
       if (dto.itemIds.length !== items.length || new Set(dto.itemIds).size !== items.length || dto.itemIds.some((id) => !known.has(id))) {
         throw new MeetingRefusal('MEETING_AGENDA_ORDER_MISMATCH');
@@ -183,7 +192,7 @@ export class MeetingAgendaService {
       const before = new Map(items.map((i) => [i.id, i.order]));
       const moved = dto.itemIds.filter((id, i) => before.get(id) !== i + 1);
       for (const [i, id] of dto.itemIds.entries()) if (before.get(id) !== i + 1) await tx.agendaItem.update({ where: { id }, data: { order: i + 1 } });
-      if (moved.length > 0) await this.audit(tx, organizationId, viewer.id, 'UPDATE', meetingId, { order: items.sort((a, b) => a.order - b.order).map((i) => i.id) }, { order: dto.itemIds });
+      if (moved.length > 0) await this.audit(tx, organizationId, viewer.id, 'UPDATE', meetingId, { order: items.map((i) => i.id) }, { order: dto.itemIds });
       return { issued, invitedPresenter: null, changed: moved.length > 0 };
     })
       .catch((error: unknown) => asMeetingConflict(error));
