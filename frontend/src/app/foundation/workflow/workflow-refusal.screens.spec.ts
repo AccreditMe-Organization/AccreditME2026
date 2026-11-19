@@ -59,7 +59,6 @@ const TRANSITION: WorkflowTransitionDto = {
   labelEn: 'Approve',
   labelAr: 'اعتماد',
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE',
 };
 

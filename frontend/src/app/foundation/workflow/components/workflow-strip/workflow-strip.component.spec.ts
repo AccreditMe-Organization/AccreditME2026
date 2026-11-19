@@ -27,7 +27,6 @@ const transition = (over: Partial<WorkflowTransitionDto>): WorkflowTransitionDto
   labelEn: '',
   labelAr: null,
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE',
   ...over,
 });

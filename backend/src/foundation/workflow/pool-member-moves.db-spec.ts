@@ -252,7 +252,7 @@ describe('Pool members see and press their moves, against a real database (ACC-2
     // waits on everyone who may act. Remove the direct entry for this case.
     await prisma.workflowStageAssignee.deleteMany({ where: { kind: 'SPECIFIC_USER', userId: w.formerNamed.id } });
     // ACC-284 — the seeded Approve is used as it is: an ADVANCE on an ALL stage is a
-    // vote by its kind, whatever its isApprovalPath (the old workaround is gone).
+    // vote by its kind (the old isApprovalPath workaround is gone; ACC-294 dropped the field).
 
     expect(await outcome(press(w, w.poolMember))).toBe('OK');
     expect(await prisma.workflowApproval.count({ where: { workflowInstanceStageId: w.entryId, decision: 'APPROVED' } })).toBe(1);

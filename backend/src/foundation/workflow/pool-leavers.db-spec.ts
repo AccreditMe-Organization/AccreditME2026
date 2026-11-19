@@ -133,7 +133,6 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     let order = 0;
     for (const e of entries) await prisma.workflowStageAssignee.create({ data: { organizationId: o.id, stageId: stage.id, order: ++order, ...e } as never });
     const approve = await prisma.workflowTransition.findFirstOrThrow({ where: { fromStageId: stage.id, toStage: { key: 'active' } } });
-    await prisma.workflowTransition.update({ where: { id: approve.id }, data: { isApprovalPath: true } });
     return { stageId: stage.id, approveId: approve.id };
   }
 

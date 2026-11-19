@@ -571,6 +571,21 @@ describe('WorkflowTemplateService', () => {
       );
     });
 
+    // ACC-294 — the template read names its fields; isApprovalPath is not one. A row
+    // that still carries the column (the database keeps it until PR B) never leaks it.
+    it('a template read carries no isApprovalPath, even from a row that still has the column', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { ...BASE_STAGE, transitionsFrom: [{ ...BASE_TRANSITION, isApprovalPath: true, actions: [] }] },
+      ]);
+
+      const result = await service.getTemplateById('template-1', ORG_A);
+
+      const transition = result.stages?.[0]?.transitions?.[0];
+      expect(transition?.id).toBe(BASE_TRANSITION.id); // non-vacuity: the move is read
+      expect(transition).not.toHaveProperty('isApprovalPath');
+    });
+
     it('throws NotFoundException when the template does not exist', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(null);
 
@@ -1051,8 +1066,9 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
     });
 
-    // ACC-271 PR 5b — the transition panel sets Approval path when adding.
-    it('stores isApprovalPath when sent on create, and leaves the default when not', async () => {
+    // ACC-294 — isApprovalPath is gone. The DTO refuses one (dto/is-approval-path.dto.spec.ts);
+    // and if one ever reached the service, nothing writes it.
+    it('never writes isApprovalPath on create, even when one reaches the service', async () => {
       const add = async (extra: Record<string, unknown>): Promise<Record<string, unknown>> => {
         mockPrisma.workflowStage.findFirst
           .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
@@ -1066,7 +1082,7 @@ describe('WorkflowTemplateService', () => {
         const calls = mockPrisma.workflowTransition.create.mock.calls;
         return (calls[calls.length - 1]![0] as { data: Record<string, unknown> }).data;
       };
-      expect((await add({ isApprovalPath: true })).isApprovalPath).toBe(true);
+      expect(await add({ isApprovalPath: true })).not.toHaveProperty('isApprovalPath');
       expect(await add({})).not.toHaveProperty('isApprovalPath');
     });
 

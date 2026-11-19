@@ -176,7 +176,6 @@ export interface WorkflowTransitionDto {
   // ACC-271 PR 6b — no old people field: whoever works the from-stage presses
   // a PERSON move.
   validatorConfig: Record<string, unknown> | null;
-  isApprovalPath: boolean;
   // ACC-190 — ADVANCE is held by the stage's open mandatory tasks; RETURN and
   // EXIT never are. Never inferred from stage order.
   kind: WorkflowTransitionKind;
@@ -320,13 +319,11 @@ export interface CreateWorkflowTransitionDto {
   labelEn: string;
   labelAr: string;
   kind?: WorkflowTransitionKind;
-  isApprovalPath?: boolean;
 }
 
 export interface UpdateWorkflowTransitionDto {
   labelEn?: string;
   labelAr?: string;
-  isApprovalPath?: boolean;
   kind?: WorkflowTransitionKind;
 }
 
