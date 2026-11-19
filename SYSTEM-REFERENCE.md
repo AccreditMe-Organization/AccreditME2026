@@ -3082,6 +3082,46 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
     re-reads the template, which is ACC-55's trap.
   - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
     focus moves to the row's other arrow.
+  - **ACC-212 — and a drag handle on each row** (the drawing's ⣿, a 22 × 26
+    button named "Reorder task n: title"), through Angular CDK drag-drop:
+    - **Pointer:** drag the row by its handle. The preview stays inside the
+      list (`cdkDragPreviewContainer="parent"`), so it inherits the page's
+      direction in Arabic.
+    - **Keyboard, on the same handle:** Space lifts the row, ↑ / ↓ move it
+      (shown, not saved), Space or Enter drops it, and Escape (or focus
+      leaving the handle) puts it back. While a row is lifted, the arrows,
+      Edit and Delete wait.
+    - **Announced** in the arrows' live line: picked up (the position only),
+      each position, the drop, a cancel. The keys are described by a hint
+      (`aria-describedby`) only while nothing is lifted, so they are never read
+      twice. Focus stays on the row's handle.
+    - **A lifted row is put back** when the stage or `canManage` changes.
+    - **Saving:** both paths use the same order endpoint as the arrows, and
+      the new order shows at once.
+      - A failed save puts the rows back and says so ("The new order
+        couldn't be saved…").
+      - A refusal says what the arrows say for every code
+        (`plainWorkflowRefusalKey`).
+      - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+        Focus waits for the re-read, then goes to the moved row's handle, or
+        the list, or the section; never the page body.
+    - **The ↑ / ↓ buttons stay.**
+    - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
+      with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
+      CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
+      because it styles the caller's row; the next sortable list reuses it.
+      Keyboard pick-up stays with the list, which knows the order.
+      - **No literal sizes.** The handle box is `--am-drag-handle-inline` /
+        `-block` (22 × 26, from the Stage Tasks drawing).
+      - **Disabled** is the disabled-control border, not a fade.
+      - **The placeholder** is a dashed slot.
+      - **No slide animation** (no drawing gives a duration).
+      - **The preview's class is doubled.** The caller's row rule ties with it
+        on specificity, and whichever stylesheet loads last would win the
+        bottom border.
+    - **Specs:** `stage-task-list.drag.spec.ts` and
+      `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
+      px, both languages). Mutation-checked.
 - **`StageTaskDefinitionFormComponent`** is the two-step dialog.
   - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
   - The other routes are one or two selects.
@@ -14484,12 +14524,11 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**Two panels are left OUT, not empty**: Tasks and Sessions. Both reads exist: a
-person's tasks through the task list's `person` filter and
-`GET /tasks/record-panel?person=` (#332), and Sessions through
-`GET /users/:userId/sessions` and its endings (below). Each panel is a later PR.
-A spec pins their absence. Committees and Access history were the other two;
-ACC-216 parts 1 and 2 built them (below).
+**One panel is left OUT, not empty**: Tasks. Its read exists: a person's tasks
+through the task list's `person` filter and `GET /tasks/record-panel?person=`
+(#332). Its panel is a later PR. A spec pins its absence. Committees, Access
+history and Sessions were the other three: ACC-216 parts 1 and 2 built the first
+two, and its Sessions panel is "Signed-in devices" (below).
 
 **The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
 `UserCommitteesService` (`foundation/user/committees/`, its own controller
@@ -14509,9 +14548,9 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 - **The gate**, checked before any read, with no query (§1.9 clause a): yourself, or `users:view` (`GET /users/:id`'s rule). The refusal is a 403 "Required permission: users:view", the same for a real colleague and an invented id. Another organisation's person is the identical 404 ("User not found"). No `@Permissions()` on the route. `take` is 1–50 (default 5), `skip` ≥ 0; anything else is a 400.
 - **The rows are stored AuditLog rows, one paged source** (`accessHistoryWhere()`), scoped by organisation: objectType `User` with objectId = the person (the `[objectType, objectId]` index), and objectType `UserRole` whose `metadata.userId` is the person. **Role grants and removals are written against the ROLE** (`objectId` = roleId, `role.service.ts`), so `objectType User` alone would never show them. LOGIN and LOGOUT are left out (not changes; the Sessions panel will hold sign-ins), from the rows and the count. So `total` is exact and Load more never repeats or skips.
 - **A transfer appears once.** `transferUser()` writes an audit row AND a `UserTransferEvent`. The audit row is the one listed; an edit that moved the unit or position is matched to its event (same actor, same source and destination unit, within 10 minutes, nearest; `matchTransfers()`) and read as TRANSFERRED with the units, the position taken and the head appointment (NONE, DONE, FAILED). Unmatched, it stays a profile edit (an invited person's first placement). The failed head appointment's own audit row is listed as HEAD_APPOINTMENT_FAILED; its error text is never returned.
-- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
+- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; `sessions_ended` → SESSIONS_ENDED, with its `scope` and `count` when both are of their shapes; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
 - **Never returned: `before`, `after`, `metadata`.** They hold a whole User row (its invitation token included), a revoked invitation's email and an error message. The server reads them for the kind and, for an edit, which of nine fields differ (`name`, `language`, `calendar`, `position`, `unit`, `manager`, `actingUnit`, `outOfOffice`, `cover`), compared only where both copies hold the key. Never their values.
-- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, or `transfer` (`from`, `to`, `position`, `headAppointment`).
+- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, `transfer` (`from`, `to`, `position`, `headAppointment`), or `sessionsScope` + `sessionsCount` (SESSIONS_ENDED: `one`, `others` or `all`, and a whole number of zero or more; both or neither, neither when either stored value is not of its shape, and the screen then says it without them).
 - **The actor** is `{ id, name }` while a person of this organisation, deactivated included (they did it). It is null with no actorId (the system), or when the id is not a person here: a platform administrator signing in as the person (IMPERSONATE_START names them), or a deleted account. An impersonated write is stored under the impersonated person with no marker (Open / Deferred, ACC-99), so it cannot be told apart.
 - **A role is named only with `roles:view`** (`GET /users/:userId/roles`'s gate); without it the row says a role was granted, and no role is read.
 - **Cost:** at most 8 queries per page (the person; the page and its count; actors, roles and transfer events, each only when needed; units and positions only for a transfer), every one scoped by organisation. Nothing on the per-request path.
@@ -14519,7 +14558,7 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 
 **A person's sign-ins, and ending them (ACC-216 Sessions, PR 1, the backend).**
 `UserSessionsService` (`foundation/user/sessions/`); plan and Ahmad's answers (17
-Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
+Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is "Signed-in devices", below.
 - **A sign-in is a chain of `RefreshToken` rows** (each renewal revokes one row and
   writes the next, copying `sessionStartedAt`); the row listed is its one live row.
   **Live** (`liveSessionWhere()`): not revoked, not expired, under 12 hours from its
@@ -14549,13 +14588,30 @@ Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
   `sessions_ended` security email (a failed email never fails the sign-out).
 - **Audit** (every ending): `UPDATE` / `User` / the person, `metadata: { event:
   'sessions_ended', scope: 'one' | 'others' | 'all', count }`. No address, device or
-  token. Part 2's access history (#323) reads it as "Changed" until a SESSIONS_ENDED
-  kind is added there.
+  token. Part 2's access history reads it as SESSIONS_ENDED: "Signed out of one
+  device", "Signed out of other devices: {count} devices" or "Signed out
+  everywhere: {count} devices" (counted, every Arabic category), and "Signed out of
+  devices" when the scope or count could not be read.
 - **`users:manage_sessions`**: grantable, seeded to Organization Administrator only,
   in Users' "Account access" group. Existing organisations get it from
   `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`
   written directly, one audit row per tenant, refuses customers, skips the platform
   organisation; dry run by default).
+- **The panel** (`UserSessionsPanelComponent`, "Signed-in devices" / «أجهزة الدخول»)
+  on `am-capped-panel`, for the design thread to check (Ahmad, Q11). The record page
+  decides its mode (`sessionsMode`): `own` for yourself, `admin` for a `users:view` +
+  `users:manage_sessions` holder, and nothing (no panel, no request) for anyone
+  else; a 403 or 404 also hides it. Five rows (device, "This device" on yours, last
+  active through `FormatService.relative()`, and the address when the server sent
+  one), See all in `am-list-dialog` compact. Its own outcome (skeleton, error with
+  Retry, "Not signed in on any device"). **Own:** "Sign out" on each other device
+  and "Sign out other devices" (offered only when one exists), each confirmed
+  through `AmConfirmService.ask()` saying up to 15 minutes; nothing on this device.
+  **Admin:** one "Sign out everywhere" (only when they are signed in somewhere),
+  confirmed naming the person, at once, emailed. Every refusal is said from its code
+  (`sessions-refusal.ts`), in both languages. A layout spec at 988 and 358 in both
+  languages pins the header whole (the title never cut by its action) and one row
+  height.
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the
@@ -17049,12 +17105,13 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5, 6)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
 2's (§1, §2.18, §2.19, §3.16). PR 3b added invitees, guests, answers, the agenda,
-files and the clash check (§18.8–§18.12); PR 4 the minutes.
+files and the clash check (§18.8–§18.12); PR 4 the minutes; PR 5 the series
+(§18.14); PR 6 the first screens (§18.15).
 
 ### 18.1 The routes
 
@@ -17068,6 +17125,9 @@ files and the clash check (§18.8–§18.12); PR 4 the minutes.
 | `POST /meetings` | schedule: `committeeId` or `orgUnitId` (exactly one), title, `typeValueId` (a `meeting_type` value), `scheduledAt`, `durationMinutes` 5–1440, `location` and/or `meetingUrl`, `unitQuorum` (unit meetings only) |
 | `PATCH /meetings/:id` | edit those fields except the owner and the time; `expectedUpdatedAt` |
 | `POST /meetings/:id/reschedule` | a new time and a reason, both required |
+| `GET /meetings/form-choices` | PR 6: the organisation's meeting types, as `getValues('meeting_type')` offers them (no permission, as the committee form's choices) |
+| `GET /meetings/may-schedule?committeeId=\|orgUnitId=` | PR 6: `{ may }`, whether Schedule meeting is offered (§18.15) |
+| `GET /meetings/:id/guest-candidates?q=&skip=&take=` | PR 6: ACTIVE people not invited, name, unit and position only, for whoever may write the meeting; `take` up to 50 |
 
 Cancel is the workflow's own move (`POST /workflows/instances/:id/transition`,
 with a comment), not a meetings route.
@@ -17086,6 +17146,14 @@ write a second copy.
 - An **overseer** (reads, `{ oversight: true }`): a head, or an acting head in
   force, of the owning unit (the meeting's own, or its committee's) or a unit
   above it.
+- A **scheduler** (ACC-316 PR 6, Ahmad, 19 Nov): whoever may schedule the
+  owner's meetings (`MEETING_SCHEDULERS`) sees them and manages them with the
+  writes a scheduler already passes (edit, reschedule, guests, agenda, cancel),
+  and nothing more. The seat path is a member and the head path an overseer, so
+  the clause adds the own-unit path: an ACTIVE person whose own unit is the
+  owning unit and who holds `meetings:schedule` through an active role. It is
+  in MEMBER's SQL (`meetingMemberSql`), so the parent rule, every list, the
+  clash check and the task registry read it, live, with no query per row.
 
 Anyone else gets the identical 404 "Meeting not found". It is the same for a
 real meeting, a missing one and another organisation's.
@@ -17612,3 +17680,90 @@ with `schedule()`).
 - **Organisation scoping:** another organisation's series is
   `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
   `seriesId` filter lists nothing of theirs.
+### 18.15 The screens, part 1 (PR 6)
+
+Plan §6.5 lists the departures. Frontend under `foundation/meetings/`, plus two
+shared pieces in `foundation/workflow/`.
+
+**Where meetings appear:**
+
+- **The rail:** "Meetings", `/meetings`, `moduleKey: 'meetings'`, no permission
+  of its own (members open their own meetings; the server decides each view).
+- **`/meetings`:** `app-data-list` with the views Mine, Past, Minutes I record,
+  All meetings (only with `meetings:view`) and Sub-units' meetings, a title
+  search (`q`) and server paging. Headers are plain: the list takes no sort.
+- **The committee and unit pages:** `app-meetings-panel` (`am-capped-panel`),
+  the next three meetings then the last two held. Both pages show it only while
+  `isNavModuleOpen('meetings')`. Schedule meeting follows `GET
+  /meetings/may-schedule`.
+- **`/meetings/:id`:** the header, the stage indicator, the move buttons, the
+  relations strip, the person's own answer, the agenda (read-only) and the
+  invitees. A 404 or 403 reads "You can't open this meeting."
+- **Links:** `recordPageLink('MEETING')`, so a task's meeting and the bell's
+  meeting notices open the page.
+
+**Every rule is the server's:**
+
+- the read's `may` (`reschedule`, `manageGuests`, `answer`) decides each control;
+  absent, never disabled;
+- the moves are the moves list's; Cancel's reason is its `needsReason`, Issue
+  Agenda's confirm its `toStageFlags` (`AGENDA_ISSUED`);
+- refusals are said from their codes (`meeting-refusal.ts`), with a screen's own
+  generic sentence for any other failure, never the server's words.
+
+**May-schedule** (`MeetingsService.maySchedule()`) is true exactly when
+`schedule()` would make a meeting the person can open, three reads at once:
+
+- SCHEDULERS (`meeting-authority.ts`), as `schedule()` checks;
+- for a committee, its stage allows `schedule_meeting`;
+- `meetings:view`, or `wouldSeeNewMeeting()` (`meeting-membership.ts`, beside
+  the rule's one copy): a member of the active committee, a person of the unit,
+  or a head of the owning unit or a unit above.
+
+The db-spec proves it against `schedule()` for every person and owner.
+`schedule()` asks the same parent-rule question BEFORE its transaction and
+refuses `MEETING_NOT_ALLOWED`, so a meeting is never written that its scheduler
+could not open; since the scheduler clause (§18.2) it refuses nothing, and the
+db-spec forces the two rules apart to prove nothing is written.
+
+**The panels list by the plain rule:** `view=upcoming` (every meeting the
+person may see that has not started) and `past`, by owner, and the header count
+is the two totals. **The list's `canSeeAll`** says whether All meetings is
+offered; the screen keeps no copy of `meetings:view`.
+
+**The start is the tenant's wall clock.** `FormatService.wallClock()` and
+`instantAt()` read the formatting layer's own zone (`FormatContext`), so 10:00
+typed is 10:00 shown, whatever the browser's zone, and Reschedule opens on the
+meeting's time as every display shows it. Reschedule resets only when it opens.
+
+**A press whose outcome is unknown** (no answer, a 408 or 504, any 5xx) is never
+offered as a plain retry: Schedule says the meeting may have been scheduled,
+offers Close only, and the panel reads its list again. A refusal (a 4xx) wrote
+nothing and is said from its code. Meeting types that fail to load say so, with
+Retry, in Type's place.
+
+**The move confirm** (`MoveConfirmDialogComponent`): `app-workflow-transition-actions`
+takes `confirmFor(move)`, a record's own words for a move, or null to press at
+once. A move with `needsReason` always opens it, with generic words if the
+record gives none, and sends the reason as the press's comment.
+
+**The dialogs** are `app-edit-dialog`, measured under the 420px cap at 1280 and
+390, in both languages, each keeping 20px:
+
+| Dialog | Tallest body (en / ar) |
+|---|---|
+| Schedule meeting, a unit with every error | 380 / 390 at 1280; 397 / 390 at 390 |
+| Schedule meeting, a committee | 363 / 373 |
+| Reschedule | 248 / 266 refused; 218 / 234 otherwise |
+| Add a guest, an outside guest, issued | 333 / 330 at 1280; 369 / 350 at 390 |
+| Cancel (move confirm, with its reason) | 178 / 171 at 1280; 178 / 195 at 390 |
+
+The start (`am-meeting-when-field`) is New task's day-and-time control: the day
+as words with its calendar toggle (the calendar swaps the body), the time typed
+HH:mm at 112px on PrimeNG's INNER input. Sized on the host only, that input was
+305px and ran the body sideways. Its validator (`meetingTimeValidator`) requires
+a day and a time, then HH:mm.
+
+**Test support:** `meeting-fixtures.testing.ts` (`aMeeting`, `anAttendee`) and
+`meeting-dialog-layout.testing.ts` (open, wait for the motion, measure), imported
+by specs only.

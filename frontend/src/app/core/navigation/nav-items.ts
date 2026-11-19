@@ -216,6 +216,12 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         // opens it without committees:view; the server answers what they may read.
         orWhen: 'mayBrowseCommittees',
       },
+      // ACC-316 PR 6 — Meetings, after Committees (plan §4.3). A moduleKey and,
+      // deliberately, NO requiredPermission: the plan shows it to meetings:view
+      // holders, committee members, people of any unit and heads, which a
+      // permission can't say; the list shows each person what the server lets
+      // them see (the "All meetings" view needs meetings:view, server side).
+      { key: 'meetings', labelKey: 'nav.meetings', icon: 'pi pi-calendar', route: '/meetings', moduleKey: 'meetings' },
       // ACC-120 slice 11, PR F (D1, option B1) — the Organisation pages,
       // read-only, for an org:view holder who does not administer (OS §6). An
       // administrator never sees this item: they have Organization Structure

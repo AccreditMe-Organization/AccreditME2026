@@ -48,8 +48,12 @@ export type AccessHistoryKind =
   | 'TWO_STEP_RESET'
   | 'PASSWORD_RESET_REQUESTED'
   | 'PASSWORD_RESET'
+  | 'SESSIONS_ENDED'
   | 'SIGNED_IN_AS'
   | 'CHANGED';
+
+/** SESSIONS_ENDED: one of the person's own sign-ins, all but the one in use, or all (an administrator). */
+export type AccessHistorySessionsScope = 'one' | 'others' | 'all';
 
 export type AccessHistoryField =
   | 'name'
@@ -84,6 +88,9 @@ export interface IAccessHistoryRowDto {
     position: IAccessHistoryNameDto | null;
     headAppointment: 'NONE' | 'DONE' | 'FAILED';
   };
+  /** SESSIONS_ENDED only, both or neither: absent when the server could not read them. */
+  sessionsScope?: AccessHistorySessionsScope;
+  sessionsCount?: number;
 }
 
 export interface IUserAccessHistoryPageDto {
@@ -91,6 +98,30 @@ export interface IUserAccessHistoryPageDto {
   total: number;
   skip: number;
   take: number;
+}
+
+/** ACC-216 Sessions — one current sign-in on GET /users/:id/sessions (backend IUserSession). */
+export interface IUserSessionDto {
+  id: string;
+  startedAt: string;
+  /** The last renewal: accurate to about 15 minutes. */
+  lastActiveAt: string;
+  expiresAt: string;
+  /** Family names read on the server; null when unrecognised. */
+  device: { browser: string | null; os: string | null };
+  /** Sent only to the person and a users:manage_sessions holder. */
+  address: string | null;
+  /** Your own sign-in on your own list. */
+  current: boolean;
+}
+
+export interface IUserSessionsDto {
+  total: number;
+  rows: IUserSessionDto[];
+}
+
+export interface ISessionsEndedDto {
+  ended: number;
 }
 
 // ACC-79 — names for the ids on a user record. Returned by GET /users/:id
@@ -284,6 +315,29 @@ export class UserService {
   getAccessHistory(id: string, page: { skip: number; take: number }): Observable<IUserAccessHistoryPageDto> {
     const params = new HttpParams().set('skip', page.skip).set('take', page.take);
     return this.http.get<IUserAccessHistoryPageDto>(`${this.base}/${id}/access-history`, { params });
+  }
+
+  /**
+   * ACC-216 Sessions — a person's current sign-ins: yourself, or users:view plus
+   * users:manage_sessions. At most 20; `total` counts past them.
+   */
+  getSessions(id: string): Observable<IUserSessionsDto> {
+    return this.http.get<IUserSessionsDto>(`${this.base}/${id}/sessions`);
+  }
+
+  /** Yourself: end one other sign-in (by any row of its chain). Bites within 15 minutes. */
+  endOwnSession(sessionId: string): Observable<ISessionsEndedDto> {
+    return this.http.post<ISessionsEndedDto>(`${environment.apiUrl}/auth/sessions/${sessionId}/end`, {});
+  }
+
+  /** Yourself: end every sign-in but this device's. Bites within 15 minutes. */
+  endOtherOwnSessions(): Observable<ISessionsEndedDto> {
+    return this.http.post<ISessionsEndedDto>(`${environment.apiUrl}/auth/sessions/end-others`, {});
+  }
+
+  /** An administrator (users:manage_sessions): "Sign out everywhere", at once; the person is emailed. */
+  endAllSessions(id: string): Observable<ISessionsEndedDto> {
+    return this.http.post<ISessionsEndedDto>(`${this.base}/${id}/sessions/end-all`, {});
   }
 
   invite(dto: InviteUserDto): Observable<IUserDto> {

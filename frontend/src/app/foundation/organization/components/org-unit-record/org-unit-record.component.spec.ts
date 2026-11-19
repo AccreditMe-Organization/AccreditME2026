@@ -153,7 +153,7 @@ describe('OrgUnitRecordComponent (ACC-120 slice 11, PR D)', () => {
         provideFormatTesting(),
         providePrimeNG({}),
         ConfirmationService,
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.includes(p) } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => permissions.includes(p) } },
         { provide: AmConfirmService, useValue: { ask: (o: AmConfirmOptions) => asked.push(o) } },
         {
           provide: OrgUnitService,

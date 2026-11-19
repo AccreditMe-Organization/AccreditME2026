@@ -63,9 +63,17 @@ describe('NotificationBellComponent — task notifications open the task page (A
     expect(bell.isRecordLink(item({ objectType: 'COMMITTEE', objectId: 'c-1' }))).toBe(true);
   });
 
+  // ACC-316 PR 6 — a meeting's notification opens the meeting page.
+  it('a meeting notification opens the meeting page, as a record link', () => {
+    const bell = create();
+    expect(bell.itemLink(item({ objectType: 'MEETING', objectId: 'm-1' }))).toEqual(['/meetings', 'm-1']);
+    expect(bell.isRecordLink(item({ objectType: 'MEETING', objectId: 'm-1' }))).toBe(true);
+    expect(bell.itemLink(item({ objectType: 'MEETING', objectId: null }))).toBeNull();
+  });
+
   it('leaves every other notification without a link, as before', () => {
     const bell = create();
-    expect(bell.itemLink(item({ objectType: 'MEETING', objectId: 'm-1' }))).toBeNull();
+    expect(bell.itemLink(item({ objectType: 'DOCUMENT', objectId: 'd-1' }))).toBeNull();
     expect(bell.itemLink(item({ objectType: null, objectId: null }))).toBeNull();
     expect(bell.itemLink(item({ objectType: 'Task', objectId: null }))).toBeNull();
     expect(bell.itemLink(item({ objectType: 'COMMITTEE', objectId: null }))).toBeNull();

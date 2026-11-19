@@ -5,18 +5,23 @@ import {
   OnInit,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
+import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { DragHandleComponent } from '../../../../shared/components/drag-handle/drag-handle.component';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { refusalCode } from '../../../../core/http/refusal';
 import {
   StageTaskDefinitionDto,
   StageTaskDefinitionListItemDto,
@@ -58,20 +63,41 @@ type LoadState = 'loading' | 'ready' | 'error';
  * template read replaces every stage, and ACC-55 is what that does to a dialog
  * open inside the row.
  *
- * ## Reorder is ↑ / ↓, and an arrow that cannot move is ABSENT
+ * ## Reorder: ↑ / ↓, and an arrow that cannot move is ABSENT
  *
  * The drawing's no-drag path. The first row has no ↑ and the last no ↓, so
  * after a move focus goes to the moved row's same arrow, or to its other one
- * when that arrow has just gone, and the move is announced. The drawing's drag
- * handle is not built (step-208 §8b): it is a second reorder mechanism, which
- * is a decision rather than a picture.
+ * when that arrow has just gone, and the move is announced.
+ *
+ * ## ACC-212 — and the drag handle, with keyboard pick-up
+ *
+ * Each row's handle (⣿, drawing section 1) is a real button and the CDK drag
+ * handle. A pointer drags the row (Angular CDK drag-drop, vertical, its
+ * preview kept inside the list so it inherits the page's direction). From the
+ * keyboard the same handle picks the row up: Space lifts it, ↑ / ↓ move it,
+ * Space (or Enter) drops it, Escape puts it back. Each step is announced in
+ * the same live line as the arrows', and focus stays on the moved row's handle.
+ *
+ * Both paths save through the one order endpoint the arrows use. The new order
+ * is shown at once; a failed save puts the rows back as they were and says so
+ * (a list someone else changed is re-read, as the arrows do).
  */
 @Component({
   selector: 'app-stage-task-list',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, EditDialogComponent, IconButtonComponent, StageTaskDefinitionFormComponent],
+  imports: [
+    TranslatePipe,
+    ButtonModule,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    DragHandleComponent,
+    EditDialogComponent,
+    IconButtonComponent,
+    StageTaskDefinitionFormComponent,
+  ],
   template: `
-    <section class="am-stage-tasks" [attr.aria-label]="'workflow.stageTasks.title' | translate">
+    <section class="am-stage-tasks" tabindex="-1" [attr.aria-label]="'workflow.stageTasks.title' | translate">
       <div class="am-stage-tasks__head">
         <h3 class="am-stage-tasks__title">{{ 'workflow.stageTasks.title' | translate }}</h3>
         @if (canAdd() && rows().length > 0) {
@@ -128,9 +154,37 @@ type LoadState = 'loading' | 'ready' | 'error';
                 }
               </div>
             } @else {
-              <ol class="am-stage-tasks__list" [attr.aria-label]="'workflow.stageTasks.listAria' | translate">
+              <ol
+                class="am-stage-tasks__list"
+                [attr.aria-label]="'workflow.stageTasks.listAria' | translate"
+                cdkDropList
+                cdkDropListLockAxis="y"
+                [cdkDropListDisabled]="!canManage() || locked()"
+                (cdkDropListDropped)="onDrop($event)"
+                tabindex="-1"
+                data-stage-tasks-list
+              >
                 @for (row of rows(); track row.id; let i = $index; let first = $first; let last = $last) {
-                  <li class="am-stage-task" [attr.data-stage-task]="row.id">
+                  <li
+                    class="am-stage-task am-drag-row"
+                    [class.am-drag-row--lifted]="lifted()?.id === row.id"
+                    [attr.data-stage-task]="row.id"
+                    cdkDrag
+                    [cdkDragData]="row"
+                    cdkDragPreviewContainer="parent"
+                  >
+                    @if (canManage()) {
+                      <am-drag-handle
+                        cdkDragHandle
+                        [attr.data-handle]="row.id"
+                        [label]="'workflow.stageTasks.reorderNamed' | translate: { position: i + 1, title: titleOf(row) }"
+                        [describedBy]="lifted() ? null : hintId"
+                        [pressed]="lifted()?.id === row.id"
+                        [disabled]="busy()"
+                        (keydown)="onHandleKey($event, row)"
+                        (focusout)="onHandleFocusOut(row)"
+                      />
+                    }
                     <span class="am-stage-task__n" aria-hidden="true">{{ i + 1 }}</span>
                     <div class="am-stage-task__body">
                       <span class="am-stage-task__title">{{ titleOf(row) }}</span>
@@ -165,7 +219,7 @@ type LoadState = 'loading' | 'ready' | 'error';
                           <am-icon-button
                             icon="pi pi-arrow-up"
                             [label]="'workflow.stageTasks.moveUpNamed' | translate: { title: titleOf(row) }"
-                            [disabled]="busy()"
+                            [disabled]="locked()"
                             [attr.data-move]="row.id + ':up'"
                             (activated)="move(row, -1)"
                           />
@@ -174,7 +228,7 @@ type LoadState = 'loading' | 'ready' | 'error';
                           <am-icon-button
                             icon="pi pi-arrow-down"
                             [label]="'workflow.stageTasks.moveDownNamed' | translate: { title: titleOf(row) }"
-                            [disabled]="busy()"
+                            [disabled]="locked()"
                             [attr.data-move]="row.id + ':down'"
                             (activated)="move(row, 1)"
                           />
@@ -182,14 +236,14 @@ type LoadState = 'loading' | 'ready' | 'error';
                         <am-icon-button
                           icon="pi pi-pencil"
                           [label]="'workflow.stageTasks.editNamed' | translate: { title: titleOf(row) }"
-                          [disabled]="busy()"
+                          [disabled]="locked()"
                           (activated)="openEdit(row)"
                         />
                         <am-icon-button
                           icon="pi pi-trash"
                           severity="danger"
                           [label]="'workflow.stageTasks.deleteNamed' | translate: { title: titleOf(row) }"
-                          [disabled]="busy()"
+                          [disabled]="locked()"
                           (activated)="askDelete(row)"
                         />
                       </span>
@@ -207,6 +261,7 @@ type LoadState = 'loading' | 'ready' | 'error';
       }
 
       <p class="sr-only" aria-live="polite" data-stage-tasks-announcement>{{ announcement() }}</p>
+      <span class="sr-only" [id]="hintId">{{ 'workflow.stageTasks.handleHint' | translate }}</span>
     </section>
 
     <!-- Add and edit (drawing section 2): two steps, the step named in the
@@ -554,6 +609,18 @@ export class StageTaskListComponent implements OnInit {
   readonly deleting = signal<StageTaskDefinitionListItemDto | null>(null);
 
   readonly busy = computed(() => this.reordering() || this.removing());
+
+  /**
+   * ACC-212 — the row picked up from the keyboard: its id, and the order to put
+   * back on Escape. While one is lifted the other row actions wait.
+   */
+  readonly lifted = signal<{ id: string; snapshot: StageTaskDefinitionListItemDto[] } | null>(null);
+  /** The arrows, Edit and Delete: not while saving, nor while a row is lifted. */
+  readonly locked = computed(() => this.busy() || this.lifted() !== null);
+  /** A moved row's DOM node is re-inserted, which blurs its handle: not a reason to cancel. */
+  private relocating = false;
+  private static nextHintId = 0;
+  readonly hintId = 'am-stage-task-hint-' + ++StageTaskListComponent.nextHintId;
   readonly canAdd = computed(() => this.canManage() && !this.stage().isFinal && this.state() === 'ready');
 
   readonly longest = computed(() => {
@@ -602,15 +669,32 @@ export class StageTaskListComponent implements OnInit {
     });
   });
 
+  constructor() {
+    // ACC-212 — a row picked up from the keyboard is put back when the stage it
+    // belongs to, or the viewer's right to reorder, changes under it.
+    effect(() => {
+      this.stage();
+      this.canManage();
+      untracked(() => this.cancelLift(false));
+    });
+  }
+
   ngOnInit(): void {
     this.load();
   }
 
-  load(): void {
+  /** `settled` runs once the list has been redrawn from what was read (or failed to be). */
+  load(settled?: () => void): void {
     this.state.set('loading');
     this.templates.listStageTaskDefinitions(this.stage().id).subscribe({
-      next: (rows) => this.settle(rows),
-      error: () => this.state.set('error'),
+      next: (rows) => {
+        this.settle(rows);
+        settled?.();
+      },
+      error: () => {
+        this.state.set('error');
+        settled?.();
+      },
     });
   }
 
@@ -752,6 +836,184 @@ export class StageTaskListComponent implements OnInit {
         this.load();
       },
     });
+  }
+
+  // ── ACC-212 — drag, and keyboard pick-up ─────────────────────────────────
+
+  /** A pointer drop: the new order is shown at once and saved; a failure puts it back. */
+  onDrop(event: CdkDragDrop<unknown, unknown, StageTaskDefinitionListItemDto>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const snapshot = this.rows();
+    const next = [...snapshot];
+    moveItemInArray(next, event.previousIndex, event.currentIndex);
+    this.rows.set(next);
+    this.saveOrder(next, snapshot, event.item.data);
+  }
+
+  onHandleKey(event: KeyboardEvent, row: StageTaskDefinitionListItemDto): void {
+    const lifted = this.lifted();
+    switch (event.key) {
+      case ' ':
+      case 'Spacebar':
+        event.preventDefault();
+        if (lifted) this.dropLifted();
+        else this.lift(row);
+        return;
+      case 'Enter':
+        if (!lifted) return;
+        event.preventDefault();
+        this.dropLifted();
+        return;
+      case 'ArrowUp':
+      case 'ArrowDown':
+        if (!lifted) return;
+        event.preventDefault();
+        this.nudge(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      case 'Escape':
+        if (!lifted) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.cancelLift();
+        return;
+    }
+  }
+
+  /** Focus leaving the lifted row's handle (Tab, a click elsewhere) puts the row back. */
+  onHandleFocusOut(row: StageTaskDefinitionListItemDto): void {
+    if (this.relocating || this.lifted()?.id !== row.id) return;
+    this.cancelLift(false);
+  }
+
+  private lift(row: StageTaskDefinitionListItemDto): void {
+    if (this.busy() || !this.canManage()) return;
+    const rows = this.rows();
+    this.actionError.set(null);
+    this.lifted.set({ id: row.id, snapshot: rows });
+    this.announcement.set(
+      this.translate.instant('workflow.stageTasks.pickedUp', {
+        title: this.titleOf(row),
+        position: rows.findIndex((r) => r.id === row.id) + 1,
+        of: rows.length,
+      }),
+    );
+  }
+
+  /** One step up or down, shown at once and not yet saved. */
+  private nudge(by: -1 | 1): void {
+    const lifted = this.lifted();
+    if (!lifted) return;
+    const rows = [...this.rows()];
+    const from = rows.findIndex((r) => r.id === lifted.id);
+    const to = from + by;
+    if (from < 0 || to < 0 || to >= rows.length) return;
+    moveItemInArray(rows, from, to);
+    this.rows.set(rows);
+    this.announcement.set(
+      this.translate.instant('workflow.stageTasks.movingTo', { title: this.titleOf(rows[to]!), position: to + 1, of: rows.length }),
+    );
+    this.refocusHandle(lifted.id);
+  }
+
+  private dropLifted(): void {
+    const lifted = this.lifted();
+    if (!lifted) return;
+    this.lifted.set(null);
+    const rows = this.rows();
+    const row = rows.find((r) => r.id === lifted.id)!;
+    if (rows.every((r, i) => r.id === lifted.snapshot[i]?.id)) {
+      this.announcement.set(
+        this.translate.instant('workflow.stageTasks.droppedUnchanged', {
+          title: this.titleOf(row),
+          position: rows.indexOf(row) + 1,
+          of: rows.length,
+        }),
+      );
+      return;
+    }
+    this.saveOrder(rows, lifted.snapshot, row);
+  }
+
+  /** Escape (or focus leaving): the order as it was before the lift, unsaved. */
+  private cancelLift(refocus = true): void {
+    const lifted = this.lifted();
+    if (!lifted) return;
+    this.lifted.set(null);
+    this.rows.set(lifted.snapshot);
+    const row = lifted.snapshot.find((r) => r.id === lifted.id)!;
+    this.announcement.set(
+      this.translate.instant('workflow.stageTasks.dropCancelled', {
+        title: this.titleOf(row),
+        position: lifted.snapshot.indexOf(row) + 1,
+        of: lifted.snapshot.length,
+      }),
+    );
+    if (refocus) this.refocusHandle(lifted.id);
+  }
+
+  /**
+   * The one order endpoint the arrows use. Success: the server's list, announced
+   * as the arrows announce, focus on the row's handle. Failure: the rows exactly
+   * as they were, and a line that says so; a list someone else changed is re-read
+   * (STAGE_TASK_ORDER_MISMATCH), as the arrows do.
+   */
+  private saveOrder(next: StageTaskDefinitionListItemDto[], snapshot: StageTaskDefinitionListItemDto[], row: StageTaskDefinitionListItemDto): void {
+    this.reordering.set(true);
+    this.actionError.set(null);
+    this.templates
+      .reorderStageTaskDefinitions(
+        this.stage().id,
+        next.map((r) => r.id),
+      )
+      .subscribe({
+        next: (updated) => {
+          this.reordering.set(false);
+          this.settle(updated);
+          this.announcement.set(
+            this.translate.instant('workflow.stageTasks.moved', {
+              title: this.titleOf(row),
+              position: updated.findIndex((r) => r.id === row.id) + 1,
+              of: updated.length,
+            }),
+          );
+          this.refocusHandle(row.id);
+        },
+        error: (err: unknown) => {
+          this.reordering.set(false);
+          this.rows.set(snapshot);
+          // The refusal the arrows say, for every code it knows; else the plain line.
+          const key = plainWorkflowRefusalKey(err) ?? 'workflow.stageTasks.orderNotSaved';
+          this.actionError.set(key);
+          this.announcement.set(this.translate.instant(key));
+          if (refusalCode(err) === 'STAGE_TASK_ORDER_MISMATCH') {
+            // The list is re-read, which redraws it: focus waits for the new rows.
+            this.load(() => this.refocusHandle(row.id));
+          } else {
+            this.refocusHandle(row.id);
+          }
+        },
+      });
+  }
+
+  /**
+   * Focus follows the row: its handle, once the list has re-rendered — or, when
+   * the row is no longer there (a list re-read without it), the list itself, or
+   * the section when the list is empty. Never the page body.
+   */
+  private refocusHandle(id: string): void {
+    this.relocating = true;
+    afterNextRender(
+      () => {
+        const root = this.host.nativeElement;
+        const target =
+          root.querySelector<HTMLElement>('[data-handle="' + id + '"] button') ??
+          root.querySelector<HTMLElement>('[data-stage-tasks-list]') ??
+          root.querySelector<HTMLElement>('.am-stage-tasks');
+        target?.focus();
+        this.relocating = false;
+      },
+      { injector: this.injector },
+    );
   }
 
   /** After a save in the dialog: the list is re-read, so it shows exactly what the server holds. */

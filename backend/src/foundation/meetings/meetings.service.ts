@@ -8,6 +8,7 @@ import {
   meetingMemberSql,
   meetingOversightUnitIds,
   meetingOverseenSql,
+  wouldSeeNewMeeting,
 } from '../../common/services/meeting-membership';
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
@@ -76,6 +77,14 @@ export class MeetingsService {
     if (!(await isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now))) {
       throw new MeetingRefusal('MEETING_NOT_ALLOWED');
     }
+    // ACC-316 PR 6 — never write a meeting its scheduler could not then open
+    // (the parent rule for a new meeting, as may-schedule asks). Since Ahmad's
+    // 19 Nov decision every scheduler sees what they schedule, so this refuses
+    // nothing today; it is what keeps a create from answering 404 if the two
+    // rules ever part again.
+    if (!viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW) && !(await wouldSeeNewMeeting(this.prisma, organizationId, owner, viewer.id, now))) {
+      throw new MeetingRefusal('MEETING_NOT_ALLOWED');
+    }
     // A title of spaces passes the DTO and would be stored as ''.
     const title = dto.title.trim();
     if (!title) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
@@ -142,6 +151,28 @@ export class MeetingsService {
   }
 
   // ── Read ────────────────────────────────────────────────────────────────────
+
+  /**
+   * ACC-316 PR 6 — whether Schedule meeting is offered for this committee or
+   * unit: exactly when schedule() would make a meeting this person can then
+   * open. Three answers, read at once, each one schedule() checks too: the
+   * SCHEDULERS predicate (meeting-authority.ts); for a committee, its stage's
+   * `schedule_meeting` (a Dissolved committee schedules nothing); and the
+   * parent rule for a new meeting of this owner (meetings:view, or
+   * wouldSeeNewMeeting()). Since 19 Nov (Ahmad) a scheduler always sees what
+   * they schedule (meeting-membership.ts's SCHEDULER clause), so the last
+   * answer only guards against the two rules parting. Another organisation's
+   * owner is MEETING_OWNER_NOT_FOUND, as schedule() answers.
+   */
+  async maySchedule(dto: { committeeId?: string; orgUnitId?: string }, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<{ may: boolean }> {
+    const owner = await this.resolveNewOwner(dto, organizationId);
+    const [schedules, stageAllows, sees] = await Promise.all([
+      isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
+      owner.committeeId ? this.stageRules.stageAllows('COMMITTEE', owner.committeeId, COMMITTEE_ACTIONS.SCHEDULE_MEETING, organizationId) : Promise.resolve(true),
+      viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW) ? Promise.resolve(true) : wouldSeeNewMeeting(this.prisma, organizationId, owner, viewer.id, now),
+    ]);
+    return { may: schedules && stageAllows && sees };
+  }
 
   async getForViewer(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting> {
     // A read: the head of a unit above may open it too (oversight).
@@ -235,6 +266,8 @@ export class MeetingsService {
    * Every view keeps the visibility rule in its WHERE, so a listed row always
    * opens: an organiser who has since left the unit or committee no longer
    * lists the meeting they could not open.
+   *   upcoming  every meeting the viewer may see that has not started; soonest first
+   *             (the committee and unit panels, which list by owner)
    *   past      every meeting the viewer may see that has started; latest first
    *   minutes   meetings whose minutes the viewer records (meeting-authority's RECORDERS, as SQL)
    *   all       every meeting: meetings:view only
@@ -255,6 +288,10 @@ export class MeetingsService {
     switch (view) {
       case 'mine':
         where = Prisma.sql`${visible} AND (${member} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
+        order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
+        break;
+      case 'upcoming':
+        where = Prisma.sql`${visible} AND m."scheduledAt" >= ${now}`;
         order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
         break;
       case 'past':
@@ -280,7 +317,10 @@ export class MeetingsService {
         ? Prisma.sql`m."orgUnitId" = ${dto.orgUnitId}`
         : Prisma.sql`TRUE`;
     const series = dto.seriesId ? Prisma.sql`m."seriesId" = ${dto.seriesId}` : Prisma.sql`TRUE`;
-    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series}`;
+    // ACC-316 PR 6 — the list's search, on the title; LIKE's own wildcards are matched literally.
+    const term = dto.q?.trim();
+    const search = term ? Prisma.sql`m.title ILIKE ${'%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%'}` : Prisma.sql`TRUE`;
+    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series} AND ${search}`;
 
     const [rows, counts] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`
@@ -290,7 +330,7 @@ export class MeetingsService {
       this.prisma.$queryRaw<{ total: bigint }[]>`SELECT count(*)::bigint AS total FROM "Meeting" m WHERE ${base}`,
     ]);
     const ids = rows.map((r) => r.id);
-    return { items: await this.listItems(ids, organizationId), total: Number(counts[0]?.total ?? 0) };
+    return { items: await this.listItems(ids, organizationId), total: Number(counts[0]?.total ?? 0), canSeeAll: seesAll };
   }
 
   /**

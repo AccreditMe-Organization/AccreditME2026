@@ -146,6 +146,10 @@
   --am-field-message-line:  17px;
   // ACC-292 — a find box above a page of cards: "Find a setting" at most 420px.
   --am-find-max-width:      420px;
+  // ACC-212 — a sortable row's drag handle, as the Stage Tasks drawing draws it
+  // (section 1, "Tasks on entry"): a bordered button 22 wide and 26 tall.
+  --am-drag-handle-inline:  22px;
+  --am-drag-handle-block:   26px;
 
   // ─── Dialog widths (artboard 7) ────────────────────────────────────────
   --am-dialog-confirm: 420px;

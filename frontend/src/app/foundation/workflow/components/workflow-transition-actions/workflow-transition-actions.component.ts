@@ -12,8 +12,11 @@ import {
 } from '../../workflow-refusal';
 import { FormatService } from '../../../../core/formatting';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
+import { MoveConfirmDialogComponent, type MoveConfirmCopy } from '../move-confirm-dialog/move-confirm-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+
+export type { MoveConfirmCopy } from '../move-confirm-dialog/move-confirm-dialog.component';
 
 // Generic, reusable across every WorkflowObjectType (Committee, and later
 // Document, Incident, CAPA, Gap, Audit, KPI, ...) — contains zero
@@ -38,10 +41,19 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // are never offered. ACC-282: each move carries its label and the stage it leads
 // to, so this component reads no template (GET /workflow-templates/:id needs
 // workflows:view, which a pool member may not hold).
+/** ACC-316 PR 6 — a move that needs a reason, when its record gives no words of its own. */
+const GENERIC_REASON_COPY: MoveConfirmCopy = {
+  titleKey: 'workflow.moveReason.title',
+  leadKey: 'workflow.moveReason.lead',
+  confirmKey: 'workflow.moveReason.confirm',
+  keepKey: 'common.cancel',
+  danger: false,
+};
+
 @Component({
   selector: 'app-workflow-transition-actions',
   standalone: true,
-  imports: [ButtonModule, MessageModule, TranslatePipe, CantMoveDialogComponent],
+  imports: [ButtonModule, MessageModule, TranslatePipe, CantMoveDialogComponent, MoveConfirmDialogComponent],
   template: `
     @if (error()) {
       <p-message severity="error" [text]="error()! | translate" />
@@ -57,11 +69,22 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             size="small"
             [loading]="triggeringId() === transition.id"
             [disabled]="triggeringId() !== null"
-            (onClick)="onTrigger(transition)"
+            (onClick)="onPress(transition)"
           />
         }
       </div>
     }
+
+    <!-- ACC-316 PR 6 — a move that needs a reason (the server's needsReason), or
+         one its record asks to confirm, opens this before it is pressed. -->
+    <app-move-confirm-dialog
+      [visible]="pending() !== null"
+      (visibleChange)="$event ? null : pending.set(null)"
+      [copy]="pending()?.copy ?? null"
+      [needsReason]="pending()?.move?.needsReason === true"
+      [busy]="triggeringId() !== null"
+      (confirmed)="confirmPending($event)"
+    />
 
     <!-- ACC-208 — an Advance refused while the stage's mandatory tasks are
          open (STAGE_TASKS_OPEN): which tasks, as links to their rows. -->
@@ -88,6 +111,14 @@ export class WorkflowTransitionActionsComponent {
   /** ACC-282 — the current stage's name, as the page shows it, for the same line. */
   readonly stageLabel = input<string | null>(null);
   readonly transitioned = output<WorkflowInstanceDto>();
+  /**
+   * ACC-316 PR 6 — the record's words for a move before it is pressed, or null
+   * to press at once. A move the server says needs a reason always opens the
+   * confirm (with the generic words if the record gives none).
+   */
+  readonly confirmFor = input<((move: WorkflowMoveDto) => MoveConfirmCopy | null) | null>(null);
+  /** The move waiting on its confirm, and the words it shows. */
+  readonly pending = signal<{ move: WorkflowMoveDto; copy: MoveConfirmCopy } | null>(null);
 
   /** ACC-271 / ACC-282 — the moves the server says this person may press, as it labels them. */
   readonly moves = signal<WorkflowMoveDto[]>([]);
@@ -119,19 +150,37 @@ export class WorkflowTransitionActionsComponent {
     return this.languageService.bilingual(transition.labelEn, transition.labelAr);
   }
 
-  onTrigger(transition: WorkflowMoveDto): void {
+  /** A press: straight through, or first the record's confirm or the reason the move needs. */
+  onPress(transition: WorkflowMoveDto): void {
+    const copy = this.confirmFor()?.(transition) ?? (transition.needsReason ? GENERIC_REASON_COPY : null);
+    if (copy) {
+      this.error.set(null);
+      this.pending.set({ move: transition, copy });
+      return;
+    }
+    this.onTrigger(transition);
+  }
+
+  confirmPending(reason: string | null): void {
+    const pending = this.pending();
+    if (pending) this.onTrigger(pending.move, reason ?? undefined);
+  }
+
+  onTrigger(transition: WorkflowMoveDto, comment?: string): void {
     const instanceId = this.instance().id;
     this.triggeringId.set(transition.id);
     this.error.set(null);
 
-    this.workflowService.triggerTransition(instanceId, { transitionId: transition.id }).subscribe({
+    this.workflowService.triggerTransition(instanceId, { transitionId: transition.id, ...(comment !== undefined && { comment }) }).subscribe({
       next: (updated) => {
         this.triggeringId.set(null);
+        this.pending.set(null);
         this.warnings.set(updated.unassignedTaskWarnings);
         this.transitioned.emit(updated);
       },
       error: (err: unknown) => {
         this.triggeringId.set(null);
+        this.pending.set(null);
         const tasks = openStageTasks(err);
         if (tasks) {
           this.cantMove.set({

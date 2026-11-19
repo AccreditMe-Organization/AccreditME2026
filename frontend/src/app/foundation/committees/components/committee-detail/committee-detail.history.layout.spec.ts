@@ -148,7 +148,7 @@ describe('CommitteeDetailComponent — Stage history beside the Lifecycle card (
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p === 'committees:view' || p === 'workflows:view' } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => p === 'committees:view' || p === 'workflows:view' } },
         {
           provide: CommitteeService,
           useValue: {

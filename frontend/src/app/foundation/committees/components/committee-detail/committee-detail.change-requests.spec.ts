@@ -68,7 +68,7 @@ describe('CommitteeDetailComponent — change requests (ACC-240)', () => {
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
         // Every permission held: the button must still follow canRaise alone.
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: () => true } },
         {
           provide: CommitteeService,
           useValue: {
