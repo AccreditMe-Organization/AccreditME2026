@@ -1,4 +1,4 @@
-import { APP_MOVES, appMoveFor } from './app-moves';
+import { APP_MOVES, appMoveFor, REVIEW_STAGE_MOVE_KEY } from './app-moves';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
 /**
@@ -21,8 +21,13 @@ describe('APP_MOVES (ACC-271 PR 3)', () => {
     expect(appMoveFor(t.objectType, t.from, t.to)).toEqual(expect.objectContaining({ key: expect.any(String) }));
   });
 
+  // ACC-245 PR 3a — the entries for an added review stage's moves are checked below:
+  // the seed writes none of them.
+  const isReviewEntry = (m: { fromStageKey: string; toStageKey: string }) =>
+    m.fromStageKey === REVIEW_STAGE_MOVE_KEY || m.toStageKey === REVIEW_STAGE_MOVE_KEY;
+
   it('every entry is for a move the seed gives the app, once', () => {
-    for (const move of APP_MOVES) {
+    for (const move of APP_MOVES.filter((m) => !isReviewEntry(m))) {
       expect(appTransitions.filter((t) => t.objectType === move.objectType && t.from === move.fromStageKey && t.to === move.toStageKey)).toHaveLength(1);
     }
   });
@@ -33,6 +38,22 @@ describe('APP_MOVES (ACC-271 PR 3)', () => {
       expect(move.en.trim()).not.toBe('');
       expect(move.ar.trim()).not.toBe('');
     }
+  });
+
+  it('the review-stage entries are exactly the moves review-stages.ts creates and re-points', () => {
+    const R = REVIEW_STAGE_MOVE_KEY;
+    const made = [
+      ['draft', R], // Submit, re-pointed to the first review stage
+      ['returned', R], // Submit again, re-pointed likewise
+      [R, R], // Approve, to the next review stage
+      [R, 'under_review'], // Approve, from the last one
+      [R, 'returned'],
+      [R, 'rejected'],
+      [R, 'withdrawn'],
+    ];
+    const entries = APP_MOVES.filter(isReviewEntry).map((m) => [m.fromStageKey, m.toStageKey]);
+    expect(entries.sort()).toEqual(made.sort());
+    for (const [from, to] of made) expect(appMoveFor('COMMITTEE_CHANGE_REQUEST', from, to)).toBeDefined();
   });
 
   it('a person-pressed move has no entry', () => {

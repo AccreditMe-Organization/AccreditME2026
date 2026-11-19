@@ -237,6 +237,32 @@ describe('A task\'s files follow the task page\'s rule, on a real database (ACC-
       expect(await on('waiting', as('poolMember'))).toEqual(allOk));
   });
 
+  describe('admittedIds(): the same rule as admit(), many tasks in one read (ACC-316 PR 7b, P206)', () => {
+    const viewers: [string, TaskViewer][] = [
+      ['a pool member while one task waits', as('poolMember')],
+      ['a request decider (Manage tasks on committees)', as('reassigner', MANAGE)],
+      ['the creator', as('plainCreator')],
+      ['someone who sees the record without View all tasks', as('reader', ['committees:view'])],
+      ['nobody in particular', as('nobody')],
+    ];
+    for (const [who, viewer] of viewers) {
+      it(`${who}: exactly the tasks admit() admits`, async () => {
+        const ids = Object.values(t).map((x) => x.id);
+        const batch = await admission.admittedIds(ids, viewer, A);
+        const one = new Set<string>();
+        for (const id of ids) if (await admission.load(id, A, viewer, 'spec')) one.add(id);
+        // Non-vacuity: the fixture's tasks were all asked about.
+        expect(ids.length).toBeGreaterThan(5);
+        expect([...batch].sort()).toEqual([...one].sort());
+      });
+    }
+
+    it(`${TENANT_ISOLATION_GATE_STRING} — admittedIds() never admits another organisation's task id, even for its own assignee`, async () => {
+      expect([...(await admission.admittedIds([foreign.id, t['waiting']!.id], as('outsider'), A))]).toEqual([]);
+      expect([...(await admission.admittedIds([foreign.id, t['waiting']!.id], as('poolMember'), A))]).toEqual([t['waiting']!.id]);
+    });
+  });
+
   describe('keys: admitted with the record visible', () => {
     it('View all tasks on committees, and the record', async () => expect(await on('main', as('reader', VIEW_ALL))).toEqual(allOk));
     it('Manage tasks on committees, the creator no longer active', async () =>

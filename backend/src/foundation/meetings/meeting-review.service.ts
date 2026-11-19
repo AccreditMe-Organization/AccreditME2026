@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { DateTime } from 'luxon';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -13,7 +12,7 @@ import { MEETING_ACTIONS } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
-import { dayAsDate, unrecordedAttendance } from './meeting-minutes-rules';
+import { dayAsDate, distributeBlockedBy, reviewDayDefaults } from './meeting-minutes-rules';
 import { minutesAudit } from './meeting-minutes.service';
 import { distributedNotice, peopleDay, returnedNotice, suggestionDeclinedNotice } from './meeting-notices';
 import { notifyUsers } from './meeting-send';
@@ -24,7 +23,6 @@ import type { IMeetingAwaitingMe } from './interfaces/meeting.interface';
 const TO_REVIEW = 'minutes_review';
 const TO_DRAFT = 'minutes_draft';
 /** Distribute Minutes' default review window, in working days (plan §3.6). */
-const REVIEW_WORKING_DAYS = 5;
 /** Home reads at most this many candidate rows per part (the performance rule). */
 const AWAITING_CAP = 200;
 
@@ -74,8 +72,8 @@ export class MeetingReviewService {
   async distribute(id: string, dto: DistributeMinutesDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<void> {
     await this.access.seeing(id, organizationId, viewer, now);
     const current = await this.assertInPool(id, organizationId, viewer.id);
-    const today = DateTime.fromJSDate(now).setZone(await this.calendar.getEffectiveTimeZone(organizationId)).toISODate()!;
-    const day = dto.reviewBy ?? (await this.calendar.addWorkingDays(today, REVIEW_WORKING_DAYS, organizationId));
+    const { today, defaultDay } = await reviewDayDefaults(this.calendar, organizationId, now);
+    const day = dto.reviewBy ?? defaultDay;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day <= today) throw new MeetingRefusal('MEETING_REVIEW_DATE_INVALID');
 
     let told: { title: string; userIds: string[] } = { title: '', userIds: [] };
@@ -83,8 +81,9 @@ export class MeetingReviewService {
       .triggerSystemTransition(current.instanceId, TO_REVIEW, organizationId, viewer.id, {
         inTx: async (tx) => {
           await lockMeetingRow(tx, id, organizationId);
-          const missing = await unrecordedAttendance(tx, id, organizationId);
-          if (missing.length > 0) throw new MeetingRefusal('MEETING_ATTENDANCE_INCOMPLETE', { missing });
+          const blocked = await distributeBlockedBy(tx, id, organizationId);
+          if (blocked?.code === 'MEETING_ATTENDANCE_INCOMPLETE') throw new MeetingRefusal(blocked.code, { missing: blocked.missing });
+          if (blocked?.code === 'MEETING_VOTES_EXCEED_PRESENT') throw new MeetingRefusal(blocked.code, { items: blocked.items });
           const meeting = await tx.meeting.update({
             where: { id },
             data: { reviewRound: { increment: 1 }, reviewBy: dayAsDate(day) },
