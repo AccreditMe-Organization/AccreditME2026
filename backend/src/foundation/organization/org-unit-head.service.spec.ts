@@ -1035,11 +1035,22 @@ describe('OrgUnitHeadService', () => {
     });
 
     it('throws ConflictException when an Acting Head is already assigned', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: 'someone-else' });
+      // ACC-327 — its own state: the refusal comes from an OPEN acting period on the
+      // unit (the period table), not the cached actingHeadUserId. Set here, so the
+      // test passes alone as well as after the others.
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
+        user: { name: 'Someone Else' },
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        validTo: null,
+      });
 
-      await expect(
-        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
-      ).rejects.toThrow(ConflictException);
+      const refusal = service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1');
+      await expect(refusal).rejects.toThrow(ConflictException);
+      await expect(refusal).rejects.toThrow('Someone Else is already acting head of this unit from 2026-09-01 to no end date.');
+      // Refused before anyone is looked up or anything is written.
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnitHeadAssignment.create).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when the unit already has an active real Head — never shadows a real holder', async () => {
