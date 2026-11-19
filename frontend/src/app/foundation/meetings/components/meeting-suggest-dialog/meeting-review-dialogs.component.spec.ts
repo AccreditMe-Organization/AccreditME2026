@@ -48,39 +48,56 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
   };
 
   describe('Suggest a correction', () => {
-    function create(about: string | null = null) {
+    function create() {
       setup();
       const fixture = TestBed.createComponent(MeetingSuggestDialogComponent);
       fixture.componentRef.setInput('meetingId', 'm-1');
       fixture.componentRef.setInput('items', [aMinutesItem({ id: 'i-4', order: 4, title: 'Isolation room maintenance' })]);
-      fixture.componentRef.setInput('about', about);
       fixture.componentRef.setInput('visible', true);
       fixture.detectChanges();
-      return fixture.componentInstance;
+      return { c: fixture.componentInstance, fixture };
     }
 
-    it('about the minutes as a whole sends no item; the text trimmed', () => {
-      const c = create();
+    it('opens on the minutes as a whole, which sends no item; the text trimmed', () => {
+      const { c } = create();
+      expect(c.form.getRawValue().about).toBe('whole');
       c.form.patchValue({ text: '  Add the apologies.  ' });
       c.submit();
       expect(svc['suggest']).toHaveBeenCalledOnceWith('m-1', { agendaItemId: null, text: 'Add the apologies.' });
     });
 
-    it('about an item sends its id', () => {
-      const c = create('i-4');
-      c.form.patchValue({ text: 'Name room 5.' });
+    it('about an item (chosen in About) sends its id', () => {
+      const { c } = create();
+      c.form.patchValue({ about: 'i-4', text: 'Name room 5.' });
       c.submit();
       expect(svc['suggest']).toHaveBeenCalledOnceWith('m-1', { agendaItemId: 'i-4', text: 'Name room 5.' });
     });
 
     it('no text, nothing sent; a refusal said from its code', () => {
-      const c = create();
+      const { c } = create();
       c.submit();
       expect(svc['suggest']).not.toHaveBeenCalled();
       svc['suggest']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'MEETING_NOT_REVIEWER' } })));
       c.form.patchValue({ text: 'X' });
       c.submit();
       expect(c.error()).toBe('meeting.refusal.notReviewer');
+      expect(c.needsReload()).toBeFalse();
+    });
+
+    it('a stale refusal offers Reload in place of Send, which closes and asks the page to read the meeting (P220)', () => {
+      const { c, fixture } = create();
+      const reload = jasmine.createSpy('reload');
+      const visible = jasmine.createSpy('visible');
+      c.reload.subscribe(reload);
+      c.visibleChange.subscribe(visible);
+      svc['suggest']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_CHANGED' } })));
+      c.form.patchValue({ text: 'X' });
+      c.submit();
+      fixture.detectChanges();
+      expect(document.querySelector('[data-testid="suggest-submit"]')).toBeNull();
+      document.querySelector<HTMLElement>('[data-testid="suggest-reload"] button')!.click();
+      expect(visible).toHaveBeenCalledWith(false);
+      expect(reload).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -93,7 +110,7 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       fixture.componentRef.setInput('itemOrder', 4);
       fixture.componentRef.setInput('visible', true);
       fixture.detectChanges();
-      return fixture.componentInstance;
+      return Object.assign(fixture.componentInstance, { fixture });
     }
 
     it('a reply is required: an empty or blank one sends nothing (the server refuses one too)', () => {
@@ -120,6 +137,31 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       c.submit();
       expect(c.error()).toBe('meeting.refusal.suggestionReplyRequired');
     });
+
+    it('keeps its suggestion while it closes, so the quote and context do not blank (P220)', () => {
+      const c = create();
+      // The page clears its suggestion as the dialog starts to close.
+      c.fixture.componentRef.setInput('visible', false);
+      c.fixture.componentRef.setInput('suggestion', null);
+      c.fixture.componentRef.setInput('itemOrder', null);
+      c.fixture.detectChanges();
+      expect(c.shown().suggestion?.id).toBe('s-1');
+      expect(c.context()).toBe('Item 4 · from Dr. Sara Al-Qahtani');
+    });
+
+    it('a stale refusal offers Reload in place of Decline (P220)', () => {
+      const c = create();
+      const reload = jasmine.createSpy('reload');
+      c.reload.subscribe(reload);
+      svc['declineSuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_SUGGESTION_DECIDED' } })));
+      c.form.patchValue({ reply: 'No.' });
+      c.submit();
+      c.fixture.detectChanges();
+      expect(c.error()).toBe('meeting.refusal.suggestionDecided');
+      expect(document.querySelector('[data-testid="decline-submit"]')).toBeNull();
+      document.querySelector<HTMLElement>('[data-testid="decline-reload"] button')!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Return for Correction', () => {
@@ -137,7 +179,7 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       );
       fixture.componentRef.setInput('visible', true);
       fixture.detectChanges();
-      return fixture.componentInstance;
+      return Object.assign(fixture.componentInstance, { fixture });
     }
 
     it('says who is told (the present members) and the answers so far', () => {
@@ -153,6 +195,30 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       c.form.patchValue({ reason: '  Item 2 needs the Q3 figures.  ' });
       c.submit();
       expect(svc['returnMinutes']).toHaveBeenCalledWith('m-1', 'Item 2 needs the Q3 figures.');
+    });
+
+    it('a refusal is said in the footer, as in Suggest and Decline (P220)', () => {
+      const c = create();
+      svc['returnMinutes']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'STAGE_ACTION_NOT_ALLOWED' } })));
+      c.submit();
+      c.fixture.detectChanges();
+      const error = document.querySelector('[data-testid="return-error"]');
+      expect(error).not.toBeNull();
+      expect(error!.closest('form')).toBeNull();
+      expect(error!.closest('.p-dialog-footer')).not.toBeNull();
+      expect(document.querySelector('[data-testid="return-reload"]')).toBeNull();
+    });
+
+    it('a stale refusal offers Reload in place of Return (P220)', () => {
+      const c = create();
+      const reload = jasmine.createSpy('reload');
+      c.reload.subscribe(reload);
+      svc['returnMinutes']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_CHANGED' } })));
+      c.submit();
+      c.fixture.detectChanges();
+      expect(document.querySelector('[data-testid="return-submit"]')).toBeNull();
+      document.querySelector<HTMLElement>('[data-testid="return-reload"] button')!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
     });
   });
 });

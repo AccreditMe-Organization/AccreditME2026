@@ -62,6 +62,13 @@ describe('MeetingReviewBannerComponent (ACC-316 PR 7c-1)', () => {
     expect(el.querySelector('[data-testid="meeting-review-suggest"]')).not.toBeNull();
   });
 
+  it('after a suggestion it says so and does not offer "No corrections", which the server would refuse (P220)', () => {
+    const { el } = create(inReview({ review: { ...inReview().review, mine: 'SUGGESTED' } }));
+    expect(el.querySelector('[data-testid="meeting-review-mine"]')?.textContent?.trim()).toBe(en.meeting.review.mine.SUGGESTED);
+    expect(el.querySelector('[data-testid="meeting-review-no-corrections"]')).toBeNull();
+    expect(el.querySelector('[data-testid="meeting-review-suggest"]')).not.toBeNull();
+  });
+
   it("names this round's changes by item, and not an earlier round's", () => {
     const { el } = create(
       inReview({
@@ -84,5 +91,20 @@ describe('MeetingReviewBannerComponent (ACC-316 PR 7c-1)', () => {
     el.querySelector<HTMLElement>('[data-testid="meeting-review-no-corrections"] button')!.click();
     fixture.detectChanges();
     expect(el.querySelector('[data-testid="meeting-review-error"]')?.textContent?.trim()).toBe(en.meeting.refusal.reviewSuggested);
+    expect(el.querySelector('[data-testid="meeting-review-reload"]')).toBeNull();
+  });
+
+  it('a stale refusal offers Reload, which asks the page to read the meeting (P220)', () => {
+    const { el, fixture, c } = create(inReview());
+    const reload = jasmine.createSpy('reload');
+    c.reload.subscribe(reload);
+    noCorrections.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_CHANGED' } })));
+    el.querySelector<HTMLElement>('[data-testid="meeting-review-no-corrections"] button')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="meeting-review-error"]')?.textContent).toContain(en.meeting.refusal.changed);
+    el.querySelector<HTMLElement>('[data-testid="meeting-review-reload"] button')!.click();
+    fixture.detectChanges();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('[data-testid="meeting-review-error"]')).toBeNull();
   });
 });

@@ -91,4 +91,49 @@ describe('MeetingReviewCardComponent (ACC-316 PR 7c-1)', () => {
     expect(el.querySelector('[data-suggestion="s-1"]')?.textContent).toContain('Reply: Already recorded.');
     expect(el.querySelector('[data-suggestion-apply="s-1"]')).toBeNull();
   });
+
+  describe("the page's Mark applied, said in the card (P220)", () => {
+    const q = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`);
+
+    it('while one is in flight, every Mark applied is held', () => {
+      const { el, fixture } = create(inReview({}, { applySuggestions: true }));
+      // Another whole-minutes suggestion in flight: this one's button is held too.
+      fixture.componentRef.setInput('applying', 's-other');
+      fixture.detectChanges();
+      expect(el.querySelector<HTMLButtonElement>('[data-suggestion-apply="s-1"] button')!.disabled).toBeTrue();
+    });
+
+    it('the server not reached: the sentence and Retry', () => {
+      const { el, fixture, c } = create(inReview({}, { applySuggestions: true }));
+      const retry = jasmine.createSpy('retry');
+      c.retry.subscribe(retry);
+      fixture.componentRef.setInput('failure', { key: 'meeting.review.markFailed', offer: 'retry' });
+      fixture.detectChanges();
+      expect(q(el, 'meeting-review-action-error')?.textContent).toContain(en.meeting.review.markFailed);
+      expect(q(el, 'meeting-review-action-reload')).toBeNull();
+      el.querySelector<HTMLElement>('[data-testid="meeting-review-action-retry"] button')!.click();
+      expect(retry).toHaveBeenCalledTimes(1);
+    });
+
+    it('a stale refusal: its sentence and Reload', () => {
+      const { el, fixture, c } = create(inReview({}, { applySuggestions: true }));
+      const reload = jasmine.createSpy('reload');
+      c.reload.subscribe(reload);
+      fixture.componentRef.setInput('failure', { key: 'meeting.refusal.suggestionNotFound', offer: 'reload' });
+      fixture.detectChanges();
+      expect(q(el, 'meeting-review-action-error')?.textContent).toContain(en.meeting.refusal.suggestionNotFound);
+      expect(q(el, 'meeting-review-action-retry')).toBeNull();
+      el.querySelector<HTMLElement>('[data-testid="meeting-review-action-reload"] button')!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('any other refusal: its sentence and nothing to press', () => {
+      const { el, fixture } = create(inReview({}, { applySuggestions: true }));
+      fixture.componentRef.setInput('failure', { key: 'meeting.refusal.notRecorder', offer: null });
+      fixture.detectChanges();
+      expect(q(el, 'meeting-review-action-error')?.textContent).toContain(en.meeting.refusal.notRecorder);
+      expect(q(el, 'meeting-review-action-retry')).toBeNull();
+      expect(q(el, 'meeting-review-action-reload')).toBeNull();
+    });
+  });
 });

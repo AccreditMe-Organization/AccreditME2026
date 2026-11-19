@@ -12,7 +12,8 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
 
 // ACC-316 PR 7c-1 — the review dialogs against the 420px body cap (ACC-111),
 // MEASURED in both languages at 1280 and on a 390 phone: each with its error
-// showing, and refused (said in the footer or the body). The design measured
+// showing, and refused (said in the footer). Decline's refusal and Return's
+// second are stale ones, so their footers carry Reload (P220). The design measured
 // Suggest 210 / 226, Decline 173 / 190, Return 225 / 246. Each keeps 20px.
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass.
 
@@ -35,7 +36,7 @@ const SUGGESTION: MeetingSuggestionDto = {
 @Component({
   standalone: true,
   imports: [MeetingSuggestDialogComponent],
-  template: `<app-meeting-suggest-dialog [visible]="true" meetingId="m-1" [items]="items" about="i-4" />`,
+  template: `<app-meeting-suggest-dialog [visible]="true" meetingId="m-1" [items]="items" />`,
 })
 class SuggestHost {
   readonly items = [aMinutesItem({ id: 'i-4', order: 4, title: 'Isolation room maintenance' })];
@@ -106,6 +107,7 @@ describe('Review dialogs — layout, measured (ACC-316 PR 7c-1)', () => {
         reply.dispatchEvent(new Event('input'));
         await decline.click('[data-testid="decline-submit"] button');
         expect(document.querySelector('[data-testid="decline-error"]')).withContext('the refusal').not.toBeNull();
+        expect(document.querySelector('[data-testid="decline-reload"]')).withContext('a stale refusal: Reload').not.toBeNull();
         decline.check('decline, refused', language, width, 420, [reply]);
         decline.destroy();
 
@@ -116,7 +118,17 @@ describe('Review dialogs — layout, measured (ACC-316 PR 7c-1)', () => {
         reason.dispatchEvent(new Event('input'));
         await ret.click('[data-testid="return-submit"] button');
         expect(document.querySelector('[data-testid="return-error"]')).withContext('the refusal').not.toBeNull();
+        expect(document.querySelector('[data-testid="return-error"]')!.closest('.p-dialog-footer')).withContext('said in the footer').not.toBeNull();
         ret.check('return, refused', language, width, 420, [reason]);
+        ret.destroy();
+
+        await ret.open(ReturnHost, language, width, { returnMinutes: refuse('MEETING_CHANGED') });
+        const reason2 = document.querySelector<HTMLTextAreaElement>('[data-testid="return-reason"]')!;
+        reason2.value = LONG[language];
+        reason2.dispatchEvent(new Event('input'));
+        await ret.click('[data-testid="return-submit"] button');
+        expect(document.querySelector('[data-testid="return-reload"]')).withContext('Reload in place of Return').not.toBeNull();
+        ret.check('return, stale (Reload)', language, width, 420, [reason2]);
       }, 60_000);
     }
   }
