@@ -13,7 +13,8 @@ import { MeetingsService } from './meetings.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
-import { insertMeetingInTx } from './meeting-create';
+import { mayActInStagePool } from '../workflow/stage-pool.service';
+import { insertMeetingsInTx, ownerMembers, type NewMeeting } from './meeting-create';
 import { patternDays, seriesTitle, type SeriesPattern } from './meeting-series-dates';
 import type { CreateMeetingSeriesDto, EndMeetingSeriesDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
 import type { IMeeting, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
@@ -92,8 +93,28 @@ export class MeetingSeriesService {
     const presenters = await this.standingPresenters(dto, organizationId);
     const seriesId = randomUUID();
     const ids = plan.dates.map(() => randomUUID());
-    // Every read the engine can do first, one per meeting (template, first stage, its tasks).
-    const prepared = await Promise.all(ids.map((id) => this.workflow.prepareInstanceStart('MEETING', id, organizationId)));
+    // Every read first, once for the whole series: the template and first stage
+    // (shared by every meeting), and the owner's invitees (the same for each).
+    const [prepared, members] = await Promise.all([
+      this.workflow.prepareInstanceStarts('MEETING', ids, organizationId),
+      ownerMembers(this.prisma, organizationId, plan.owner),
+    ]);
+    const meetings: NewMeeting[] = plan.dates.map((date, i) => ({
+      id: ids[i]!,
+      organizationId,
+      owner: plan.owner,
+      organizerId: viewer.id,
+      title: date.title,
+      typeValueId: dto.typeValueId,
+      scheduledAt: date.startsAt,
+      durationMinutes: dto.durationMinutes,
+      location: dto.location ?? null,
+      meetingUrl: dto.meetingUrl ?? null,
+      unitQuorum: dto.unitQuorum ?? null,
+      seriesId,
+      seriesIndex: date.index,
+    }));
+    const { attendees, items } = standingRows(organizationId, ids, members, dto, presenters, viewer.id);
 
     const started = await this.prisma.$transaction(async (tx) => {
       if (plan.owner.committeeId) {
@@ -116,34 +137,16 @@ export class MeetingSeriesService {
           weekday: dto.weekday ?? null,
           dayOfMonth: dto.dayOfMonth ?? null,
           ordinal: dto.ordinal ?? null,
-          firstDate: new Date(`${dto.firstDate}T00:00:00.000Z`),
-          endsOn: dto.endsOn ? new Date(`${dto.endsOn}T00:00:00.000Z`) : null,
+          firstDate: new Date(`${dto.firstDate.slice(0, 10)}T00:00:00.000Z`),
+          endsOn: dto.endsOn ? new Date(`${dto.endsOn.slice(0, 10)}T00:00:00.000Z`) : null,
           count: dto.count ?? null,
           standingAgenda: (dto.standingAgenda ?? []) as unknown as Prisma.InputJsonValue,
           createdById: viewer.id,
         },
       });
-      const out = [];
-      for (const [i, date] of plan.dates.entries()) {
-        out.push(
-          await insertMeetingInTx(tx, this.workflow, prepared[i]!, {
-            id: ids[i]!,
-            organizationId,
-            owner: plan.owner,
-            organizerId: viewer.id,
-            title: date.title,
-            typeValueId: dto.typeValueId,
-            scheduledAt: date.startsAt,
-            durationMinutes: dto.durationMinutes,
-            location: dto.location ?? null,
-            meetingUrl: dto.meetingUrl ?? null,
-            unitQuorum: dto.unitQuorum ?? null,
-            seriesId,
-            seriesIndex: date.index,
-          }),
-        );
-        await this.copyStandingAgenda(tx, ids[i]!, organizationId, viewer.id, dto, presenters);
-      }
+      // Batched: the rows, the invitees (presenters included), the audit rows; the instances one by one.
+      const out = await insertMeetingsInTx(tx, this.workflow, prepared, meetings, { attendees });
+      if (items.length > 0) await tx.agendaItem.createMany({ data: items });
       await tx.auditLog.create({
         data: {
           organizationId,
@@ -157,8 +160,15 @@ export class MeetingSeriesService {
       return out;
     }, SERIES_TX);
 
+    // After the commit the series exists: one meeting whose notices fail is
+    // logged and the others still go, and the answer is still the series (a
+    // 500 here would invite a retry that makes a second series).
     for (const [i, s] of started.entries()) {
-      await this.workflow.finishInstanceStart(prepared[i]!, s, organizationId, viewer.id, { notifyInitialAssignee: false });
+      try {
+        await this.workflow.finishInstanceStart(prepared[i]!, s, organizationId, viewer.id, { notifyInitialAssignee: false });
+      } catch (error) {
+        this.logger.error(`Series ${seriesId}: finishing meeting ${ids[i]} in org ${organizationId} failed: ${error instanceof Error ? error.name : 'unknown error'}`);
+      }
     }
     return { seriesId, meetingIds: ids };
   }
@@ -206,7 +216,8 @@ export class MeetingSeriesService {
         held = await this.calendar.nextWorkingDay(DateTime.fromISO(held, { zone: 'UTC' }).plus({ days: 1 }).toISODate()!, organizationId);
       }
       taken.add(held);
-      const startsAt = DateTime.fromISO(held, { zone }).plus({ minutes: startMinute }).toJSDate();
+      // The wall-clock time in the zone, so a clock change never moves it (an elapsed-minutes add would).
+      const startsAt = DateTime.fromISO(held, { zone }).set({ hour: Math.floor(startMinute / 60), minute: startMinute % 60 }).toJSDate();
       dates.push({
         index: i + 1,
         patternDay,
@@ -229,25 +240,6 @@ export class MeetingSeriesService {
     return new Set(found.map((u) => u.id));
   }
 
-  /** The standing agenda, copied into a new meeting as `standing` items; a presenter not yet invited becomes an organisation guest. */
-  private async copyStandingAgenda(tx: EngineTx, meetingId: string, organizationId: string, actorId: string, dto: CreateMeetingSeriesDto, presenters: Set<string>): Promise<void> {
-    for (const [i, item] of (dto.standingAgenda ?? []).entries()) {
-      let presenterAttendeeId: string | null = null;
-      if (item.presenterUserId && presenters.has(item.presenterUserId)) {
-        const row =
-          (await tx.meetingAttendee.findFirst({ where: { organizationId, meetingId, userId: item.presenterUserId }, select: { id: true } })) ??
-          (await tx.meetingAttendee.create({
-            data: { organizationId, meetingId, kind: 'ORG_GUEST', userId: item.presenterUserId, addedAsPresenter: true, createdById: actorId },
-            select: { id: true },
-          }));
-        presenterAttendeeId = row.id;
-      }
-      await tx.agendaItem.create({
-        data: { organizationId, meetingId, title: item.title.trim(), order: i + 1, duration: item.durationMinutes ?? null, standing: true, presenterAttendeeId },
-      });
-    }
-  }
-
   // ── End series ──────────────────────────────────────────────────────────────
 
   /**
@@ -258,7 +250,7 @@ export class MeetingSeriesService {
   async end(seriesId: string, dto: EndMeetingSeriesDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<{ cancelled: string[]; failed: string[] }> {
     const series = await this.prisma.meetingSeries.findFirst({
       where: { id: seriesId, organizationId },
-      select: { id: true, committeeId: true, orgUnitId: true, committee: { select: { orgUnitId: true } } },
+      select: { id: true, committeeId: true, orgUnitId: true, endedAt: true, committee: { select: { orgUnitId: true } } },
     });
     if (!series) throw new MeetingRefusal('MEETING_SERIES_NOT_FOUND');
     const owner: MeetingOwner = { key: seriesId, committeeId: series.committeeId, unitId: series.orgUnitId ?? series.committee?.orgUnitId ?? null };
@@ -272,44 +264,60 @@ export class MeetingSeriesService {
     });
     const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', later.map((m) => m.id));
     const open = later.filter((m) => rules.get(m.id)?.actions[MEETING_ACTIONS.RESCHEDULE] === true);
+
+    // Before cancelling anything: the caller can press Cancel Meeting on every
+    // one of them (its stage's pool), or nothing is written.
+    const moves: { meetingId: string; instanceId: string; transitionId: string }[] = [];
+    const cannot: string[] = [];
+    for (const m of open) {
+      const current = await this.workflow.currentStagePool('MEETING', m.id, organizationId);
+      const move = current
+        ? await this.prisma.workflowTransition.findFirst({
+            where: {
+              fromStageId: current.stage.id,
+              fromStage: { workflowTemplate: { organizationId } },
+              mover: 'PERSON',
+              toStage: { flags: { has: STAGE_FLAG.MEETING_CANCELLED } },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (!current || !move || !mayActInStagePool(current.pool, viewer.id)) cannot.push(m.id);
+      else moves.push({ meetingId: m.id, instanceId: current.instanceId, transitionId: move.id });
+    }
+    if (cannot.length > 0) throw new MeetingRefusal('MEETING_SERIES_CANNOT_CANCEL', { meetings: cannot });
+
     const cancelled: string[] = [];
     const failed: string[] = [];
-    for (const m of open) {
+    for (const m of moves) {
       try {
-        const instance = await this.prisma.workflowInstance.findFirst({
-          where: { organizationId, objectType: 'MEETING', objectId: m.id },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, currentStageId: true },
-        });
-        const move = instance?.currentStageId
-          ? await this.prisma.workflowTransition.findFirst({
-              where: { fromStageId: instance.currentStageId, mover: 'PERSON', toStage: { flags: { has: STAGE_FLAG.MEETING_CANCELLED } } },
-              select: { id: true },
-            })
-          : null;
-        if (!instance || !move) throw new Error('no cancel move');
-        await this.workflow.triggerTransition(instance.id, { transitionId: move.id, comment: reason }, organizationId, viewer.id, [...viewer.permissions]);
-        cancelled.push(m.id);
+        await this.workflow.triggerTransition(m.instanceId, { transitionId: m.transitionId, comment: reason }, organizationId, viewer.id, [...viewer.permissions]);
+        cancelled.push(m.meetingId);
       } catch (error) {
-        // One meeting that can't be cancelled doesn't stop the others; it is named, and End can run again.
-        this.logger.warn(`Ending series ${seriesId}: meeting ${m.id} in org ${organizationId} not cancelled: ${error instanceof Error ? error.name : 'unknown error'}`);
-        failed.push(m.id);
+        // One that can't be cancelled doesn't stop the others; the series stays open, and End can run again.
+        const code = (error as { getResponse?: () => { code?: string } }).getResponse?.()?.code ?? (error instanceof Error ? error.name : 'unknown');
+        this.logger.warn(`Ending series ${seriesId}: meeting ${m.meetingId} in org ${organizationId} not cancelled (${code})`);
+        failed.push(m.meetingId);
       }
     }
-    await this.prisma.$transaction(async (tx) => {
-      const stamped = await tx.meetingSeries.updateMany({ where: { id: seriesId, organizationId, endedAt: null }, data: { endedAt: now, endReason: reason } });
-      await tx.auditLog.create({
-        data: {
-          organizationId,
-          actorId: viewer.id,
-          action: 'UPDATE',
-          objectType: 'MeetingSeries',
-          objectId: seriesId,
-          after: { ended: stamped.count > 0 || undefined, cancelled, failed },
-          metadata: { reason },
-        },
+    // Ended only when nothing is left open; a re-run on an ended series writes nothing.
+    const ends = failed.length === 0 && series.endedAt === null;
+    if (ends || cancelled.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        const stamped = ends ? await tx.meetingSeries.updateMany({ where: { id: seriesId, organizationId, endedAt: null }, data: { endedAt: now, endReason: reason } }) : { count: 0 };
+        await tx.auditLog.create({
+          data: {
+            organizationId,
+            actorId: viewer.id,
+            action: 'UPDATE',
+            objectType: 'MeetingSeries',
+            objectId: seriesId,
+            after: { ended: stamped.count > 0, cancelled, failed },
+            metadata: { reason },
+          },
+        });
       });
-    });
+    }
     return { cancelled, failed };
   }
 
@@ -379,9 +387,11 @@ export class MeetingSeriesService {
 
   /**
    * Reschedule this meeting and the later ones still in Planned or Agenda
-   * Issued by the same shift; a later one that lands on a day that isn't a
-   * working day moves to the next one, keeping its time. A meeting rescheduled
-   * on its own keeps its time.
+   * Issued by the same shift. Each new time is worked out from the time read
+   * under its lock, then placed as creation places a day: off a day that isn't
+   * a working day, and past a day the owner already meets (a meeting not
+   * moving, not cancelled), keeping the time. A meeting rescheduled on its own
+   * keeps its time.
    */
   async rescheduleLater(id: string, dto: RescheduleMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting & { scope: IMeetingScopeResult }> {
     await this.access.writing(id, organizationId, viewer, now);
@@ -389,29 +399,14 @@ export class MeetingSeriesService {
     if (toAt <= now) throw new MeetingRefusal('MEETING_TIME_IN_PAST');
     const reason = dto.reason.trim();
     const targets = await this.laterMeetings(id, organizationId, now, MEETING_ACTIONS.RESCHEDULE);
-    const anchorAt = targets.find((t) => t.id === id)!.scheduledAt;
-    const shift = toAt.getTime() - anchorAt.getTime();
-    if (shift === 0) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
     const zone = await this.calendar.getEffectiveTimeZone(organizationId);
-
-    // Every new time read before the transaction (the working calendar's).
-    const moves = new Map<string, Date>();
-    for (const t of targets) {
-      if (t.id === id) {
-        moves.set(t.id, toAt);
-        continue;
-      }
-      if (t.ownEdits.includes('scheduledAt')) continue;
-      const shifted = DateTime.fromJSDate(new Date(t.scheduledAt.getTime() + shift)).setZone(zone);
-      const working = await this.calendar.nextWorkingDay(shifted.toISODate()!, organizationId);
-      const at = DateTime.fromISO(working, { zone }).set({ hour: shifted.hour, minute: shifted.minute }).toJSDate();
-      if (at > now) moves.set(t.id, at);
-    }
 
     const scope: IMeetingScopeResult = { changed: [], kept: [] };
     const told: { id: string; title: string; at: Date }[] = [];
     await this.prisma
       .$transaction(async (tx) => {
+        // 1. Lock each (id order) and read it under its lock.
+        const locked: { id: string; title: string; scheduledAt: Date; ownEdits: string[]; seriesIndex: number }[] = [];
         for (const t of targets) {
           const anchor = t.id === id;
           const rules = await this.stageRules.currentStageRules('MEETING', t.id, organizationId, tx, { lock: 'share' });
@@ -420,20 +415,46 @@ export class MeetingSeriesService {
             continue;
           }
           await lockMeetingRow(tx, t.id, organizationId);
-          const row = await tx.meeting.findFirstOrThrow({ where: { id: t.id, organizationId }, select: { title: true, scheduledAt: true, ownEdits: true, updatedAt: true } });
+          const row = await tx.meeting.findFirstOrThrow({
+            where: { id: t.id, organizationId },
+            select: { title: true, scheduledAt: true, ownEdits: true, updatedAt: true, seriesIndex: true },
+          });
           if (anchor && dto.expectedUpdatedAt && new Date(dto.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new MeetingRefusal('MEETING_CHANGED');
           if (!anchor && row.ownEdits.includes('scheduledAt')) {
             scope.kept.push({ meetingId: t.id, title: row.title, fields: ['scheduledAt'] });
             continue;
           }
-          const at = moves.get(t.id);
-          if (!at || at.getTime() === row.scheduledAt.getTime()) continue;
+          locked.push({ id: t.id, title: row.title, scheduledAt: row.scheduledAt, ownEdits: row.ownEdits, seriesIndex: row.seriesIndex ?? 0 });
+        }
+        const anchorRow = locked.find((l) => l.id === id);
+        if (!anchorRow) return;
+        const shift = toAt.getTime() - anchorRow.scheduledAt.getTime();
+        if (shift === 0) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
+
+        // 2. The days the owner already meets on, other than the meetings moving now.
+        const moving = new Set(locked.map((l) => l.id));
+        const taken = await this.ownerDays(tx, organizationId, targets[0]!.owner, moving, zone, toAt);
+
+        // 3. Each new time, in series order, then the writes.
+        for (const l of [...locked].sort((x, y) => x.seriesIndex - y.seriesIndex)) {
+          let at = toAt;
+          if (l.id !== id) {
+            const shifted = DateTime.fromJSDate(new Date(l.scheduledAt.getTime() + shift)).setZone(zone);
+            let day = await this.calendar.nextWorkingDay(shifted.toISODate()!, organizationId);
+            for (let step = 0; taken.has(day) && step < MOVE_LIMIT; step++) {
+              day = await this.calendar.nextWorkingDay(DateTime.fromISO(day, { zone: 'UTC' }).plus({ days: 1 }).toISODate()!, organizationId);
+            }
+            at = DateTime.fromISO(day, { zone }).set({ hour: shifted.hour, minute: shifted.minute }).toJSDate();
+            if (at <= now) continue;
+          }
+          taken.add(DateTime.fromJSDate(at).setZone(zone).toISODate()!);
+          if (at.getTime() === l.scheduledAt.getTime()) continue;
           await tx.meetingReschedule.create({
-            data: { organizationId, meetingId: t.id, fromAt: row.scheduledAt, toAt: at, reason, scope: 'THIS_AND_LATER', actorId: viewer.id },
+            data: { organizationId, meetingId: l.id, fromAt: l.scheduledAt, toAt: at, reason, scope: 'THIS_AND_LATER', actorId: viewer.id },
           });
           await tx.meeting.update({
-            where: { id: t.id },
-            data: { scheduledAt: at, ...(anchor && { ownEdits: row.ownEdits.filter((f) => f !== 'scheduledAt') }) },
+            where: { id: l.id },
+            data: { scheduledAt: at, ...(l.id === id && { ownEdits: l.ownEdits.filter((f) => f !== 'scheduledAt') }) },
           });
           await tx.auditLog.create({
             data: {
@@ -441,20 +462,44 @@ export class MeetingSeriesService {
               actorId: viewer.id,
               action: 'UPDATE',
               objectType: 'Meeting',
-              objectId: t.id,
-              before: { scheduledAt: row.scheduledAt.toISOString() },
+              objectId: l.id,
+              before: { scheduledAt: l.scheduledAt.toISOString() },
               after: { scheduledAt: at.toISOString() },
               metadata: { change: 'reschedule', scope: 'THIS_AND_LATER', from: id, reason },
             },
           });
-          scope.changed.push(t.id);
-          told.push({ id: t.id, title: row.title, at });
+          scope.changed.push(l.id);
+          told.push({ id: l.id, title: l.title, at });
         }
       }, SERIES_TX)
       .catch((error: unknown) => asMeetingConflict(error));
 
     for (const t of told) await this.meetings.tellRescheduled(t.id, t.title, t.at, reason, organizationId, viewer.id);
     return { ...(await this.meetings.getForViewer(id, organizationId, viewer, now)), scope };
+  }
+
+  /** The days (organisation's zone) the owner has a meeting that isn't cancelled and isn't one of `except`, from `from` for a year. */
+  private async ownerDays(
+    tx: EngineTx,
+    organizationId: string,
+    owner: { committeeId: string | null; orgUnitId: string | null },
+    except: ReadonlySet<string>,
+    zone: string,
+    from: Date,
+  ): Promise<Set<string>> {
+    const rows = await tx.meeting.findMany({
+      where: {
+        organizationId,
+        ...(owner.committeeId ? { committeeId: owner.committeeId } : { committeeId: null, orgUnitId: owner.orgUnitId }),
+        scheduledAt: { gte: DateTime.fromJSDate(from).minus({ days: 1 }).toJSDate(), lt: DateTime.fromJSDate(from).plus({ months: 13 }).toJSDate() },
+        id: { notIn: [...except] },
+      },
+      select: { id: true, scheduledAt: true },
+    });
+    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id), tx);
+    return new Set(
+      rows.filter((r) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED)).map((r) => DateTime.fromJSDate(r.scheduledAt).setZone(zone).toISODate()!),
+    );
   }
 
   /**
@@ -467,17 +512,56 @@ export class MeetingSeriesService {
     organizationId: string,
     now: Date,
     action: string,
-  ): Promise<{ id: string; seriesId: string; scheduledAt: Date; ownEdits: string[] }[]> {
+  ): Promise<{ id: string; seriesId: string; scheduledAt: Date; ownEdits: string[]; owner: { committeeId: string | null; orgUnitId: string | null } }[]> {
     const anchor = await this.prisma.meeting.findFirst({ where: { id, organizationId }, select: { seriesId: true, seriesIndex: true } });
     if (!anchor?.seriesId || anchor.seriesIndex === null) throw new MeetingRefusal('MEETING_NOT_IN_SERIES');
     const rows = await this.prisma.meeting.findMany({
       where: { organizationId, seriesId: anchor.seriesId, OR: [{ id }, { seriesIndex: { gt: anchor.seriesIndex }, scheduledAt: { gt: now } }] },
       orderBy: { id: 'asc' },
-      select: { id: true, seriesId: true, scheduledAt: true, ownEdits: true },
+      select: { id: true, seriesId: true, scheduledAt: true, ownEdits: true, committeeId: true, orgUnitId: true },
     });
     const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id));
     return rows
       .filter((r) => r.id === id || rules.get(r.id)?.actions[action] === true)
-      .map((r) => ({ id: r.id, seriesId: r.seriesId!, scheduledAt: r.scheduledAt, ownEdits: r.ownEdits }));
+      .map((r) => ({ id: r.id, seriesId: r.seriesId!, scheduledAt: r.scheduledAt, ownEdits: r.ownEdits, owner: { committeeId: r.committeeId, orgUnitId: r.orgUnitId } }));
   }
+}
+
+/**
+ * Each meeting's invitees and standing agenda as rows, built before the
+ * transaction: the owner's MEMBERS (ids chosen here, so a standing item can
+ * name its presenter's row), plus an organisation guest for a presenter who
+ * isn't a member (`addedAsPresenter`).
+ */
+function standingRows(
+  organizationId: string,
+  meetingIds: readonly string[],
+  members: readonly [string, string | null][],
+  dto: CreateMeetingSeriesDto,
+  presenters: ReadonlySet<string>,
+  actorId: string,
+): { attendees: Prisma.MeetingAttendeeCreateManyInput[]; items: Prisma.AgendaItemCreateManyInput[] } {
+  const attendees: Prisma.MeetingAttendeeCreateManyInput[] = [];
+  const items: Prisma.AgendaItemCreateManyInput[] = [];
+  for (const meetingId of meetingIds) {
+    const rowOf = new Map<string, string>();
+    for (const [userId, seatValueId] of members) {
+      const id = randomUUID();
+      rowOf.set(userId, id);
+      attendees.push({ id, organizationId, meetingId, kind: 'MEMBER', userId, seatValueId });
+    }
+    for (const [i, item] of (dto.standingAgenda ?? []).entries()) {
+      let presenterAttendeeId: string | null = null;
+      if (item.presenterUserId && presenters.has(item.presenterUserId)) {
+        if (!rowOf.has(item.presenterUserId)) {
+          const id = randomUUID();
+          rowOf.set(item.presenterUserId, id);
+          attendees.push({ id, organizationId, meetingId, kind: 'ORG_GUEST', userId: item.presenterUserId, addedAsPresenter: true, createdById: actorId });
+        }
+        presenterAttendeeId = rowOf.get(item.presenterUserId)!;
+      }
+      items.push({ organizationId, meetingId, title: item.title.trim(), order: i + 1, duration: item.durationMinutes ?? null, standing: true, presenterAttendeeId });
+    }
+  }
+  return { attendees, items };
 }

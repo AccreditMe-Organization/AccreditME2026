@@ -66,7 +66,8 @@ export type MeetingRefusalCode =
   | 'MEETING_SERIES_EMPTY'
   | 'MEETING_SERIES_TIME_INVALID'
   | 'MEETING_SERIES_NOT_FOUND'
-  | 'MEETING_NOT_IN_SERIES';
+  | 'MEETING_NOT_IN_SERIES'
+  | 'MEETING_SERIES_CANNOT_CANCEL';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -119,6 +120,7 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_SERIES_TIME_INVALID: HttpStatus.BAD_REQUEST,
   MEETING_SERIES_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEETING_NOT_IN_SERIES: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_CANNOT_CANCEL: HttpStatus.FORBIDDEN,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -172,6 +174,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_SERIES_TIME_INVALID: 'Give the time as hours and minutes.',
   MEETING_SERIES_NOT_FOUND: 'Series not found.',
   MEETING_NOT_IN_SERIES: "This meeting isn't part of a series.",
+  MEETING_SERIES_CANNOT_CANCEL: "You can't cancel some of this series' meetings, so the series wasn't ended.",
 };
 
 export class MeetingRefusal extends HttpException {

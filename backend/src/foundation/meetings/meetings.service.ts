@@ -12,7 +12,7 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { peopleDateIn } from '../task/task-sla.service';
-import { insertMeetingInTx } from './meeting-create';
+import { insertMeetingsInTx } from './meeting-create';
 import { meetingAnswerSummary } from './meeting-people.service';
 import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
@@ -98,7 +98,7 @@ export class MeetingsService {
           lock: 'share',
         });
       }
-      return insertMeetingInTx(tx, this.workflow, prepared, {
+      const [started] = await insertMeetingsInTx(tx, this.workflow, [prepared], [{
         id: meetingId,
         organizationId,
         owner,
@@ -110,7 +110,8 @@ export class MeetingsService {
         location: dto.location ?? null,
         meetingUrl: dto.meetingUrl ?? null,
         unitQuorum: dto.unitQuorum ?? null,
-      });
+      }]);
+      return started!;
     }, { maxWait: 10_000, timeout: 30_000 });
     // The meeting's own notices come with the agenda (AGENDA_ISSUED); the
     // generic "new workflow assignment" would tell the scheduler about their own meeting.

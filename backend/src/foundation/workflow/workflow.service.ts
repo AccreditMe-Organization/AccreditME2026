@@ -221,6 +221,20 @@ export class WorkflowService {
   }
 
   /** The instance, its first entry and that entry's tasks, on the caller's transaction. */
+  /**
+   * ACC-316 PR 5 — the same prepare for many records of one type at once (a
+   * meeting series): the template, first stage and its clock are read ONCE.
+   * Shared when entering the stage creates no task and snapshots no quorum
+   * (both are per record); otherwise each record is prepared on its own.
+   */
+  async prepareInstanceStarts(objectType: string, objectIds: readonly string[], organizationId: string): Promise<PreparedInstanceStart[]> {
+    if (objectIds.length === 0) return [];
+    const first = await this.prepareInstanceStart(objectType, objectIds[0]!, organizationId);
+    if (first.entryTasks.tasks.length === 0 && first.quorumCount === null) return objectIds.map(() => first);
+    const rest = await Promise.all(objectIds.slice(1).map((id) => this.prepareInstanceStart(objectType, id, organizationId, first.template.id)));
+    return [first, ...rest];
+  }
+
   async insertInstanceStartInTx(
     tx: EngineTx,
     prepared: PreparedInstanceStart,
