@@ -15,7 +15,12 @@ import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
 import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
-import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
+import {
+  assertMaySeeCommittee,
+  assertMayWriteCommittee,
+  committeeReadersAmong,
+  mayReadCommittee,
+} from '../../../common/services/committee-membership';
 import { seatValues } from '../committee-seat-rules';
 import { canonicalSeatActions, currentSeatActionMap, sameSeatActions, seatActionWanted, writeSeatActions } from '../seat-actions';
 import { assertMemberAction, memberActionsFor } from '../member-actions';
@@ -571,6 +576,7 @@ export class CommitteeChangeRequestService {
   ): Promise<void> {
     await this.workflow.triggerSystemAdvance(loaded.instanceId, organizationId, viewer.userId, {
       inTx: async (tx) => {
+        await assertStillAt(tx, loaded);
         const key = await instanceStageKey(tx, loaded.instanceId);
         if (key !== null) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_UNDER_REVIEW');
         assertRequestStageAllows(key, 'approve');
@@ -596,7 +602,16 @@ export class CommitteeChangeRequestService {
     const stage = (await requestStageKeys(this.prisma, [row.id], organizationId)).get(row.id);
     if (!stage || !stage.open || !awaitsDecision(stage.key)) return;
     const decision = await this.decisionOf(row, stage, organizationId);
-    for (const userId of decision.deciderIds.filter((u) => u !== row.requestedById)) {
+    let deciders = decision.deciderIds.filter((u) => u !== row.requestedById);
+    if (stage.key === null) {
+      // ACC-245 — an added stage's pool is whatever the tenant set, and the notice
+      // names the committee and the requester (ACC-101, ACC-297): only its members
+      // who may open the committee are told. The others cannot decide it either
+      // (loadDecision's record-first 404). One batch, never one query per person.
+      const readers = await committeeReadersAmong(this.prisma, row.committeeId, organizationId, deciders);
+      deciders = deciders.filter((u) => readers.has(u));
+    }
+    for (const userId of deciders) {
       await this.notify(userId, organizationId, row.committeeId, {
         titleEn: `Change request #${row.number} to review`,
         titleAr: `طلب التغيير رقم ${row.number} بانتظار المراجعة`,
@@ -645,6 +660,11 @@ export class CommitteeChangeRequestService {
     }
     // ACC-245 (Q1) — the root head's own Approve now SKIPS added review stages: each
     // is passed by with the app's forward move, recorded, until Under review.
+    // Submit, each skip and Approve are SEPARATE transactions, each in its own lock
+    // order. A failure partway leaves the request where it stopped: in an added
+    // review stage, where Approve now is offered again (`approveNow` in the
+    // response's actions) and resumes from there, or Under review, the retry
+    // above. Nothing is half-applied: only the last step writes the committee.
     let reloaded = await this.loadRequest(id, organizationId);
     for (let step = 0; reloaded.stageKey === null && step <= MAX_REVIEW_STAGES; step++) {
       await this.performReviewAdvance(reloaded, organizationId, viewer, { kind: 'ROOT_HEAD_OWN' }, 'SKIPPED');
@@ -700,6 +720,7 @@ export class CommitteeChangeRequestService {
     const approvedStageKey = await this.approvedStageKey(loaded.instanceId, organizationId);
     await this.workflow.triggerSystemTransition(loaded.instanceId, approvedStageKey, organizationId, viewer.userId, {
       inTx: async (tx) => {
+        await assertStillAt(tx, loaded);
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'approve');
 
         // The committee's instance: no committee transition moves under the
@@ -808,6 +829,7 @@ export class CommitteeChangeRequestService {
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.return, organizationId, viewer.userId, {
       comment: note,
       inTx: async (tx) => {
+        await assertStillAt(tx, loaded);
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'return');
         // The committee's stage decides whether a decision may still be made.
         assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'return');
@@ -842,6 +864,7 @@ export class CommitteeChangeRequestService {
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.reject, organizationId, viewer.userId, {
       comment: reason,
       inTx: async (tx) => {
+        await assertStillAt(tx, loaded);
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'reject');
         await tx.committeeChangeRequest.update({
           where: { id },
@@ -1656,6 +1679,19 @@ async function lockCommitteeInstance(tx: EngineTx, committeeId: string, organiza
     ORDER BY wi."createdAt" DESC
     LIMIT 1
     FOR UPDATE`;
+}
+
+/**
+ * ACC-245 — a decision is made in the stage its decider was admitted for. Run
+ * inside the engine's transaction, under the instance lock: if the request has
+ * moved since it was loaded (another member of an added stage's pool approved it
+ * on, say), the decision is refused with nothing written, and the screen reloads.
+ * Without it, a second member of stage R1's pool would move the request out of
+ * R2, whose pool they are not in.
+ */
+async function assertStillAt(tx: Reader, loaded: Pick<LoadedRequest, 'instanceId' | 'stageId'>): Promise<void> {
+  const instance = await tx.workflowInstance.findFirst({ where: { id: loaded.instanceId }, select: { currentStageId: true } });
+  if ((instance?.currentStageId ?? null) !== loaded.stageId) throw new ChangeRequestRefusal('CHANGE_REQUEST_CHANGED');
 }
 
 /** The stage key the request's instance stands in right now (inside the engine's lock, its from-stage). */

@@ -1,7 +1,13 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { COMMITTEES_PERMISSIONS } from '../constants/permissions';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { findUnitHeadedBy, findUnitSubtreeIds, findUnitsCoveredBy } from '../../foundation/organization/unit-headship';
+import {
+  findCurrentHeadHoldersForUnits,
+  findRunningActingCoversForUnits,
+  findUnitHeadedBy,
+  findUnitSubtreeIds,
+  findUnitsCoveredBy,
+} from '../../foundation/organization/unit-headship';
 
 /**
  * ACC-281 — the ONE membership rule (Ahmad, 7 Nov): an ACTIVE member of an ACTIVE
@@ -233,6 +239,79 @@ export async function readableCommitteeIds(
   });
   for (const c of overseen) readable.add(c.id);
   return readable;
+}
+
+/**
+ * ACC-245 — which of `userIds` may READ this committee, by mayReadCommittee()'s
+ * rule, for MANY people at once (a review stage's pool, before a notice names the
+ * committee). Never one query per person:
+ *   1. committees:view, through their active roles — one query;
+ *   2. for the rest, an active seat on this active committee — one query;
+ *   3. for the rest, a head holder or a cover in force of the committee's owning
+ *      unit or an ACTIVE unit above it (the reverse of committeeOversightUnitIds:
+ *      the committee is in their unit's subtree) — the ancestor walk, then the
+ *      holders and covers of those units, through unit-headship.ts.
+ * Only ACTIVE users count. Scoped by organisation throughout.
+ */
+export async function committeeReadersAmong(
+  client: ReadClient & Pick<PrismaService, 'userRole'>,
+  committeeId: string,
+  organizationId: string,
+  userIds: readonly string[],
+  now: Date = new Date(),
+): Promise<Set<string>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Set();
+  const active = await client.user.findMany({ where: { id: { in: ids }, organizationId, status: 'ACTIVE' }, select: { id: true } });
+  let rest = active.map((u) => u.id);
+  if (rest.length === 0) return new Set();
+
+  const [module, action] = COMMITTEES_PERMISSIONS.VIEW.split(':') as [string, string];
+  const holders = await client.userRole.findMany({
+    where: {
+      userId: { in: rest },
+      role: { isActive: true, organizationId, rolePermissions: { some: { permission: { module, action } } } },
+    },
+    select: { userId: true },
+  });
+  const readers = new Set(holders.map((h) => h.userId));
+  rest = rest.filter((id) => !readers.has(id));
+  if (rest.length === 0) return readers;
+
+  const committee = await client.committee.findFirst({ where: { id: committeeId, organizationId, isActive: true }, select: { orgUnitId: true } });
+  if (!committee) return readers; // an inactive committee: committees:view only
+
+  const seats = await client.committeeMember.findMany({
+    where: { committeeId, organizationId, userId: { in: rest }, isActive: true, committee: { organizationId, isActive: true } },
+    select: { userId: true },
+  });
+  for (const seat of seats) readers.add(seat.userId);
+  rest = rest.filter((id) => !readers.has(id));
+  if (rest.length === 0 || !committee.orgUnitId) return readers;
+
+  // The owning unit and every unit above it; only an ACTIVE one grants reach, as
+  // findUnitSubtreeIds() requires of a root.
+  const chain = await client.$queryRaw<{ id: string; isActive: boolean }[]>`
+    WITH RECURSIVE up(id, "parentId", "isActive") AS (
+      SELECT u.id, u."parentId", u."isActive" FROM "OrgUnit" u
+       WHERE u."organizationId" = ${organizationId} AND u.id = ${committee.orgUnitId}
+      UNION
+      SELECT p.id, p."parentId", p."isActive" FROM "OrgUnit" p JOIN up ON p.id = up."parentId"
+       WHERE p."organizationId" = ${organizationId}
+    )
+    SELECT id, "isActive" FROM up`;
+  const units = chain.filter((u) => u.isActive).map((u) => u.id);
+  if (units.length === 0) return readers;
+  const [heads, covers] = await Promise.all([
+    findCurrentHeadHoldersForUnits(client, organizationId, units),
+    findRunningActingCoversForUnits(client, organizationId, units, now),
+  ]);
+  const leaders = new Set<string>([
+    ...[...heads.values()].flat().map((h) => h.id),
+    ...[...covers.values()].map((c) => c.userId),
+  ]);
+  for (const id of rest) if (leaders.has(id)) readers.add(id);
+  return readers;
 }
 
 /**
