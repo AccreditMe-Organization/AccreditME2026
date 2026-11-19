@@ -167,6 +167,16 @@ describe('workflow refusals (ACC-255 PR 3)', () => {
     }
   });
 
+  // ACC-245 — the added review stages' refusals, said once the stages page adds one.
+  it('says each review stage refusal in both languages, never the server English', () => {
+    for (const code of ['REVIEW_STAGE_LIMIT', 'REVIEW_STAGE_POSITION', 'REVIEW_STAGE_ANY_ONE', 'REVIEW_STAGE_NO_CREATOR']) {
+      const key = plainWorkflowRefusalKey(refusal(400, { code, message: 'server English' }));
+      expect(key).withContext(code).not.toBeNull();
+      expect(typeof lookup(en, key!)).withContext(`en ${key}`).toBe('string');
+      expect(typeof lookup(ar, key!)).withContext(`ar ${key}`).toBe('string');
+    }
+  });
+
   it('says each of the nine protected edits in its own sentence, in both languages', () => {
     const edits = ['CREATE_TEMPLATE', 'REPLACE_DEFAULT', 'DEACTIVATE', 'CHANGE_TYPE', 'ADD_STAGE', 'REMOVE_STAGE', 'STAGE_FIELD', 'TRANSITION', 'STAGE_TASKS'];
     const sentences = new Set<unknown>();
