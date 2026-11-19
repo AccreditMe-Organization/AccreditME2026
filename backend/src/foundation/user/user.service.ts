@@ -1518,9 +1518,9 @@ export class UserService {
   // ACC-216 (CC-301) — the sessions end INSIDE the flip's transaction, through
   // endEverySessionInTx(): tokenVersion + 1, every live RefreshToken row
   // revoked, and the person's Better Auth sessions deleted. Before this only
-  // tokenVersion was bumped (AuthProvider.invalidateUserSessions(), after the
-  // commit), so the refresh rows stayed `revokedAt: null` and read as live
-  // sign-ins. A refused deactivation rolls the ending back with the flip.
+  // tokenVersion was bumped, after the commit, so the refresh rows stayed
+  // `revokedAt: null` and read as live sign-ins. A refused deactivation rolls
+  // the ending back with the flip.
   // Reactivation brings none of it back: reactivate() writes no refresh row.
   async deactivate(
     id: string,
