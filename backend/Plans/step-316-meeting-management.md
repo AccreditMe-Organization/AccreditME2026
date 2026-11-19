@@ -1555,12 +1555,18 @@ them together with their resolver.
        - the list's `q` (the title, LIKE's wildcards matched literally);
        - each move in the moves list carries `toStageFlags`.
      - **Departures from the plan and the design:**
-       - **May-schedule is stricter than SCHEDULERS.** It also asks the
-         committee's stage (`schedule_meeting`) and whether the person would
-         see the meeting. A person of a committee's owning unit holding
-         `meetings:schedule` is a scheduler by §4.2, but not a viewer by §4.1
-         unless a member, so `schedule()` creates the meeting and then answers
-         404. Schedule is not offered to them; which rule gives way is open.
+       - **Schedulers see what they schedule (Ahmad, 19 Nov).** §4.1 gains a
+         SCHEDULER clause: whoever may schedule the owner's meetings by
+         `MEETING_SCHEDULERS` sees them, and manages them with the writes a
+         scheduler already passes. Before it, a person of a committee's owning
+         unit holding `meetings:schedule` was a scheduler (§4.2) but not a
+         viewer, and `schedule()` created their meeting, then answered 404.
+         May-schedule asks SCHEDULERS, the committee's stage and the parent
+         rule; `schedule()` asks the parent rule before it writes.
+       - **The panels list by the plain rule** (`view=upcoming`), not Mine, and
+         count the server's totals. **All meetings** follows the list's
+         `canSeeAll`. **The start is the tenant's wall clock** (FormatService's
+         `wallClock()` / `instantAt()`).
        - **The panels follow the meetings module** (`isNavModuleOpen`,
          ACC-279's rule), like the rail item. With the module off, the committee
          page keeps its old placeholder and the unit page has no panel.

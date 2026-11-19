@@ -17032,6 +17032,14 @@ write a second copy.
 - An **overseer** (reads, `{ oversight: true }`): a head, or an acting head in
   force, of the owning unit (the meeting's own, or its committee's) or a unit
   above it.
+- A **scheduler** (ACC-316 PR 6, Ahmad, 19 Nov): whoever may schedule the
+  owner's meetings (`MEETING_SCHEDULERS`) sees them and manages them with the
+  writes a scheduler already passes (edit, reschedule, guests, agenda, cancel),
+  and nothing more. The seat path is a member and the head path an overseer, so
+  the clause adds the own-unit path: an ACTIVE person whose own unit is the
+  owning unit and who holds `meetings:schedule` through an active role. It is
+  in MEMBER's SQL (`meetingMemberSql`), so the parent rule, every list, the
+  clash check and the task registry read it, live, with no query per row.
 
 Anyone else gets the identical 404 "Meeting not found". It is the same for a
 real meeting, a missing one and another organisation's.
@@ -17598,10 +17606,27 @@ shared pieces in `foundation/workflow/`.
   the rule's one copy): a member of the active committee, a person of the unit,
   or a head of the owning unit or a unit above.
 
-The db-spec proves it against `schedule()` for every person and owner. A person
-of a committee's owning unit with `meetings:schedule` and no membership is
-refused here: `schedule()` would create the meeting and then answer 404 (an
-open question, plan §6.5).
+The db-spec proves it against `schedule()` for every person and owner.
+`schedule()` asks the same parent-rule question BEFORE its transaction and
+refuses `MEETING_NOT_ALLOWED`, so a meeting is never written that its scheduler
+could not open; since the scheduler clause (§18.2) it refuses nothing, and the
+db-spec forces the two rules apart to prove nothing is written.
+
+**The panels list by the plain rule:** `view=upcoming` (every meeting the
+person may see that has not started) and `past`, by owner, and the header count
+is the two totals. **The list's `canSeeAll`** says whether All meetings is
+offered; the screen keeps no copy of `meetings:view`.
+
+**The start is the tenant's wall clock.** `FormatService.wallClock()` and
+`instantAt()` read the formatting layer's own zone (`FormatContext`), so 10:00
+typed is 10:00 shown, whatever the browser's zone, and Reschedule opens on the
+meeting's time as every display shows it. Reschedule resets only when it opens.
+
+**A press whose outcome is unknown** (no answer, a 408 or 504, any 5xx) is never
+offered as a plain retry: Schedule says the meeting may have been scheduled,
+offers Close only, and the panel reads its list again. A refusal (a 4xx) wrote
+nothing and is said from its code. Meeting types that fail to load say so, with
+Retry, in Type's place.
 
 **The move confirm** (`MoveConfirmDialogComponent`): `app-workflow-transition-actions`
 takes `confirmFor(move)`, a record's own words for a move, or null to press at
