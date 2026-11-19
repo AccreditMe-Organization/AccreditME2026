@@ -41,6 +41,7 @@ import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-w
 import { AWAITING_DECISION_CAP, ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
+import { SetupConditionDetectors } from '../../setup-health/setup-condition.detectors';
 import * as candidates from './awaiting-decision-candidates';
 import { chainCandidates, reviewCandidates } from './awaiting-decision-candidates';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
@@ -2507,6 +2508,79 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const { svc } = countedRequests();
       svc.awaitingPageSize = 2;
       expect(await idsFor(svc, w, v)).toEqual([mine.id]);
+    });
+
+    // ── ACC-245 PR 3a: what the screens will read ──
+
+    it('3a G1: reviewStages agrees with the add refusals — canAdd until 9, REVIEW_STAGE_LIMIT at 9; who is any-one only, without CREATOR', async () => {
+      const w = await world();
+      const reviewer = await person(w, 'Reviewer');
+      const read = async () => (await templates.getTemplateById((await shape(w)).tpl.id, w.org)).reviewStages!;
+      let rs = await read();
+      const s0 = await shape(w);
+      expect(rs).toMatchObject({ canAdd: true, max: 9, count: 0 });
+      expect(rs.after.map((a) => a.id)).toEqual([s0.byKey('draft').id]);
+      // Who: the save's own rules.
+      expect(rs.who.modes).toEqual(['ANY_ONE']);
+      expect(rs.who.assigneeKinds).not.toContain('CREATOR');
+      expect(rs.who.assigneeKinds.length).toBeGreaterThan(0); // non-vacuity
+      const tpl = (await shape(w)).tpl;
+      expect(
+        await outcome(templates.addStage(tpl.id, { nameEn: 'C', order: 0, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never, w.org, w.approver.userId)),
+      ).toBe('REVIEW_STAGE_NO_CREATOR');
+      expect(
+        await outcome(
+          templates.addStage(tpl.id, { nameEn: 'A', order: 0, who: { mode: 'ALL', entries: [{ kind: 'SPECIFIC_USER', userId: reviewer }] } } as never, w.org, w.approver.userId),
+        ),
+      ).toBe('REVIEW_STAGE_ANY_ONE');
+
+      for (let i = 1; i <= 9; i++) {
+        expect(rs.canAdd).toBe(true);
+        await addReview(w, `Review ${i}`, [reviewer]);
+        rs = await read();
+        expect(rs.count).toBe(i);
+      }
+      expect(rs.canAdd).toBe(false);
+      expect(rs.after.map((a) => a.nameEn)).toEqual(['Draft', ...Array.from({ length: 9 }, (_, i) => `Review ${i + 1}`)]);
+      expect(await outcome(addReview(w, 'Review 10', [reviewer]))).toBe('REVIEW_STAGE_LIMIT');
+      // Removing one makes room again, in both.
+      await templates.removeStage(rs.after[9]!.id, w.org, w.approver.userId);
+      expect((await read()).canAdd).toBe(true);
+    });
+
+    it('3a G1: reviewStages is absent on every other template', async () => {
+      const w = await world();
+      const committeeTemplate = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE' } });
+      expect((await templates.getTemplateById(committeeTemplate.id, w.org)).reviewStages).toBeUndefined();
+      expect((await templates.getTemplateById((await shape(w)).tpl.id, w.org)).reviewStages).toBeDefined(); // non-vacuity
+    });
+
+    it('3a G2: with two review stages, every app move on the change request template has its line, in both languages', async () => {
+      const w = await world();
+      const reviewer = await person(w, 'Reviewer');
+      await addReview(w, 'First', [reviewer]);
+      await addReview(w, 'Second', [reviewer]);
+      const read = await templates.getTemplateById((await shape(w)).tpl.id, w.org);
+      const appMoves = read.stages!.flatMap((st) => (st.transitions ?? []).filter((t) => t.mover === 'APP').map((t) => ({ from: st.nameEn, t })));
+      expect(appMoves.length).toBe(16); // the seed's 8 (its two Submit moves re-pointed) and each review stage's 4
+      for (const { from, t } of appMoves) {
+        expect([from, t.labelEn, t.appMove]).toEqual([from, t.labelEn, expect.objectContaining({ key: expect.any(String), en: expect.any(String), ar: expect.any(String) })]);
+        expect(t.appMove!.en.trim()).not.toBe('');
+        expect(t.appMove!.ar.trim()).not.toBe('');
+      }
+    });
+
+    it('3a G3: an added stage nobody is on is flagged, and Setup health lists it', async () => {
+      const w = await world();
+      const gone = await person(w, 'Gone');
+      const stage = await addReview(w, 'Legal review', [gone]);
+      await prisma.user.update({ where: { id: gone }, data: { status: 'INACTIVE' } });
+      const r = await submitted(w);
+      expect(await stageNow(w, r.id)).toBe(stage.id); // non-vacuity: it waits there
+      const entry = await prisma.workflowInstanceStage.findFirstOrThrow({ where: { stageId: stage.id, exitedAt: null } });
+      expect(entry.isUnassigned).toBe(true);
+      const conditions = await new SetupConditionDetectors(prisma).stagesWithoutAssignee(w.org);
+      expect(conditions.map((c) => c.objectId)).toContain(stage.id);
     });
 
     describe('PR 2 cost: the query counts, pinned (P200)', () => {
