@@ -22,6 +22,13 @@ function deps(lang: 'en' | 'ar', viewerId: string | null = 'me'): AccessHistoryT
     },
     bilingual: (nameEn, nameAr) => (lang === 'ar' ? nameAr || nameEn : nameEn),
     dateTime: (value) => `<${value}>`,
+    // The plural sections, read as FormatService.count() reads them: the
+    // language's own category, then {{count}}.
+    count: (key, n) => {
+      const forms = (key.split('.').reduce<unknown>((node, k) => (node as Tree | undefined)?.[k], tree['plural']) ?? {}) as Record<string, string>;
+      const template = forms[new Intl.PluralRules(lang).select(n)] ?? forms['other'];
+      return template === undefined ? key : template.replace('{{count}}', String(n));
+    },
     viewerId,
   };
 }
@@ -51,6 +58,7 @@ const ALL_KINDS: AccessHistoryKind[] = [
   'TWO_STEP_RESET',
   'PASSWORD_RESET_REQUESTED',
   'PASSWORD_RESET',
+  'SESSIONS_ENDED',
   'SIGNED_IN_AS',
   'CHANGED',
 ];
@@ -106,6 +114,57 @@ describe('Access history text (ACC-216 part 2)', () => {
     expect(accessHistoryWhat(row('TRANSFERRED', { transfer: { ...transfer, to: null, position: null, headAppointment: 'NONE' } }), deps('en'))).toBe(
       'Transferred from Cardiology to a unit no longer in the organisation',
     );
+  });
+
+  describe('ended sign-ins (SESSIONS_ENDED)', () => {
+    const ended = (sessionsScope?: 'one' | 'others' | 'all', sessionsCount?: number) =>
+      row('SESSIONS_ENDED', { sessionsScope, sessionsCount });
+
+    it('one of their own: one sentence, no count', () => {
+      expect(accessHistoryWhat(ended('one', 1), deps('en'))).toBe('Signed out of one device');
+      expect(accessHistoryWhat(ended('one', 1), deps('ar'))).toBe('تسجيل الخروج من جهاز واحد');
+    });
+
+    it('others and all: counted in English', () => {
+      expect(accessHistoryWhat(ended('others', 1), deps('en'))).toBe('Signed out of other devices: 1 device');
+      expect(accessHistoryWhat(ended('others', 3), deps('en'))).toBe('Signed out of other devices: 3 devices');
+      expect(accessHistoryWhat(ended('all', 0), deps('en'))).toBe('Signed out everywhere: 0 devices');
+      expect(accessHistoryWhat(ended('all', 1), deps('en'))).toBe('Signed out everywhere: 1 device');
+    });
+
+    it('others and all: every Arabic category', () => {
+      const all: Array<[number, string]> = [
+        [0, 'تسجيل الخروج من كل الأجهزة: لا أجهزة'],
+        [1, 'تسجيل الخروج من كل الأجهزة: جهاز واحد'],
+        [2, 'تسجيل الخروج من كل الأجهزة: جهازان'],
+        [3, 'تسجيل الخروج من كل الأجهزة: 3 أجهزة'],
+        [11, 'تسجيل الخروج من كل الأجهزة: 11 جهازًا'],
+        [100, 'تسجيل الخروج من كل الأجهزة: 100 جهاز'],
+      ];
+      for (const [n, sentence] of all) expect(accessHistoryWhat(ended('all', n), deps('ar'))).toBe(sentence);
+      const others: Array<[number, string]> = [
+        [0, 'تسجيل الخروج من الأجهزة الأخرى: لا أجهزة'],
+        [1, 'تسجيل الخروج من الأجهزة الأخرى: جهاز واحد'],
+        [2, 'تسجيل الخروج من الأجهزة الأخرى: جهازان'],
+        [5, 'تسجيل الخروج من الأجهزة الأخرى: 5 أجهزة'],
+        [12, 'تسجيل الخروج من الأجهزة الأخرى: 12 جهازًا'],
+        [101, 'تسجيل الخروج من الأجهزة الأخرى: 101 جهاز'],
+      ];
+      for (const [n, sentence] of others) expect(accessHistoryWhat(ended('others', n), deps('ar'))).toBe(sentence);
+    });
+
+    it('what the server could not read: the generic sentence', () => {
+      for (const r of [ended(), ended('others'), ended('all')]) {
+        expect(accessHistoryWhat(r, deps('en'))).toBe('Signed out of devices');
+        expect(accessHistoryWhat(r, deps('ar'))).toBe('تسجيل الخروج من الأجهزة');
+      }
+    });
+
+    it('who ended them is the second line only, never the first', () => {
+      const r = row('SESSIONS_ENDED', { sessionsScope: 'all', sessionsCount: 2, actor: { id: 'u-admin', name: 'Ahmad' } });
+      expect(accessHistoryWhat(r, deps('en'))).not.toContain('Ahmad');
+      expect(accessHistoryWhen(r, deps('en'))).toContain('Ahmad');
+    });
   });
 
   it('the second line: the date, then who did it; yourself reads "by you"; nobody named, the date alone', () => {
