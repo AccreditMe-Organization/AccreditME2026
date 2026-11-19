@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TaskModule } from '../task/task.module';
@@ -17,6 +18,8 @@ import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { LookupModule } from '../lookup/lookup.module';
 import { UserCommitteesController } from './committees/user-committees.controller';
 import { UserCommitteesService } from './committees/user-committees.service';
+import { UserAccessHistoryController } from './access-history/user-access-history.controller';
+import { UserAccessHistoryService } from './access-history/user-access-history.service';
 import { OwnSessionsController, UserSessionsController } from './sessions/user-sessions.controller';
 import { UserSessionsService } from './sessions/user-sessions.service';
 
@@ -59,6 +62,9 @@ import { UserSessionsService } from './sessions/user-sessions.service';
     // ACC-297 — the committee notice after a transfer. Its module imports only
     // Prisma and the queues, so this edge closes no cycle.
     CommitteeTransferNoticeModule,
+    // ACC-316 PR 3b — the meeting invitee sync. Its module imports only Prisma
+    // and the queues, so this edge closes no cycle.
+    MeetingInviteesModule,
     // ACC-283 PR 2b — the leaver's unfinished change requests. That module reaches
     // WorkflowModule and TaskModule, which reach back here through TenantModule,
     // so forwardRef(), as the TaskModule edge above.
@@ -69,13 +75,14 @@ import { UserSessionsService } from './sessions/user-sessions.service';
     // names them. LookupModule forwardRef()s TenantModule, as this module does.
     forwardRef(() => LookupModule),
   ],
-  controllers: [UserController, UserCommitteesController, UserSessionsController, OwnSessionsController],
+  controllers: [UserController, UserCommitteesController, UserAccessHistoryController, UserSessionsController, OwnSessionsController],
   providers: [
     UserService,
     UserHomeCountsService,
     UserMfaResetService,
     SecurityNoticeService,
     UserCommitteesService,
+    UserAccessHistoryService,
     UserSessionsService,
   ],
   exports: [UserService, UserHomeCountsService],

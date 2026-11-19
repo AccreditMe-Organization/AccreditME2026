@@ -1,22 +1,26 @@
 import type { EngineTx } from '../workflow/workflow.service';
 import { peopleDateIn } from '../task/task-sla.service';
-import { Logger } from '@nestjs/common';
 import { STAGE_FLAG } from '../workflow/record-registry';
-import type { AnyTransitionEffect, TransitionEffectContext, TransitionEffectDeps } from '../workflow/transition-effect.types';
+import type { AnyTransitionEffect, TransitionEffectContext } from '../workflow/transition-effect.types';
 import { transitionEffect } from '../workflow/transition-effect.types';
+import { cancelledNotice, invitationNotice, outsideCancelledEmail, outsideInvitationEmail } from './meeting-notices';
+import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
 
 /**
- * ACC-316 PR 3a — what entering a meeting's stages does (TRANSITION_EFFECTS,
- * plan step-316 §3.8.1 and §3.9). Notices are written in English and Arabic
- * and link the meeting. The invitation names the meeting's date and time,
- * absolute, in the organisation's zone (the working calendar's), with Latin
- * digits: peopleDateIn(), the helper the task reminders use.
+ * ACC-316 — what entering a meeting's stages does (TRANSITION_EFFECTS, plan
+ * step-316 §3.8.1 and §3.9). The words are meeting-notices.ts's; the sends are
+ * meeting-send.ts's, each on its own (a failure is logged and the rest go).
  *
- * Invitees arrive in PR 3b; until then a meeting has none, so these send
- * nothing on a real record. The outside guests' emails are PR 3b's too.
+ *   Agenda Issued  every attendee not yet invited is stamped invitedAt; users
+ *                  get the invitation in the app and by email, outside guests
+ *                  by email in the organisation's language (PR 3b).
+ *   Cancelled      everyone invited is told, with the reason; outside guests
+ *                  by email, only if they were invited.
+ *
+ * The invitation names the meeting's date and time, absolute, in the
+ * organisation's zone (the working calendar's), with Latin digits:
+ * peopleDateIn(). The actor is never told.
  */
-
-const logger = new Logger('MeetingEffects');
 
 /**
  * What a meeting effect hands to finish(): read inside the move's transaction,
@@ -26,47 +30,49 @@ const logger = new Logger('MeetingEffects');
 interface Invited {
   title: string;
   startsAt: Date | null;
+  location: string | null;
+  meetingUrl: string | null;
+  organisation: OrganisationNames;
   /** The users to tell. */
   userIds: string[];
+  /** The outside guests to email. */
+  outsideEmails: string[];
 }
 
-async function meetingOf(tx: EngineTx, ctx: TransitionEffectContext): Promise<{ title: string; startsAt: Date | null }> {
-  const meeting = await tx.meeting.findFirst({
-    where: { id: ctx.objectId, organizationId: ctx.organizationId },
-    select: { title: true, scheduledAt: true },
-  });
-  return { title: meeting?.title ?? '', startsAt: meeting?.scheduledAt ?? null };
+type Meeting = Omit<Invited, 'userIds' | 'outsideEmails'>;
+
+async function meetingOf(tx: EngineTx, ctx: TransitionEffectContext): Promise<Meeting> {
+  const [meeting, organization] = await Promise.all([
+    tx.meeting.findFirst({
+      where: { id: ctx.objectId, organizationId: ctx.organizationId },
+      select: { title: true, scheduledAt: true, location: true, meetingUrl: true },
+    }),
+    tx.organization.findFirst({ where: { id: ctx.organizationId }, select: { name: true, nameAr: true } }),
+  ]);
+  return {
+    title: meeting?.title ?? '',
+    startsAt: meeting?.scheduledAt ?? null,
+    location: meeting?.location ?? null,
+    meetingUrl: meeting?.meetingUrl ?? null,
+    organisation: organisationNames(organization),
+  };
 }
 
-async function notifyAll(
-  deps: TransitionEffectDeps,
-  ctx: TransitionEffectContext,
-  userIds: readonly string[],
-  text: { titleEn: string; titleAr: string; bodyEn: string; bodyAr: string },
-): Promise<void> {
-  // One by one, each on its own: a notice that fails is logged and the rest
-  // still go (MeetingsService.tellInvited does the same).
-  for (const userId of userIds) {
-    if (userId === ctx.actorId) continue;
-    try {
-      await deps.notifications.create(
-        { userId, ...text, channel: 'BOTH', objectType: 'MEETING', objectId: ctx.objectId },
-        ctx.organizationId,
-      );
-    } catch (error) {
-      logger.warn(
-        `A meeting notice failed for meeting ${ctx.objectId} in org ${ctx.organizationId}: ${error instanceof Error ? error.name : 'unknown'}`,
-      );
-    }
-  }
+/** Attendee rows split into the users to tell and the outside guests to email. */
+function split(rows: readonly { userId: string | null; kind: string; outsideEmail: string | null }[]): Pick<Invited, 'userIds' | 'outsideEmails'> {
+  return {
+    userIds: rows.filter((r) => r.userId).map((r) => r.userId!),
+    outsideEmails: rows.filter((r) => r.kind === 'OUTSIDE_GUEST' && r.outsideEmail).map((r) => r.outsideEmail!),
+  };
 }
 
 /**
- * The agenda is issued: EVERY attendee with a user and no `invitedAt`, as the
- * rows stand inside the move's transaction, is stamped and told after it
- * commits. Not the rows prepare() could read before the lock: someone added in
- * between would never be invited. (PR 3b: adding an invitee takes the
- * meeting's instance FOR SHARE first, so it waits for this move or follows it.)
+ * The agenda is issued: EVERY attendee with no `invitedAt` (a user or an
+ * outside guest), as the rows stand inside the move's transaction, is stamped
+ * and told after it commits. Not the rows prepare() could read before the
+ * lock: someone added in between would never be invited. Adding an invitee
+ * takes the meeting's instance FOR SHARE first, so it waits for this move or
+ * follows it (and is invited at once, being added in Agenda Issued).
  */
 const agendaIssued = transitionEffect<Invited | null>({
   key: 'meeting.agenda_issued',
@@ -78,22 +84,26 @@ const agendaIssued = transitionEffect<Invited | null>({
     const [meeting, stamped] = await Promise.all([
       meetingOf(tx, ctx),
       tx.meetingAttendee.updateManyAndReturn({
-        where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: null },
+        where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, invitedAt: null },
         data: { invitedAt: new Date() },
-        select: { userId: true },
+        select: { userId: true, kind: true, outsideEmail: true },
       }),
     ]);
-    return { ...meeting, userIds: stamped.map((r) => r.userId!) };
+    return { ...meeting, ...split(stamped) };
   },
   async finish(deps, ctx, prepared) {
-    if (!prepared || prepared.userIds.length === 0) return;
+    if (!prepared || prepared.userIds.length + prepared.outsideEmails.length === 0) return;
     const when = prepared.startsAt ? peopleDateIn(prepared.startsAt, await deps.calendar.getEffectiveTimeZone(ctx.organizationId)) : null;
-    await notifyAll(deps, ctx, prepared.userIds, {
-      titleEn: 'Meeting invitation',
-      titleAr: 'دعوة إلى اجتماع',
-      bodyEn: `You're invited to ${prepared.title}${when ? ` on ${when.en}` : ''}. The agenda is issued.`,
-      bodyAr: `دعوة إلى ${prepared.title}${when ? ` في ${when.ar}` : ''}. صدرت الأجندة.`,
-    });
+    await notifyUsers(deps.notifications, ctx.organizationId, ctx.objectId, ctx.actorId, prepared.userIds, invitationNotice(prepared.title, when));
+    if (when && prepared.outsideEmails.length > 0) {
+      await emailOutsideGuests(
+        deps.notifications,
+        ctx.organizationId,
+        ctx.objectId,
+        prepared.outsideEmails,
+        outsideInvitationEmail(prepared.title, prepared.organisation, when, prepared),
+      );
+    }
   },
 });
 
@@ -108,21 +118,23 @@ const cancelled = transitionEffect<Invited | null>({
     const [meeting, rows] = await Promise.all([
       meetingOf(tx, ctx),
       tx.meetingAttendee.findMany({
-        where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: { not: null } },
-        select: { userId: true },
+        where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, invitedAt: { not: null } },
+        select: { userId: true, kind: true, outsideEmail: true },
       }),
     ]);
-    return { ...meeting, userIds: rows.map((r) => r.userId!) };
+    return { ...meeting, ...split(rows) };
   },
   async finish(deps, ctx, prepared) {
     if (!prepared) return;
     const reason = ctx.comment?.trim() ?? '';
-    await notifyAll(deps, ctx, prepared.userIds, {
-      titleEn: 'Meeting cancelled',
-      titleAr: 'إلغاء اجتماع',
-      bodyEn: `${prepared.title} is cancelled. Reason: ${reason}`,
-      bodyAr: `أُلغي ${prepared.title}. السبب: ${reason}`,
-    });
+    await notifyUsers(deps.notifications, ctx.organizationId, ctx.objectId, ctx.actorId, prepared.userIds, cancelledNotice(prepared.title, reason));
+    await emailOutsideGuests(
+      deps.notifications,
+      ctx.organizationId,
+      ctx.objectId,
+      prepared.outsideEmails,
+      outsideCancelledEmail(prepared.title, prepared.organisation, reason),
+    );
   },
 });
 

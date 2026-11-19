@@ -1,3 +1,4 @@
+import { MeetingInviteesModule } from '../meetings/invitees/meeting-invitees.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
@@ -36,6 +37,8 @@ import {
     forwardRef(() => LookupModule),
     TaskModule,
     forwardRef(() => OrganizationModule),
+    // ACC-316 PR 3b — the meeting invitee sync, after each membership write.
+    MeetingInviteesModule,
   ],
   controllers: [CommitteesController, CommitteeChangeRequestsByCommitteeController, CommitteeChangeRequestsController],
   // ACC-295 — CommitteeMembershipsService: one person's memberships, for the Transfer wizard.

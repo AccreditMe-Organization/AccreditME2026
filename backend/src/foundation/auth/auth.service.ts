@@ -18,8 +18,10 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { MeetingInviteeSyncService, refreshMeetingInvitees } from '../meetings/invitees/meeting-invitee-sync.service';
 // Aliased — the Fetch API's global `Response`/`Headers` (used for Better
 // Auth's own auth.api.* results below) would otherwise collide with
 // Express's same-named types used for the controller's req/res.
@@ -211,6 +213,10 @@ export class AuthService {
     private readonly passwordReset: PasswordResetService,
     // ACC-164 — the mfa_disabled notice (email only).
     private readonly securityNotice: SecurityNoticeService,
+    // ACC-316 PR 3b — a meeting's MEMBER invitees follow this change (after the
+    // commit, never failing it; the SLA sweep is the backstop). Optional so a
+    // service built by hand in a spec needs no sync.
+    @Optional() private readonly meetingInvitees?: MeetingInviteeSyncService,
   ) {
     this.auth = createBetterAuthInstance(this.prisma);
   }
@@ -1055,6 +1061,10 @@ export class AuthService {
       objectId: user.id,
       metadata: { event: 'invitation_accepted' },
     });
+
+    // ACC-316 PR 3b — now ACTIVE, the person is a MEMBER invitee of their unit's
+    // and committees' open meetings. After the audit row, as every other writer.
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'an accepted invitation', (s) => s.forUser(user.organizationId, user.id));
   }
 
   /**

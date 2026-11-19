@@ -1645,9 +1645,11 @@ consumes them.
 Built:
 
 ```
-email-delivery      All outbound emails via Resend
+email-delivery      All outbound emails via Resend (an outside meeting guest's
+                    too: the outside-email job, ACC-316 PR 3b)
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
-                    recompute cached org-unit vacancy and stage-reachability flags
+                    recompute cached org-unit vacancy and stage-reachability flags,
+                    and every open meeting's MEMBER invitees (ACC-316 PR 3b)
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
 storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177),
                     and the 30-day SharePoint secret warning (ACC-185);

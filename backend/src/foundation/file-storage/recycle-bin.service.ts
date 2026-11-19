@@ -87,6 +87,16 @@ export class RecycleBinService {
         const task = await tx.task.findFirst({ where: { id: file.ownerId, organizationId }, select: { id: true } });
         if (!task) throw new StorageRefusalException('FILE_RECORD_GONE');
       }
+      // ACC-316 PR 3b — a meeting's attachment goes back to its meeting, a paper
+      // to its agenda item; either gone, the file has nowhere to go.
+      if (file.ownerType === 'MEETING') {
+        const meeting = await tx.meeting.findFirst({ where: { id: file.ownerId, organizationId }, select: { id: true } });
+        if (!meeting) throw new StorageRefusalException('FILE_RECORD_GONE');
+      }
+      if (file.ownerType === 'MEETING_AGENDA_ITEM') {
+        const item = await tx.agendaItem.findFirst({ where: { id: file.ownerId, organizationId }, select: { id: true } });
+        if (!item) throw new StorageRefusalException('FILE_RECORD_GONE');
+      }
 
       const now = new Date();
       await tx.storedFile.update({
