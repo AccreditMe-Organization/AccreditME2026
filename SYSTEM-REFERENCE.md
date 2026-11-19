@@ -16938,7 +16938,7 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
@@ -17423,3 +17423,81 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
   press its APP move.
 - `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
 - `WorkingCalendarService.previousWorkingDay()`.
+
+### 18.14 Series (PR 5)
+
+Plan §3.2, §3.10. Code: `meeting-series-dates.ts` (the pattern, plain rules),
+`meeting-series.service.ts`, `meeting-create.ts` (one meeting written, shared
+with `schedule()`).
+
+- **Who:** whoever schedules for the owner (`MEETING_SCHEDULERS`), as for one
+  meeting. A committee's series needs its stage to allow `schedule_meeting`.
+- **The pattern** (Gregorian, on days in the organisation's zone):
+  - weekly or every two weeks on a weekday;
+  - monthly, or every 3, 6 or 12 months, on a day of the month (a missing day
+    falls on the month's last) or on the first to fourth, or last, weekday.
+
+  Refused under the field: `MEETING_SERIES_PATTERN_INVALID`,
+  `MEETING_SERIES_END_REQUIRED` (exactly one of `endsOn` and `count`),
+  `MEETING_SERIES_TOO_LONG` (past twelve months from today, with `limit`),
+  `MEETING_SERIES_EMPTY`, `MEETING_SERIES_TIME_INVALID`.
+- **At most 53 meetings**, weekly for twelve months, both ends included.
+- **Each day is moved** to the next working day (`WorkingCalendarService`:
+  weekend and holidays), then past any day the owner already has a meeting that
+  isn't cancelled (one read of the owner's meetings, their stages in one batch).
+  The preview says `moved`: `NOT_WORKING_DAY` or `OWNER_MEETS`.
+- **Titles,** in the organisation's language: `subject · October 2026` for
+  monthly and longer, from the pattern's month; `subject · 22 Oct 2026` for
+  weekly, from the day held. Each is the meeting's own.
+- **`POST /meetings/series/preview`** gives the dates and their clashes, in one
+  batched query (`MeetingClashService`, cap 53), and writes nothing.
+- **The start is the wall-clock time in the organisation's zone** on each day
+  (`set({ hour, minute })`), so a clock change never moves a meeting by an hour.
+- **`POST /meetings/series`:**
+  - the series and every meeting are written in ONE transaction, each meeting
+    with its MEMBER invitees, its instance at Planned and its audit row;
+  - its engine reads come first and once: the template and first stage
+    (`WorkflowService.prepareInstanceStarts()`, shared while the stage creates
+    no task and snapshots no quorum; otherwise five records at a time). The
+    owner's invitees are read once, inside the transaction. The writes are
+    batched (`insertMeetingsInTx()`: the rows, the invitees, the agenda items and
+    the audit rows each in one write; the instances one by one);
+  - after the commit, each meeting's notices are sent on their own: one that
+    fails is logged, and the answer is still the series;
+  - the standing agenda is copied into each meeting as `standing` items, and a
+    presenter not yet invited becomes an organisation guest
+    (`addedAsPresenter`);
+  - the reads (each instance's prepare) come first, and the notices after the
+    commit.
+- **This only:** an edit or reschedule of a series meeting adds what it changed
+  to that meeting's `ownEdits`.
+- **This and all later** (`scope: THIS_AND_LATER`):
+  - it reaches this meeting and every later one of the series that hasn't
+    started and whose stage allows the action (Planned, Agenda Issued);
+  - each is locked in id order: its instance FOR SHARE, then its row FOR
+    UPDATE;
+  - a later meeting's own edit is kept, and the answer's `scope.kept` names it;
+  - an edit carries the type, duration, place, link and quorum, never the
+    title;
+  - a reschedule moves each by the anchor's move AS PEOPLE READ IT, in the
+    organisation's zone: the same number of calendar days and the same change
+    of wall-clock time, from its time read under its lock (never elapsed time,
+    so a clock change between two meetings keeps their hour). It then places it
+    as creation places a day: off a day that
+    isn't a working day, and past a day the owner already meets (a meeting not
+    moving and not cancelled). One `MeetingReschedule` (`THIS_AND_LATER`) each.
+    The invitees of each are told after the commit.
+  - an edit sends no notice, as a single meeting's edit sends none.
+- **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
+  - first, the caller must be in the pool of every later open meeting's stage
+    (Cancel Meeting is a person's move, both its stages this organisation's);
+    otherwise 403
+    `MEETING_SERIES_CANNOT_CANCEL`, naming them, and nothing is written;
+  - each later meeting still in Planned or Agenda Issued is cancelled by its
+    own Cancel Meeting, so each tells its invitees; one that fails is logged with
+    its id and code, named in `failed`, and the rest go on;
+  - `endedAt` and `endReason` are stamped only when nothing failed. A re-run
+    finishes what is left; on an ended series it writes nothing.
+- **Organisation scoping:** another organisation's series is
+  `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
+  `seriesId` filter lists nothing of theirs.

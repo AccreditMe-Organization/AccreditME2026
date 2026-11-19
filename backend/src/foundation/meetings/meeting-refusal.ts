@@ -58,7 +58,16 @@ export type MeetingRefusalCode =
   | 'MEETING_SUGGESTION_NOT_FOUND'
   | 'MEETING_SUGGESTION_DECIDED'
   | 'MEETING_SUGGESTION_TEXT_REQUIRED'
-  | 'MEETING_MINUTES_NOT_OPEN';
+  | 'MEETING_MINUTES_NOT_OPEN'
+  // ACC-316 PR 5 — series.
+  | 'MEETING_SERIES_PATTERN_INVALID'
+  | 'MEETING_SERIES_END_REQUIRED'
+  | 'MEETING_SERIES_TOO_LONG'
+  | 'MEETING_SERIES_EMPTY'
+  | 'MEETING_SERIES_TIME_INVALID'
+  | 'MEETING_SERIES_NOT_FOUND'
+  | 'MEETING_NOT_IN_SERIES'
+  | 'MEETING_SERIES_CANNOT_CANCEL';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -104,6 +113,14 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_SUGGESTION_DECIDED: HttpStatus.CONFLICT,
   MEETING_SUGGESTION_TEXT_REQUIRED: HttpStatus.BAD_REQUEST,
   MEETING_MINUTES_NOT_OPEN: HttpStatus.FORBIDDEN,
+  MEETING_SERIES_PATTERN_INVALID: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_END_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_TOO_LONG: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_EMPTY: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_TIME_INVALID: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_NOT_IN_SERIES: HttpStatus.BAD_REQUEST,
+  MEETING_SERIES_CANNOT_CANCEL: HttpStatus.FORBIDDEN,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -129,7 +146,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_AGENDA_ORDER_MISMATCH: 'The order must list every agenda item once. Reload the agenda and try again.',
   MEETING_PRESENTER_NOT_FOUND: 'Presenter not found.',
   MEETING_CLASH_OWNER_REQUIRED: 'Name the committee, the unit or the meeting to check.',
-  MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 52 times at once.',
+  MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 53 times at once.',
   MEETING_AGENDA_TITLE_REQUIRED: 'Give the agenda item a title.',
   MEETING_CLASH_PERSON_NOT_INVITEE: "Check only the meeting's invitees, or the committee's or unit's members.",
   MEETING_NOT_RECORDER: "You don't record this meeting's minutes.",
@@ -150,6 +167,14 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_SUGGESTION_DECIDED: 'This suggestion was already applied or declined.',
   MEETING_SUGGESTION_TEXT_REQUIRED: 'Write the correction.',
   MEETING_MINUTES_NOT_OPEN: "This meeting's minutes aren't open to you yet.",
+  MEETING_SERIES_PATTERN_INVALID: 'Choose a day the repeat can use: a weekday for weekly, or a day or a weekday of the month for monthly.',
+  MEETING_SERIES_END_REQUIRED: 'Give an end date or a number of meetings, not both.',
+  MEETING_SERIES_TOO_LONG: 'A series ends at most 12 months ahead.',
+  MEETING_SERIES_EMPTY: 'The repeat makes no meeting before its end.',
+  MEETING_SERIES_TIME_INVALID: 'Give the time as hours and minutes.',
+  MEETING_SERIES_NOT_FOUND: 'Series not found.',
+  MEETING_NOT_IN_SERIES: "This meeting isn't part of a series.",
+  MEETING_SERIES_CANNOT_CANCEL: "You can't cancel some of this series' meetings, so the series wasn't ended.",
 };
 
 export class MeetingRefusal extends HttpException {
