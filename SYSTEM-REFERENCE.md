@@ -7021,18 +7021,21 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   and its owning unit.
 - **The awaiting list (PR 2).** `GET /committee-change-requests/awaiting-decision`
   reads each arm with its own capped query (`awaiting-decision-candidates.ts`)
-  and merges them, so one arm's rows never use the other's cap. The chain arm:
-  requests Under review, then one chain resolution. The review arm first works
+  and merges them, so one arm's rows never use the other's cap. Both arms page
+  (keyset on submittedAt and id, 200 a page, at most 5, until 200 are kept), so
+  older rows the viewer cannot keep never hide theirs. The chain arm: requests
+  Under review, each page's chains in one batch. The review arm first works
   out where the viewer can be in a pool without reading a request (the added
   stages and entries; each pool resolved without a record; for the record-routed
   entries, the committees the viewer and whoever they cover sit on and the units
   they lead, `findUnitsLedBy()`), then reads only the requests standing there,
-  filtered IN SQL, 200 a page (at most 5), each checked exactly: the pool and
+  filtered IN SQL, a page at a time, each checked exactly: the pool and
   `readableCommitteeIds()`. The gate is still one query,
   `awaitingDecisionGate()`: the chain's three arms plus "a submitted request's
   newest instance in an added stage here". Pinned query counts: 1 with nothing
   in an added stage; 4 for a non-reviewer while something is (no request read);
-  16 for a reviewer with one request; 14 for a chain decider. Every
+  16 for a reviewer with one request; 14 for a chain decider; 21 for a chain
+  decider whose request is on the second page. Every
   organisation predicate in both queries is held load-bearing by gate-named
   specs on corrupt cross-organisation rows. Home's counts read the same API;
   `awaiting-me` never lists a review stage (app moves only), so nothing counts
