@@ -3091,19 +3091,34 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
       (shown, not saved), Space or Enter drops it, and Escape (or focus
       leaving the handle) puts it back. While a row is lifted, the arrows,
       Edit and Delete wait.
-    - **Announced** in the arrows' live line: picked up, each position, the
-      drop, a cancel. Focus stays on the row's handle.
+    - **Announced** in the arrows' live line: picked up (the position only),
+      each position, the drop, a cancel. The keys are described by a hint
+      (`aria-describedby`) only while nothing is lifted, so they are never read
+      twice. Focus stays on the row's handle.
+    - **A lifted row is put back** when the stage or `canManage` changes.
     - **Saving:** both paths use the same order endpoint as the arrows, and
       the new order shows at once.
       - A failed save puts the rows back and says so ("The new order
         couldn't be saved…").
+      - A refusal says what the arrows say for every code
+        (`plainWorkflowRefusalKey`).
       - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+        Focus waits for the re-read, then goes to the moved row's handle, or
+        the list, or the section; never the page body.
     - **The ↑ / ↓ buttons stay.**
     - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
       with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
       CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
       because it styles the caller's row; the next sortable list reuses it.
       Keyboard pick-up stays with the list, which knows the order.
+      - **No literal sizes.** The handle box is `--am-drag-handle-inline` /
+        `-block` (22 × 26, from the Stage Tasks drawing).
+      - **Disabled** is the disabled-control border, not a fade.
+      - **The placeholder** is a dashed slot.
+      - **No slide animation** (no drawing gives a duration).
+      - **The preview's class is doubled.** The caller's row rule ties with it
+        on specificity, and whichever stylesheet loads last would win the
+        bottom border.
     - **Specs:** `stage-task-list.drag.spec.ts` and
       `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
       px, both languages). Mutation-checked.
