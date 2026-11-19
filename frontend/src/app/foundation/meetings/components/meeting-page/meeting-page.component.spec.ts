@@ -127,6 +127,16 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       expect(q(el, 'meeting-my-answer')?.textContent?.trim()).toBe('Attending');
       expect(q(el, 'meeting-answer')?.textContent).toContain(en.meeting.answer.closed);
     });
+    it('the stored note is filled in, kept on a reload, and sent with the next answer rather than cleared', () => {
+      meeting = () => of(aMeeting({ myAnswer: { answer: 'ATTENDING', note: 'Joining from the clinic' } }));
+      const { c } = create();
+      expect(c.answerNote).toBe('Joining from the clinic');
+      c.answer('CANT_ATTEND');
+      expect(answer).toHaveBeenCalledWith('m-1', { answer: 'CANT_ATTEND', note: 'Joining from the clinic' });
+      // The answer's reload reads the meeting again; the note stays as stored.
+      expect(c.answerNote).toBe('Joining from the clinic');
+    });
+
     it('not invited: no answer section at all', () => {
       meeting = () => of(aMeeting({ may: { ...aMeeting().may, answer: false }, myAnswer: null }));
       expect(q(create().el, 'meeting-answer')).toBeNull();

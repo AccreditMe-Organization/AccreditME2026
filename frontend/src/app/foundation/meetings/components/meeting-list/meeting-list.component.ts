@@ -1,12 +1,11 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { map } from 'rxjs';
+import { map, tap } from 'rxjs';
 import { DataListComponent, DataListColumn, DataListScope } from '../../../../shared/components/data-list/data-list.component';
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { FormatService } from '../../../../core/formatting';
 import { MeetingService, type MeetingListItemDto, type MeetingListView } from '../../services/meeting.service';
@@ -18,8 +17,7 @@ const PAGE = 25;
  * ACC-316 PR 6 — /meetings: the saved views (Mine, Past, Minutes I record, All
  * meetings, Sub-units' meetings), searched by title, paged on the server. Which
  * meetings a person sees in each is the server's (the parent rule, plan §4.1);
- * "All meetings" is offered only with meetings:view, which the server also
- * requires. Ordered by time, as the server orders each view: the headers are
+ * "All meetings" is offered only where the list's answer says `canSeeAll`. Ordered by time, as the server orders each view: the headers are
  * plain text because the list takes no sort (a column the server cannot sort
  * by stays plain, ACC-234). Nothing polls.
  */
@@ -106,15 +104,17 @@ export class MeetingListComponent {
   private readonly meetings = inject(MeetingService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
-  private readonly access = inject(NavigationAccessService);
   private readonly language = inject(LanguageService);
   readonly format = inject(FormatService);
   readonly pageSize = PAGE;
 
-  /** The views; "All meetings" only with meetings:view (the server refuses it otherwise). */
+  /** Whether the server offers All meetings to this person (its `canSeeAll`, from every list answer). */
+  readonly canSeeAll = signal(false);
+
+  /** The views; "All meetings" only where the server says so, with no client copy of the rule. */
   readonly scopes = computed<DataListScope[]>(() => {
     this.translate.currentLang();
-    const views: MeetingListView[] = ['mine', 'past', 'minutes', ...(this.access.hasPermission('meetings:view') ? (['all'] as const) : []), 'subunits'];
+    const views: MeetingListView[] = ['mine', 'past', 'minutes', ...(this.canSeeAll() ? (['all'] as const) : []), 'subunits'];
     return views.map((key) => ({ key, label: this.translate.instant(`meeting.list.view.${key}`) }));
   });
 
@@ -133,7 +133,10 @@ export class MeetingListComponent {
     const page = query.page ?? 1;
     return this.meetings
       .list({ view: (query.scope as MeetingListView | undefined) ?? 'mine', q: query.search || undefined, skip: (page - 1) * pageSize, take: Math.min(pageSize, 50) })
-      .pipe(map((r) => ({ data: r.items, total: r.total, page, pageSize })));
+      .pipe(
+        tap((r) => this.canSeeAll.set(r.canSeeAll)),
+        map((r) => ({ data: r.items, total: r.total, page, pageSize })),
+      );
   };
 
   readonly trackById = (m: MeetingListItemDto): string => m.id;

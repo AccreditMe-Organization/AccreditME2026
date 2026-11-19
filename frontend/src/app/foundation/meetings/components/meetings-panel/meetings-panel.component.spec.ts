@@ -45,22 +45,25 @@ describe('MeetingsPanelComponent (ACC-316 PR 6)', () => {
   }
 
   beforeEach(() => {
-    list = jasmine.createSpy('list').and.callFake((q: { view: string }): Observable<MeetingListDto> => of({ items: q.view === 'mine' ? UPCOMING : HELD, total: 0 }));
+    // The server's totals are larger than the rows asked for: the count is theirs.
+    list = jasmine.createSpy('list').and.callFake((q: { view: string }): Observable<MeetingListDto> =>
+      of(q.view === 'upcoming' ? { items: UPCOMING, total: 4, canSeeAll: false } : { items: HELD, total: 9, canSeeAll: false }),
+    );
     may = () => of({ may: true });
   });
 
   const committee: ScheduleOwner = { kind: 'COMMITTEE', id: 'c-1', name: 'Pharmacy and Therapeutics Committee' };
   const unit: ScheduleOwner = { kind: 'UNIT', id: 'u-1', name: 'Quality Department' };
 
-  it('reads the next three and the last two held, for this committee only', () => {
+  it('reads the next three and the last two held, for this committee only, under the plain visibility rule (not Mine)', () => {
     create(committee);
-    expect(list).toHaveBeenCalledWith({ view: 'mine', committeeId: 'c-1', take: 3 });
+    expect(list).toHaveBeenCalledWith({ view: 'upcoming', committeeId: 'c-1', take: 3 });
     expect(list).toHaveBeenCalledWith({ view: 'past', committeeId: 'c-1', take: 2 });
   });
 
   it('a unit reads by its unit', () => {
     create(unit);
-    expect(list).toHaveBeenCalledWith({ view: 'mine', orgUnitId: 'u-1', take: 3 });
+    expect(list).toHaveBeenCalledWith({ view: 'upcoming', orgUnitId: 'u-1', take: 3 });
   });
 
   it('lists upcoming first, each linked to its page, a cancelled one struck through', () => {
@@ -70,6 +73,14 @@ describe('MeetingsPanelComponent (ACC-316 PR 6)', () => {
     expect(rows[0]!.querySelector('a')?.getAttribute('href')).toBe('/meetings/m-next');
     expect(rows[2]!.querySelector('a')?.classList.contains('line-through')).toBeTrue();
     expect(rows[1]!.querySelector('a')?.classList.contains('line-through')).toBeFalse();
+  });
+
+  it("counts every meeting the server says this person may see, not the rows drawn, and offers no See all", () => {
+    const { fixture, el } = create(committee);
+    expect(fixture.componentInstance.total()).toBe(13);
+    expect(el.querySelectorAll('[data-meeting-row]').length).toBe(3);
+    expect(el.querySelector('[data-testid="meetings-committee-count"]')?.textContent?.trim()).toBe('13');
+    expect(el.querySelector('[data-testid$="-see-all"]')).toBeNull();
   });
 
   describe('Schedule meeting follows the server', () => {

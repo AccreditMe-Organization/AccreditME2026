@@ -10,7 +10,7 @@ import { environment } from '../../../../environments/environment';
  * worked out here.
  */
 
-export type MeetingListView = 'mine' | 'past' | 'minutes' | 'all' | 'subunits';
+export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits';
 export type MeetingAttendeeKind = 'MEMBER' | 'ORG_GUEST' | 'OUTSIDE_GUEST';
 export type MeetingAnswer = 'ATTENDING' | 'CANT_ATTEND';
 
@@ -49,6 +49,8 @@ export interface MeetingListItemDto {
 export interface MeetingListDto {
   items: MeetingListItemDto[];
   total: number;
+  /** Whether this person may list All meetings: the screen offers it from this, never a permission of its own. */
+  canSeeAll: boolean;
 }
 
 /** "6 attending · 2 can't · quorum 5": MEMBER answers, for whoever may edit the meeting. */

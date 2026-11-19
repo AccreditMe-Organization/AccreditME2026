@@ -55,7 +55,7 @@ type GuestKind = 'person' | 'outside';
             <am-field [label]="'meeting.guest.name' | translate" [control]="form.controls.outsideName" [forceShowErrors]="showErrors()" [errorMessages]="{ required: 'meeting.guest.nameRequired' }">
               <input #nameInput pInputText formControlName="outsideName" maxlength="200" data-testid="guest-name" />
             </am-field>
-            <am-field [label]="'meeting.guest.email' | translate" [control]="form.controls.outsideEmail" [forceShowErrors]="showErrors()" [errorMessages]="{ required: 'meeting.guest.emailRequired', email: 'meeting.guest.emailInvalid' }">
+            <am-field [label]="'meeting.guest.email' | translate" [control]="form.controls.outsideEmail" [forceShowErrors]="showErrors()" [errorMessages]="{ required: 'meeting.guest.emailRequired', email: 'storage.request.contactEmailInvalid' }">
               <input pInputText dir="ltr" type="email" formControlName="outsideEmail" maxlength="320" data-testid="guest-email" />
             </am-field>
             <am-field [label]="'meeting.guest.organisation' | translate" [control]="form.controls.outsideOrganisation">

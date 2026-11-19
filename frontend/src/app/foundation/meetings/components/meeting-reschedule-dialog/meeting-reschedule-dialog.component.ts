@@ -1,4 +1,4 @@
-import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, untracked, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { AbstractControl, FormBuilder, FormsModule, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -10,7 +10,7 @@ import { InlineCalendarComponent } from '../../../../shared/components/inline-ca
 import { MeetingService, type MeetingDto } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingWhenFieldComponent } from '../meeting-when-field/meeting-when-field.component';
-import { meetingStart, timeText, today, meetingTimeValidator } from '../../meeting-when';
+import { dayInstant, meetingDay, meetingStart, meetingTimeText, meetingTimeValidator, meetingToday } from '../../meeting-when';
 
 /** The longest reason the server accepts (RescheduleMeetingDto). */
 export const RESCHEDULE_REASON_MAX = 500;
@@ -100,7 +100,7 @@ export class MeetingRescheduleDialogComponent {
   readonly showErrors = signal(false);
   readonly dateView = signal(false);
   readonly day = signal<Date | null>(null);
-  readonly minDay = today();
+  readonly minDay = meetingToday(this.format);
   private readonly reasonInput = viewChild<ElementRef<HTMLTextAreaElement>>('reasonInput');
 
   readonly form = this.fb.group({
@@ -109,23 +109,26 @@ export class MeetingRescheduleDialogComponent {
   });
 
   constructor() {
-    // Every opening starts from the meeting as it stands.
+    // Every OPENING starts from the meeting as it stands, on the tenant's wall
+    // clock. Only the opening: a reload of the meeting while the dialog is open
+    // never wipes what the person has typed.
     effect(() => {
-      const m = this.meeting();
-      if (this.visible() && m) {
-        const at = new Date(m.scheduledAt);
-        this.day.set(at);
-        this.form.reset({ time: timeText(at), reason: '' });
+      if (!this.visible()) return;
+      untracked(() => {
+        const m = this.meeting();
+        if (!m) return;
+        this.day.set(meetingDay(m.scheduledAt, this.format));
+        this.form.reset({ time: meetingTimeText(m.scheduledAt, this.format), reason: '' });
         this.error.set(null);
         this.showErrors.set(false);
         this.dateView.set(false);
-      }
+      });
     });
   }
 
   dayText(): string {
     const d = this.day();
-    return d ? this.format.dateWithWeekday(d) : '';
+    return d ? this.format.dateWithWeekday(dayInstant(d, this.format)) : '';
   }
 
   pickDay(day: Date | null): void {
@@ -138,7 +141,7 @@ export class MeetingRescheduleDialogComponent {
   submit(): void {
     const m = this.meeting();
     if (!m || this.saving()) return;
-    const at = meetingStart(this.day(), this.form.getRawValue().time ?? '');
+    const at = meetingStart(this.day(), this.form.getRawValue().time ?? '', this.format);
     if (this.form.invalid || !at) {
       this.showErrors.set(true);
       if (this.form.controls.reason.invalid) this.reasonInput()?.nativeElement.focus();

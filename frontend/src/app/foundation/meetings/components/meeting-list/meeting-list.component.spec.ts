@@ -17,8 +17,8 @@ import { MeetingListComponent } from './meeting-list.component';
 describe('MeetingListComponent (ACC-316 PR 6)', () => {
   let list: jasmine.Spy;
 
-  function create(permissions: string[]) {
-    list = jasmine.createSpy('list').and.returnValue(of({ items: [], total: 0 }));
+  function create(permissions: string[], canSeeAll = false) {
+    list = jasmine.createSpy('list').and.returnValue(of({ items: [], total: 0, canSeeAll }));
     TestBed.configureTestingModule({
       imports: [MeetingListComponent],
       providers: [
@@ -36,16 +36,25 @@ describe('MeetingListComponent (ACC-316 PR 6)', () => {
     return TestBed.createComponent(MeetingListComponent).componentInstance;
   }
 
-  it('offers All meetings to a meetings:view holder, between Minutes and Sub-units', () => {
-    expect(create(['meetings:view']).scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'all', 'subunits']);
+  const firstPage = (c: MeetingListComponent) => firstValueFrom(c.source({ page: 1, pageSize: 25 } as Parameters<typeof c.source>[0]));
+
+  it("offers All meetings, between Minutes and Sub-units, once the server's answer says canSeeAll", async () => {
+    const c = create([], true);
+    expect(c.scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'subunits']);
+    await firstPage(c);
+    expect(c.scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'all', 'subunits']);
   });
 
-  it('never offers All meetings without meetings:view', () => {
-    expect(create([]).scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'subunits']);
+  it('never offers All meetings when the server says not, whatever the client holds', async () => {
+    const c = create(['meetings:view'], false);
+    await firstPage(c);
+    expect(c.scopes().map((s) => s.key)).toEqual(['mine', 'past', 'minutes', 'subunits']);
   });
 
-  it('labels every view in words', () => {
-    const labels = create(['meetings:view']).scopes().map((s) => s.label);
+  it('labels every view in words', async () => {
+    const c = create([], true);
+    await firstPage(c);
+    const labels = c.scopes().map((s) => s.label);
     expect(labels).toEqual(["Mine, upcoming first", 'Past', 'Minutes I record', 'All meetings', "Sub-units' meetings"]);
   });
 

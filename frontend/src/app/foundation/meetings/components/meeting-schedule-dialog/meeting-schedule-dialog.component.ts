@@ -1,6 +1,7 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, untracked, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { AbstractControl, FormBuilder, FormsModule, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -13,7 +14,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { MeetingService } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingWhenFieldComponent } from '../meeting-when-field/meeting-when-field.component';
-import { meetingStart, meetingTimeValidator, today } from '../../meeting-when';
+import { dayInstant, meetingStart, meetingTimeValidator, meetingToday } from '../../meeting-when';
 
 /** Whose meeting: one committee or one unit, named as the page shows it. */
 export interface ScheduleOwner {
@@ -24,6 +25,16 @@ export interface ScheduleOwner {
 
 /** The durations offered, in minutes (Meeting Screens round 5: "90 min"). */
 export const MEETING_DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240] as const;
+
+/**
+ * Whether a failed press may still have written the meeting: the request went
+ * and no answer, or a server error, came back (status 0, a 408 or 504
+ * timeout, any 5xx). A 4xx is a refusal: nothing was written.
+ */
+function mayHaveBeenWritten(err: unknown): boolean {
+  if (!(err instanceof HttpErrorResponse)) return false;
+  return err.status === 0 || err.status === 408 || err.status >= 500;
+}
 
 const placeRequired = (group: AbstractControl): ValidationErrors | null => {
   const v = group.value as { location?: string; meetingUrl?: string };
@@ -58,9 +69,16 @@ const placeRequired = (group: AbstractControl): ValidationErrors | null => {
           <am-field [label]="'meeting.schedule.subject' | translate" [control]="form.controls.title" [hint]="'meeting.schedule.subjectHint' | translate" [forceShowErrors]="showErrors()" [errorMessages]="{ required: 'meeting.schedule.subjectRequired' }">
             <input #titleInput pInputText formControlName="title" maxlength="200" data-testid="schedule-title" />
           </am-field>
-          <div class="grid gap-3" [style.grid-template-columns]="owner()?.kind === 'UNIT' ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'">
+          <div class="grid gap-3" [style.grid-template-columns]="owner()?.kind === 'UNIT' ? 'minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr)' : 'repeat(2, minmax(0, 1fr))'">
             <am-field [label]="'meeting.schedule.type' | translate" [control]="form.controls.typeValueId" [forceShowErrors]="showErrors()" [errorMessages]="{ required: 'meeting.schedule.typeRequired' }">
-              <app-overlay-select [options]="typeOptions()" optionLabel="label" optionValue="value" formControlName="typeValueId" [ariaLabel]="'meeting.schedule.type' | translate" />
+              @if (typesState() === 'error') {
+                <span class="flex items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="schedule-types-error">
+                  {{ 'meeting.schedule.typesError' | translate }}
+                  <p-button size="small" [text]="true" [label]="'common.retry' | translate" data-testid="schedule-types-retry" (onClick)="loadTypes()" />
+                </span>
+              } @else {
+                <app-overlay-select [options]="typeOptions()" optionLabel="label" optionValue="value" formControlName="typeValueId" [ariaLabel]="'meeting.schedule.type' | translate" />
+              }
             </am-field>
             <am-field [label]="'meeting.schedule.duration' | translate" [control]="form.controls.durationMinutes" message="none">
               <app-overlay-select [options]="durationOptions()" optionLabel="label" optionValue="value" formControlName="durationMinutes" [ariaLabel]="'meeting.schedule.duration' | translate" />
@@ -100,8 +118,14 @@ const placeRequired = (group: AbstractControl): ValidationErrors | null => {
         @if (error()) {
           <p class="m-0 me-auto min-w-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="schedule-error">{{ error()! | translate }}</p>
         }
-        <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
-        <p-button type="button" data-testid="schedule-submit" [label]="'meeting.schedule.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        @if (uncertain()) {
+          <!-- The request went and no answer came: it may have been scheduled.
+               No plain retry, which could make it twice; the list is read again. -->
+          <p-button type="button" data-testid="schedule-close" [label]="'common.close' | translate" (onClick)="close()" />
+        } @else {
+          <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
+          <p-button type="button" data-testid="schedule-submit" [label]="'meeting.schedule.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        }
       </div>
     </ng-template>
     <app-edit-dialog
@@ -129,13 +153,17 @@ export class MeetingScheduleDialogComponent {
   readonly visible = input.required<boolean>();
   readonly owner = input<ScheduleOwner | null>(null);
   readonly visibleChange = output<boolean>();
+  /** A press whose outcome is unknown (no answer, a timeout, a 5xx): the opener reads its list again. */
+  readonly maybeScheduled = output<void>();
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  readonly uncertain = signal(false);
+  readonly typesState = signal<'loading' | 'ready' | 'error'>('loading');
   readonly showErrors = signal(false);
   readonly dateView = signal(false);
   readonly day = signal<Date | null>(null);
-  readonly minDay = today();
+  readonly minDay = meetingToday(this.format);
   readonly types = signal<{ id: string; labelEn: string; labelAr: string | null }[]>([]);
   private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
 
@@ -171,14 +199,35 @@ export class MeetingScheduleDialogComponent {
         this.error.set(null);
         this.showErrors.set(false);
         this.dateView.set(false);
-        this.meetings.formChoices().subscribe({ next: (c) => this.types.set(c.types), error: () => this.types.set([]) });
+        this.uncertain.set(false);
+        untracked(() => this.loadTypes());
       }
     });
   }
 
+  /** The meeting types; a failure says so, with Retry, rather than leave Type an empty required list. */
+  loadTypes(): void {
+    this.typesState.set('loading');
+    this.meetings.formChoices().subscribe({
+      next: (c) => {
+        this.types.set(c.types);
+        this.typesState.set('ready');
+      },
+      error: () => {
+        this.types.set([]);
+        this.typesState.set('error');
+      },
+    });
+  }
+
+  close(): void {
+    this.form.markAsPristine();
+    this.visibleChange.emit(false);
+  }
+
   dayText(): string {
     const d = this.day();
-    return d ? this.format.dateWithWeekday(d) : '';
+    return d ? this.format.dateWithWeekday(dayInstant(d, this.format)) : '';
   }
 
   pickDay(day: Date | null): void {
@@ -190,9 +239,9 @@ export class MeetingScheduleDialogComponent {
 
   submit(): void {
     const owner = this.owner();
-    if (!owner || this.saving()) return;
+    if (!owner || this.saving() || this.uncertain()) return;
     const v = this.form.getRawValue();
-    const at = meetingStart(this.day(), v.time ?? '');
+    const at = meetingStart(this.day(), v.time ?? '', this.format);
     if (this.form.invalid || !at) {
       this.showErrors.set(true);
       if (this.form.controls.title.invalid) this.titleInput()?.nativeElement.focus();
@@ -220,7 +269,14 @@ export class MeetingScheduleDialogComponent {
         },
         error: (err: unknown) => {
           this.saving.set(false);
-          this.error.set(meetingRefusalKey(err) ?? 'meeting.schedule.error');
+          const refusal = meetingRefusalKey(err);
+          if (!refusal && mayHaveBeenWritten(err)) {
+            this.uncertain.set(true);
+            this.error.set('meeting.schedule.maybeScheduled');
+            this.maybeScheduled.emit();
+            return;
+          }
+          this.error.set(refusal ?? 'meeting.schedule.error');
         },
       });
   }

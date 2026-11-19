@@ -289,6 +289,8 @@ export class MeetingPageComponent {
     }).subscribe({
       next: ({ meeting, attendees, agenda, instances }) => {
         this.meeting.set(meeting);
+        // The note as stored, so the next answer keeps it rather than clearing it.
+        this.answerNote = meeting.myAnswer?.note ?? '';
         this.attendees.set(attendees);
         this.agenda.set(agenda);
         this.instance.set(instances[0] ?? null);

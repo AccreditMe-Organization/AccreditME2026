@@ -32,8 +32,9 @@ const HELD = 2;
     <am-capped-panel
       [heading]="'meeting.panel.title' | translate"
       [state]="state()"
-      [total]="rows().length"
+      [total]="total()"
       [shown]="rows().length"
+      [offersSeeAll]="false"
       [loadingText]="'meeting.panel.loading' | translate"
       [errorText]="'meeting.panel.error' | translate"
       [emptyText]="'meeting.panel.empty' | translate"
@@ -53,7 +54,7 @@ const HELD = 2;
         </li>
       }
     </am-capped-panel>
-    <app-meeting-schedule-dialog [visible]="scheduleOpen()" (visibleChange)="scheduleOpen.set($event)" [owner]="owner()" />
+    <app-meeting-schedule-dialog [visible]="scheduleOpen()" (visibleChange)="scheduleOpen.set($event)" [owner]="owner()" (maybeScheduled)="load()" />
   `,
 })
 export class MeetingsPanelComponent {
@@ -69,6 +70,8 @@ export class MeetingsPanelComponent {
   readonly maySchedule = signal(false);
   readonly scheduleOpen = signal(false);
   readonly rows = computed(() => [...this.upcoming(), ...this.held()]);
+  /** Every meeting of this owner the person may see: the server's two totals, never the rows drawn. */
+  readonly total = signal(0);
 
   constructor() {
     effect(() => {
@@ -86,12 +89,15 @@ export class MeetingsPanelComponent {
     const key = owner.kind === 'COMMITTEE' ? { committeeId: owner.id } : { orgUnitId: owner.id };
     this.state.set('loading');
     forkJoin({
-      upcoming: this.meetings.list({ view: 'mine', ...key, take: UPCOMING }),
+      // The plain visibility rule, not Mine: a head, a cover or a meetings:view
+      // holder who is no member sees the owner's next meetings too.
+      upcoming: this.meetings.list({ view: 'upcoming', ...key, take: UPCOMING }),
       held: this.meetings.list({ view: 'past', ...key, take: HELD }),
     }).subscribe({
       next: ({ upcoming, held }) => {
         this.upcoming.set(upcoming.items);
         this.held.set(held.items);
+        this.total.set(upcoming.total + held.total);
         this.state.set('ready');
       },
       error: () => this.state.set('error'),
