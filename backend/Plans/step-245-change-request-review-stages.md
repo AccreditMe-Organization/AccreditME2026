@@ -199,7 +199,7 @@ In one transaction:
 - `DEPARTURE_WITHDRAWS_FROM` stays draft and returned. A request in an added stage, like one under review, is left to its deciders.
 - The skip of unkeyed stages is now explicit: an unkeyed stage is a review stage, so it awaits a decision.
 - **A pool member's deactivation** leaves the stage to the rest of its pool. ACC-271 records `POOL_MEMBER_LEFT`, and ALL stops waiting for them.
-- **An emptied pool** stalls the request. It is visible on Setup health (stage worked by nobody) and in the request's "awaiting" line, and the requester can still withdraw. §9 Q2.
+- **An emptied pool** stalls the request. It is visible on Setup health (`STAGE_WITHOUT_ASSIGNEE`, the existing condition for an instance stage nobody can act on) and in the request's "awaiting" line, and the requester can still withdraw. §9 Q2.
 
 **Approve now (root head, own request).** Recommended: it **skips** added review stages and applies at once, as today. It is the root head's own final decision (ACC-283 Q4). §9 Q1.
 
@@ -295,7 +295,7 @@ PR 1 deploys before PR 2 reads its shape. The engine change is behaviour-neutral
 - **Recommend (a):** it is the root head's own final decision, and ACC-283 Q4 made it immediate.
 
 **Q2. An added stage whose pool is empty (nobody left)**
-- (a) The request waits. It shows on Setup health; the requester can withdraw, and an admin can fix the pool.
+- (a) The request waits. It shows on Setup health (`STAGE_WITHOUT_ASSIGNEE`); the requester can withdraw, and an admin can fix the pool.
 - (b) The stage is skipped automatically.
 - (c) The chain decides it instead.
 - **Recommend (a):** the engine fails closed everywhere else, and silently skipping a review defeats it.
