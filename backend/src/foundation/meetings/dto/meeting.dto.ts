@@ -152,7 +152,7 @@ export class RescheduleMeetingDto {
 }
 
 /** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
-export const MEETING_LIST_VIEWS = ['mine', 'past', 'minutes', 'all', 'subunits'] as const;
+export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits'] as const;
 export type MeetingListView = (typeof MEETING_LIST_VIEWS)[number];
 
 export class ListMeetingsDto {

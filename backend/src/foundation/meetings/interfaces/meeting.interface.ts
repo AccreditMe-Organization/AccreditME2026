@@ -28,6 +28,8 @@ export interface IMeetingListItem {
 export interface IMeetingList {
   items: IMeetingListItem[];
   total: number;
+  /** ACC-316 PR 6 — whether this viewer may list All meetings (meetings:view), so the screen offers it without a copy of the rule. */
+  canSeeAll: boolean;
 }
 
 export interface IMeeting extends IMeetingListItem {
