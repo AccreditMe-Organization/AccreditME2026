@@ -99,6 +99,19 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       expect(visible).toHaveBeenCalledWith(false);
       expect(reload).toHaveBeenCalledTimes(1);
     });
+
+    it('the server not reached: Retry in place of Send, which sends it again (P227)', () => {
+      const { c, fixture } = create();
+      svc['suggest']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      c.form.patchValue({ text: 'Name room 5.' });
+      c.submit();
+      fixture.detectChanges();
+      expect(document.querySelector('[data-testid="suggest-submit"]')).toBeNull();
+      svc['suggest']!.and.returnValue(of({ id: 's-9' }));
+      document.querySelector<HTMLElement>('[data-testid="suggest-retry"] button')!.click();
+      expect(svc['suggest']).toHaveBeenCalledTimes(2);
+      expect(c.error()).toBeNull();
+    });
   });
 
   describe('Decline', () => {
@@ -162,6 +175,19 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       document.querySelector<HTMLElement>('[data-testid="decline-reload"] button')!.click();
       expect(reload).toHaveBeenCalledTimes(1);
     });
+
+    it('the server not reached: Retry in place of Decline, which sends it again (P227)', () => {
+      const c = create();
+      svc['declineSuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      c.form.patchValue({ reply: 'Room 5 is the standing alternative.' });
+      c.submit();
+      c.fixture.detectChanges();
+      expect(document.querySelector('[data-testid="decline-submit"]')).toBeNull();
+      svc['declineSuggestion']!.and.returnValue(of(undefined));
+      document.querySelector<HTMLElement>('[data-testid="decline-retry"] button')!.click();
+      expect(svc['declineSuggestion']).toHaveBeenCalledTimes(2);
+      expect(c.error()).toBeNull();
+    });
   });
 
   describe('Return for Correction', () => {
@@ -219,6 +245,18 @@ describe('The review dialogs (ACC-316 PR 7c-1)', () => {
       expect(document.querySelector('[data-testid="return-submit"]')).toBeNull();
       document.querySelector<HTMLElement>('[data-testid="return-reload"] button')!.click();
       expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('the server not reached: Retry in place of Return, which sends it again (P227)', () => {
+      const c = create();
+      svc['returnMinutes']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      c.submit();
+      c.fixture.detectChanges();
+      expect(document.querySelector('[data-testid="return-submit"]')).toBeNull();
+      svc['returnMinutes']!.and.returnValue(of(undefined));
+      document.querySelector<HTMLElement>('[data-testid="return-retry"] button')!.click();
+      expect(svc['returnMinutes']).toHaveBeenCalledTimes(2);
+      expect(c.error()).toBeNull();
     });
   });
 });

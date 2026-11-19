@@ -6,7 +6,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { FormatService } from '../../../../core/formatting';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
-import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure } from '../../meeting-refusal';
 import { MeetingService, type MeetingSuggestionDto } from '../../services/meeting.service';
 
 function notBlank(control: AbstractControl): ValidationErrors | null {
@@ -48,6 +48,8 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
         <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
         @if (needsReload()) {
           <p-button type="button" data-testid="decline-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else if (mayRetry()) {
+          <p-button type="button" data-testid="decline-retry" [label]="'list.retry' | translate" [loading]="saving()" (onClick)="submit()" />
         } @else {
           <p-button type="button" data-testid="decline-submit" [label]="'meeting.review.decline' | translate" [loading]="saving()" (onClick)="submit()" />
         }
@@ -91,8 +93,11 @@ export class MeetingDeclineDialogComponent {
   });
 
   readonly saving = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly needsReload = signal(false);
+  /** P227 — the last failure, said by meetingFailure(): Retry when unreachable, Reload when stale. */
+  readonly failure = signal<MeetingFailure | null>(null);
+  readonly error = computed(() => this.failure()?.key ?? null);
+  readonly needsReload = computed(() => this.failure()?.offer === 'reload');
+  readonly mayRetry = computed(() => this.failure()?.offer === 'retry');
   readonly showErrors = signal(false);
   private readonly replyInput = viewChild<ElementRef<HTMLTextAreaElement>>('replyInput');
 
@@ -111,8 +116,7 @@ export class MeetingDeclineDialogComponent {
       if (!this.visible()) return;
       untracked(() => {
         this.form.reset({ reply: '' });
-        this.error.set(null);
-        this.needsReload.set(false);
+        this.failure.set(null);
         this.showErrors.set(false);
       });
     });
@@ -127,7 +131,7 @@ export class MeetingDeclineDialogComponent {
       return;
     }
     this.saving.set(true);
-    this.error.set(null);
+    this.failure.set(null);
     this.meetings.declineSuggestion(this.meetingId(), s.id, this.form.getRawValue().reply!.trim()).subscribe({
       next: () => {
         this.saving.set(false);
@@ -137,8 +141,7 @@ export class MeetingDeclineDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
-        this.error.set(meetingRefusalKey(err) ?? 'meeting.decline.error');
-        this.needsReload.set(meetingNeedsReload(err));
+        this.failure.set(meetingFailure(err, 'meeting.decline.error', 'meeting.decline.error'));
       },
     });
   }

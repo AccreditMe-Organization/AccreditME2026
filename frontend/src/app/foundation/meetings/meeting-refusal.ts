@@ -75,6 +75,8 @@ const RELOAD_CODES: ReadonlySet<string> = new Set([
   'MEETING_CHANGED',
   'MEETING_SUGGESTION_NOT_FOUND',
   'MEETING_SUGGESTION_DECIDED',
+  // P227 — "No corrections" pressed on a banner that predates the person's own suggestion.
+  'MEETING_REVIEW_SUGGESTED',
 ]);
 
 export function meetingNeedsReload(err: unknown): boolean {

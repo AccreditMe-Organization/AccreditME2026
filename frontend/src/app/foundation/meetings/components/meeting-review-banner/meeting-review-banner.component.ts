@@ -2,7 +2,7 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
-import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure } from '../../meeting-refusal';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 
 /**
@@ -37,6 +37,8 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
               {{ error()! | translate }}
               @if (needsReload()) {
                 <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-testid="meeting-review-reload" (onClick)="reloadMeeting()" />
+              } @else if (mayRetry()) {
+                <p-button size="small" [text]="true" [label]="'common.retry' | translate" [loading]="busy()" data-testid="meeting-review-retry" (onClick)="noCorrections()" />
               }
             </p>
           }
@@ -77,8 +79,11 @@ export class MeetingReviewBannerComponent {
   readonly reload = output<void>();
 
   readonly busy = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly needsReload = signal(false);
+  /** P227 — the last failure, said by meetingFailure(): Retry when unreachable, Reload when stale. */
+  readonly failure = signal<MeetingFailure | null>(null);
+  readonly error = computed(() => this.failure()?.key ?? null);
+  readonly needsReload = computed(() => this.failure()?.offer === 'reload');
+  readonly mayRetry = computed(() => this.failure()?.offer === 'retry');
 
   /** The review date as a day (stored as yyyy-MM-dd, the organisation's day). */
   private readonly reviewDay = computed(() => {
@@ -114,8 +119,7 @@ export class MeetingReviewBannerComponent {
   noCorrections(): void {
     if (this.busy()) return;
     this.busy.set(true);
-    this.error.set(null);
-    this.needsReload.set(false);
+    this.failure.set(null);
     this.meetings.noCorrections(this.meetingId()).subscribe({
       next: () => {
         this.busy.set(false);
@@ -123,15 +127,13 @@ export class MeetingReviewBannerComponent {
       },
       error: (err: unknown) => {
         this.busy.set(false);
-        this.error.set(meetingRefusalKey(err) ?? 'meeting.review.error');
-        this.needsReload.set(meetingNeedsReload(err));
+        this.failure.set(meetingFailure(err, 'meeting.review.error', 'meeting.review.error'));
       },
     });
   }
 
   reloadMeeting(): void {
-    this.error.set(null);
-    this.needsReload.set(false);
+    this.failure.set(null);
     this.reload.emit();
   }
 }

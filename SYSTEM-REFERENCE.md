@@ -18167,11 +18167,14 @@ failed apply is said from its code, by one rule, `meetingFailure()`
 - any other refusal its own sentence, and nothing to press.
 
 **Stale refusals offer Reload, never Retry** (`meetingNeedsReload()`):
-`MEETING_CHANGED`, `MEETING_SUGGESTION_NOT_FOUND` and
-`MEETING_SUGGESTION_DECIDED`, beside the agenda's three. Reload reads the
-meeting again; in a dialog it takes the primary button's place and closes the
-dialog first. The banner, the card, an item's apply line and all three dialogs
-offer it.
+`MEETING_CHANGED`, `MEETING_SUGGESTION_NOT_FOUND`,
+`MEETING_SUGGESTION_DECIDED` and `MEETING_REVIEW_SUGGESTED` (a stale banner's
+"No corrections"), beside the agenda's three. Reload reads the meeting again; in
+a dialog it takes the primary button's place and closes the dialog first. The
+banner, the card, an item's apply line and all three dialogs offer it, and say
+every failure through the same `meetingFailure()`: when the server could not be
+reached, the banner offers Retry beside its line and each dialog's primary
+button becomes Retry, which sends the same request again (P227).
 
 **The dialogs:**
 

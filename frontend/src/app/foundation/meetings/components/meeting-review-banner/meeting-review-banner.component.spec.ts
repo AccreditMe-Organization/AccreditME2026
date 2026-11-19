@@ -85,13 +85,39 @@ describe('MeetingReviewBannerComponent (ACC-316 PR 7c-1)', () => {
     expect(el.querySelector('[data-testid="meeting-review-changes"]')?.textContent?.trim()).toBe('Changed during review: item 2, decision');
   });
 
-  it('a refusal is said from its code', () => {
+  it('a refusal is said from its code, with nothing to press', () => {
+    const { el, fixture } = create(inReview());
+    noCorrections.and.returnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'MEETING_NOT_REVIEWER' } })));
+    el.querySelector<HTMLElement>('[data-testid="meeting-review-no-corrections"] button')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="meeting-review-error"]')?.textContent?.trim()).toBe(en.meeting.refusal.notReviewer);
+    expect(el.querySelector('[data-testid="meeting-review-reload"]')).toBeNull();
+    expect(el.querySelector('[data-testid="meeting-review-retry"]')).toBeNull();
+  });
+
+  it('"No corrections" on a stale banner (a suggestion was sent meanwhile) offers Reload (P227)', () => {
     const { el, fixture } = create(inReview());
     noCorrections.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_REVIEW_SUGGESTED' } })));
     el.querySelector<HTMLElement>('[data-testid="meeting-review-no-corrections"] button')!.click();
     fixture.detectChanges();
-    expect(el.querySelector('[data-testid="meeting-review-error"]')?.textContent?.trim()).toBe(en.meeting.refusal.reviewSuggested);
+    expect(el.querySelector('[data-testid="meeting-review-error"]')?.textContent).toContain(en.meeting.refusal.reviewSuggested);
+    expect(el.querySelector('[data-testid="meeting-review-reload"]')).not.toBeNull();
+  });
+
+  it('the server not reached: Retry, which sends "No corrections" again (P227)', () => {
+    const { el, fixture, c } = create(inReview());
+    const answered = jasmine.createSpy('answered');
+    c.answered.subscribe(answered);
+    noCorrections.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    el.querySelector<HTMLElement>('[data-testid="meeting-review-no-corrections"] button')!.click();
+    fixture.detectChanges();
     expect(el.querySelector('[data-testid="meeting-review-reload"]')).toBeNull();
+    noCorrections.and.returnValue(of(undefined));
+    el.querySelector<HTMLElement>('[data-testid="meeting-review-retry"] button')!.click();
+    fixture.detectChanges();
+    expect(noCorrections).toHaveBeenCalledTimes(2);
+    expect(answered).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('[data-testid="meeting-review-error"]')).toBeNull();
   });
 
   it('a stale refusal offers Reload, which asks the page to read the meeting (P220)', () => {

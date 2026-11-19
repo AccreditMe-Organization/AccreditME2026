@@ -6,7 +6,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { FormatService } from '../../../../core/formatting';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
-import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure } from '../../meeting-refusal';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 
 /**
@@ -44,6 +44,8 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
         <p-button [label]="'meeting.distribute.notYet' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
         @if (needsReload()) {
           <p-button type="button" data-testid="return-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else if (mayRetry()) {
+          <p-button type="button" data-testid="return-retry" [label]="'list.retry' | translate" [loading]="saving()" (onClick)="submit()" />
         } @else {
           <p-button type="button" data-testid="return-submit" [label]="'meeting.return.submit' | translate" [loading]="saving()" (onClick)="submit()" />
         }
@@ -87,8 +89,11 @@ export class MeetingReturnDialogComponent {
   readonly reload = output<void>();
 
   readonly saving = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly needsReload = signal(false);
+  /** P227 — the last failure, said by meetingFailure(): Retry when unreachable, Reload when stale. */
+  readonly failure = signal<MeetingFailure | null>(null);
+  readonly error = computed(() => this.failure()?.key ?? null);
+  readonly needsReload = computed(() => this.failure()?.offer === 'reload');
+  readonly mayRetry = computed(() => this.failure()?.offer === 'retry');
 
   readonly form = this.fb.group({ reason: ['', Validators.maxLength(2000)] });
 
@@ -111,8 +116,7 @@ export class MeetingReturnDialogComponent {
       if (!this.visible()) return;
       untracked(() => {
         this.form.reset({ reason: '' });
-        this.error.set(null);
-        this.needsReload.set(false);
+        this.failure.set(null);
       });
     });
   }
@@ -120,7 +124,7 @@ export class MeetingReturnDialogComponent {
   submit(): void {
     if (this.saving()) return;
     this.saving.set(true);
-    this.error.set(null);
+    this.failure.set(null);
     this.meetings.returnMinutes(this.meetingId(), this.form.getRawValue().reason?.trim() || null).subscribe({
       next: () => {
         this.saving.set(false);
@@ -130,8 +134,7 @@ export class MeetingReturnDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
-        this.error.set(meetingRefusalKey(err) ?? 'meeting.return.error');
-        this.needsReload.set(meetingNeedsReload(err));
+        this.failure.set(meetingFailure(err, 'meeting.return.error', 'meeting.return.error'));
       },
     });
   }
