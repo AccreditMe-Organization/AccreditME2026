@@ -4170,9 +4170,22 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - return → its RETURN;
   - not exactly one → 409 `VOTE_MOVE_AMBIGUOUS`, naming the stage.
 - **`isApprovalPath` is no longer read** by anything that decides.
-  - The API still accepts, stores, returns and audits it (expand).
   - The transition panel no longer offers it, and the list no longer tags it.
-  - Lane B's follow-up ticket drops it (contract).
+  - **Removed by ACC-294, in two deploys (ACC-278's shape):**
+    - **PR A (no migration):** the column is `@ignore` in `schema.prisma`, so
+      it is out of the generated client and still in the database.
+      - A transition create or update that sends it is the global
+        whitelist's 400, "property isApprovalPath should not exist".
+      - The template read, the audits, the seed and the frontend models no
+        longer name it, and the unused `workflow.isApprovalPath` key is gone.
+      - `submitApproval()` never named it.
+      - Specs: `is-approval-path.client.spec.ts` and
+        `dto/is-approval-path.dto.spec.ts`, plus the template read and create
+        tests in `workflow-template.service.spec.ts`. Mutation-checked.
+    - **PR B:** one contracting migration drops the column. It runs only after
+      PR A has deployed. **Never roll Railway back past PR A:** on a scratch
+      database with the column dropped, PR A's client made 9 real calls, all
+      OK, while the client before PR A made 2 of 9 (7 P2022).
 - **No backfill:** on the shared database (10 Nov), 0 stored moves change behaviour.
   Every seeded stage decided together already had its one ADVANCE marked.
 - **Specs:**
