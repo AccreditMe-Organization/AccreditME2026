@@ -44,7 +44,7 @@ describe('CommitteeDetailComponent — ?task=<id> (ACC-208, D2)', () => {
         },
         { provide: Router, useValue: { navigate } },
         { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm') } },
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: () => true } },
         ...[FormatService, CommitteeService, LookupService, UserService, OrgUnitService, WorkflowService].map(
           (provide) => ({ provide, useValue: stubService() }),
         ),

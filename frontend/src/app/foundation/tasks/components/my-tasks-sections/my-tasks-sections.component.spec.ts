@@ -436,10 +436,19 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
 
     it('names a record with no page of its own as plain text', () => {
       setup();
-      answer({ available: [available('p1', { sourceType: 'MEETING', record: { type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null } })] });
+      answer({ available: [available('p1', { sourceType: 'DOCUMENT', record: { type: 'DOCUMENT', id: 'd-1', nameEn: 'Hand hygiene policy', nameAr: null } })] });
       const record = q('mts-record')!;
       expect(record.tagName).toBe('SPAN');
-      expect(text(record)).toBe('Board meeting');
+      expect(text(record)).toBe('Hand hygiene policy');
+    });
+
+    // ACC-316 PR 6 — a meeting has its page now.
+    it("links a named meeting to its page", () => {
+      setup();
+      answer({ available: [available('p1', { sourceType: 'MEETING', record: { type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null } })] });
+      const record = q('mts-record')!;
+      expect(record.tagName).toBe('A');
+      expect(record.getAttribute('href')).toBe('/meetings/m-1');
     });
 
     it('names it in Arabic, through the bilingual rule', () => {

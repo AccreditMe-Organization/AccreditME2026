@@ -136,7 +136,7 @@ describe('CommitteeDetailComponent — every panel lines up in its grid row', ()
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p === 'committees:view' || p === 'committees:add_member' } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => p === 'committees:view' || p === 'committees:add_member' } },
         {
           provide: CommitteeService,
           useValue: {

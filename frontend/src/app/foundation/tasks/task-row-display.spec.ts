@@ -16,7 +16,16 @@ describe('taskRecordHref (ACC-120)', () => {
     expect(taskRecordHref({ type: 'COMMITTEE', id: 'c-9', nameEn: null, nameAr: null })).toBeNull();
   });
 
-  it('does not link a meeting, which has no page yet', () => {
-    expect(taskRecordHref({ type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null })).toBeNull();
+  // ACC-316 PR 6 — a meeting has its page now.
+  it('links a named meeting to its page', () => {
+    expect(taskRecordHref({ type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null })).toEqual(['/meetings', 'm-1']);
+  });
+
+  it('does not link a meeting the server left unnamed', () => {
+    expect(taskRecordHref({ type: 'MEETING', id: 'm-1', nameEn: null, nameAr: null })).toBeNull();
+  });
+
+  it('does not link a record type with no page yet', () => {
+    expect(taskRecordHref({ type: 'DOCUMENT', id: 'd-1', nameEn: 'Hand hygiene policy', nameAr: null })).toBeNull();
   });
 });

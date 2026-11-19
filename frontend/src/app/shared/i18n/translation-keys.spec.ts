@@ -79,6 +79,10 @@ const AR_PLURAL = pluralLeaves((ar as Json)['plural']);
 // values it can produce. Found by grepping for `'prefix.' +` and for template
 // literals of the same shape. MAINTAINED BY HAND — see the note above.
 const CONCATENATED_KEYS: { site: string; prefix: string; values: string[] }[] = [
+  // ACC-316 PR 6 — a meeting's invitation answer, the Add a guest kinds, and the list's views.
+  { site: 'MeetingPageComponent (my answer)', prefix: 'meeting.answer', values: ['ATTENDING', 'CANT_ATTEND'] },
+  { site: 'MeetingAddGuestDialogComponent (guest kind)', prefix: 'meeting.guest.kind', values: ['person', 'outside'] },
+  { site: 'MeetingListComponent (views)', prefix: 'meeting.list.view', values: ['mine', 'past', 'minutes', 'all', 'subunits'] },
   // StatusChipComponent, via user-list's labelPrefix override. The override is
   // itself the bug this ticket found: the component's default would have built
   // `user.invited`, and the keys live under `user.status.*`.

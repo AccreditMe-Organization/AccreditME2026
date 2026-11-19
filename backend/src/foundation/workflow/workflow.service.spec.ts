@@ -2589,7 +2589,7 @@ describe('WorkflowService', () => {
         labelAr: null,
         kind: 'ADVANCE',
         toStageId: `to-${id}`,
-        toStage: { nameEn: `Stage ${id}`, nameAr: null },
+        toStage: { nameEn: `Stage ${id}`, nameAr: null, flags: [] },
       });
       const moves = [
         move('move-approve', 'PERSON'),
@@ -2610,6 +2610,7 @@ describe('WorkflowService', () => {
         needsReason: false,
         // ACC-316 PR 4 — nothing holds these moves.
         blockedBy: null,
+        toStageFlags: [],
       });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
