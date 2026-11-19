@@ -289,6 +289,21 @@ describe('ACC-316 backfills against a real database', () => {
       ).toBe(1);
       expect(await audits(o.id, 'backfill-acc316-meeting-workflow')).toBe(1);
 
+      // Postgres returns rows in the order they sit on disk, not by `order`: on CI
+      // (18 Nov) Minutes Review's two entries came back second-first, and the next
+      // dry run called them configured. Force that here: the same rows, ids
+      // included, re-inserted in one statement in reverse, so they sit reversed.
+      for (const key of ['agenda_ready', 'minutes_review']) {
+        const where = { stage: { workflowTemplateId: w.t.id, key } };
+        const rows = await prisma.workflowStageAssignee.findMany({ where, orderBy: { order: 'asc' } });
+        expect(rows).toHaveLength(2);
+        await prisma.workflowStageAssignee.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+        await prisma.workflowStageAssignee.createMany({ data: [...rows].reverse() });
+        // Non-vacuity: read with no order, as the backfill once did, they come back reversed.
+        const unordered = await prisma.workflowStageAssignee.findMany({ where, select: { kind: true } });
+        expect(unordered.map((r) => r.kind)).toEqual([...rows].reverse().map((r) => r.kind));
+      }
+
       const again = await runWorkflow(prisma, { execute: false, organizationIds: [o.id], isFixture });
       expect(again.plans[0]!.ops).toEqual([]);
       expect(again.plans[0]!.left).toEqual([]);
