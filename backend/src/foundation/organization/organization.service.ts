@@ -15,7 +15,7 @@ import {
   OrgUnitParentCycleRefusal,
 } from './org-unit-refusals';
 import { ORG_UNIT_TYPE_CATEGORY, buildOrgUnitTypeResolver } from './org-unit-type-resolver';
-import { headHolderWhere } from './unit-headship';
+import { findActiveCoversForUnits, headHolderWhere } from './unit-headship';
 
 // ACC-141 - the type reserved for the ROOT unit, and for nothing else.
 //
@@ -107,13 +107,15 @@ export class OrganizationService {
         return holders.map((h) => h.id);
       }
 
-      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
-        await this.prisma.orgUnit.findFirst({
-          where: { id: current, organizationId },
-          select: { actingHeadUserId: true, parentId: true },
-        });
+      const unit: { parentId: string | null } | null = await this.prisma.orgUnit.findFirst({
+        where: { id: current, organizationId },
+        select: { parentId: true },
+      });
       if (!unit) return [];
-      if (unit.actingHeadUserId) return [unit.actingHeadUserId];
+      // ACC-324 — the cover in force whose person is ACTIVE, from the period
+      // table (unit-headship.ts), never the `actingHeadUserId` cache.
+      const cover = (await findActiveCoversForUnits(this.prisma, organizationId, [current], new Date())).get(current);
+      if (cover) return [cover];
 
       current = unit.parentId;
     }
@@ -148,7 +150,10 @@ export class OrganizationService {
       },
     });
 
-    const isNowVacant = directHolderCount === 0 && !orgUnit.actingHeadUserId;
+    // ACC-324 — covered only by a cover in force whose person is ACTIVE (the
+    // root-unit invariant's rule), never the `actingHeadUserId` cache.
+    const covered = directHolderCount === 0 && (await findActiveCoversForUnits(this.prisma, organizationId, [orgUnitId], new Date())).has(orgUnitId);
+    const isNowVacant = directHolderCount === 0 && !covered;
     if (isNowVacant === orgUnit.isHeadVacant) return; // no transition — the sweep handles ongoing drift, not this entry-time check
 
     if (!isNowVacant) {

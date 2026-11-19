@@ -19,6 +19,7 @@ import { TaskDueWarningService } from '../task/task-due-warning.service';
 import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
 import { readEscalationRules, type EscalationRule } from './stage-escalation';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
+import { findActiveCoversForUnits } from '../organization/unit-headship';
 
 /**
  * ACC-312 — the entries the unassigned-stage sweep looks at: open, at a stage
@@ -370,9 +371,13 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       _count: { _all: true },
     });
     const unitsWithAHead = new Set(holderCounts.map((row) => row.primaryOrgUnitId));
+    // ACC-324 — a unit is covered by a cover in force whose person is ACTIVE
+    // (the root-unit invariant's rule), read once for every unit, never from
+    // the `actingHeadUserId` cache.
+    const covered = await findActiveCoversForUnits(this.prisma, organizationId, units.map((u) => u.id), new Date());
 
     for (const orgUnit of units) {
-      const isNowVacant = !unitsWithAHead.has(orgUnit.id) && !orgUnit.actingHeadUserId;
+      const isNowVacant = !unitsWithAHead.has(orgUnit.id) && !covered.has(orgUnit.id);
 
       if (!isNowVacant) {
         if (orgUnit.isHeadVacant || orgUnit.isHeadFullyUnresolved) {
