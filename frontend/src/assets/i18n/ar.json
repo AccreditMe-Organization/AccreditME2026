@@ -4340,6 +4340,14 @@
         "many": "{{count}} شخصًا",
         "other": "{{count}} شخص"
       },
+      "votes": {
+        "zero": "لا أصوات",
+        "one": "صوت واحد",
+        "two": "صوتان",
+        "few": "{{count}} أصوات",
+        "many": "{{count}} صوتًا",
+        "other": "{{count}} صوت"
+      },
       "moreNeeded": {
         "zero": "لا حاجة لأحد",
         "one": "يلزم عضو واحد آخر",
@@ -5693,7 +5701,7 @@
       "recordFirst": "سجّل حضور الجميع أولًا. لم يُسجَّل بعد:",
       "error": "تعذّر توزيع المحضر.",
       "votesAbove": "مجموع بعض الأصوات أكبر من عدد الأعضاء الحاضرين الآن. صحّحها أولًا:",
-      "votesAboveItem": "{{title}}: عدد الأصوات {{total}}، والأعضاء الحاضرون {{present}}"
+      "votesAboveItem": "{{title}}: {{votes}}، {{members}}"
     },
     "invitees": {
       "title": "المدعوون",
@@ -5830,7 +5838,7 @@
       "notRecorder": "لا يقوم بذلك إلا من يسجّل محضر هذا الاجتماع.",
       "notStarted": "يُفتح تسجيل الحضور عند بدء الاجتماع.",
       "votesPartial": "أدخل أعداد الأصوات الثلاثة، أو لا شيء.",
-      "votesExceedPresent": "عدد الأصوات {{total}}، وعدد الأعضاء الحاضرين {{present}} فقط.",
+      "votesExceedPresent": "{{votes}}، ولكن {{members}} فقط.",
       "decisionNotFound": "لم يعد هذا القرار في المحضر. أعد تحميل الاجتماع.",
       "decisionTextRequired": "اكتب القرار.",
       "actionNotFound": "لم يعد هذا الإجراء في المحضر. أعد تحميل الاجتماع.",

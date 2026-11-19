@@ -365,7 +365,7 @@ export class MeetingItemMinutesComponent {
     if (refusalCode(err) === 'MEETING_VOTES_EXCEED_PRESENT' && err instanceof HttpErrorResponse) {
       const body = err.error as { total?: number; present?: number } | null;
       if (typeof body?.total === 'number' && typeof body.present === 'number') {
-        return { key: 'meeting.refusal.votesExceedPresent', params: { total: this.format.number(body.total), present: this.format.number(body.present) } };
+        return { key: 'meeting.refusal.votesExceedPresent', params: { votes: this.format.count('meeting.votes', body.total), members: this.format.count('meeting.presentMembers', body.present) } };
       }
     }
     return { key: meetingRefusalKey(err) ?? 'meeting.minutes.error' };

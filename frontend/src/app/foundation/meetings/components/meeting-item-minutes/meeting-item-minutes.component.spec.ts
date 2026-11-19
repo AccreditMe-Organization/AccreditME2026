@@ -218,7 +218,7 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
       fixture.detectChanges();
       el.querySelector<HTMLElement>('[data-decision-save] button')!.click();
       fixture.detectChanges();
-      expect(el.querySelector('[data-item-minutes-error]')?.textContent?.trim()).toBe('6 votes, but only 4 members present.');
+      expect(el.querySelector('[data-item-minutes-error]')?.textContent?.trim()).toBe('6 votes, but only 4 present members.');
     });
   });
 });

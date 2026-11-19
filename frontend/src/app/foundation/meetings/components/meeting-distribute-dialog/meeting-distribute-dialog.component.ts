@@ -48,7 +48,7 @@ function isoDay(day: Date): string {
             <p class="m-0 text-[13px]">{{ 'meeting.distribute.votesAbove' | translate }}</p>
             <ul class="m-0 ps-4 text-[13px]" data-testid="distribute-votes-above">
               @for (i of b.items; track i.agendaItemId) {
-                <li>{{ 'meeting.distribute.votesAboveItem' | translate: { title: i.title, total: format.number(i.total), present: format.number(i.present) } }}</li>
+                <li>{{ 'meeting.distribute.votesAboveItem' | translate: { title: i.title, votes: format.count('meeting.votes', i.total), members: format.count('meeting.presentMembers', i.present) } }}</li>
               }
             </ul>
           }

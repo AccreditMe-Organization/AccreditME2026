@@ -3676,6 +3676,10 @@
         "one": "{{count}} person",
         "other": "{{count}} people"
       },
+      "votes": {
+        "one": "{{count}} vote",
+        "other": "{{count}} votes"
+      },
       "moreNeeded": {
         "one": "{{count}} more needed",
         "other": "{{count}} more needed"
@@ -5013,7 +5017,7 @@
       "recordFirst": "Record attendance for everyone first. Still missing:",
       "error": "The minutes couldn't be distributed.",
       "votesAbove": "Some votes add up to more than the members now present. Correct them first:",
-      "votesAboveItem": "{{title}}: {{total}} votes, {{present}} members present"
+      "votesAboveItem": "{{title}}: {{votes}}, {{members}}"
     },
     "invitees": {
       "title": "Invitees",
@@ -5150,7 +5154,7 @@
       "notRecorder": "Only whoever records this meeting's minutes can do that.",
       "notStarted": "Attendance opens when the meeting starts.",
       "votesPartial": "Give all three vote counts, or none.",
-      "votesExceedPresent": "{{total}} votes, but only {{present}} members present.",
+      "votesExceedPresent": "{{votes}}, but only {{members}}.",
       "decisionNotFound": "This decision is no longer in the minutes. Reload the meeting.",
       "decisionTextRequired": "Write the decision.",
       "actionNotFound": "This action item is no longer in the minutes. Reload the meeting.",
