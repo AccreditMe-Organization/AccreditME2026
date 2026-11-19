@@ -26,6 +26,7 @@ import { MeetingPeopleService } from './meeting-people.service';
 import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
+import { MeetingReviewService } from './meeting-review.service';
 import {
   AddMeetingGuestDto,
   AnswerMeetingDto,
@@ -42,6 +43,7 @@ import type {
   IMeeting,
   IMeetingAgendaItem,
   IMeetingAttendee,
+  IMeetingAwaitingMe,
   IMeetingClash,
   IMeetingFile,
   IMeetingFiles,
@@ -66,6 +68,7 @@ export class MeetingsController {
     private readonly agenda: MeetingAgendaService,
     private readonly files: MeetingFilesService,
     private readonly clashes: MeetingClashService,
+    private readonly review: MeetingReviewService,
   ) {}
 
   @Get()
@@ -88,6 +91,12 @@ export class MeetingsController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IMeetingClash[]> {
     return this.clashes.check(dto, tenantId, { id: userId, permissions });
+  }
+
+  /** ACC-316 PR 4 — Home's meeting rows, self-scoped. Before ':id', so it is not read as an id. */
+  @Get('awaiting-me')
+  awaitingMe(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMeetingAwaitingMe> {
+    return this.review.awaitingMe(tenantId, userId);
   }
 
   @Get(':id')

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
 import { MeetingInviteeSyncService } from '../meetings/invitees/meeting-invitee-sync.service';
+import { MeetingReviewReminderService } from '../meetings/meeting-review-reminder.service';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { DateTime } from 'luxon';
@@ -95,6 +96,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
     // ACC-316 PR 3b — the meeting invitees' scheduled recomputer (ACC-82's rule).
     private readonly meetingInvitees: MeetingInviteeSyncService,
+    // ACC-316 PR 4 — the minutes review's reminder, the day before its date.
+    private readonly meetingReviewReminders: MeetingReviewReminderService,
   ) {
     super();
   }
@@ -155,6 +158,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // committees and units (MeetingInviteeSyncService.sweep()). The writers'
     // own calls only make a change show sooner; correctness rests here.
     await this.runIsolatedStep('sweepMeetingInvitees', failedSteps, () => this.meetingInvitees.sweep(now).then(() => undefined));
+    await this.runIsolatedStep('sweepMeetingReviewReminders', failedSteps, () => this.meetingReviewReminders.sweep(now).then(() => undefined));
 
     // Every step has now run regardless of what failed. Surfacing the failure
     // to BullMQ is the last act, never a short-circuit.
