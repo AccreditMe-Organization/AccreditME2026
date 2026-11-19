@@ -976,7 +976,7 @@ describe('OrganizationService', () => {
 
     it("falls through to the unit's own Acting Head when vacant, without walking to the parent", async () => {
       mockPrisma.user.findMany.mockResolvedValue([]); // unit-1 has no direct holder
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: null, parentId: 'parent-1' });
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ parentId: 'parent-1' });
       // ACC-324 — the Acting Head is the cover in force whose person is ACTIVE, from the period table.
       mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: 'unit-1', userId: 'acting-1' }]);
 
@@ -1009,7 +1009,7 @@ describe('OrganizationService', () => {
       );
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(
-          where.id === 'unit-1' ? { actingHeadUserId: null, parentId: 'parent-1' } : null,
+          where.id === 'unit-1' ? { parentId: 'parent-1' } : null,
         ),
       );
 
@@ -1034,8 +1034,8 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(
           where.id === 'unit-1'
-            ? { actingHeadUserId: null, parentId: 'parent-1' }
-            : { actingHeadUserId: null, parentId: null }, // parent-1: root, chain ends here
+            ? { parentId: 'parent-1' }
+            : { parentId: null }, // parent-1: root, chain ends here
         ),
       );
 
@@ -1147,7 +1147,7 @@ describe('OrganizationService', () => {
     it('on a false→true transition with ancestor coverage (partial), sets isHeadFullyUnresolved false', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: 'parent-1' }); // resolver: unit-1 walk step — never reaches a 3rd call, since parent-1 has a direct holder
+        .mockResolvedValueOnce({ parentId: 'parent-1' }); // resolver: unit-1 walk step — never reaches a 3rd call, since parent-1 has a direct holder
       mockPrisma.user.count.mockResolvedValue(0); // no direct holder on unit-1
       mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
         Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
@@ -1170,7 +1170,7 @@ describe('OrganizationService', () => {
     it('on a false→true transition fully exhausted, sets isHeadFullyUnresolved true and looks up no admins to notify', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+        .mockResolvedValueOnce({ parentId: null }); // resolver: root, chain ends
       mockPrisma.user.count.mockResolvedValue(0);
       mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
 
@@ -1197,7 +1197,7 @@ describe('OrganizationService', () => {
     it('filters the direct-holder count by status: ACTIVE — an INVITED holder still counts the unit as vacant', async () => {
       mockPrisma.orgUnit.findFirst
         .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
-        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+        .mockResolvedValueOnce({ parentId: null }); // resolver: root, chain ends
       mockPrisma.user.count.mockResolvedValue(0); // the ACTIVE-only filter excludes the INVITED holder
       mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
 

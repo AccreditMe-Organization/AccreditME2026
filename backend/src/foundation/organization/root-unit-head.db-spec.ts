@@ -252,6 +252,30 @@ describe('The root unit keeps a head, against a real database (ACC-288)', () => 
       expect(listed.map((c) => [c.objectId, c.severity])).toEqual([[t.rootId, 'BLOCKS_WORK']]);
     });
 
+    it('P213: hasDirectOrActingHead — a unit whose only cover is deactivated, or not started yet, is not headed', async () => {
+      const t = await rootWithCover();
+      expect(await heads.hasDirectOrActingHead(t.rootId, t.organizationId)).toBe(true); // non-vacuity: the active cover
+      await prisma.user.update({ where: { id: t.coverId }, data: { status: 'INACTIVE' } });
+      expect(await heads.hasDirectOrActingHead(t.rootId, t.organizationId)).toBe(false);
+
+      const later = await rootWithCover();
+      await prisma.orgUnitHeadAssignment.updateMany({
+        where: { organizationId: later.organizationId, orgUnitId: later.rootId },
+        data: { validFrom: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      });
+      expect(await heads.hasDirectOrActingHead(later.rootId, later.organizationId)).toBe(false);
+    });
+
+    it('P213: resolveHeadEscalationTargets — the unit’s cover is a target while its person is ACTIVE, and no longer once deactivated', async () => {
+      const t = await rootWithCover();
+      const assignee = await prisma.user.create({
+        data: { organizationId: t.organizationId, email: `assignee-${t.rootId}@example.test`, name: 'Assignee', status: 'ACTIVE', primaryOrgUnitId: t.rootId },
+      });
+      expect(await positions.resolveHeadEscalationTargets([assignee.id], t.organizationId)).toEqual([t.coverId]);
+      await prisma.user.update({ where: { id: t.coverId }, data: { status: 'INACTIVE' } });
+      expect(await positions.resolveHeadEscalationTargets([assignee.id], t.organizationId)).toEqual([]);
+    });
+
     it('the platform organisation stays excluded: deactivating its root’s only cover is not refused', async () => {
       const t = await rootWithCover({ platform: true });
       expect(await code(users.deactivate(t.coverId, t.organizationId, t.actorId))).toBe('OK');

@@ -1419,7 +1419,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         [
           {
             where: { organizationId: ORG_A, isActive: true },
-            select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true, actingHeadUserId: true },
+            select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true },
           },
         ],
       ]);

@@ -181,11 +181,23 @@ describe('OrgUnitHeadService', () => {
       });
     });
 
-    it('returns true when there is no direct holder but an Acting Head is declared', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+    it('returns true when there is no direct holder but an acting Head is in force (an ACTIVE person)', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
       mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: UNIT_1, userId: ACTING_USER.id }]);
 
       await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(true);
+      expect(mockPrisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1, user: { status: 'ACTIVE' }, kind: 'ACTING', endedAt: null }) }),
+      );
+    });
+
+    it('ACC-324 — a cached acting Head with no ACTIVE cover in force (deactivated, or not started yet) is not a head', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(false);
     });
 
     it('returns false when there is neither a direct holder nor an Acting Head — genuinely headless', async () => {
