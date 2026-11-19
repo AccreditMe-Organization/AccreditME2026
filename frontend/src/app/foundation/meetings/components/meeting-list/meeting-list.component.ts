@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { map, tap } from 'rxjs';
 import { DataListComponent, DataListColumn, DataListScope } from '../../../../shared/components/data-list/data-list.component';
@@ -29,6 +30,14 @@ const PAGE = 25;
     <div class="flex flex-col gap-3 h-full min-h-0">
       <app-page-header [title]="'meeting.title' | translate" />
       <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="meeting-list-order">{{ 'meeting.list.order' | translate }}</p>
+      <!-- ACC-316 PR 7 — opened from a committee's or unit's Meetings panel (See all). -->
+      @if (ownerFilter()) {
+        <p class="m-0 flex flex-wrap items-center gap-2 text-[13px]" data-testid="meeting-list-owner">
+          <span>{{ 'meeting.list.ownerFilter' | translate: { owner: ownerLabel() } }}</span>
+          <a routerLink="/meetings" class="text-[var(--am-blue-primary)]" data-testid="meeting-list-owner-clear">{{ 'meeting.list.clearOwner' | translate }}</a>
+        </p>
+      }
+      @for (k of [listKey()]; track k) {
       <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden flex flex-col min-h-0">
         <app-data-list
           #list
@@ -45,7 +54,7 @@ const PAGE = 25;
           [noResultsMessage]="'meeting.list.noMatchBody' | translate"
           [hasDestination]="true"
           gridSuffix="0px"
-          persistKey="meetings"
+          [persistKey]="ownerFilter() ? 'meetings-owner' : 'meetings'"
           [urlSync]="true"
         >
           <ng-template #listHeader let-h>
@@ -97,6 +106,7 @@ const PAGE = 25;
           </ng-template>
         </app-data-list>
       </div>
+      }
     </div>
   `,
 })
@@ -111,10 +121,24 @@ export class MeetingListComponent {
   /** Whether the server offers All meetings to this person (its `canSeeAll`, from every list answer). */
   readonly canSeeAll = signal(false);
 
+  /**
+   * ACC-316 PR 7 — one committee's or unit's meetings (?committeeId= or
+   * ?orgUnitId=, from its panel's See all): its Upcoming and Past, under the
+   * plain visibility rule, as the panel lists them. Named from the panel's
+   * navigation state, else from the first row.
+   */
+  readonly ownerFilter = signal<{ committeeId?: string; orgUnitId?: string } | null>(null);
+  readonly ownerName = signal<string | null>(null);
+  readonly ownerLabel = computed(() => this.ownerName() ?? this.translate.instant('meeting.list.oneOwner'));
+  /** A new list for each owner, so its views, paging and search start again. */
+  readonly listKey = computed(() => JSON.stringify(this.ownerFilter()));
+
   /** The views; "All meetings" only where the server says so, with no client copy of the rule. */
   readonly scopes = computed<DataListScope[]>(() => {
     this.translate.currentLang();
-    const views: MeetingListView[] = ['mine', 'past', 'minutes', ...(this.canSeeAll() ? (['all'] as const) : []), 'subunits'];
+    const views: MeetingListView[] = this.ownerFilter()
+      ? ['upcoming', 'past']
+      : ['mine', 'past', 'minutes', ...(this.canSeeAll() ? (['all'] as const) : []), 'subunits'];
     return views.map((key) => ({ key, label: this.translate.instant(`meeting.list.view.${key}`) }));
   });
 
@@ -131,15 +155,38 @@ export class MeetingListComponent {
   readonly source: DataListSource<MeetingListItemDto> = (query) => {
     const pageSize = query.pageSize ?? PAGE;
     const page = query.page ?? 1;
+    const owner = this.ownerFilter();
     return this.meetings
-      .list({ view: (query.scope as MeetingListView | undefined) ?? 'mine', q: query.search || undefined, skip: (page - 1) * pageSize, take: Math.min(pageSize, 50) })
+      .list({
+        view: (query.scope as MeetingListView | undefined) ?? (owner ? 'upcoming' : 'mine'),
+        q: query.search || undefined,
+        ...(owner ?? {}),
+        skip: (page - 1) * pageSize,
+        take: Math.min(pageSize, 50),
+      })
       .pipe(
-        tap((r) => this.canSeeAll.set(r.canSeeAll)),
+        tap((r) => {
+          this.canSeeAll.set(r.canSeeAll);
+          if (owner && !this.ownerName() && r.items[0]) this.ownerName.set(ownerName(r.items[0].owner, this.language));
+        }),
         map((r) => ({ data: r.items, total: r.total, page, pageSize })),
       );
   };
 
   readonly trackById = (m: MeetingListItemDto): string => m.id;
+
+  constructor() {
+    const route = inject(ActivatedRoute);
+    route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const committeeId = params.get('committeeId');
+      const orgUnitId = params.get('orgUnitId');
+      const next = committeeId ? { committeeId } : orgUnitId ? { orgUnitId } : null;
+      if (JSON.stringify(next) === JSON.stringify(this.ownerFilter())) return;
+      this.ownerFilter.set(next);
+      const state = (this.router.getCurrentNavigation()?.extras.state ?? history.state) as { ownerName?: unknown } | null;
+      this.ownerName.set(next && typeof state?.ownerName === 'string' ? state.ownerName : null);
+    });
+  }
 
   open(m: MeetingListItemDto): void {
     void this.router.navigate(['/meetings', m.id]);

@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
@@ -75,12 +75,23 @@ describe('MeetingsPanelComponent (ACC-316 PR 6)', () => {
     expect(rows[1]!.querySelector('a')?.classList.contains('line-through')).toBeFalse();
   });
 
-  it("counts every meeting the server says this person may see, not the rows drawn, and offers no See all", () => {
+  it("counts every meeting the server says this person may see, not the rows drawn, and See all opens the list filtered to this committee", async () => {
     const { fixture, el } = create(committee);
     expect(fixture.componentInstance.total()).toBe(13);
     expect(el.querySelectorAll('[data-meeting-row]').length).toBe(3);
     expect(el.querySelector('[data-testid="meetings-committee-count"]')?.textContent?.trim()).toBe('13');
-    expect(el.querySelector('[data-testid$="-see-all"]')).toBeNull();
+    // P189 e — "Showing 3 of 13 · See all".
+    expect(el.textContent).toContain('3 of 13');
+    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    el.querySelector<HTMLButtonElement>('[data-testid="meetings-committee-see-all"]')!.click();
+    expect(navigate).toHaveBeenCalledWith(['/meetings'], { queryParams: { committeeId: 'c-1' }, state: { ownerName: 'Pharmacy and Therapeutics Committee' } });
+  });
+
+  it("a unit's See all filters by the unit", () => {
+    const { el } = create(unit);
+    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    el.querySelector<HTMLButtonElement>('[data-testid="meetings-unit-see-all"]')!.click();
+    expect(navigate).toHaveBeenCalledWith(['/meetings'], { queryParams: { orgUnitId: 'u-1' }, state: { ownerName: 'Quality Department' } });
   });
 
   describe('Schedule meeting follows the server', () => {
