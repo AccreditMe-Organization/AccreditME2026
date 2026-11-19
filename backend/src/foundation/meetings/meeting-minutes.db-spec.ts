@@ -595,6 +595,17 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       expect(notices.find((n) => n.titleEn === 'Correction declined')).toMatchObject({ userId: a.people['member'], bodyEn: expect.stringContaining('Already there.') });
       expect(await code(review.decideSuggestion(m.id, id, 'APPLIED', {}, a.orgId, as(a, 'secretary')))).toBe('MEETING_SUGGESTION_DECIDED');
     });
+
+    it('a decline needs a reply: without one it is refused and nothing changes; an apply needs none (PR 7c-1)', async () => {
+      const m = await inReview(a);
+      const { id } = await review.suggest(m.id, { text: 'Add the apologies.' }, a.orgId, as(a, 'member'));
+      expect(await code(review.decideSuggestion(m.id, id, 'DECLINED', {}, a.orgId, as(a, 'secretary')))).toBe('MEETING_SUGGESTION_REPLY_REQUIRED');
+      expect(await code(review.decideSuggestion(m.id, id, 'DECLINED', { reply: null }, a.orgId, as(a, 'secretary')))).toBe('MEETING_SUGGESTION_REPLY_REQUIRED');
+      expect((await prisma.meetingSuggestion.findFirstOrThrow({ where: { id } })).status).toBe('OPEN');
+      expect(notices.find((n) => n.titleEn === 'Correction declined')).toBeUndefined();
+      await review.decideSuggestion(m.id, id, 'APPLIED', {}, a.orgId, as(a, 'secretary'));
+      expect((await prisma.meetingSuggestion.findFirstOrThrow({ where: { id } })).status).toBe('APPLIED');
+    });
   });
 
   describe('Approve Minutes', () => {
