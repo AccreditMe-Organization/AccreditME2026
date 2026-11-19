@@ -3147,6 +3147,16 @@
       }
     },
     "user": {
+      "accessHistory": {
+        "sessionsEndedOthers": {
+          "one": "Signed out of other devices: {{count}} device",
+          "other": "Signed out of other devices: {{count}} devices"
+        },
+        "sessionsEndedAll": {
+          "one": "Signed out everywhere: {{count}} device",
+          "other": "Signed out everywhere: {{count}} devices"
+        }
+      },
       "tasksReassigned": {
         "one": "{{count}} task reassigned",
         "other": "{{count}} tasks reassigned"
@@ -3993,6 +4003,8 @@
         "passwordResetRequested": "Password reset link sent",
         "passwordReset": "Password reset",
         "signedInAs": "AccreditMe support signed in as this person",
+        "sessionsEndedOne": "Signed out of one device",
+        "sessionsEnded": "Signed out of devices",
         "changed": "Changed"
       }
     },
