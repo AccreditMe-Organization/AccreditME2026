@@ -26,7 +26,8 @@ import {
   type MeetingSuggestionDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
 import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meeting-add-guest-dialog.component';
 import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
@@ -194,7 +195,7 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
 
         <!-- PR 7c-1 — the review banner, for a present member while corrections are taken (may.review). -->
         @if (minutes(); as mm) {
-          <am-meeting-review-banner [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (suggest)="openSuggest(null)" (answered)="afterReview()" />
+          <am-meeting-review-banner [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (suggest)="suggestOpen.set(true)" (answered)="afterReview()" (reload)="load()" />
         }
 
         <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
@@ -242,10 +243,15 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
             <div class="flex min-w-0 flex-col gap-3">
               <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
-              <am-meeting-review-card [minutes]="mm" (apply)="applyWhole($event)" (decline)="declining.set($event)" />
-              @if (reviewError()) {
-                <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-review-action-error">{{ reviewError()! | translate }}</p>
-              }
+              <am-meeting-review-card
+                [minutes]="mm"
+                [failure]="wholeFailure()?.failure ?? null"
+                [applying]="wholeApplying()"
+                (apply)="applyWhole($event)"
+                (decline)="declining.set($event)"
+                (retry)="retryWhole()"
+                (reload)="load()"
+              />
             </div>
           } @else {
           <!-- Invitees -->
@@ -325,8 +331,8 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
         (visibleChange)="suggestOpen.set($event)"
         [meetingId]="m.id"
         [items]="minutes()?.items ?? []"
-        [about]="suggestAbout()"
         (sent)="afterReview()"
+        (reload)="load()"
       />
       <app-meeting-decline-dialog
         [visible]="declining() !== null"
@@ -335,6 +341,7 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
         [suggestion]="declining()"
         [itemOrder]="declineItemOrder()"
         (declined)="afterReview()"
+        (reload)="load()"
       />
       <app-meeting-return-dialog
         [visible]="returnOpen()"
@@ -343,6 +350,7 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
         [context]="m.title"
         [minutes]="minutes()"
         (returned)="load()"
+        (reload)="load()"
       />
     }
   `,
@@ -413,10 +421,12 @@ export class MeetingPageComponent {
   readonly distributeOpen = signal(false);
   // PR 7c-1 — the review.
   readonly suggestOpen = signal(false);
-  readonly suggestAbout = signal<string | null>(null);
   readonly declining = signal<MeetingSuggestionDto | null>(null);
   readonly returnOpen = signal(false);
-  readonly reviewError = signal<string | null>(null);
+  /** The whole-minutes suggestion being marked applied, while the request is in flight. */
+  readonly wholeApplying = signal<string | null>(null);
+  /** How the last whole-minutes Mark applied failed, with the suggestion to retry. */
+  readonly wholeFailure = signal<{ suggestion: MeetingSuggestionDto; failure: MeetingFailure } | null>(null);
   /** The place of the item the suggestion being declined is about. */
   readonly declineItemOrder = computed(() => {
     const s = this.declining();
@@ -543,24 +553,42 @@ export class MeetingPageComponent {
     });
   }
 
-  openSuggest(about: string | null): void {
-    this.suggestAbout.set(about);
-    this.suggestOpen.set(true);
-  }
-
   /** A review answer, suggestion, apply or decline: the minutes are read again. */
   afterReview(): void {
-    this.reviewError.set(null);
+    this.wholeFailure.set(null);
     this.refreshMinutes();
   }
 
-  /** Mark applied on a suggestion about the minutes as a whole: there is no item to edit. */
+  /**
+   * Mark applied on a suggestion about the minutes as a whole: there is no item
+   * to edit. One request at a time; MEETING_SUGGESTION_DECIDED means an earlier
+   * press (or a lost answer) already applied it, so it reads as applied (P220).
+   * A failure is said from its code (Retry only when the server could not be
+   * reached), never as "Your edit was saved", since nothing was edited.
+   */
   applyWhole(s: MeetingSuggestionDto): void {
-    this.reviewError.set(null);
+    if (this.wholeApplying() !== null) return;
+    this.wholeFailure.set(null);
+    this.wholeApplying.set(s.id);
     this.meetings.applySuggestion(this.id, s.id).subscribe({
-      next: () => this.afterReview(),
-      error: (err: unknown) => this.reviewError.set(meetingRefusalKey(err) ?? 'meeting.review.applyFailed'),
+      next: () => {
+        this.wholeApplying.set(null);
+        this.afterReview();
+      },
+      error: (err: unknown) => {
+        this.wholeApplying.set(null);
+        if (refusalCode(err) === 'MEETING_SUGGESTION_DECIDED') {
+          this.afterReview();
+          return;
+        }
+        this.wholeFailure.set({ suggestion: s, failure: meetingFailure(err, 'meeting.review.markFailed', 'meeting.review.markFailed') });
+      },
     });
+  }
+
+  retryWhole(): void {
+    const f = this.wholeFailure();
+    if (f) this.applyWhole(f.suggestion);
   }
 
   /** The minutes read again (attendance opens at the start time, without a reload). */

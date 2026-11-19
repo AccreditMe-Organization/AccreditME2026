@@ -5068,6 +5068,7 @@
       "editToApply": "Edit to apply",
       "applyingHint": "Edit the item, then save: the suggestion is marked applied.",
       "applyFailed": "Your edit was saved, but the suggestion couldn't be marked applied.",
+      "markFailed": "The suggestion couldn't be marked applied.",
       "silence": "No answer by the review date counts as no corrections.",
       "closesOn": "Review closes {{day}}",
       "closedOn": "Review closed {{day}}"

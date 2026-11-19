@@ -2,7 +2,7 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 
 /**
@@ -12,7 +12,9 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
  * screen copies no rule. "No corrections" is one press; "Suggest a correction…"
  * opens the dialog, which the page owns. After answering, the banner says the
  * person's own answer (`review.mine`) and still offers Suggest, which the server
- * allows (it replaces "No corrections").
+ * allows (it replaces "No corrections"). "No corrections" is offered only before
+ * any answer: after a suggestion the server refuses it (MEETING_REVIEW_SUGGESTED,
+ * P220). A stale refusal offers Reload.
  */
 @Component({
   selector: 'am-meeting-review-banner',
@@ -31,12 +33,17 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
             <p class="m-0 text-meta" data-testid="meeting-review-changes">{{ line }}</p>
           }
           @if (error()) {
-            <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-review-error">{{ error()! | translate }}</p>
+            <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-review-error">
+              {{ error()! | translate }}
+              @if (needsReload()) {
+                <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-testid="meeting-review-reload" (onClick)="reloadMeeting()" />
+              }
+            </p>
           }
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <p-button size="small" severity="secondary" [label]="'meeting.review.suggest' | translate" data-testid="meeting-review-suggest" (onClick)="suggest.emit()" />
-          @if (minutes().review.mine !== 'NO_CORRECTIONS') {
+          @if (minutes().review.mine === null) {
             <p-button size="small" [label]="'meeting.review.noCorrections' | translate" [loading]="busy()" data-testid="meeting-review-no-corrections" (onClick)="noCorrections()" />
           }
         </div>
@@ -66,9 +73,12 @@ export class MeetingReviewBannerComponent {
   readonly suggest = output<void>();
   /** The person answered: the page reads the minutes again. */
   readonly answered = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
+  readonly needsReload = signal(false);
 
   /** The review date as a day (stored as yyyy-MM-dd, the organisation's day). */
   private readonly reviewDay = computed(() => {
@@ -105,6 +115,7 @@ export class MeetingReviewBannerComponent {
     if (this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
+    this.needsReload.set(false);
     this.meetings.noCorrections(this.meetingId()).subscribe({
       next: () => {
         this.busy.set(false);
@@ -113,7 +124,14 @@ export class MeetingReviewBannerComponent {
       error: (err: unknown) => {
         this.busy.set(false);
         this.error.set(meetingRefusalKey(err) ?? 'meeting.review.error');
+        this.needsReload.set(meetingNeedsReload(err));
       },
     });
+  }
+
+  reloadMeeting(): void {
+    this.error.set(null);
+    this.needsReload.set(false);
+    this.reload.emit();
   }
 }

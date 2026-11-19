@@ -8,7 +8,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingMinutesItemDto } from '../../services/meeting.service';
 
 function notBlank(control: AbstractControl): ValidationErrors | null {
@@ -22,7 +22,9 @@ const WHOLE = 'whole';
  * ACC-316 PR 7c-1 — Suggest a correction (Meeting Screens, dialogs): a present
  * member's correction, about one agenda item or the minutes as a whole, which
  * whoever records the minutes applies or declines. The minutes stay in review.
- * A refusal is said from its code.
+ * Opened from the banner only (plan 7c draws no per-item Suggest), so it always
+ * starts on the minutes as a whole. A refusal is said from its code; a stale one
+ * (P220) offers Reload, which closes and lets the page read the meeting again.
  */
 @Component({
   selector: 'app-meeting-suggest-dialog',
@@ -45,7 +47,11 @@ const WHOLE = 'whole';
           <p class="m-0 me-auto min-w-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="suggest-error">{{ error()! | translate }}</p>
         }
         <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
-        <p-button type="button" data-testid="suggest-submit" [label]="'meeting.suggest.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        @if (needsReload()) {
+          <p-button type="button" data-testid="suggest-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else {
+          <p-button type="button" data-testid="suggest-submit" [label]="'meeting.suggest.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        }
       </div>
     </ng-template>
     <app-edit-dialog
@@ -72,14 +78,15 @@ export class MeetingSuggestDialogComponent {
   readonly visible = input.required<boolean>();
   readonly meetingId = input.required<string>();
   readonly items = input<MeetingMinutesItemDto[]>([]);
-  /** The item the suggestion starts about, or null for the minutes as a whole. */
-  readonly about = input<string | null>(null);
   readonly visibleChange = output<boolean>();
   /** Sent: the page reads the minutes again. */
   readonly sent = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  readonly needsReload = signal(false);
   readonly showErrors = signal(false);
   private readonly textInput = viewChild<ElementRef<HTMLTextAreaElement>>('textInput');
 
@@ -100,8 +107,9 @@ export class MeetingSuggestDialogComponent {
     effect(() => {
       if (!this.visible()) return;
       untracked(() => {
-        this.form.reset({ about: this.about() ?? WHOLE, text: '' });
+        this.form.reset({ about: WHOLE, text: '' });
         this.error.set(null);
+        this.needsReload.set(false);
         this.showErrors.set(false);
       });
     });
@@ -127,7 +135,15 @@ export class MeetingSuggestDialogComponent {
       error: (err: unknown) => {
         this.saving.set(false);
         this.error.set(meetingRefusalKey(err) ?? 'meeting.suggest.error');
+        this.needsReload.set(meetingNeedsReload(err));
       },
     });
+  }
+
+  /** Close, and let the page read the meeting again. */
+  reloadMeeting(): void {
+    this.form.markAsPristine();
+    this.visibleChange.emit(false);
+    this.reload.emit();
   }
 }

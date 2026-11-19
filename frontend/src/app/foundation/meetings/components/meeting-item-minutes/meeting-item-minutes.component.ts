@@ -7,7 +7,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { Observable } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
 import { refusalCode } from '../../../../core/http/refusal';
 import { MinutesWriteOrder } from '../../minutes-write-order';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -159,10 +159,14 @@ interface DecisionDraft {
           }
         </div>
       }
-      @if (applyFailed(); as id) {
+      @if (applyFailed(); as f) {
         <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-apply-error>
-          {{ 'meeting.review.applyFailed' | translate }}
-          <p-button size="small" [text]="true" [label]="'common.retry' | translate" data-apply-retry (onClick)="applyNow(id)" />
+          {{ f.failure.key | translate }}
+          @if (f.failure.offer === 'retry') {
+            <p-button size="small" [text]="true" [label]="'common.retry' | translate" [loading]="applyInFlight() !== null" data-apply-retry (onClick)="applyNow(f.id)" />
+          } @else if (f.failure.offer === 'reload') {
+            <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-apply-reload (onClick)="reloadAfterApply()" />
+          }
         </p>
       }
     </div>
@@ -263,14 +267,20 @@ export class MeetingItemMinutesComponent {
   readonly decline = output<MeetingSuggestionDto>();
   /** A suggestion was applied: the page reads the minutes again. */
   readonly applied = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   /**
    * The suggestion being applied ("Edit to apply"): the item's editors open, and
    * the next minutes write that succeeds marks it applied (P212: the write
-   * first, apply only after it). If apply fails, Retry applies it alone.
+   * first, apply only after it). If apply fails, Retry applies it alone — only
+   * when the server could not be reached; a stale refusal offers Reload, and any
+   * other is said from its code (P220).
    */
   readonly applying = signal<string | null>(null);
-  readonly applyFailed = signal<string | null>(null);
+  /** The apply request in flight: a second press waits for it (P220). */
+  readonly applyInFlight = signal<string | null>(null);
+  readonly applyFailed = signal<{ id: string; failure: MeetingFailure } | null>(null);
   readonly canEdit = computed(() => this.canWrite() || (this.canApply() && this.applying() !== null));
 
   readonly voteFields = [
@@ -320,16 +330,41 @@ export class MeetingItemMinutesComponent {
     this.applying.set(s.id);
   }
 
-  /** Mark the suggestion applied: after its edit was saved, or again on Retry. */
+  /**
+   * Mark the suggestion applied: after its edit was saved, or again on Retry.
+   * Safe to press twice (one request at a time) and after a lost answer: the
+   * server's MEETING_SUGGESTION_DECIDED means an earlier press already applied
+   * it, so it reads as applied and the page reads the minutes again (P220).
+   */
   applyNow(suggestionId: string): void {
+    if (this.applyInFlight() !== null) return;
     this.applyFailed.set(null);
+    this.applyInFlight.set(suggestionId);
     this.meetings.applySuggestion(this.meetingId(), suggestionId).subscribe({
-      next: () => {
-        if (this.applying() === suggestionId) this.applying.set(null);
-        this.applied.emit();
+      next: () => this.appliedNow(suggestionId),
+      error: (err: unknown) => {
+        if (refusalCode(err) === 'MEETING_SUGGESTION_DECIDED') {
+          this.appliedNow(suggestionId);
+          return;
+        }
+        this.applyInFlight.set(null);
+        this.applyFailed.set({ id: suggestionId, failure: meetingFailure(err, 'meeting.review.applyFailed', 'meeting.review.applyFailed') });
       },
-      error: () => this.applyFailed.set(suggestionId),
     });
+  }
+
+  private appliedNow(suggestionId: string): void {
+    this.applyInFlight.set(null);
+    this.applyFailed.set(null);
+    if (this.applying() === suggestionId) this.applying.set(null);
+    this.applied.emit();
+  }
+
+  /** Reload after a stale apply refusal: stop applying, and the page reads the meeting again. */
+  reloadAfterApply(): void {
+    this.applying.set(null);
+    this.applyFailed.set(null);
+    this.reload.emit();
   }
 
   /** Reload: the box takes the stored discussion, dropping what was typed. */

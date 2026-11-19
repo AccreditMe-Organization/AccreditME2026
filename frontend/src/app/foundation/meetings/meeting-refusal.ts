@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { refusalCode } from '../../core/http/refusal';
 
 /**
@@ -62,13 +63,46 @@ export function meetingRefusalKey(err: unknown): string | null {
 }
 
 /**
- * P198 — the refusals that mean the agenda on screen is no longer the server's:
+ * P198 — the refusals that mean what is on screen is no longer the server's:
  * the screen offers Reload (the page reads the meeting again), never Retry,
- * which would send the same stale request.
+ * which would send the same stale request. P220 added the meeting's own
+ * staleness and the review's: a suggestion gone, or already decided.
  */
-const RELOAD_CODES: ReadonlySet<string> = new Set(['MEETING_AGENDA_ITEM_NOT_FOUND', 'MEETING_AGENDA_ORDER_MISMATCH', 'MEETING_AGENDA_CHANGED']);
+const RELOAD_CODES: ReadonlySet<string> = new Set([
+  'MEETING_AGENDA_ITEM_NOT_FOUND',
+  'MEETING_AGENDA_ORDER_MISMATCH',
+  'MEETING_AGENDA_CHANGED',
+  'MEETING_CHANGED',
+  'MEETING_SUGGESTION_NOT_FOUND',
+  'MEETING_SUGGESTION_DECIDED',
+]);
 
 export function meetingNeedsReload(err: unknown): boolean {
   const code = refusalCode(err);
   return !!code && RELOAD_CODES.has(code);
+}
+
+/** The server could not be reached, or timed out: the one case that offers Retry (Design System rule 5.5). */
+const UNREACHABLE: ReadonlySet<number> = new Set([0, 408, 502, 503, 504]);
+
+export function meetingUnreachable(err: unknown): boolean {
+  return err instanceof HttpErrorResponse && UNREACHABLE.has(err.status);
+}
+
+/** What a failed write says, and the one control it offers. */
+export interface MeetingFailure {
+  key: string;
+  offer: 'retry' | 'reload' | null;
+}
+
+/**
+ * P220 — a failed write said from its code: a stale refusal offers Reload; an
+ * unreachable server or a timeout offers Retry with `unreachableKey`; any other
+ * refusal its own sentence, and no code at all `fallbackKey`, with nothing to
+ * press (sending it again would be refused again).
+ */
+export function meetingFailure(err: unknown, unreachableKey: string, fallbackKey: string): MeetingFailure {
+  if (meetingNeedsReload(err)) return { key: meetingRefusalKey(err) ?? fallbackKey, offer: 'reload' };
+  if (meetingUnreachable(err)) return { key: unreachableKey, offer: 'retry' };
+  return { key: meetingRefusalKey(err) ?? fallbackKey, offer: null };
 }

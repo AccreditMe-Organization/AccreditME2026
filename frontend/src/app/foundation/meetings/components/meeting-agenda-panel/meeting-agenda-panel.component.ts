@@ -106,6 +106,7 @@ import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-ite
                   [canApply]="minutes()!.may.applySuggestions"
                   (decline)="declineSuggestion.emit($event)"
                   (applied)="suggestionApplied.emit()"
+                  (reload)="reload.emit()"
                 />
               }
             </div>

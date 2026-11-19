@@ -3,6 +3,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
+import type { MeetingFailure } from '../../meeting-refusal';
 import type { MeetingMinutesDto, MeetingSuggestionDto } from '../../services/meeting.service';
 
 /**
@@ -15,6 +16,9 @@ import type { MeetingMinutesDto, MeetingSuggestionDto } from '../../services/mee
  * Suggestions about the minutes as a whole (no agenda item) are listed here,
  * with Decline and Mark applied for whoever may apply suggestions
  * (`may.applySuggestions`); a suggestion about an item sits under that item.
+ * The page applies; the card says how a Mark applied failed (`failure`), with
+ * Retry only when the server could not be reached and Reload when the review on
+ * screen is stale (P220), and holds the button while one is in flight.
  */
 @Component({
   selector: 'am-meeting-review-card',
@@ -46,11 +50,29 @@ import type { MeetingMinutesDto, MeetingSuggestionDto } from '../../services/mee
               }
             } @else if (minutes().may.applySuggestions) {
               <span class="flex gap-1">
-                <p-button size="small" [text]="true" [label]="'meeting.review.markApplied' | translate" [attr.data-suggestion-apply]="s.id" (onClick)="apply.emit(s)" />
+                <p-button
+                  size="small"
+                  [text]="true"
+                  [label]="'meeting.review.markApplied' | translate"
+                  [loading]="applying() === s.id"
+                  [disabled]="applying() !== null"
+                  [attr.data-suggestion-apply]="s.id"
+                  (onClick)="apply.emit(s)"
+                />
                 <p-button size="small" [text]="true" severity="secondary" [label]="'meeting.review.decline' | translate" [attr.data-suggestion-decline]="s.id" (onClick)="decline.emit(s)" />
               </span>
             }
           </div>
+        }
+        @if (failure(); as f) {
+          <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="meeting-review-action-error">
+            {{ f.key | translate }}
+            @if (f.offer === 'retry') {
+              <p-button size="small" [text]="true" [label]="'common.retry' | translate" [loading]="applying() !== null" data-testid="meeting-review-action-retry" (onClick)="retry.emit()" />
+            } @else if (f.offer === 'reload') {
+              <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-testid="meeting-review-action-reload" (onClick)="reload.emit()" />
+            }
+          </p>
         }
         @if (minutes().phase === 'review' && !minutes().review.closed) {
           <p class="m-0 text-meta text-[var(--am-ink-500)]">{{ 'meeting.review.silence' | translate }}</p>
@@ -69,6 +91,14 @@ export class MeetingReviewCardComponent {
   readonly apply = output<MeetingSuggestionDto>();
   /** Decline on a whole-minutes suggestion: the page opens the dialog. */
   readonly decline = output<MeetingSuggestionDto>();
+  /** How the page's last Mark applied failed, if it did. */
+  readonly failure = input<MeetingFailure | null>(null);
+  /** The suggestion being marked applied, while the request is in flight. */
+  readonly applying = input<string | null>(null);
+  /** Retry the failed Mark applied (the server could not be reached). */
+  readonly retry = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly shown = computed(() => {
     const m = this.minutes();

@@ -6,7 +6,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { FormatService } from '../../../../core/formatting';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 
 /**
@@ -14,7 +14,8 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
  * at 420): the minutes go back to Minutes Draft, and distributing again starts
  * a new review. Who is told (the present members, as the server tells them) and
  * the answers so far, then an optional reason, shown to the present members and
- * in the draft. Offered on `may.returnForCorrection` only.
+ * in the draft. Offered on `may.returnForCorrection` only. A refusal is said
+ * in the footer, as in Suggest and Decline; a stale one offers Reload (P220).
  */
 @Component({
   selector: 'app-meeting-return-dialog',
@@ -24,7 +25,7 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
     <ng-template #bodyTpl>
       <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
         <p class="m-0 text-[13px]">{{ 'meeting.return.lead' | translate }}</p>
-        <dl class="m-0 grid gap-x-3 gap-y-1 text-meta" style="grid-template-columns: max-content 1fr" data-testid="return-pairs">
+        <dl class="am-return-pairs m-0 grid gap-x-3 gap-y-1 text-meta" data-testid="return-pairs">
           <dt class="text-[var(--am-ink-500)]">{{ 'meeting.return.told' | translate }}</dt>
           <dd class="m-0">{{ told() }}</dd>
           <dt class="text-[var(--am-ink-500)]">{{ 'meeting.return.answers' | translate }}</dt>
@@ -33,15 +34,19 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
         <am-field [label]="'meeting.return.reason' | translate" [control]="form.controls.reason" [hint]="'meeting.return.reasonHint' | translate" message="none">
           <textarea pTextarea id="returnReason" formControlName="reason" rows="3" maxlength="2000" data-testid="return-reason"></textarea>
         </am-field>
-        @if (error()) {
-          <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="return-error">{{ error()! | translate }}</p>
-        }
       </form>
     </ng-template>
     <ng-template #footerTpl>
-      <div class="flex justify-end gap-3">
+      <div class="flex items-center justify-end gap-3">
+        @if (error()) {
+          <p class="m-0 me-auto min-w-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="return-error">{{ error()! | translate }}</p>
+        }
         <p-button [label]="'meeting.distribute.notYet' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
-        <p-button type="button" data-testid="return-submit" [label]="'meeting.return.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        @if (needsReload()) {
+          <p-button type="button" data-testid="return-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else {
+          <p-button type="button" data-testid="return-submit" [label]="'meeting.return.submit' | translate" [loading]="saving()" (onClick)="submit()" />
+        }
       </div>
     </ng-template>
     <app-edit-dialog
@@ -57,6 +62,13 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
       size="confirm"
     />
   `,
+  styles: [
+    `
+      .am-return-pairs {
+        grid-template-columns: max-content 1fr;
+      }
+    `,
+  ],
 })
 export class MeetingReturnDialogComponent {
   private readonly fb = inject(FormBuilder);
@@ -71,9 +83,12 @@ export class MeetingReturnDialogComponent {
   readonly visibleChange = output<boolean>();
   /** Returned: the page reads the meeting again (its stage moved). */
   readonly returned = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  readonly needsReload = signal(false);
 
   readonly form = this.fb.group({ reason: ['', Validators.maxLength(2000)] });
 
@@ -97,6 +112,7 @@ export class MeetingReturnDialogComponent {
       untracked(() => {
         this.form.reset({ reason: '' });
         this.error.set(null);
+        this.needsReload.set(false);
       });
     });
   }
@@ -115,7 +131,15 @@ export class MeetingReturnDialogComponent {
       error: (err: unknown) => {
         this.saving.set(false);
         this.error.set(meetingRefusalKey(err) ?? 'meeting.return.error');
+        this.needsReload.set(meetingNeedsReload(err));
       },
     });
+  }
+
+  /** Close, and let the page read the meeting again. */
+  reloadMeeting(): void {
+    this.form.markAsPristine();
+    this.visibleChange.emit(false);
+    this.reload.emit();
   }
 }

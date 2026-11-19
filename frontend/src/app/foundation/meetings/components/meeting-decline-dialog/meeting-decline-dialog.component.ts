@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -6,7 +6,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { FormatService } from '../../../../core/formatting';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingSuggestionDto } from '../../services/meeting.service';
 
 function notBlank(control: AbstractControl): ValidationErrors | null {
@@ -17,6 +17,9 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
  * ACC-316 PR 7c-1 — Decline this suggestion? (Meeting Screens, dialogs): the
  * suggestion quoted, and a REQUIRED reply its author reads with the item. The
  * server refuses an empty one too (MEETING_SUGGESTION_REPLY_REQUIRED, P212).
+ * The page clears its suggestion as the dialog closes; the dialog keeps the last
+ * one it was given (P220), so the quote and context don't blank during the
+ * close animation. A stale refusal offers Reload.
  */
 @Component({
   selector: 'app-meeting-decline-dialog',
@@ -25,11 +28,11 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
   template: `
     <ng-template #bodyTpl>
       <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
-        <p class="m-0 whitespace-pre-line text-[13px]" dir="auto" data-testid="decline-quote">“{{ suggestion()?.text }}”</p>
+        <p class="m-0 whitespace-pre-line text-[13px]" dir="auto" data-testid="decline-quote">“{{ shown().suggestion?.text }}”</p>
         <am-field
           [label]="'meeting.decline.reply' | translate"
           [control]="form.controls.reply"
-          [hint]="'meeting.decline.replyHint' | translate: { name: suggestion()?.author?.name ?? '' }"
+          [hint]="'meeting.decline.replyHint' | translate: { name: shown().suggestion?.author?.name ?? '' }"
           [forceShowErrors]="showErrors()"
           [errorMessages]="{ required: 'meeting.decline.replyRequired' }"
         >
@@ -43,7 +46,11 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
           <p class="m-0 me-auto min-w-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="decline-error">{{ error()! | translate }}</p>
         }
         <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" [disabled]="saving()" (onClick)="dialog.requestClose()" />
-        <p-button type="button" data-testid="decline-submit" [label]="'meeting.review.decline' | translate" [loading]="saving()" (onClick)="submit()" />
+        @if (needsReload()) {
+          <p-button type="button" data-testid="decline-reload" [label]="'meeting.agenda.reload' | translate" (onClick)="reloadMeeting()" />
+        } @else {
+          <p-button type="button" data-testid="decline-submit" [label]="'meeting.review.decline' | translate" [loading]="saving()" (onClick)="submit()" />
+        }
       </div>
     </ng-template>
     <app-edit-dialog
@@ -74,18 +81,26 @@ export class MeetingDeclineDialogComponent {
   readonly visibleChange = output<boolean>();
   /** Declined: the page reads the minutes again. */
   readonly declined = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
+
+  /** The last suggestion given (with its item's place), kept while the page's goes null on close. */
+  readonly shown = linkedSignal<{ suggestion: MeetingSuggestionDto | null; order: number | null }, { suggestion: MeetingSuggestionDto | null; order: number | null }>({
+    source: () => ({ suggestion: this.suggestion(), order: this.itemOrder() }),
+    computation: (next, prev) => (next.suggestion || !prev ? next : prev.value),
+  });
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  readonly needsReload = signal(false);
   readonly showErrors = signal(false);
   private readonly replyInput = viewChild<ElementRef<HTMLTextAreaElement>>('replyInput');
 
   readonly form = this.fb.group({ reply: ['', [notBlank, Validators.maxLength(2000)]] });
 
   readonly context = computed(() => {
-    const s = this.suggestion();
+    const { suggestion: s, order: n } = this.shown();
     if (!s) return '';
-    const n = this.itemOrder();
     return n
       ? (this.translate.instant('meeting.decline.contextItem', { n: this.format.number(n), name: s.author.name }) as string)
       : (this.translate.instant('meeting.decline.contextWhole', { name: s.author.name }) as string);
@@ -97,13 +112,14 @@ export class MeetingDeclineDialogComponent {
       untracked(() => {
         this.form.reset({ reply: '' });
         this.error.set(null);
+        this.needsReload.set(false);
         this.showErrors.set(false);
       });
     });
   }
 
   submit(): void {
-    const s = this.suggestion();
+    const s = this.shown().suggestion;
     if (!s || this.saving()) return;
     if (this.form.invalid) {
       this.showErrors.set(true);
@@ -122,7 +138,15 @@ export class MeetingDeclineDialogComponent {
       error: (err: unknown) => {
         this.saving.set(false);
         this.error.set(meetingRefusalKey(err) ?? 'meeting.decline.error');
+        this.needsReload.set(meetingNeedsReload(err));
       },
     });
+  }
+
+  /** Close, and let the page read the meeting again. */
+  reloadMeeting(): void {
+    this.form.markAsPristine();
+    this.visibleChange.emit(false);
+    this.reload.emit();
   }
 }
