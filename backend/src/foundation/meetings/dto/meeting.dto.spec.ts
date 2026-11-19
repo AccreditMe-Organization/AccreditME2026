@@ -11,9 +11,10 @@ describe('meeting DTOs', () => {
   };
   const time = { startsAt: '2026-12-01T09:00:00.000Z', durationMinutes: 60 };
 
-  it('the clash check takes at most 52 times', async () => {
-    expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(52).fill(time) })).toEqual([]);
-    expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(53).fill(time) })).toEqual(['times']);
+  // ACC-316 PR 5 — a series' most meetings: weekly for twelve months, both ends included.
+  it('the clash check takes at most 53 times', async () => {
+    expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(53).fill(time) })).toEqual([]);
+    expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(54).fill(time) })).toEqual(['times']);
   });
 
   it("an online meeting link is https only (it goes into an outside guest's email)", async () => {
