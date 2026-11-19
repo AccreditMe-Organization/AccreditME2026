@@ -165,6 +165,12 @@ export class ListMeetingsDto {
   @IsString()
   seriesId?: string;
 
+  /** ACC-316 PR 6 — the list's search: the title contains it (case-insensitive). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
   /** Narrow to one owner (the committee or unit panel's "All 14 meetings"). */
   @IsOptional()
   @IsString()
@@ -227,6 +233,40 @@ export class AddMeetingGuestDto {
 export const MEETING_ANSWERS = ['ATTENDING', 'CANT_ATTEND'] as const;
 
 /** Answer the invitation (a user invitee, until the start). */
+/** ACC-316 PR 6 — Add a guest's person search. */
+export class GuestCandidatesQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  take?: number;
+}
+
+/** ACC-316 PR 6 — may this person schedule for this committee or unit. */
+export class MayScheduleQueryDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  committeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  orgUnitId?: string;
+}
+
 export class AnswerMeetingDto {
   @IsIn(MEETING_ANSWERS)
   answer!: (typeof MEETING_ANSWERS)[number];

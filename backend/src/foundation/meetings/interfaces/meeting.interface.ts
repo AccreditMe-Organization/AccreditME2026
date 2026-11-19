@@ -80,6 +80,13 @@ export interface IMeetingAnswerSummary {
   belowQuorum: boolean;
 }
 
+/** ACC-316 PR 6 — who Add a guest may choose: never an email. */
+export interface IMeetingGuestCandidates {
+  items: { id: string; name: string; unit: { nameEn: string; nameAr: string | null } | null; position: { nameEn: string; nameAr: string | null } | null }[];
+  total: number;
+  matching: number;
+}
+
 /** ACC-316 PR 3b — one invitee: a MEMBER, an organisation guest, or an outside guest. */
 export interface IMeetingAttendee {
   id: string;

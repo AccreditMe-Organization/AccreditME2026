@@ -8,6 +8,7 @@ import {
   meetingMemberSql,
   meetingOversightUnitIds,
   meetingOverseenSql,
+  wouldSeeNewMeeting,
 } from '../../common/services/meeting-membership';
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
@@ -142,6 +143,29 @@ export class MeetingsService {
   }
 
   // ── Read ────────────────────────────────────────────────────────────────────
+
+  /**
+   * ACC-316 PR 6 — whether Schedule meeting is offered for this committee or
+   * unit: exactly when schedule() would make a meeting this person can then
+   * open. Three answers, read at once: the SCHEDULERS predicate
+   * (meeting-authority.ts) schedule() checks; for a committee, its stage's
+   * `schedule_meeting` (a Dissolved committee schedules nothing); and the
+   * parent rule for a new meeting of this owner (meetings:view, or
+   * wouldSeeNewMeeting()). The last one matters: a person of the committee's
+   * owning unit holding meetings:schedule passes SCHEDULERS but, not being a
+   * member, would not see the meeting (plan §4.1 against §4.2, an open
+   * question). Another organisation's owner is MEETING_OWNER_NOT_FOUND, as
+   * schedule() answers.
+   */
+  async maySchedule(dto: { committeeId?: string; orgUnitId?: string }, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<{ may: boolean }> {
+    const owner = await this.resolveNewOwner(dto, organizationId);
+    const [schedules, stageAllows, sees] = await Promise.all([
+      isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
+      owner.committeeId ? this.stageRules.stageAllows('COMMITTEE', owner.committeeId, COMMITTEE_ACTIONS.SCHEDULE_MEETING, organizationId) : Promise.resolve(true),
+      viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW) ? Promise.resolve(true) : wouldSeeNewMeeting(this.prisma, organizationId, owner, viewer.id, now),
+    ]);
+    return { may: schedules && stageAllows && sees };
+  }
 
   async getForViewer(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting> {
     // A read: the head of a unit above may open it too (oversight).
@@ -280,7 +304,10 @@ export class MeetingsService {
         ? Prisma.sql`m."orgUnitId" = ${dto.orgUnitId}`
         : Prisma.sql`TRUE`;
     const series = dto.seriesId ? Prisma.sql`m."seriesId" = ${dto.seriesId}` : Prisma.sql`TRUE`;
-    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series}`;
+    // ACC-316 PR 6 — the list's search, on the title; LIKE's own wildcards are matched literally.
+    const term = dto.q?.trim();
+    const search = term ? Prisma.sql`m.title ILIKE ${'%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%'}` : Prisma.sql`TRUE`;
+    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series} AND ${search}`;
 
     const [rows, counts] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`

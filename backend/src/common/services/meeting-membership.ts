@@ -71,6 +71,36 @@ export function meetingOversightUnitIds(client: Client, organizationId: string, 
   return committeeOversightUnitIds(client, organizationId, viewerId, now);
 }
 
+/**
+ * ACC-316 PR 6 — would `viewerId` see a NEW meeting of this owner, by the rule
+ * above without meetings:view? The same clauses with no meeting row yet: a new
+ * meeting has nobody invited, so MEMBER is the committee's active membership or
+ * the unit's own people, and OVERSEER is the owning unit (`unitId`: the unit, or
+ * the committee's unit) in the viewer's oversight set. Read by may-schedule, so
+ * Schedule meeting is offered only where the meeting it makes would open.
+ */
+export async function wouldSeeNewMeeting(
+  client: Client,
+  organizationId: string,
+  owner: { committeeId: string | null; unitId: string | null },
+  viewerId: string,
+  now: Date,
+): Promise<boolean> {
+  const member = owner.committeeId
+    ? await client.$queryRaw<{ ok: boolean }[]>`
+        SELECT TRUE AS ok FROM "CommitteeMember" cm
+        JOIN "Committee" c ON c.id = cm."committeeId" AND c."organizationId" = cm."organizationId"
+        WHERE cm."committeeId" = ${owner.committeeId} AND cm."organizationId" = ${organizationId}
+          AND cm."userId" = ${viewerId} AND cm."isActive" AND c."isActive"`
+    : await client.$queryRaw<{ ok: boolean }[]>`
+        SELECT TRUE AS ok FROM "User" u
+        WHERE u.id = ${viewerId} AND u."organizationId" = ${organizationId}
+          AND u."primaryOrgUnitId" = ${owner.unitId} AND u.status = 'ACTIVE'`;
+  if (member.length > 0) return true;
+  if (!owner.unitId) return false;
+  return (await meetingOversightUnitIds(client, organizationId, viewerId, now)).has(owner.unitId);
+}
+
 /** Does `viewerId` oversee this meeting (its owning unit in their set)? Their set, then one query. */
 export async function overseesMeeting(client: Client, meetingId: string, organizationId: string, viewerId: string, now: Date): Promise<boolean> {
   const units = await meetingOversightUnitIds(client, organizationId, viewerId, now);
