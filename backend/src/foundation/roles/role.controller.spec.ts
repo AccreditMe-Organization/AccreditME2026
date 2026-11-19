@@ -174,9 +174,9 @@ describe('RoleController', () => {
   // ── deactivateRole ────────────────────────────────────────────────────────
 
   describe('deactivateRole', () => {
-    it('delegates to roleService.deactivateRole with id, tenantId, actorId', async () => {
-      await controller.deactivateRole(ROLE_ID, TENANT_ID, USER_ID);
-      expect(service.deactivateRole).toHaveBeenCalledWith(ROLE_ID, TENANT_ID, USER_ID);
+    it('delegates to roleService.deactivateRole with id, tenantId, actorId and the caller permissions', async () => {
+      await controller.deactivateRole(ROLE_ID, TENANT_ID, USER_ID, ['roles:manage']);
+      expect(service.deactivateRole).toHaveBeenCalledWith(ROLE_ID, TENANT_ID, USER_ID, ['roles:manage']);
     });
   });
 

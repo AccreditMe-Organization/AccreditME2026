@@ -876,7 +876,9 @@ describe('OrgPositionService — the root unit keeps a head (ACC-288)', () => {
 
     await service.updatePosition(HEAD.id, { nameEn: 'Chief' }, ORG_A, 'admin-1');
 
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    // ACC-154 — every position save is one transaction now (a changed role is
+    // locked in it); an edit that keeps the head flag still takes no lock.
+    expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     expect(assertSpy).not.toHaveBeenCalled();
   });
 });
