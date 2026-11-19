@@ -1463,6 +1463,32 @@ them together with their resolver.
      - series clashes.
    - **No migration.**
    - **Live after:** the API.
+   - **6.4 PR 5 as built (19 Nov):** SYSTEM-REFERENCE §18.14.
+     - **Routes:**
+       - `POST /meetings/series/preview` (dates and clashes, writes nothing);
+       - `POST /meetings/series`;
+       - `POST /meetings/series/:seriesId/end`;
+       - `PATCH /meetings/:id` and `POST /meetings/:id/reschedule` take
+         `scope: THIS_AND_LATER`;
+       - `GET /meetings?seriesId=` lists one series;
+       - the meeting read says `series` (index, total, ended).
+     - **Departures from the plan:**
+       - **"This and all later" never carries the title:** a title is each
+         meeting's own (§3.2), so it changes only the meeting edited.
+       - **A "this and all later" reschedule shifts each later meeting by the
+         same amount.** One that lands off the working week moves to the next
+         working day at the same time. It does not look for a day the owner
+         already meets, as creation does.
+       - **End series cancels each meeting by its own Cancel Meeting** (the
+         reason rule and its notices), one after another, then stamps
+         `endedAt`. One that can't be cancelled is named in `failed` and the
+         rest go on. Running it again cancels what is left and keeps the first
+         reason.
+       - **The standing agenda is copied at creation.** Changing it later on
+         the series reaches no meeting already made (every meeting is made at
+         once).
+       - **The clash check's cap is 53,** a series' most meetings (weekly for
+         twelve months, both ends included); it was 52.
 6. **PR 6: screens, part 1.**
    - The rail item, `/meetings` with "Sub-units' meetings", the committee and
      unit panels, Schedule (one meeting), the meeting page through Agenda
