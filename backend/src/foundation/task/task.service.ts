@@ -136,6 +136,12 @@ export interface RecordTaskDraft {
   sourceId: string;
   /** Its people, directly; anyone not ACTIVE is dropped, and none leaves it UNASSIGNED. */
   assigneeUserIds: string[];
+  /**
+   * ACC-316 PR 4 — a due date a person chose (a meeting's action item): the task
+   * is due then, and its SLA limit stays the priority's window from now. Without
+   * it the task is due at that window.
+   */
+  dueAt?: Date;
 }
 
 /**
@@ -437,6 +443,15 @@ export class TaskService {
    * the notices after commit with announceCreated(). Object-scoped, like a
    * manual task: no stage, so no stage exit ever cancels it. Its SLA starts now.
    */
+  /**
+   * ACC-316 PR 4 — a task's SLA limit if it started at `start` with this
+   * priority (ACC-174's window), for a rule that must check a chosen due date
+   * against it before the task exists.
+   */
+  slaLimitFrom(start: Date, priority: TaskPriority, organizationId: string): Promise<Date> {
+    return this.sla.windowFrom(start, priority, organizationId);
+  }
+
   async prepareRecordTask(draft: RecordTaskDraft, organizationId: string): Promise<PreparedTask> {
     const slaStartAt = new Date();
     const window = await this.sla.windowFrom(slaStartAt, draft.priority, organizationId);
@@ -452,8 +467,8 @@ export class TaskService {
         requiresEvidence: false,
         priority: draft.priority,
         status: eligibleAssigneeIds.length === 0 ? 'UNASSIGNED' : 'PENDING',
-        dueAt: window,
-        dueDateOverridden: false,
+        dueAt: draft.dueAt ?? window,
+        dueDateOverridden: draft.dueAt !== undefined,
         slaStartAt,
         slaLimitAt: window,
         slaExtendedTo: null,

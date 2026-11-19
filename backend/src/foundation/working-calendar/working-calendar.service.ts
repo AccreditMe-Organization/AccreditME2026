@@ -373,6 +373,20 @@ export class WorkingCalendarService {
   }
 
   /** The date `count` working days after `day` (`day` itself never counts): the review date's default. */
+  /**
+   * ACC-316 PR 4 — the last working day BEFORE `day` (yyyy-MM-dd), in the
+   * organisation's calendar: when a meeting's review reminder is due.
+   */
+  async previousWorkingDay(day: string, organizationId: string): Promise<string> {
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    for (let i = 0; i <= WorkingCalendarService.DAY_SEARCH_LIMIT; i++) {
+      candidate = candidate.minus({ days: 1 });
+      if (isWorkingDay(candidate, loaded)) return candidate.toISODate()!;
+    }
+    throw new BadRequestException('The working calendar has no working day within a year.');
+  }
+
   async addWorkingDays(day: string, count: number, organizationId: string): Promise<string> {
     if (!Number.isInteger(count) || count < 1) throw new BadRequestException('count must be a whole number of at least 1.');
     const loaded = await this.loadCalendar(organizationId);

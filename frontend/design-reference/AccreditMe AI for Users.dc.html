@@ -22,7 +22,7 @@
 <div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
 
   <div style="margin-block-end: 14px;">
-    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 10 Oct 2026 · AI for users · on the File Viewer drawer, Task Screens (New task, assignee picker), App Shell (Home) and Meeting Screens</div>
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 10 Oct 2026 · AI for users · Meetings AI refreshed 18 Nov 2026 · on the File Viewer drawer, Task Screens (New task, assignee picker), App Shell (Home) and Meeting Screens</div>
     <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">AI for users</h1>
     <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 108ch; text-wrap: pretty;">One shared AI pattern (am-ai-assist), then five places that use it. AI suggests, a person reviews and accepts, the system records it. With AI off, every accepted screen looks exactly as drawn. Users never see credits, providers or models, except in the “used up” refusal.</p>
   </div>
@@ -227,49 +227,43 @@
     <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
       <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">6</span>
       <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Meetings AI · Infection Prevention &amp; Control · 24 Sep and 29 Oct 2026</h2>
-      <span style="font-size: 12.5px; color: #5A6779;">Page panels on the accepted meeting page, never dialogs: each can be long, and each is the secretary's working surface.</span>
+      <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">Refreshed 18 Nov 2026 on the meeting page as Meeting Screens draws it in round 5 (accepted 10 Nov). Page panels, never dialogs: each is the Secretary's working surface. Same people and dates as Meeting Screens.</span>
     </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 620px), 1fr)); gap: 16px; align-items: start;">
-      <sc-for list="{{ meetings }}" as="m" hint-placeholder-count="4">
-        <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ m.cap }}</div>
-          <div dir="{{ m.dir }}" style="{{ m.frame }}">
-            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="{{ m.titleStyle }}">{{ m.title }}</span><sc-if value="{{ m.trig }}" hint-placeholder-val="{{ false }}"><button style="{{ m.trig.style }}"><span aria-hidden="true" style="{{ m.trig.markStyle }}">{{ m.trig.mark }}</span>{{ m.trig.text }}</button></sc-if></div>
-            <div style="padding: 10px 12px;">
-              <sc-if value="{{ m.input }}" hint-placeholder-val="{{ false }}"><div style="{{ m.inputLab }}">{{ m.inputLabel }}</div><div style="{{ m.inputBox }}">{{ m.input }}</div></sc-if>
-              <div role="region" aria-label="{{ m.tag }}" style="{{ m.box }}">
-                <div style="{{ m.tagStyle }}"><span aria-hidden="true">✦</span> {{ m.tag }}</div>
-                <sc-for list="{{ m.rows }}" as="r" hint-placeholder-count="4">
-                  <div style="{{ r.row }}">
-                    <sc-if value="{{ r.check }}" hint-placeholder-val="{{ false }}"><span role="checkbox" aria-checked="{{ r.aria }}" style="{{ r.boxStyle }}">{{ r.mark }}</span></sc-if>
-                    <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ r.tStyle }}">{{ r.t }}</span><sc-if value="{{ r.d }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dStyle }}">{{ r.d }}</span></sc-if><sc-if value="{{ r.src }}" hint-placeholder-val="{{ false }}"><a href="#a6" style="{{ r.srcStyle }}">{{ r.src }}</a></sc-if></span>
-                    <sc-if value="{{ r.acts }}" hint-placeholder-val="{{ false }}"><span style="flex: none; display: flex; gap: 8px;"><sc-for list="{{ r.acts }}" as="a" hint-placeholder-count="3"><a href="#a6" style="{{ a.style }}">{{ a.l }}</a></sc-for></span></sc-if>
+    <sc-for list="{{ mtSecs }}" as="ms" hint-placeholder-count="6">
+      <div id="{{ ms.id }}" style="margin-block-end: 24px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-block-end: 3px;"><span style="font-size: 12px; font-weight: 700; color: #8A94A6; font-variant-numeric: tabular-nums;">{{ ms.n }}</span><h3 style="margin: 0; font-size: 17px; font-weight: 600;">{{ ms.title }}</h3></div>
+        <div style="font-size: 12.5px; color: #4A5568; margin-block-end: 10px; max-width: 150ch; text-wrap: pretty;">{{ ms.sub }}</div>
+        <sc-for list="{{ ms.groups }}" as="mg" hint-placeholder-count="3">
+          <div style="margin-block-end: 16px;">
+            <sc-if value="{{ mg.title }}" hint-placeholder-val="{{ true }}"><div style="font-size: 14px; font-weight: 600; margin-block-end: 6px;">{{ mg.title }}</div></sc-if>
+            <div style="display: flex; flex-wrap: wrap; gap: 18px 16px; align-items: flex-start;">
+              <sc-for list="{{ mg.panels }}" as="mp" hint-placeholder-count="2">
+                <div style="{{ mp.outer }}">
+                  <div style="{{ mp.capStyle }}">{{ mp.cap }}</div>
+                  <div dir="{{ mp.dir }}" style="{{ mp.frame }}">
+                    <sc-for list="{{ mp.blocks }}" as="mb" hint-placeholder-count="3"><div style="{{ mb.style }}"><sc-for list="{{ mb.cells }}" as="mc" hint-placeholder-count="2"><div style="{{ mc.style }}"><sc-for list="{{ mc.segs }}" as="s" hint-placeholder-count="4"><sc-if value="{{ s.isS }}" hint-placeholder-val="{{ true }}"><span dir="{{ s.dir }}" style="{{ s.style }}">{{ s.text }}</span></sc-if><sc-if value="{{ s.isL }}" hint-placeholder-val="{{ false }}"><a href="{{ s.href }}" style="{{ s.style }}">{{ s.text }}</a></sc-if><sc-if value="{{ s.isB }}" hint-placeholder-val="{{ false }}"><button style="{{ s.style }}">{{ s.text }}</button></sc-if><sc-if value="{{ s.isR }}" hint-placeholder-val="{{ false }}"><span style="{{ s.style }}"><sc-for list="{{ s.parts }}" as="q" hint-placeholder-count="3"><sc-if value="{{ q.isS }}" hint-placeholder-val="{{ true }}"><span dir="{{ q.dir }}" style="{{ q.style }}">{{ q.text }}</span></sc-if><sc-if value="{{ q.isL }}" hint-placeholder-val="{{ false }}"><a href="{{ q.href }}" style="{{ q.style }}">{{ q.text }}</a></sc-if><sc-if value="{{ q.isB }}" hint-placeholder-val="{{ false }}"><button style="{{ q.style }}">{{ q.text }}</button></sc-if><sc-if value="{{ q.isR }}" hint-placeholder-val="{{ false }}"><span style="{{ q.style }}"><sc-for list="{{ q.parts }}" as="r" hint-placeholder-count="3"><sc-if value="{{ r.isS }}" hint-placeholder-val="{{ true }}"><span dir="{{ r.dir }}" style="{{ r.style }}">{{ r.text }}</span></sc-if><sc-if value="{{ r.isL }}" hint-placeholder-val="{{ false }}"><a href="{{ r.href }}" style="{{ r.style }}">{{ r.text }}</a></sc-if><sc-if value="{{ r.isB }}" hint-placeholder-val="{{ false }}"><button style="{{ r.style }}">{{ r.text }}</button></sc-if><sc-if value="{{ r.isR }}" hint-placeholder-val="{{ false }}"><span style="{{ r.style }}"><sc-for list="{{ r.parts }}" as="t" hint-placeholder-count="2"><sc-if value="{{ t.isS }}" hint-placeholder-val="{{ true }}"><span dir="{{ t.dir }}" style="{{ t.style }}">{{ t.text }}</span></sc-if><sc-if value="{{ t.isB }}" hint-placeholder-val="{{ false }}"><button style="{{ t.style }}">{{ t.text }}</button></sc-if><sc-if value="{{ t.isL }}" hint-placeholder-val="{{ false }}"><a href="{{ t.href }}" style="{{ t.style }}">{{ t.text }}</a></sc-if></sc-for></span></sc-if></sc-for></span></sc-if></sc-for></span></sc-if></sc-for></div></sc-for></div></sc-for>
                   </div>
-                </sc-for>
-              </div>
+                  <sc-if value="{{ mp.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ mp.note }}</div></sc-if>
+                </div>
+              </sc-for>
             </div>
-            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;"><span style="{{ m.footStyle }}">{{ m.foot }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ m.btns }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
           </div>
-          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ m.note }}</div>
-        </div>
-      </sc-for>
-    </div>
-    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; margin-block-start: 16px;">
-      <sc-for list="{{ confirms }}" as="d" hint-placeholder-count="3">
-        <div style="{{ d.outer }}">
-          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
-          <div dir="{{ d.dir }}" style="{{ d.frame }}">
-            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
-            <div style="padding: 16px 20px;"><div style="{{ d.noteStyle }}">{{ d.note }}</div><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-block-start: 12px;"><sc-for list="{{ d.pairs }}" as="q" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ d.labStyle }}">{{ q.k }}</div><div style="{{ d.valStyle }}">{{ q.v }}</div></div></sc-for></div></div>
-            <div style="{{ d.footStyle }}"><span></span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
-          </div>
-          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
-        </div>
-      </sc-for>
-    </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+        </sc-for>
+      </div>
+    </sc-for>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 4px;">
       <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · meetings</div><sc-for list="{{ meetNotes }}" as="n" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
       <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · meetings AI</div><sc-for list="{{ outMeet }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+    </div>
+    <div style="margin-block-start: 14px; border: 1px solid #FEDF89; border-radius: 8px; padding: 12px 14px;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 8px;">Questions for the product owner · Meetings AI refresh · open, 18 Nov 2026</div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+        <sc-for list="{{ mtQs }}" as="q" hint-placeholder-count="10"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;">{{ q.why }}</div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for><div style="font-size: 12px; color: #4A5568; padding-block-start: 4px; text-wrap: pretty;"><strong style="color: #067647;">Recommendation:</strong> {{ q.rec }}</div></div></sc-for>
+      </div>
+    </div>
+    <div style="margin-block-start: 14px; border: 1px solid #E2E8F0; border-radius: 8px; overflow-x: auto;">
+      <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; min-width: 860px;">New Arabic written for this refresh · for review. Stages, moves, labels and names are Meeting Screens' own; refusals and the AI marks are section 1's.</div>
+      <sc-for list="{{ mtAr }}" as="x" hint-placeholder-count="12"><div style="display: flex; gap: 12px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; min-width: 860px;"><span style="flex: none; width: 170px; color: #5A6779; font-weight: 600;">{{ x.w }}</span><span style="flex: 1 1 0; min-width: 0; text-wrap: pretty;">{{ x.en }}</span><span dir="rtl" style="flex: 1 1 0; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; text-wrap: pretty;">{{ x.ar }}</span></div></sc-for>
     </div>
   </section>
 
@@ -460,64 +454,326 @@ class Component extends DCLogic {
       H({ cap: "AI off, credits used up, paused or failed · the ordinary Home", card: null, note: "No briefing and no error: the accepted Home exactly as drawn, with its full lists. A user who turned the briefing off sees the same, plus “Turn on my briefing” in their profile." })
     ];
 
-    // meetings
-    const MT = (o) => { const ar = !!o.ar; return Object.assign({ trig: null, input: null }, o, { dir: ar ? "rtl" : "ltr", frame: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;" + (ar ? " " + AF : ""), titleStyle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600;", box: sbox, tagStyle: tagS(ar) + " margin-block-end: 4px;", inputLab: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;", inputBox: "border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; margin-block-end: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: #2D3748; white-space: pre-wrap;", footStyle: "font-size: " + (ar ? 13 : 12) + "px; color: #4A5568;", btns: o.btns.map(b => btn(b[0], b[1], ar)) }); };
-    const row = (o, ar) => Object.assign({ check: false, d: null, src: null, acts: null, aria: "false", mark: "" }, o, {
-      row: "display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-block-end: 1px solid #E2E8F0;" + (o.dropped ? " opacity: 0.6;" : ""),
-      boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; margin-block-start: 2px; font-size: 11px; line-height: 14px; text-align: center; " + (o.on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6;"),
-      aria: o.on ? "true" : "false", mark: o.on ? "✓" : "",
-      tStyle: "display: block; font-size: " + (ar ? 14 : 13) + "px; font-weight: " + (o.decision ? 700 : 600) + ";" + (o.dropped ? " text-decoration: line-through;" : ""), dStyle: "display: block; " + txt(ar) + " font-size: " + (ar ? 13.5 : 12.5) + "px;", srcStyle: "display: block; font-size: " + (ar ? 12.5 : 11.5) + "px; text-decoration: none;",
-      acts: o.acts ? o.acts.map(a => ({ l: a, style: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 600; text-decoration: none;" + (a === "Drop" || a === "حذف" ? " color: #B42318;" : "") })) : null
-    });
-    const meetings = [
-      MT({ cap: "6.1 · Agenda suggestions · next IPC meeting, 29 Oct 2026 · Planned", title: "Agenda · suggested items", trig: trig("Suggest agenda items"), tag: "AI suggestions · tick the ones to add",
-        rows: [
-          row({ check: 1, on: 1, t: "Repair of the negative-pressure alarm, room 3", d: "Due 15 Oct and still open: overdue. Raised at item 4 on 24 Sep.", src: "Open action · IPC, 24 Sep 2026, item 4 ↗" }),
-          row({ check: 1, on: 1, t: "Ward action plans, 4B and 6A", d: "Due 25 Oct, agreed at item 2 on 24 Sep to be presented at this meeting.", src: "Open action · IPC, 24 Sep 2026, item 2 ↗" }),
-          row({ check: 1, t: "Hand-hygiene audit tool update", d: "Dr. Huda Zahrani has asked for more time, to 20 Oct.", src: "Open action · more time asked · item 2 ↗" }),
-          row({ check: 1, t: "Approve isolation policy IPC-04, revision 3", d: "Waiting for the committee's approval since 30 Sep.", src: "Pending approval · IPC-04 rev 3 ↗" })
-        ], foot: "2 of 4 ticked · added at the end of the 29 Oct agenda, in this order", btns: [["Discard all", "text"], ["Add 2 items", "primary"]], note: "Drawn on the next meeting, which is Planned: suggestions come from the 24 Sep meeting's open actions and from pending approvals. Each says why and links its source. Nothing is added until “Add 2 items”, which names the count." }),
-      MT({ cap: "6.2 · Minutes drafting · Minutes draft stage", title: "Minutes · draft from notes", trig: trig("Draft minutes"), inputLabel: "Rough notes", input: "item 2 hh audit 4B 71% night shift worst\nagreed: re-audit 4B+6A nov, ward mgrs action plans next mtg\nhuda to update audit tool by 15 oct", tag: "AI suggestion · check before using",
-        rows: [
-          row({ t: "2 · Hand-hygiene compliance, Q3", d: "Discussion: Compliance on ward 4B was 71% in September, against a 90% target; the night shift had the most missed moments." }),
-          row({ t: "Decision", decision: 1, d: "▸ Wards 4B and 6A will be re-audited in November. Ward managers will present action plans at the next meeting." })
-        ], foot: "Lands in the minutes editor per agenda item; decisions marked “Decision ▸”", btns: [["Discard", "text"], ["Edit", "secondary"], ["Accept into minutes", "primary"]], note: "Drafted in the meeting's format, per agenda item. Decisions are marked with a label and a ▸ glyph, not colour. Accept fills the discussion and decision fields; returned-comment handling from Meeting Screens is unchanged." }),
-      MT({ cap: "6.3 · Action items drafted with the minutes", title: "Action items · suggested", tag: "AI suggestions · confirm, edit or drop each",
-        rows: [
-          row({ t: "Re-audit wards 4B and 6A", d: "Waiting for Infection Control Nurse · due 30 Nov 2026 · High · from item 2", acts: ["Confirm ✓", "Edit", "Drop"] }),
-          row({ t: "Present ward action plans", d: "Ward managers, 4B and 6A · due 25 Oct 2026 · Medium · from item 2", acts: ["Confirmed ✓", "Edit"] }),
-          row({ t: "Update hand-hygiene audit tool", d: "Dr. Huda Zahrani · due 15 Oct 2026 · Medium · from item 2", acts: ["Confirmed ✓", "Edit"] }),
-          row({ t: "Order new dispensers for 4B", dropped: 1, d: "Dropped by Nora Al-Otaibi", acts: ["Undo"] })
-        ], foot: "2 confirmed · 1 to decide · 1 dropped", btns: [["Create 2 tasks…", "primary"]], note: "Assignee, due date and priority follow the task rules already drawn (priority limit, the assignee picker's outcome). Edit opens New task prefilled. Tasks are created only for confirmed ones, after a confirm that names the count." }),
-      MT({ cap: "6.4 · Summary for absent members · after approval", title: "Summary for absent members", trig: trig("Draft summary"), tag: "AI suggestion · review before sending",
-        rows: [
-          row({ t: "To · 3 members who were absent", d: "Tariq Suleiman (apologies) · Dana Chalabi (apologies) · Hessa Al-Mutairi (absent)" }),
-          row({ t: "What they'll receive", d: "A notification and email: “What the IPC meeting on 24 Sep decided”, this summary, and a link to the approved minutes." }),
-          row({ t: "Summary", d: "The committee agreed to re-audit wards 4B and 6A in November after September compliance fell to 71%. Ward managers will bring action plans to the next meeting. The isolation room 3 alarm will be repaired by 15 Oct; the room stays closed until then." })
-        ], foot: "Sent from Nora Al-Otaibi (Secretary); recorded on the meeting", btns: [["Discard", "text"], ["Edit", "secondary"], ["Send to 3 members…", "primary"]], note: "Offered only after the minutes are approved and locked. Guests aren't included; they see the minutes after approval anyway." }),
-      MT({ ar: 1, cap: "٦.١ · اقتراحات جدول الأعمال · اجتماع " + iso("29 Oct 2026") + " · العربية", title: "جدول الأعمال · بنود مقترحة", trig: trig("اقتراح بنود", true), tag: "اقتراحات الذكاء الاصطناعي · حدّد ما تريد إضافته",
-        rows: [row({ check: 1, on: 1, t: "إصلاح إنذار الضغط السالب، الغرفة " + iso("3"), d: "مستحق " + iso("15 Oct") + " وما زال مفتوحًا: متأخر. أُثير في البند " + iso("4") + " يوم " + iso("24 Sep") + ".", src: "إجراء مفتوح · مكافحة العدوى، " + iso("24 Sep 2026") + "، البند " + iso("4") + " ↗" }, true),
-          row({ check: 1, on: 1, t: "خطط عمل الجناحين " + iso("4B") + " و" + iso("6A"), d: "مستحقة " + iso("25 Oct") + "، اتُّفق على عرضها في هذا الاجتماع.", src: "إجراء مفتوح · البند " + iso("2") + " ↗" }, true),
-          row({ check: 1, t: "تحديث أداة تدقيق نظافة اليدين", d: "طلبت د. هدى الزهراني مهلة حتى " + iso("20 Oct") + ".", src: "إجراء مفتوح · طلب مهلة ↗" }, true),
-          row({ check: 1, t: "اعتماد سياسة العزل IPC-04، المراجعة " + iso("3"), d: "بانتظار اعتماد اللجنة منذ " + iso("30 Sep") + ".", src: "اعتماد معلّق ↗" }, true)],
-        foot: "حُدّد " + iso("2") + " من " + iso("4"), btns: [["تجاهل الكل", "text"], ["إضافة بندين", "primary"]], note: "Checkboxes sit at the inline start (right); source links stay links; dates and codes are isolated LTR runs." }),
-      MT({ ar: 1, cap: "٦.٢ · صياغة المحضر · العربية · " + iso("24 Sep 2026"), title: "المحضر · صياغة من الملاحظات", trig: trig("صياغة المحضر", true), inputLabel: "ملاحظات أولية", input: "بند 2 تدقيق نظافة اليدين 4B ‏71%‏ الأسوأ ليلًا\nاتفقنا: إعادة تدقيق 4B و6A في نوفمبر، خطط عمل من مديري الأجنحة\nهدى تحدّث أداة التدقيق قبل 15 أكتوبر", tag: "اقتراح من الذكاء الاصطناعي · راجعه قبل الاستخدام",
-        rows: [row({ t: iso("2") + " · الامتثال لنظافة اليدين، الربع الثالث", d: "النقاش: بلغ الامتثال في الجناح " + iso("4B") + " خلال سبتمبر " + iso("71%") + " مقابل هدف " + iso("90%") + "، وكانت المناوبة الليلية الأكثر فواتًا للفرص." }, true),
-          row({ t: "قرار", decision: 1, d: "◂ يُعاد تدقيق الجناحين " + iso("4B") + " و" + iso("6A") + " في نوفمبر، ويعرض مديرو الأجنحة خطط العمل في الاجتماع القادم." }, true)],
-        foot: "يُدرج في محرر المحضر لكل بند؛ القرارات معلّمة بـ «قرار ◂»", btns: [["تجاهل", "text"], ["تعديل", "secondary"], ["قبول في المحضر", "primary"]], note: "The decision marker mirrors for RTL: “قرار ◂”, pointing into the text from the right. A label and a glyph, never colour." })
+    // ── Meetings AI · refreshed 18 Nov 2026 on Meeting Screens round 5 (accepted 10 Nov) ──
+    const mK = (ar) => {
+      const k = ar ? 1 : 0;
+      const w = (e, a) => ar ? a : e;
+      const tx = (sz, o) => { o = o || {}; return "display: " + (o.inl ? "inline" : "block") + "; font-size: " + (sz + k) + "px; line-height: " + (o.lh || Math.round((sz + k) * (ar ? 1.6 : 1.45))) + "px; font-weight: " + (o.w || 400) + "; color: " + (o.c || "#2D3748") + "; text-wrap: pretty;" + (o.x ? " " + o.x : ""); };
+      const N = (o) => Object.assign({ isS: false, isL: false, isB: false, isR: false, text: "", style: "", dir: "auto", href: "#a6", parts: [] }, o);
+      const S = (text, sz, o) => N({ isS: true, text, style: tx(sz, o), dir: o && o.ltr ? "ltr" : "auto" });
+      const L = (text, sz, o) => N({ isL: true, text, style: tx(sz, Object.assign({ c: "#2E6FA3", w: 600 }, o || {})) + " text-decoration: none;" });
+      const BT = { primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", off: "background: #DCE5EE; color: #4A5568; border: 1px solid #DCE5EE; font-weight: 600; cursor: not-allowed;" };
+      const Bt = (text, kind, x) => N({ isB: true, text, style: "display: inline-flex; align-items: center; font-family: inherit; font-size: " + (12.5 + k) + "px; line-height: 18px; border-radius: 6px; padding: 5px 11px; white-space: nowrap; cursor: pointer; " + BT[kind || "secondary"] + (x ? " " + x : "") });
+      const TONE = { info: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;", warn: "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;", danger: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", muted: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", ok: "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;", draft: "color: #4A5568; background: #fff; border: 1px dashed #8A94A6;", standing: "color: #4A5568; background: #fff; border: 1px solid #8A94A6;" };
+      const chip = (text, tone, x) => N({ isS: true, text, style: "display: inline-flex; align-items: center; font-size: " + (11 + k) + "px; line-height: " + (ar ? 18 : 16) + "px; font-weight: 600; border-radius: " + (tone === "stage" ? 4 : 999) + "px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; " + (TONE[tone] || TONE.info) + (x ? " " + x : "") });
+      const RW = (parts, style) => N({ isR: true, parts, style: style || "display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;" });
+      const C = (segs, style) => ({ segs, style: "min-width: 0;" + (style ? " " + style : "") });
+      const R = (cells, style) => ({ cells, style: style || "" });
+      const P = (segs, style) => R([C(segs)], style || "");
+      // the accepted AI marks: ✦, the words, the dashed inline-start rule, then the tint
+      const SBOX = "background: #F7FAFD; border: 1px solid #C5DAEA; border-inline-start: 3px dashed #2E6FA3; border-radius: 6px; padding: 10px 12px;";
+      const tag = (t) => S("✦ " + t, 11.5, { w: 700, c: "#1F5480", lh: ar ? 20 : 18, x: ar ? "" : "letter-spacing: 0.02em;" });
+      const trig = (t, st) => st === "work"
+        ? RW([S("◌", 12, { c: "#2E6FA3", inl: 1 }), S(w("Working…", "جارٍ العمل…"), 12.5, { w: 600, c: "#4A5568", inl: 1 })], "display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 4px 10px; background: #F4F7FA; border: 1px solid #CBD5E0; white-space: nowrap; cursor: progress;")
+        : RW([S("✦", 12, { c: "#2E6FA3", inl: 1 }), S(t, 12.5, { w: 600, c: "#1F5480", inl: 1 })], "display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 4px 10px; background: #fff; border: 1px solid #2E6FA3; white-space: nowrap; cursor: pointer;");
+      const paused = () => S(w("⏸ AI features are paused by AccreditMe", "⏸ ميزات الذكاء الاصطناعي متوقفة مؤقتًا من AccreditMe"), 12, { w: 500, c: "#4A5568", x: "display: inline-flex; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px; padding: 3px 10px;" });
+      const working = (t) => RW([S(t, 12, { c: "#4A5568" })].concat(["92%", "78%", "64%"].map(p => S("", 1, { lh: 10, x: "height: 10px; width: " + p + "; border-radius: 3px; background: #E9EEF4; margin-block-start: 7px;" }))), "display: block;");
+      const refusal = (kind, date) => kind === "failed"
+        ? RW([S(w("! AI couldn't answer just now. Try again.", "! تعذّر على الذكاء الاصطناعي الرد الآن. حاول مرة أخرى."), 13, { w: 500, c: "#B42318" }), Bt(w("Try again", "حاول مرة أخرى"), "secondary", "margin-block-start: 8px;")], "display: block; border-radius: 6px; padding: 10px 12px; border: 1px solid #FECDCA; background: #FEF3F2;")
+        : RW([S(w("◔ Your organisation's AI credits for this month are used up. They renew on " + date + ". Your administrator can add more.", "◔ نفد رصيد الذكاء الاصطناعي لمؤسستك لهذا الشهر. يتجدد في " + iso(date) + ". يمكن لمسؤول النظام إضافة المزيد."), 13)], "display: block; border-radius: 6px; padding: 10px 12px; border: 1px solid #E2E8F0; background: #F4F7FA;");
+      return { k, w, tx, S, L, Bt, chip, RW, C, R, P, SBOX, tag, trig, paused, working, refusal };
+    };
+    const mE = mK(false), mA = mK(true);
+    const mCard = "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;";
+    const mHeadRow = "display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;";
+
+    // ── the page header, as Meeting Screens round 5 draws it ──
+    const mStages = (ar) => ar ? ["مجدول", "الأجندة مُصدَرة", "مسودة المحضر", "مراجعة المحضر", "اعتماد المحضر"] : ["Planned", "Agenda Issued", "Minutes Draft", "Minutes Review", "Minutes Approved"];
+    const mHead = (K, ar, o) => {
+      const w = K.w, st = mStages(ar);
+      const title = o.oct ? w("Infection Prevention & Control · October 2026", "مكافحة العدوى · أكتوبر 2026") : w("Infection Prevention & Control · September 2026", "مكافحة العدوى · سبتمبر 2026");
+      const date = o.oct ? (ar ? iso("29 Oct 2026, 10:00–11:30") + " " + iso("+03") : "29 Oct 2026, 10:00–11:30 +03") : (ar ? iso("24 Sep 2026, 10:00–11:30") + " " + iso("+03") : "24 Sep 2026, 10:00–11:30 +03");
+      const hijri = o.oct ? null : w("13 Rabiʻ al-Thani 1448", "13 ربيع الآخر 1448");
+      const left = [
+        K.RW([K.L(w("Meetings", "الاجتماعات"), 12, { w: 400, inl: 1 }), K.S("/", 12, { c: "#5A6779", inl: 1 }), K.S(title, 12, { c: "#5A6779", inl: 1 })], "display: flex; flex-wrap: wrap; gap: 6px;"),
+        K.S(title, 22, { w: 600, x: "margin-block-start: 4px; letter-spacing: -0.01em;" }),
+        K.RW([K.chip(st[o.idx] + " · " + (ar ? iso((o.idx + 1) + "/5") : (o.idx + 1) + "/5"), "stage", o.idx === 4 ? TONE_MUTED : ""), K.S(date, 13, { w: 600, inl: 1 })].concat(hijri ? [K.S(hijri, 12.5, { c: "#5A6779", inl: 1 })] : []), "display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-block-start: 6px;")
+      ];
+      if (o.idx < 3) left.push(K.RW([K.S(w("Who works this stage:", "من يعمل على هذه المرحلة:"), 12.5, { w: 600, inl: 1 }), K.S(w("Nora Al-Otaibi (Secretary)", "نورة العتيبي (أمينة السر)"), 12.5, { inl: 1 })], "display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 5px;"));
+      left.push(K.RW(st.map((s, i) => K.S((i < o.idx ? "✓ " : "") + s, 11.5, { w: i === o.idx ? 600 : 400, c: i === o.idx ? "#1F5480" : i < o.idx ? "#4A5568" : "#5A6779", inl: 1, x: "border-radius: 4px; padding: 2px 8px; white-space: nowrap; " + (i === o.idx ? "background: #E4EEF6; border: 1px solid #2E6FA3;" : i < o.idx ? "background: #fff; border: 1px solid #CBD5E0;" : "background: #fff; border: 1px dashed #CBD5E0;") })), "display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 8px;"));
+      const right = [K.RW(o.actions, "display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;")].concat(o.why ? [K.S(o.why, 12, { c: "#4A5568", x: "text-align: end;" })] : []);
+      return K.R([K.C(left, "flex: 1 1 480px;"), K.C(right, "flex: 0 1 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;")], "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 14px 16px 12px;");
+    };
+    const TONE_MUTED = "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;";
+    const mPhHead = (K, ar, o) => {
+      const w = K.w, st = mStages(ar);
+      return K.P([K.S(w("‹ Meetings", "‹ الاجتماعات"), 12.5, { c: "#2E6FA3" }),
+        K.S(o.oct ? w("Infection Prevention & Control · October 2026", "مكافحة العدوى · أكتوبر 2026") : w("Infection Prevention & Control · September 2026", "مكافحة العدوى · سبتمبر 2026"), 18, { w: 600, x: "margin-block-start: 2px;" }),
+        K.chip(st[o.idx] + " · " + (ar ? iso((o.idx + 1) + "/5") : (o.idx + 1) + "/5"), "stage", "margin-block-start: 4px;" + (o.idx === 4 ? " " + TONE_MUTED : "")),
+        K.S(o.oct ? (ar ? iso("29 Oct 2026, 10:00") : "29 Oct 2026, 10:00") : (ar ? iso("24 Sep 2026, 10:00") + " · 13 ربيع الآخر 1448" : "24 Sep 2026, 10:00 · 13 Rabiʻ al-Thani 1448"), 12, { c: "#4A5568", x: "margin-block-start: 4px;" })]
+        .concat(o.idx < 3 ? [K.S(w("Who works this stage: Nora Al-Otaibi (Secretary)", "من يعمل على هذه المرحلة: نورة العتيبي (أمينة السر)"), 12, {})] : [])
+        .concat([K.RW(o.actions.map(a => Object.assign({}, a, { style: a.style + " min-height: 40px; justify-content: center; flex: 1 1 auto;" })), "display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px;")]), "padding: 12px 14px; background: #fff; border-block-end: 1px solid #E2E8F0;");
+    };
+    const mPhSide = (K, ar) => K.P([K.S(K.w("Attendance, Action items and Attachments cards stack here, as in Meeting Screens 14.", "تُكدَّس هنا بطاقات الحضور والإجراءات والمرفقات كما في شاشات الاجتماعات 14."), 12, { c: "#5A6779" })], "margin: 12px; padding: 12px; text-align: center; border: 1px dashed #CBD5E0; border-radius: 8px; background: repeating-linear-gradient(135deg, #FCFDFE 0 6px, #F4F7FA 6px 12px);");
+
+    // ── 1 · Suggest agenda items · 29 Oct, Planned ──
+    const OPEN_SEP = (ar) => ar ? [["تحديث أداة تدقيق نظافة اليدين", "د. هدى الزهراني · الاستحقاق " + iso("15 Oct"), "قيد التنفيذ · متأخرة", "warn"], ["إعادة تدقيق الجناحين " + iso("4B") + " و" + iso("6A"), "عمر حداد · الاستحقاق " + iso("30 Nov"), "مُسندة", "muted"], ["إصلاح إنذار الضغط السلبي، الغرفة 3", "م. خالد الشهري · الاستحقاق " + iso("15 Oct"), "قيد التنفيذ · متأخرة", "warn"]]
+      : [["Update hand-hygiene audit tool", "Dr. Huda Zahrani · Due 15 Oct", "In progress · overdue", "warn"], ["Re-audit wards 4B and 6A", "Omar Haddad · Due 30 Nov", "Assigned", "muted"], ["Repair negative-pressure alarm, room 3", "Eng. Khalid Al-Shehri · Due 15 Oct", "In progress · overdue", "warn"]];
+    const AG_SUGG = (ar) => ar ? [
+        [1, "اعتماد سياسة العزل IPC-04، المراجعة " + iso("3"), "بانتظار اعتماد اللجنة منذ " + iso("30 Sep") + ".", "اعتماد معلّق · IPC-04 ↗"],
+        [1, "تدقيق التخلص من الأدوات الحادة في العناية المركزة: تقرير عمر حداد", "متأخر منذ " + iso("20 Sep") + ". ورد في أجندة " + iso("24 Sep") + " أن عمر يقدّم تقريره في اجتماع أكتوبر.", "مهمة مفتوحة · من اجتماع مكافحة العدوى، " + iso("27 Aug 2026") + " ↗"],
+        [0, "لافتات العزل، البرج A", "مستحقة " + iso("30 Sep") + " وما زالت مُسندة إلى دانة شلبي.", "مهمة مفتوحة · من اجتماع مكافحة العدوى، " + iso("27 Aug 2026") + " ↗"]]
+      : [[1, "Approve isolation policy IPC-04, revision 3", "Waiting for the committee's approval since 30 Sep.", "Pending approval · IPC-04 rev 3 ↗"],
+        [1, "Sharps disposal audit in ICU: Omar Haddad's report", "Overdue since 20 Sep. The 24 Sep agenda noted that Omar reports at the October meeting.", "Open task · from IPC, 27 Aug 2026 ↗"],
+        [0, "Isolation signage, Tower A", "Due 30 Sep and still Assigned to Dana Chalabi.", "Open task · from IPC, 27 Aug 2026 ↗"]];
+    const agItem = (K, ar, n, title, meta, standing, last) => K.RW([
+      K.RW([K.S(ar ? iso(n) : n, 13, { w: 600, c: "#5A6779", inl: 1, x: "width: 18px; font-variant-numeric: tabular-nums;" }), K.S(title, 13.5, { w: 600, inl: 1 })].concat(standing ? [K.chip(K.w("Standing", "ثابت"), "standing", "border-radius: 3px;")] : []), "display: flex; flex-wrap: wrap; align-items: center; gap: 6px;"),
+      K.S(meta, 12, { c: "#5A6779", x: "padding-inline-start: 24px;" })
+    ], "display: block; padding: 9px 12px;" + (last ? "" : " border-block-end: 1px solid #F0F3F7;"));
+    // st: sugg · work · credits · paused · failed · off · added
+    const agendaPanel = (K, ar, st, phone) => {
+      const w = K.w;
+      const tr = st === "paused" ? [K.paused()] : st === "off" ? [] : st === "work" ? [K.trig("", "work"), K.Bt(w("Cancel", "إلغاء"), "text", "padding: 4px 6px;")] : [K.trig(st === "sugg" ? w("Suggest again", "اقتراح مرة أخرى") : w("Suggest agenda items", "اقتراح بنود"))];
+      const segs = [K.RW([K.RW([K.S(w("Agenda", "الأجندة"), 13.5, { w: 600, inl: 1 }), K.chip(ar ? iso(st === "added" ? "4" : "2") : (st === "added" ? "4" : "2"), "muted", "border-radius: 4px;")], "display: flex; align-items: center; gap: 8px;"), K.RW(tr, "display: flex; flex-wrap: wrap; align-items: center; gap: 6px;")], mHeadRow)];
+      if (!phone || st === "sugg") segs.push(K.RW([K.RW([K.S(w("Open actions from the last meeting", "الإجراءات المفتوحة من الاجتماع السابق"), 13, { w: 600, inl: 1 }), K.S(ar ? iso("24 Sep 2026") + " · " + iso("3") + " غير منجزة · الحالة من كل مهمة" : "24 Sep 2026 · 3 not done · status read from each task", 11.5, { c: "#5A6779", inl: 1 })], "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px;")]
+        .concat(OPEN_SEP(ar).map(o => K.RW([K.L(o[0], 13, { w: 500 }), K.RW([K.S(o[1] + " · ", 11.5, { c: "#5A6779", inl: 1 }), K.S(o[2], 11.5, { w: o[3] === "warn" ? 600 : 400, c: o[3] === "warn" ? "#B54708" : "#4A5568", inl: 1 })], "display: block;")], "display: block; padding: 6px 0; border-block-end: 1px solid #F0F3F7;")))
+        .concat([K.S(w("A fixed first section: it can't be moved or removed. Status comes from the task and can't be changed here.", "قسم أول ثابت: لا يمكن نقله أو حذفه. الحالة من المهمة ولا تُغيَّر هنا."), 11.5, { c: "#5A6779", x: "margin-block-start: 6px;" })]), "display: block; padding: 10px 12px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;"));
+      const items = st === "added"
+        ? [["1", w("Minutes of the previous meeting", "محضر الاجتماع السابق"), w("Nora Al-Otaibi · Secretary · 10 min", "نورة العتيبي · أمينة السر · " + iso("10") + " دقائق"), 1],
+           ["2", w("Approve isolation policy IPC-04, revision 3", "اعتماد سياسة العزل IPC-04، المراجعة " + iso("3")), w("Nora Al-Otaibi · Secretary · 10 min", "نورة العتيبي · أمينة السر · " + iso("10") + " دقائق"), 0],
+           ["3", w("Sharps disposal audit in ICU: Omar Haddad's report", "تدقيق التخلص من الأدوات الحادة في العناية المركزة: تقرير عمر حداد"), w("Nora Al-Otaibi · Secretary · 10 min", "نورة العتيبي · أمينة السر · " + iso("10") + " دقائق"), 0],
+           ["4", w("Any other business", "ما يستجد من أعمال"), w("Dr. Fahad Al-Anazi · Chair · 5 min", "د. فهد العنزي · الرئيس · " + iso("5") + " دقائق"), 1]]
+        : [["1", w("Minutes of the previous meeting", "محضر الاجتماع السابق"), w("Nora Al-Otaibi · Secretary · 10 min", "نورة العتيبي · أمينة السر · " + iso("10") + " دقائق"), 1],
+           ["2", w("Any other business", "ما يستجد من أعمال"), w("Dr. Fahad Al-Anazi · Chair · 5 min", "د. فهد العنزي · الرئيس · " + iso("5") + " دقائق"), 1]];
+      if (!phone || st === "sugg") items.forEach((it, i) => segs.push(agItem(K, ar, it[0], it[1], it[2], it[3], false)));
+      // the result area, in flow at the end of the agenda, above “+ Add agenda item”
+      const area = [];
+      if (st === "work") area.push(K.working(w("Looking through the committee's open tasks and pending approvals…", "جارٍ البحث في المهام المفتوحة للجنة والاعتمادات المعلّقة…")));
+      if (st === "credits") area.push(K.refusal("credits", "1 Nov 2026"));
+      if (st === "failed") area.push(K.refusal("failed"));
+      if (st === "sugg") area.push(K.RW([K.tag(w("AI suggestions · tick the ones to add", "اقتراحات الذكاء الاصطناعي · حدّد ما تريد إضافته"))]
+        .concat(AG_SUGG(ar).map(s => K.RW([
+          K.S(s[0] ? "✓" : "", 11, { w: 700, c: "#fff", lh: 14, x: "grid-row: span 3; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; margin-block-start: 2px; text-align: center; " + (s[0] ? "background: #2E6FA3; border: 1px solid #1F5480;" : "background: #fff; border: 1px solid #8A94A6;") }),
+          K.S(s[1], 13, { w: 600 }), K.S(s[2], 12.5, {}), K.L(s[3], 11.5, { w: 500 })
+        ], "display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 9px; padding: 7px 0; border-block-end: 1px solid #E2E8F0;")))
+        .concat([K.S(w("Not suggested again: the 3 open actions from 24 Sep, already in the agenda's first section.", "لم يُقترح مجددًا: الإجراءات المفتوحة الثلاثة من " + iso("24 Sep") + "، فهي في القسم الأول من الأجندة."), 12, { c: "#4A5568", x: "margin-block-start: 6px;" })]), "display: block; " + K.SBOX));
+      if (area.length) segs.push(K.RW(area, "display: block; padding: 10px 12px;"));
+      if (st === "sugg") segs.push(K.RW([K.S(w("2 of 3 ticked · added before Any other business", "حُدّد " + iso("2") + " من " + iso("3") + " · تُضاف قبل «ما يستجد من أعمال»"), 12, { c: "#4A5568", inl: 1 }), K.RW([K.Bt(w("Discard all", "تجاهل الكل"), "text"), K.Bt(w("Add 2 items", "إضافة بندين"), "primary")], "display: flex; gap: 8px;")], "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;"));
+      if (!phone || st !== "sugg") segs.push(K.RW([K.S(w("+ Add agenda item", "+ إضافة بند"), 12.5, { w: 600, c: "#2E6FA3", inl: 1, x: "border: 1px dashed #8A94A6; border-radius: 5px; padding: 5px 11px;" })], "display: block; padding: 9px 12px;"));
+      return segs;
+    };
+
+    // ── 2 and 3 · Draft minutes and action items · 24 Sep, Minutes Draft ──
+    const NOTES = (ar) => ar
+      ? "1 المحضر السابق لا تصحيحات\n2 نظافة اليدين 84%، 4B و6A أقل من 75. اتفقنا: إعادة تدقيق 4B و6A في نوفمبر، يقدّم مديرا الجناحين الخطط في اجتماع أكتوبر. تصويت 5-1-0\nهدى تحدّث أداة التدقيق قبل 15 سبتمبر · عمر يعيد التدقيق قبل 30 نوفمبر\n3 CLABSI ‏92%‏ في العناية المركزة، عدوى خطين في أغسطس رُوجعتا. الاستمرار شهريًا\n4 إنذار الغرفة 3 معطل، خالد يصلحه قبل 15 أكتوبر، الغرفة مغلقة · لينا ترسل بيانات زمن إنجاز المختبر"
+      : "1 prev minutes ok\n2 hh 84%, 4B 6A under 75. agreed re-audit 4B+6A nov, ward mgrs present plans oct mtg. vote 5-1-0\nhuda update audit tool by 15 sep · omar re-audit by 30 nov\n3 clabsi 92% icu, 2 line infections aug reviewed. continue monthly\n4 room 3 alarm faulty, khalid repair before 15 oct, room closed · lina to send lab turnaround data";
+    const mBox = (K, text, o) => { o = o || {}; const t = text || (o.ro ? "—" : ""); return K.S(t || K.w("Type here", "اكتب هنا"), 12.5, { c: t ? "#2D3748" : "#8A94A6", x: "box-sizing: border-box; min-height: " + (o.h || 34) + "px; border: 1px solid " + (o.ro ? "#E2E8F0" : "#8A94A6") + "; border-radius: 4px; background: " + (o.ro ? "#F4F7FA" : "#fff") + "; padding: 6px 9px;" }); };
+    const fieldsRow = (K, ar, disc, dec, o) => { o = o || {}; const lab = (t) => K.S(t, 11, { w: 700, c: "#5A6779", x: ar ? "" : "letter-spacing: 0.06em; text-transform: uppercase;" });
+      return o.phone ? K.RW([lab(K.w("Discussion", "النقاش")), mBox(K, disc, o), lab(K.w("Decision", "القرار")), mBox(K, dec, o)], "display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 3px; margin-block-start: 8px; padding-inline-start: 24px;")
+        : K.RW([lab(K.w("Discussion", "النقاش")), lab(K.w("Decision", "القرار")), mBox(K, disc, o), mBox(K, dec, o)], "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; row-gap: 3px; margin-block-start: 8px; padding-inline-start: 24px;"); };
+    const itemTitle = (K, ar, n, title, standing) => K.RW([K.S(ar ? iso(n) : n, 13, { w: 600, c: "#5A6779", inl: 1, x: "width: 18px;" }), K.S(title, 13.5, { w: 600, inl: 1 })].concat(standing ? [K.chip(K.w("Standing", "ثابت"), "standing", "border-radius: 3px;")] : []), "display: flex; flex-wrap: wrap; align-items: center; gap: 6px;");
+    const minSugg = (K, ar, o) => K.RW([K.tag(K.w("AI suggestion · check before using", "اقتراح من الذكاء الاصطناعي · راجعه قبل الاستخدام"))]
+      .concat([K.S(K.w("Discussion", "النقاش"), 11, { w: 700, c: "#5A6779", x: "margin-block-start: 6px;" + (ar ? "" : " letter-spacing: 0.06em; text-transform: uppercase;") }), K.S(o.disc, 13, {}), K.S(K.w("Decision", "القرار"), 11, { w: 700, c: "#5A6779", x: "margin-block-start: 6px;" + (ar ? "" : " letter-spacing: 0.06em; text-transform: uppercase;") }), K.S(o.dec, 13, {}), K.S(o.vote, 12, { w: o.voteErr ? 500 : 400, c: o.voteEmpty ? "#5A6779" : "#2D3748", x: "margin-block-start: 4px; font-variant-numeric: tabular-nums;" })])
+      .concat(o.voteErr ? [K.S(o.voteErr, 12, { w: 500, c: "#B42318" })] : [])
+      .concat(o.replaces ? [K.S(o.replaces, 12, { c: "#1F5480", x: "margin-block-start: 6px;" })] : [])
+      .concat([K.RW([K.Bt(K.w("Accept into minutes", "قبول في المحضر"), "primary"), K.Bt(K.w("Edit", "تعديل"), "secondary"), K.Bt(K.w("Discard", "تجاهل"), "text")], "display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px;")]),
+      "display: block; margin-block-start: 8px; margin-inline-start: 24px; " + K.SBOX);
+    const draftAct = (K, ar, what, owner, due) => K.RW([K.S("☐ " + what, 12.5, { w: 500, inl: 1 }), K.S(owner + " · " + K.w("Due ", "الاستحقاق ") + (ar ? iso(due) : due), 12, { c: "#4A5568", inl: 1 }), K.chip(K.w("Becomes a task when the minutes are approved", "تصبح مهمة عند اعتماد المحضر"), "draft", "border-radius: 3px; font-weight: 400;")], "display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-block-start: 6px; padding-inline-start: 24px;");
+    const actSugg = (K, ar, rows) => K.RW([K.tag(K.w("AI suggestions · action items · accept, edit or discard each", "اقتراحات الذكاء الاصطناعي · إجراءات · اقبل كلًّا منها أو عدّله أو تجاهله"))]
+      .concat(rows.map(r => K.RW([K.S(r.what, 13, { w: 600 }), K.S(r.meta, 12, { c: r.metaWarn ? "#B54708" : "#4A5568", w: r.metaWarn ? 500 : 400 })]
+        .concat(r.why ? [K.S(r.why, 12, { c: "#B54708", w: 500 })] : [])
+        .concat((r.noAccept ? [] : [K.Bt(K.w("Accept", "قبول"), "primary", "padding: 3px 10px; margin-block-start: 6px; margin-inline-end: 6px;")]).concat([K.Bt(K.w("Edit", "تعديل"), "secondary", "padding: 3px 10px; margin-block-start: 6px; margin-inline-end: 6px;"), K.Bt(K.w("Discard", "تجاهل"), "text", "padding: 3px 6px; margin-block-start: 6px;")])),
+        "display: block; padding: 7px 0; border-block-start: 1px solid #E2E8F0;"))),
+      "display: block; margin-block-start: 8px; margin-inline-start: 24px; " + K.SBOX);
+    const ACTS2 = (K, ar) => [{ what: K.w("Update hand-hygiene audit tool", "تحديث أداة تدقيق نظافة اليدين"), meta: K.w("Dr. Huda Zahrani · Due —", "د. هدى الزهراني · الاستحقاق —"), why: K.w("The date in your notes, 15 Sep, has passed. Choose a due date.", "التاريخ في ملاحظاتك، " + iso("15 Sep") + "، قد مضى. اختر تاريخ استحقاق."), noAccept: 1 }];
+    const ACTS4 = (K, ar) => [
+      { what: K.w("Repair negative-pressure alarm, room 3", "إصلاح إنذار الضغط السلبي، الغرفة 3"), meta: K.w("Eng. Khalid Al-Shehri · Due 15 Oct 2026", "م. خالد الشهري · الاستحقاق " + iso("15 Oct 2026")) },
+      { what: K.w("Send lab turnaround data", "إرسال بيانات زمن إنجاز المختبر"), meta: K.w("Owner — · Due —", "المسؤول — · الاستحقاق —"), why: K.w("Dr. Lina Mansour is an outside guest, so isn't suggested as owner. Choose a person in the organisation.", "د. لينا منصور ضيفة من الخارج، فلا تُقترح مسؤولةً. اختر شخصًا في المنشأة."), noAccept: 1 }];
+    // st: sugg · work · credits · paused · failed · off · chair
+    const minutesPanel = (K, ar, st, phone) => {
+      const w = K.w, sec = st !== "chair";
+      const tr = st === "paused" ? [K.paused()] : st === "off" || !sec ? [] : st === "work" ? [K.trig("", "work"), K.Bt(w("Cancel", "إلغاء"), "text", "padding: 4px 6px;")] : [K.trig(st === "sugg" ? w("Draft again", "صياغة مرة أخرى") : w("Draft minutes", "صياغة المحضر"))];
+      const segs = [K.RW([K.RW([K.S(w("Agenda & minutes", "الأجندة والمحضر"), 13.5, { w: 600, inl: 1 }), K.chip(ar ? iso("5") : "5", "muted", "border-radius: 4px;")], "display: flex; align-items: center; gap: 8px;")]
+        .concat(st === "sugg" ? [K.S(w("✦ 3 items drafted · 3 action items undecided", "✦ صيغت " + iso("3") + " بنود · " + iso("3") + " إجراءات لم يُبتّ فيها"), 12, { w: 500, c: "#1F5480", inl: 1 })] : []), mHeadRow)];
+      if (sec) segs.push(K.RW([K.RW([K.S(w("Rough notes", "ملاحظات أولية"), 12.5, { w: 500, c: "#4A5568", inl: 1, x: "margin-inline-end: auto;" })].concat(tr), "display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-block-end: 4px;"),
+        K.S(NOTES(ar), 12, { lh: 18, x: "white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px;" + (phone ? " max-height: 120px; overflow: hidden;" : "") }),
+        K.S(w("Seen only by whoever writes the minutes. Paste or type; nothing here is in the minutes until you accept it.", "لا يراها إلا من يكتب المحضر. الصق أو اكتب؛ لا يدخل شيء منها المحضر حتى تقبله."), 11.5, { c: "#5A6779", x: "margin-block-start: 4px;" })]
+        .concat(st === "work" ? [K.RW([K.working(w("Drafting minutes for 5 agenda items from your notes…", "جارٍ صياغة محضر البنود الخمسة من ملاحظاتك…"))], "display: block; margin-block-start: 10px;")] : [])
+        .concat(st === "credits" ? [K.RW([K.refusal("credits", "1 Oct 2026")], "display: block; margin-block-start: 10px;")] : [])
+        .concat(st === "failed" ? [K.RW([K.refusal("failed")], "display: block; margin-block-start: 10px;")] : []),
+        "display: block; padding: 10px 12px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;"));
+      const S2 = st === "sugg";
+      const it = (n, title, standing, parts) => K.RW([itemTitle(K, ar, n, title, standing)].concat(parts), "display: block; padding: 10px 12px; border-block-end: 1px solid #F0F3F7;");
+      const ro = !sec;
+      if (!phone) segs.push(it("1", w("Minutes of the previous meeting", "محضر الاجتماع السابق"), 1, [fieldsRow(K, ar, w("Minutes of 27 Aug read; no corrections.", "قُرئ محضر " + iso("27 Aug") + "؛ لا تصحيحات."), w("Approved as a true record.", "اعتُمد بوصفه سجلًا صحيحًا."), { ro })]));
+      segs.push(it("2", w("Hand-hygiene compliance, Q3", "الامتثال لنظافة اليدين، الربع الثالث"), 0,
+        [fieldsRow(K, ar, w("Compliance rose to 84%.", "ارتفع الامتثال إلى " + iso("84%") + "."), "", { ro, phone })]
+        .concat(S2 ? [minSugg(K, ar, { disc: w("Compliance rose to 84% against a 90% target. Wards 4B and 6A are below 75%.", "ارتفع الامتثال إلى " + iso("84%") + " مقابل هدف " + iso("90%") + ". الجناحان " + iso("4B") + " و" + iso("6A") + " دون " + iso("75%") + "."), dec: w("Re-audit 4B and 6A in November. Ward managers present action plans at the October meeting.", "إعادة تدقيق " + iso("4B") + " و" + iso("6A") + " في نوفمبر. يقدّم مديرا الجناحين خطط العمل في اجتماع أكتوبر."), vote: w("Vote: 5 for · 1 against · 0 abstain · from your notes", "التصويت: " + iso("5") + " مع · " + iso("1") + " ضد · " + iso("0") + " امتناع · من ملاحظاتك"), replaces: w("Accepting replaces the discussion you typed.", "القبول يستبدل النقاش الذي كتبته.") })] : [])
+        .concat(S2 ? [draftAct(K, ar, w("Re-audit wards 4B and 6A", "إعادة تدقيق الجناحين " + iso("4B") + " و" + iso("6A")), w("Omar Haddad", "عمر حداد"), "30 Nov"), actSugg(K, ar, ACTS2(K, ar))] : [])));
+      if (!phone) {
+        segs.push(it("3", w("CLABSI bundle audit", "تدقيق حزمة CLABSI"), 0, [fieldsRow(K, ar, "", "", { ro })].concat(S2 ? [minSugg(K, ar, { disc: w("Bundle compliance 92% in ICU; two line infections in August, both reviewed.", "امتثال الحزمة " + iso("92%") + " في العناية المركزة؛ عدوى خطين في أغسطس، رُوجعت كلتاهما."), dec: w("Continue monthly audit; no change to the bundle.", "الاستمرار في التدقيق الشهري؛ لا تغيير في الحزمة."), vote: w("Vote: not in your notes · left empty", "التصويت: غير مذكور في ملاحظاتك · تُرك فارغًا"), voteEmpty: 1 })] : [])));
+        segs.push(it("4", w("Isolation room maintenance", "صيانة غرفة العزل"), 0, [fieldsRow(K, ar, "", "", { ro })].concat(S2 ? [minSugg(K, ar, { disc: w("Negative-pressure alarm faulty in room 3, Tower A.", "إنذار الضغط السلبي معطل في الغرفة 3، البرج A."), dec: w("Repair before 15 Oct; room closed until then.", "الإصلاح قبل " + iso("15 Oct") + "؛ تبقى الغرفة مغلقة حتى ذلك الحين."), vote: w("Vote: not in your notes · left empty", "التصويت: غير مذكور في ملاحظاتك · تُرك فارغًا"), voteEmpty: 1 }), actSugg(K, ar, ACTS4(K, ar))] : [])));
+        segs.push(it("5", w("Any other business", "ما يستجد من أعمال"), 1, [fieldsRow(K, ar, "", "", { ro })].concat(S2 ? [K.S(w("Nothing in your notes for this item.", "لا شيء في ملاحظاتك لهذا البند."), 12, { c: "#5A6779", x: "margin-block-start: 6px; padding-inline-start: 24px;" })] : [])));
+      }
+      return segs;
+    };
+    const ATT_SEP = (ar) => (ar ? [["د. فهد العنزي", "الرئيس", "P"], ["نورة العتيبي", "أمينة السر", "P"], ["د. هدى الزهراني", "عضو", "P"], ["عمر حداد", "عضو", "P"], ["د. سارة القحطاني", "عضو", "P"], ["د. يوسف بركات", "مستشار", "P"], ["طارق سليمان", "عضو", "A"], ["دانة شلبي", "عضو", "A"], ["حصة المطيري", "عضو", "X"]]
+      : [["Dr. Fahad Al-Anazi", "Chair", "P"], ["Nora Al-Otaibi", "Secretary", "P"], ["Dr. Huda Zahrani", "Member", "P"], ["Omar Haddad", "Member", "P"], ["Dr. Sara Al-Qahtani", "Member", "P"], ["Dr. Yousef Barakat", "Advisor", "P"], ["Tariq Suleiman", "Member", "A"], ["Dana Chalabi", "Member", "A"], ["Hessa Al-Mutairi", "Member", "X"]]);
+    const sideDraft = (K, ar, st) => {
+      const w = K.w, lab = ar ? { P: "حاضر", A: "معتذر", X: "غائب" } : { P: "Present", A: "Apologies", X: "Absent" };
+      const att = K.RW([K.RW([K.S(w("Attendance", "الحضور"), 13, { w: 600, inl: 1 })], mHeadRow),
+        K.RW([K.S(w("✓ Quorum met", "✓ اكتمل النصاب"), 13, { w: 600, c: "#067647", inl: 1 }), K.S(ar ? " · حضر " + iso("6") + " من " + iso("9") + "، والنصاب " + iso("5") : " · 6 of 9 present, quorum 5", 12.5, { inl: 1 })], "display: block; padding: 8px 12px; border-block-end: 1px solid #E2E8F0; background: #ECFDF3;")]
+        .concat(ATT_SEP(ar).map(a => K.RW([K.RW([K.S(a[0], 12.5, { w: 500 }), K.S(a[1], 11, { c: "#5A6779" })], "display: block; flex: 1 1 auto; min-width: 0;"), K.S(lab[a[2]], 11.5, { w: a[2] === "X" ? 600 : 500, c: a[2] === "X" ? "#B54708" : "#1F5480", inl: 1, x: "flex: none; padding: 2px 8px; border: 1px solid #8A94A6; border-radius: 4px; background: #E4EEF6;" })], "display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-block-end: 1px solid #F0F3F7;")))
+        .concat([K.S(w("Recorded by the Secretary. AI never fills or changes attendance, the quorum line or “Taken without quorum”.", "تسجّله أمينة السر. لا يملأ الذكاء الاصطناعي الحضور ولا يغيّره، ولا سطر النصاب ولا «اتُّخذ دون نصاب»."), 11.5, { c: "#5A6779", x: "padding: 7px 12px;" })]), "display: block; " + mCard);
+      const acts = K.RW([K.RW([K.RW([K.S(w("Action items · drafts", "الإجراءات · مسودات"), 13, { w: 600, inl: 1 }), K.chip(ar ? iso("1") : "1", "muted", "border-radius: 4px;")], "display: flex; align-items: center; gap: 7px;")], mHeadRow),
+        K.S(w("No task exists yet and owners aren't told. Each becomes a task about this meeting when the minutes are approved.", "لا توجد مهمة بعد ولا يُبلَّغ المسؤولون. يصبح كل إجراء مهمة عن هذا الاجتماع عند اعتماد المحضر."), 12, { c: "#4A5568", x: "padding: 7px 12px; background: #FBFCFD; border-block-end: 1px solid #F0F3F7;" }),
+        K.RW([K.S(w("Re-audit wards 4B and 6A", "إعادة تدقيق الجناحين " + iso("4B") + " و" + iso("6A")), 13, { w: 500 }), K.S(w("Omar Haddad · draft · Due 30 Nov", "عمر حداد · مسودة · الاستحقاق " + iso("30 Nov")), 11.5, { c: "#5A6779" }), K.S(w("From item 2", "من البند " + iso("2")), 11.5, { c: "#5A6779" })], "display: block; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;")]
+        .concat(st === "sugg" ? [K.RW([K.S(w("✦ 3 AI suggestions undecided · items 2 and 4", "✦ " + iso("3") + " اقتراحات لم يُبتّ فيها · البندان " + iso("2") + " و" + iso("4")), 12, { w: 500, c: "#1F5480" }), K.S(w("Not action items until accepted.", "ليست إجراءات حتى تُقبل."), 11.5, { c: "#5A6779" })], "display: block; padding: 8px 12px; border-inline-start: 3px dashed #2E6FA3; background: #F7FAFD;")] : []), "display: block; " + mCard);
+      const files = K.RW([K.RW([K.S(w("Attachments", "المرفقات"), 13, { w: 600, inl: 1 })], mHeadRow), K.S(w("Unchanged, as in Meeting Screens.", "دون تغيير، كما في شاشات الاجتماعات."), 12, { c: "#5A6779", x: "padding: 8px 12px;" })], "display: block; " + mCard);
+      return [att, acts, files];
+    };
+
+    // ── 4 · Summary for absent members · 24 Sep, Minutes Approved ──
+    const SUMM = (ar) => ar
+      ? "اعتمدت اللجنة محضر " + iso("27 Aug") + ". ارتفع الامتثال لنظافة اليدين إلى " + iso("84%") + " مقابل هدف " + iso("90%") + "؛ ويُعاد تدقيق الجناحين " + iso("4B") + " و" + iso("6A") + " في نوفمبر لأنهما دون " + iso("75%") + "، ويقدّم مديرا الجناحين خطط العمل في اجتماع أكتوبر. بلغ امتثال حزمة CLABSI في العناية المركزة " + iso("92%") + " ويستمر التدقيق الشهري. يُصلَح إنذار الضغط السلبي في غرفة العزل 3 قبل " + iso("15 Oct") + "، وتبقى الغرفة مغلقة حتى ذلك الحين."
+      : "The committee approved the 27 Aug minutes. Hand-hygiene compliance rose to 84% against a 90% target; wards 4B and 6A, below 75%, are re-audited in November, and their ward managers present action plans at the October meeting. ICU line-bundle compliance was 92%, and the monthly audit continues. The negative-pressure alarm in isolation room 3 is repaired by 15 Oct; the room stays closed until then.";
+    // st: sugg · work · credits · paused · failed · off
+    const summaryPanel = (K, ar, st) => {
+      const w = K.w;
+      if (st === "off" || st === "paused") return [];
+      const head = K.RW([K.S(w("Summary for absent members", "ملخص للأعضاء الغائبين"), 13.5, { w: 600, inl: 1 })], mHeadRow);
+      const body = [];
+      if (st === "work") body.push(K.working(w("Drafting a summary of the approved minutes…", "جارٍ صياغة ملخص للمحضر المعتمد…")));
+      if (st === "credits") body.push(K.refusal("credits", "1 Nov 2026"));
+      if (st === "failed") body.push(K.refusal("failed"));
+      if (st === "sugg") body.push(K.RW([K.tag(w("AI suggestion · review before sending", "اقتراح من الذكاء الاصطناعي · راجعه قبل الإرسال")),
+        K.RW([K.S(w("To · 3 members recorded absent", "إلى · " + iso("3") + " أعضاء سُجّلوا غائبين"), 13, { w: 600 }), K.S(w("Tariq Suleiman (Apologies) · Dana Chalabi (Apologies) · Hessa Al-Mutairi (Absent)", "طارق سليمان (معتذر) · دانة شلبي (معتذر) · حصة المطيري (غائب)"), 12.5, {}), K.S(w("From attendance. Guests aren't included: Eng. Khalid Al-Shehri, and Dr. Lina Mansour, an outside guest, who gets no minutes.", "من سجل الحضور. لا يشمل الضيوف: م. خالد الشهري، ود. لينا منصور، ضيفة من الخارج لا يصلها المحضر."), 12, { c: "#4A5568" })], "display: block; padding: 7px 0; border-block-end: 1px solid #E2E8F0;"),
+        K.RW([K.S(w("What they'll receive", "ما يصلهم"), 13, { w: 600 }), K.S(w("A notification and email: “What the IPC meeting on 24 Sep decided”, this summary, and a link to the approved minutes. No replies.", "إشعار وبريد إلكتروني: «ما قرره اجتماع مكافحة العدوى في " + iso("24 Sep") + "»، وهذا الملخص، ورابط إلى المحضر المعتمد. دون ردود."), 12.5, {})], "display: block; padding: 7px 0; border-block-end: 1px solid #E2E8F0;"),
+        K.RW([K.S(w("Summary", "الملخص"), 13, { w: 600 }), K.S(SUMM(ar), 13, {})], "display: block; padding: 7px 0;")], "display: block; " + K.SBOX));
+      const foot = st === "sugg" ? [K.RW([K.S(w("Sent from Nora Al-Otaibi (Secretary), in the Secretary's language; recorded on the meeting", "تُرسل من نورة العتيبي (أمينة السر) بلغة أمينة السر؛ وتُسجَّل على الاجتماع"), 12, { c: "#4A5568", inl: 1 }), K.RW([K.Bt(w("Discard", "تجاهل"), "text"), K.Bt(w("Edit", "تعديل"), "secondary"), K.Bt(w("Send to 3 members…", "إرسال إلى " + iso("3") + " أعضاء…"), "primary")], "display: flex; flex-wrap: wrap; gap: 8px;")], "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;")] : [];
+      return [K.RW([head].concat(body.map(x => Object.assign({}, x, { style: x.style + " margin: 10px 12px;" }))).concat(foot), "display: block; " + mCard)];
+    };
+    const lockedLine = (K, ar) => K.RW([K.S(K.w("🔒 Minutes approved and locked", "🔒 المحضر معتمد ومقفل"), 13, { w: 600, inl: 1 }), K.S(K.w("Approved by Dr. Fahad Al-Anazi (Chair) on 6 Oct 2026, after review by the 6 present members.", "اعتمده د. فهد العنزي (الرئيس) في " + iso("6 Oct 2026") + "، بعد مراجعة الأعضاء الحاضرين الستة."), 12.5, { c: "#4A5568", inl: 1 })], "display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 14px; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;");
+
+    // ── page frames ──
+    const mPN = (o) => ({ cap: o.cap, note: o.note || null, dir: o.ar ? "rtl" : "ltr", outer: "flex: 0 1 " + o.w + "px; min-width: 0;",
+      capStyle: o.ar ? "font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" + AF : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+      frame: "width: 100%; max-width: " + o.w + "px; box-sizing: border-box; background: " + (o.bg || "#F4F7FA") + "; border: 1px solid #CBD5E0; border-radius: " + (o.r || 8) + "px; overflow: hidden;" + (o.ar ? " " + AF : "") + (o.frame ? " " + o.frame : ""), blocks: o.blocks });
+    const btnRow = (K, list) => list.map(b => K.Bt(b[0], b[1]));
+    const pageAgenda = (ar, st, viewer) => { const K = ar ? mA : mE, w = K.w; const sec = viewer !== "guest";
+      return [mHead(K, ar, { oct: 1, idx: 0, actions: sec ? btnRow(K, [[w("Reschedule…", "إعادة الجدولة…"), "secondary"], [w("Cancel Meeting…", "إلغاء الاجتماع…"), "secondary"], [w("Issue Agenda…", "إصدار الأجندة…"), "primary"]]) : [] }),
+        K.R([K.C(agendaPanel(K, ar, sec ? st : "off"), mCard), K.C(sidePlanned(K, ar), "display: flex; flex-direction: column; gap: 12px;")], "display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 12px; padding: 0 16px 16px; align-items: start;")]; };
+    const sidePlanned = (K, ar) => { const w = K.w; return [
+      K.RW([K.RW([K.S(w("Attendance", "الحضور"), 13, { w: 600, inl: 1 })], mHeadRow), K.S(w("Recorded from the meeting's start. 9 members invited · quorum 5.", "يُسجَّل من بدء الاجتماع. دُعي " + iso("9") + " أعضاء · النصاب " + iso("5") + "."), 12.5, { c: "#5A6779", x: "padding: 8px 12px;" })], "display: block; " + mCard),
+      K.RW([K.RW([K.S(w("Action items", "الإجراءات"), 13, { w: 600, inl: 1 })], mHeadRow), K.S(w("None yet. They're added under agenda items while the minutes are written, and become tasks when the minutes are approved.", "لا توجد بعد. تُضاف تحت بنود الأجندة أثناء كتابة المحضر، وتصبح مهام عند اعتماد المحضر."), 12.5, { c: "#4A5568", x: "padding: 9px 12px;" })], "display: block; " + mCard)]; };
+    const pageMinutes = (ar, st) => { const K = ar ? mA : mE, w = K.w, chair = st === "chair";
+      return [mHead(K, ar, { idx: 2, actions: chair ? [] : btnRow(K, [[w("Distribute Minutes…", "توزيع المحضر…"), "primary"]]), why: chair ? null : w("Attendance recorded for all 9", "سُجّل حضور الجميع (" + iso("9") + ")") }),
+        K.R([K.C(minutesPanel(K, ar, st), mCard), K.C(sideDraft(K, ar, chair ? "off" : st), "display: flex; flex-direction: column; gap: 12px;")], "display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 12px; padding: 0 16px 16px; align-items: start;")]; };
+    const sumActs = (K, ar, st, phone) => { const w = K.w;
+      return (st === "work" ? [K.trig("", "work"), K.Bt(w("Cancel", "إلغاء"), "text", "padding: 4px 6px;")] : st === "paused" ? [K.paused()] : st === "off" ? [] : [K.trig(st === "sugg" ? w("Draft again", "صياغة مرة أخرى") : w("Draft summary", "صياغة ملخص"))]).concat(phone ? [] : [K.Bt(w("Print minutes", "طباعة المحضر"), "secondary")]); };
+    const pageApproved = (ar, st, viewer) => { const K = ar ? mA : mE, w = K.w, sec = viewer !== "absent";
+      const acts = sec ? sumActs(K, ar, st) : [K.Bt(w("Print minutes", "طباعة المحضر"), "secondary")];
+      return [mHead(K, ar, { idx: 4, actions: acts }), K.P([lockedLine(K, ar)].concat(sec ? summaryPanel(K, ar, st) : []), "display: flex; flex-direction: column; gap: 12px; padding: 0 16px 12px;"),
+        K.R([K.C([K.RW([K.RW([K.S(w("Agenda & minutes", "الأجندة والمحضر"), 13.5, { w: 600, inl: 1 })], mHeadRow), K.S(w("The approved minutes, locked, as in Meeting Screens.", "المحضر المعتمد، مقفلًا، كما في شاشات الاجتماعات."), 12.5, { c: "#5A6779", x: "padding: 14px 12px;" })], "display: block;")], mCard), K.C([K.RW([K.RW([K.S(w("Attendance", "الحضور"), 13, { w: 600, inl: 1 })], mHeadRow), K.S(w("6 present · 2 apologies · 1 absent", "حضر " + iso("6") + " · اعتذر " + iso("2") + " · غاب " + iso("1")), 12.5, { x: "padding: 8px 12px;" })], "display: block; " + mCard)], "")], "display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 12px; padding: 0 16px 16px; align-items: start;")]; };
+    const PG = (cap, ar, blocks, note) => mPN({ cap, ar, w: 1130, blocks, note });
+    const PHN = (cap, ar, blocks, note) => mPN({ cap, ar, w: 390, r: 16, blocks, note });
+    const OUT = (cap, ar, blocks, note) => mPN({ cap, ar, w: 660, bg: "#fff", frame: "border: 0;", blocks, note });
+    const SIX = ["work", "credits", "paused", "failed", "off"];
+    const SIXCAP = (ar) => ({ work: ar ? "جارٍ العمل · العربية" : "Working", credits: ar ? "نفد الرصيد · العربية" : "Refused · credits used up", paused: ar ? "متوقف مؤقتًا · العربية" : "Paused by AccreditMe · trigger replaced", failed: ar ? "تعذّر الرد · العربية" : "Failed · Try again", off: ar ? "الذكاء الاصطناعي غير مفعّل · العربية" : "AI not switched on · trigger hidden" });
+    const sixFor = (fn) => [].concat(...SIX.map(s => [OUT(SIXCAP(false)[s], false, fn(false, s)), OUT(SIXCAP(true)[s], true, fn(true, s))]));
+
+    const mtSecs = [
+      { id: "a6-1", n: "6.1", title: "Suggest agenda items · Planned · 29 Oct 2026", sub: "The next IPC meeting, Planned, seen by Nora Al-Otaibi (Secretary), who works this stage. The trigger sits on the Agenda panel's header; suggestions open in flow at the end of the agenda, above “+ Add agenda item”.",
+        groups: [
+          { title: "The suggestion, on the page", panels: [PG("Desktop 1130 · English · Secretary", false, pageAgenda(false, "sugg"), "The fixed first section lists the 24 Sep meeting's three open actions, so none of them is suggested; the line under the suggestions says so. Each suggestion gives its reason and links its source. Nothing is added until “Add 2 items”."), PG("Desktop 1130 · العربية", true, pageAgenda(true, "sugg"))] },
+          { title: "Added: ordinary agenda items", panels: [PG("After “Add 2 items” · English", false, pageAgenda(false, "added"), "Items 2 and 3 are ordinary agenda items with no AI marks, placed before Any other business in tick order (M4). The history records “suggested with AI, added by Nora Al-Otaibi”.")] },
+          { title: "The six request outcomes", panels: sixFor((ar, s) => [(ar ? mA : mE).P(agendaPanel(ar ? mA : mE, ar, s, true), mCard)]) },
+          { title: "Phone 390", panels: [PHN("Secretary · English", false, [mPhHead(mE, false, { oct: 1, idx: 0, actions: btnRow(mE, [["Issue Agenda…", "primary"], ["Reschedule…", "secondary"], ["Cancel Meeting…", "secondary"]]) }), mPhSide(mE, false), mE.P(agendaPanel(mE, false, "sugg", true), "margin: 0 12px 12px; " + mCard)]), PHN("العربية", true, [mPhHead(mA, true, { oct: 1, idx: 0, actions: btnRow(mA, [["إصدار الأجندة…", "primary"], ["إعادة الجدولة…", "secondary"], ["إلغاء الاجتماع…", "secondary"]]) }), mPhSide(mA, true), mA.P(agendaPanel(mA, true, "sugg", true), "margin: 0 12px 12px; " + mCard)])] }
+        ] },
+      { id: "a6-2", n: "6.2", title: "Draft minutes, and action items with them · Minutes Draft · 24 Sep 2026", sub: "Seen by Nora Al-Otaibi (Secretary). The minutes are per agenda item. The Secretary pastes or types rough notes; “Draft minutes” suggests each item's discussion and decision, and its action items, inside that item. Each is accepted, edited or discarded on its own.",
+        groups: [
+          { title: "The suggestion, on the page", panels: [PG("Desktop 1130 · English · Secretary", false, pageMinutes(false, "sugg"), "Item 2: the discussion already typed stays until Accept, which says it replaces it. The vote is filled because the notes state 5-1-0; items 3 and 4 leave it empty. One action item is already accepted as a draft; three suggestions wait, counted in the panel header and the Action items card."), PG("Desktop 1130 · العربية", true, pageMinutes(true, "sugg"))] },
+          { title: "The six request outcomes", panels: sixFor((ar, s) => [(ar ? mA : mE).P(minutesPanel(ar ? mA : mE, ar, s, true).slice(0, 2), mCard)]) },
+          { title: "Phone 390", panels: [PHN("Secretary · English", false, [mPhHead(mE, false, { idx: 2, actions: btnRow(mE, [["Distribute Minutes…", "primary"]]) }), mPhSide(mE, false), mE.P(minutesPanel(mE, false, "sugg", true), "margin: 0 12px 12px; " + mCard)], "Item 2 only; the other items follow it. The two fields stack."), PHN("العربية", true, [mPhHead(mA, true, { idx: 2, actions: btnRow(mA, [["توزيع المحضر…", "primary"]]) }), mPhSide(mA, true), mA.P(minutesPanel(mA, true, "sugg", true), "margin: 0 12px 12px; " + mCard)])] }
+        ] },
+      { id: "a6-3", n: "6.3", title: "Action items drafted with the minutes", sub: "Inside each agenda item, under its minutes. Round 3's three fields only: what, owner (a person in the organisation), due date; no priority. Accepting one adds it to its item as a draft action item. No task is created here: Approve Minutes creates them, and its confirm already counts them (“… · Creates 3 tasks”). The “Create 2 tasks?” confirm and the “Create action items” footer are removed.",
+        groups: [
+          { title: "At component size, both languages", panels: [
+            OUT("Item 2 · one accepted, one waiting · English", false, [mE.P([itemTitle(mE, false, "2", "Hand-hygiene compliance, Q3", 0), draftAct(mE, false, "Re-audit wards 4B and 6A", "Omar Haddad", "30 Nov"), actSugg(mE, false, ACTS2(mE, false))], "padding: 10px 12px; " + mCard)], "The date in the notes has passed, so Due is left empty and Accept is absent: Edit opens round 3's inline row with Due to choose. A due date is never in the past."),
+            OUT("البند ٢ · العربية", true, [mA.P([itemTitle(mA, true, "2", "الامتثال لنظافة اليدين، الربع الثالث", 0), draftAct(mA, true, "إعادة تدقيق الجناحين " + iso("4B") + " و" + iso("6A"), "عمر حداد", "30 Nov"), actSugg(mA, true, ACTS2(mA, true))], "padding: 10px 12px; " + mCard)]),
+            OUT("Item 4 · a guest as owner · English", false, [mE.P([itemTitle(mE, false, "4", "Isolation room maintenance", 0), actSugg(mE, false, ACTS4(mE, false))], "padding: 10px 12px; " + mCard)], "Eng. Khalid Al-Shehri is staff, invited as a guest, so can own an action item. Dr. Lina Mansour is an outside guest: the suggestion keeps the action and leaves Owner empty."),
+            OUT("البند ٤ · العربية", true, [mA.P([itemTitle(mA, true, "4", "صيانة غرفة العزل", 0), actSugg(mA, true, ACTS4(mA, true))], "padding: 10px 12px; " + mCard)]),
+            OUT("After Accept · item 4 · English", false, [mE.P([itemTitle(mE, false, "4", "Isolation room maintenance", 0), draftAct(mE, false, "Repair negative-pressure alarm, room 3", "Eng. Khalid Al-Shehri", "15 Oct"), mE.S("+ Raise action item", 12, { w: 600, c: "#2E6FA3", x: "margin-block-start: 6px; padding-inline-start: 24px;" })], "padding: 10px 12px; " + mCard)], "An ordinary draft action item: the dashed chip, no AI mark, no task. It shows in the Action items card as a draft, “From item 4”.")
+          ] }
+        ] },
+      { id: "a6-4", n: "6.4", title: "Votes, quorum and attendance stay the Secretary's", sub: "Attendance is never AI. The quorum line and “Taken without quorum” come from attendance. Votes are filled only when the notes state the counts; never guessed.",
+        groups: [{ title: null, panels: [
+          OUT("Notes state 5-2-0, with 6 present · English", false, [mE.P([itemTitle(mE, false, "2", "Hand-hygiene compliance, Q3", 0), minSugg(mE, false, { disc: "Compliance rose to 84% against a 90% target. Wards 4B and 6A are below 75%.", dec: "Re-audit 4B and 6A in November. Ward managers present action plans at the October meeting.", vote: "Vote: 5 for · 2 against · 0 abstain · from your notes", voteErr: "These add up to 7, more than the 6 members present." })], "padding: 10px 12px; " + mCard)], "The counts are copied as stated and flagged with Meeting Screens' own error; AI never changes a number to make it fit (M6)."),
+          OUT("العربية", true, [mA.P([itemTitle(mA, true, "2", "الامتثال لنظافة اليدين، الربع الثالث", 0), minSugg(mA, true, { disc: "ارتفع الامتثال إلى " + iso("84%") + " مقابل هدف " + iso("90%") + ".", dec: "إعادة تدقيق " + iso("4B") + " و" + iso("6A") + " في نوفمبر.", vote: "التصويت: " + iso("5") + " مع · " + iso("2") + " ضد · " + iso("0") + " امتناع · من ملاحظاتك", voteErr: "المجموع " + iso("7") + "، وهو أكثر من الأعضاء الحاضرين " + iso("6") + "." })], "padding: 10px 12px; " + mCard)]),
+          OUT("Without quorum · Antimicrobial Stewardship, 30 Sep · English", false, [mE.P([mE.S("✕ Quorum not met · 4 of 7 present, quorum 5", 13, { w: 600, c: "#B42318", x: "padding: 8px 10px; margin: -10px -12px 8px; background: #FEF3F2; border-block-end: 1px solid #FECDCA;" }), itemTitle(mE, false, "2", "Antibiotic use, August", 0), mE.chip("Taken without quorum", "danger", "margin: 6px 0 0 24px;"), minSugg(mE, false, { disc: "Carbapenem use rose in August, mostly in the ICU.", dec: "Restrict carbapenems to microbiology approval from October.", vote: "Vote: 3 for · 1 against · 0 abstain · from your notes" })], "padding: 10px 12px; " + mCard)], "The mark sits on the item, outside the suggestion, because it comes from attendance. Accepting doesn't add or remove it."),
+          OUT("العربية", true, [mA.P([mA.S("✕ لم يكتمل النصاب · حضر " + iso("4") + " من " + iso("7") + "، والنصاب " + iso("5"), 13, { w: 600, c: "#B42318", x: "padding: 8px 10px; margin: -10px -12px 8px; background: #FEF3F2; border-block-end: 1px solid #FECDCA;" }), itemTitle(mA, true, "2", "استهلاك المضادات الحيوية، أغسطس", 0), mA.chip("اتُّخذ دون نصاب", "danger", "margin-block-start: 6px; margin-inline-start: 24px;"), minSugg(mA, true, { disc: "ارتفع استهلاك الكاربابينيمات في أغسطس، معظمه في العناية المركزة.", dec: "قصر الكاربابينيمات على موافقة الأحياء الدقيقة من أكتوبر.", vote: "التصويت: " + iso("3") + " مع · " + iso("1") + " ضد · " + iso("0") + " امتناع · من ملاحظاتك" })], "padding: 10px 12px; " + mCard)])
+        ] }] },
+      { id: "a6-5", n: "6.5", title: "Summary for absent members · Minutes Approved · 24 Sep 2026", sub: "As accepted: the Secretary reviews it, then sends it to the members recorded absent, in the Secretary's language, with no replies. The trigger now sits beside “Print minutes” in the page header; the panel opens under the locked line.",
+        groups: [
+          { title: "The suggestion, on the page", panels: [PG("Desktop 1130 · English · Secretary", false, pageApproved(false, "sugg"), "Recipients are the names attendance recorded as Apologies or Absent. Guests never receive it; the outside guest gets no minutes at all."), PG("Desktop 1130 · العربية", true, pageApproved(true, "sugg"))] },
+          { title: "The six request outcomes", panels: sixFor((ar, s) => { const K = ar ? mA : mE; return [K.P([K.RW([K.S(K.w("Page header", "رأس الصفحة"), 12, { c: "#5A6779", inl: 1, x: "margin-inline-end: auto;" })].concat(sumActs(K, ar, s)), "display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 8px;")].concat(summaryPanel(K, ar, s)), "display: flex; flex-direction: column; gap: 10px;")]; }) },
+          { title: "Send · Confirm 420", panels: [sendConfirm(false), sendConfirm(true)] },
+          { title: "Phone 390", panels: [PHN("Secretary · English", false, [mPhHead(mE, false, { idx: 4, actions: sumActs(mE, false, "sugg", true) }), mE.P(summaryPanel(mE, false, "sugg"), "padding: 12px;")], "Print minutes isn't offered on a phone (Meeting Screens 14), so the AI trigger is the header's only action; after a result it reads “Draft again”."), PHN("العربية", true, [mPhHead(mA, true, { idx: 4, actions: sumActs(mA, true, "sugg", true) }), mA.P(summaryPanel(mA, true, "sugg"), "padding: 12px;")])] }
+        ] },
+      { id: "a6-6", n: "6.6", title: "Who is looking", sub: "Only the Secretary, who works Planned and Minutes Draft, sees triggers and AI panels. The Chair, members, guests and absent members see none until the content is accepted; then it is ordinary minutes.",
+        groups: [{ title: null, panels: [
+          PG("Minutes Draft · seen by the Chair · English", false, pageMinutes(false, "chair"), "No Rough notes, no trigger, no suggestions, no undecided count: only what the Secretary has accepted or typed, read-only. The same for members during Minutes Review."),
+          PG("Minutes Draft · seen by the Chair · العربية", true, pageMinutes(true, "chair")),
+          mPN({ cap: "Minutes Approved · seen by an absent member · English", w: 1130, blocks: pageApproved(false, "off", "absent"), note: "Print minutes only. Tariq Suleiman receives the summary as a notification and email once the Secretary sends it; the page itself has no AI." }),
+          mPN({ cap: "Minutes Approved · seen by an absent member · العربية", ar: true, w: 1130, blocks: pageApproved(true, "off", "absent") })
+        ] }] }
     ];
-    const C = (ar) => K(ar);
-    const confirms = [
-      E.make({ w: 420, cap: "Create action items · Confirm 420", title: "Create 2 tasks?", ctx: "From the IPC minutes · 24 Sep 2026", items: [], buttons: [["Not yet", "text"], ["Create 2 tasks", "primary"]], measure: "" }),
-      E.make({ w: 420, cap: "Send summary · Confirm 420", title: "Send the summary to 3 members?", ctx: "Infection Prevention & Control · 24 Sep 2026", items: [], buttons: [["Not yet", "text"], ["Send", "primary"]], measure: "" }),
-      A.make({ w: 420, cap: "إنشاء المهام · العربية", title: "إنشاء مهمتين؟", ctx: "من محضر مكافحة العدوى · " + iso("24 Sep 2026"), items: [], buttons: [["ليس الآن", "text"], ["إنشاء مهمتين", "primary"]], measure: "" })
+    function sendConfirm(ar) { const K = ar ? mA : mE, w = K.w;
+      return mPN({ cap: ar ? "إرسال الملخص · العربية" : "Send summary · Confirm 420", ar, w: 420, bg: "#fff", frame: "box-shadow: 0 12px 28px rgba(16,24,40,0.14);", note: ar ? "Measured 103 of 420: sentence 48 (2 × 24) + 12 + pair 43. The design-system constants give 104." : "Measured 90 of 420: sentence 42 (2 × 21) + 12 + pair 36. The design-system constants (pair 40) give 94.", blocks: [
+        K.R([K.C([K.S(w("Send the summary to 3 members?", "إرسال الملخص إلى " + iso("3") + " أعضاء؟"), 16, { w: 600 }), K.S(w("Infection Prevention & Control · 24 Sep 2026", "مكافحة العدوى · " + iso("24 Sep 2026")), 12, { c: "#5A6779" })], "flex: 1 1 auto;"), K.C([K.S("✕", 13, { c: "#5A6779" })])], "display: flex; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;"),
+        K.P([K.S(w("Tariq Suleiman, Dana Chalabi and Hessa Al-Mutairi get the summary and a link to the approved minutes.", "يتلقى طارق سليمان ودانة شلبي وحصة المطيري الملخص ورابطًا إلى المحضر المعتمد."), 14, { lh: ar ? 24 : 21 }),
+          K.RW([K.S(w("Recipients", "المستلمون"), 12, { w: 500, c: "#5A6779" }), K.S(w("Sent as", "تُرسل بوصفها"), 12, { w: 500, c: "#5A6779" }), K.S(w("3 absent members", iso("3") + " أعضاء غائبين"), 13, { w: 500 }), K.S(w("Notification and email", "إشعار وبريد إلكتروني"), 13, { w: 500 })], "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; margin-block-start: 12px;")], "padding: 16px 20px;"),
+        K.R([K.C([], "flex: 1 1 auto;"), K.C([K.RW([K.Bt(w("Not yet", "ليس الآن"), "text"), K.Bt(w("Send", "إرسال"), "primary")], "display: flex; gap: 8px;")])], "display: flex; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;")] }); }
+
+    const mtQs = [
+      { n: "M1", q: "Is Suggest agenda items also offered in Agenda Issued?", why: "Editing an issued agenda re-notifies members, so every added item sends a notice.", opts: ["Planned only (drawn): no extra notices and one clear moment for it; costs late items, which the Secretary adds by hand.", "Also Agenda Issued: catches tasks that become due after issue; costs a re-notification to every invitee per added batch, and more AI requests."], rec: "Planned only. If it's offered in Agenda Issued, “Add 2 items” must say it notifies the invitees." },
+      { n: "M2", q: "Does an undecided AI action-item suggestion hold Distribute Minutes?", why: "Drawn as a count only: “3 AI suggestions undecided”, in the minutes header and the Action items card.", opts: ["Holds: Distribute Minutes is disabled with “3 AI suggestions undecided” under “Why?”. Protects actions written in the notes; costs one more blocker before review.", "Dropped on distribution: nothing waits; costs an action the Secretary noted but never decided on, lost without a trace.", "A third way: Distribute Minutes' confirm says “3 AI suggestions undecided will be discarded”. One more line in that confirm (+21 EN, +24 AR), no blocker."], rec: "The third: warn in the confirm, then discard. It never blocks the meeting and never drops silently." },
+      { n: "M3", q: "Who can see the rough notes, and how long are they kept?", why: "Drawn visible only to whoever writes the minutes, with the line saying so.", opts: ["Writer only, deleted at Distribute Minutes: nothing unreviewed outlives the draft; costs no way to check the AI against the notes later.", "Kept on the meeting for the Secretary and Chair: an audit trail; costs storing unreviewed text about people."], rec: "Writer only, deleted at Distribute Minutes; the history keeps “drafted with AI, accepted by …” per item." },
+      { n: "M4", q: "Where do added agenda items go?", why: "Drawn before the standing Any other business, in tick order.", opts: ["Before Any other business (drawn): the agenda stays well formed; no cost.", "At the very end: simpler; costs Any other business no longer last."], rec: "Before Any other business." },
+      { n: "M5", q: "Accept when the Secretary already typed in that item.", why: "Drawn as replace, with the line “Accepting replaces the discussion you typed.”", opts: ["Replace (drawn): one clear result; Edit is the way to combine.", "Append under what was typed: nothing lost; costs duplicated sentences to clean up."], rec: "Replace, with the line; Edit to combine." },
+      { n: "M6", q: "Vote counts in the notes that add up to more than the members present.", why: "Drawn copied as stated, with Meeting Screens' own error.", opts: ["Copy and flag (drawn): the Secretary sees the mistake in the notes; costs an error to fix before Distribute.", "Leave the vote empty: no wrong number shown; costs the counts the Secretary did write."], rec: "Copy and flag; never change a number." },
+      { n: "M7", q: "An action whose owner in the notes is an outside guest.", why: "Drawn kept, with Owner empty and the reason.", opts: ["Keep with Owner empty (drawn): the action isn't lost; costs one choice for the Secretary.", "Don't suggest it: simpler; costs an action that was agreed in the meeting."], rec: "Keep with Owner empty." },
+      { n: "M8", q: "Draft minutes again after some items are accepted.", why: "The trigger reads “Draft again” once there are suggestions.", opts: ["Only items still empty or with undecided suggestions: accepted text is never touched.", "All items: costs suggestions over minutes the Secretary has already settled."], rec: "Only items still empty or undecided; Draft again replaces undecided suggestions, never accepted text." },
+      { n: "M9", q: "After Return for Correction, is Draft minutes offered again?", why: "The meeting goes back to Minutes Draft with the review's comments.", opts: ["Yes, same rules: helps with large corrections; costs AI near text members already reviewed.", "No: corrections are made by hand."], rec: "No for v1: corrections are small and named; the trigger is absent after a return." },
+      { n: "M10", q: "The summary trigger's words beside Print minutes.", why: "“Draft summary” (accepted) sits next to “Print minutes” and could read as a summary of the minutes for everyone.", opts: ["Keep “Draft summary” (drawn).", "“Summary for absent members”: clearer; costs header width, which wraps on narrower desktops."], rec: "Keep “Draft summary”, with the aria-label “Draft a summary for absent members”." }
     ];
-    Object.assign(confirms[0], { note: "Two tasks are created from the confirmed action items, each linked to item 2. The undecided and dropped ones aren't.", pairs: [{ k: "Created", v: "2 tasks" }, { k: "Not created", v: "1 undecided · 1 dropped" }], measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 (2 × 24) + 12 + 44 = 104." });
-    Object.assign(confirms[1], { note: "Tariq Suleiman, Dana Chalabi and Hessa Al-Mutairi get the summary and a link to the approved minutes.", pairs: [{ k: "Recipients", v: "3 absent members" }, { k: "Sent as", v: "Notification and email" }], measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 + 12 + 44 = 104." });
-    Object.assign(confirms[2], { note: "تُنشأ مهمتان من الإجراءات المؤكدة، كل منهما مرتبطة بالبند " + iso("2") + ". لا تُنشأ المعلّقة أو المحذوفة.", pairs: [{ k: "تُنشأ", v: "مهمتان" }, { k: "لا تُنشأ", v: "واحدة معلّقة · واحدة محذوفة" }], measure: "104 of 420." });
+    const mtAr = [
+      ["Agenda trigger, after a result", "Suggest again", "اقتراح مرة أخرى"], ["Working trigger", "Working…", "جارٍ العمل…"], ["Paused, in place of a trigger", "⏸ AI features are paused by AccreditMe", "⏸ ميزات الذكاء الاصطناعي متوقفة مؤقتًا من AccreditMe"],
+      ["Agenda · working", "Looking through the committee's open tasks and pending approvals…", "جارٍ البحث في المهام المفتوحة للجنة والاعتمادات المعلّقة…"],
+      ["Agenda · suggestions", "Sharps disposal audit in ICU: Omar Haddad's report · its reason · Isolation signage, Tower A · its reason · Open task · from IPC, 27 Aug 2026", "تدقيق التخلص من الأدوات الحادة في العناية المركزة: تقرير عمر حداد · لافتات العزل، البرج A · مهمة مفتوحة · من اجتماع مكافحة العدوى"],
+      ["Agenda · not re-suggested", "Not suggested again: the 3 open actions from 24 Sep, already in the agenda's first section.", "لم يُقترح مجددًا: الإجراءات المفتوحة الثلاثة من 24 Sep، فهي في القسم الأول من الأجندة."],
+      ["Agenda · footer", "2 of 3 ticked · added before Any other business", "حُدّد 2 من 3 · تُضاف قبل «ما يستجد من أعمال»"],
+      ["Agenda items", "Any other business · Standing · 10 min · 5 min · + Add agenda item", "ما يستجد من أعمال · ثابت · 10 دقائق · 5 دقائق · + إضافة بند"],
+      ["Agenda · fixed section note", "A fixed first section: it can't be moved or removed…", "قسم أول ثابت: لا يمكن نقله أو حذفه. الحالة من المهمة ولا تُغيَّر هنا."],
+      ["Minutes · panel", "Agenda & minutes · ✦ 3 items drafted · 3 action items undecided", "الأجندة والمحضر · ✦ صيغت 3 بنود · 3 إجراءات لم يُبتّ فيها"],
+      ["Minutes · notes", "Seen only by whoever writes the minutes. Paste or type; nothing here is in the minutes until you accept it.", "لا يراها إلا من يكتب المحضر. الصق أو اكتب؛ لا يدخل شيء منها المحضر حتى تقبله."],
+      ["Minutes · working", "Drafting minutes for 5 agenda items from your notes…", "جارٍ صياغة محضر البنود الخمسة من ملاحظاتك…"],
+      ["Minutes · trigger after a result", "Draft again", "صياغة مرة أخرى"],
+      ["Minutes · per item", "Accepting replaces the discussion you typed. · Vote: … · from your notes · Vote: not in your notes · left empty · Nothing in your notes for this item.", "القبول يستبدل النقاش الذي كتبته. · من ملاحظاتك · التصويت: غير مذكور في ملاحظاتك · تُرك فارغًا · لا شيء في ملاحظاتك لهذا البند."],
+      ["Action items · tag", "AI suggestions · action items · accept, edit or discard each", "اقتراحات الذكاء الاصطناعي · إجراءات · اقبل كلًّا منها أو عدّله أو تجاهله"],
+      ["Action items · reasons", "The date in your notes, 15 Sep, has passed. Choose a due date. · Dr. Lina Mansour is an outside guest, so isn't suggested as owner. Choose a person in the organisation.", "التاريخ في ملاحظاتك، 15 Sep، قد مضى. اختر تاريخ استحقاق. · د. لينا منصور ضيفة من الخارج، فلا تُقترح مسؤولةً. اختر شخصًا في المنشأة."],
+      ["Action items · card", "Action items · drafts · No task exists yet… · ✦ 3 AI suggestions undecided · items 2 and 4 · Not action items until accepted.", "الإجراءات · مسودات · لا توجد مهمة بعد… · ✦ 3 اقتراحات لم يُبتّ فيها · البندان 2 و4 · ليست إجراءات حتى تُقبل."],
+      ["Attendance · note", "Recorded by the Secretary. AI never fills or changes attendance, the quorum line or “Taken without quorum”.", "تسجّله أمينة السر. لا يملأ الذكاء الاصطناعي الحضور ولا يغيّره، ولا سطر النصاب ولا «اتُّخذ دون نصاب»."],
+      ["Header", "Attendance recorded for all 9 · 🔒 Minutes approved and locked · Who works this stage:", "سُجّل حضور الجميع (9) · 🔒 المحضر معتمد ومقفل"],
+      ["Summary", "Draft summary · Summary for absent members · AI suggestion · review before sending · To · 3 members recorded absent · the guests line · What they'll receive · No replies.", "صياغة ملخص · ملخص للأعضاء الغائبين · اقتراح من الذكاء الاصطناعي · راجعه قبل الإرسال · إلى · 3 أعضاء سُجّلوا غائبين · ما يصلهم · دون ردود."],
+      ["Summary · working, footer", "Drafting a summary of the approved minutes… · Sent from Nora Al-Otaibi (Secretary), in the Secretary's language; recorded on the meeting · Send to 3 members…", "جارٍ صياغة ملخص للمحضر المعتمد… · تُرسل من نورة العتيبي (أمينة السر) بلغة أمينة السر؛ وتُسجَّل على الاجتماع · إرسال إلى 3 أعضاء…"],
+      ["Summary text", "The whole summary, rewritten from the round 5 minutes", "اعتمدت اللجنة محضر 27 Aug… (the whole paragraph)"],
+      ["Send confirm", "Send the summary to 3 members? · Recipients · Sent as · Not yet · Send", "إرسال الملخص إلى 3 أعضاء؟ · المستلمون · تُرسل بوصفها · ليس الآن · إرسال"],
+      ["Phone placeholder", "Attendance, Action items and Attachments cards stack here, as in Meeting Screens 14.", "تُكدَّس هنا بطاقات الحضور والإجراءات والمرفقات كما في شاشات الاجتماعات 14."]
+    ].map(r => ({ w: r[0], en: r[1], ar: r[2] }));
 
     return {
-      states, viewers, dialogs, briefings, meetings, confirms,
+      states, viewers, dialogs, briefings, mtSecs, mtQs, mtAr,
       decisions: [
         { t: "1 · One component, am-ai-assist", b: "Trigger, working state, suggestion, refusals. Every AI place uses it, so “AI suggestion” looks and behaves the same everywhere." },
         { t: "2 · Marked four ways, never by colour alone", b: "The ✦ mark, the words (“AI suggestion · check before using”), a dashed rule on the inline-start edge, then a light tint. Accepted text loses all of them." },
@@ -526,7 +782,7 @@ class Component extends DCLogic {
         { t: "5 · The viewer's summary sits above the file", b: "A side panel would make an A4 page unreadable at the drawer's 60% width. Above, it collapses to a line, and is saved with the file." },
         { t: "6 · New task fits without a third step", b: "The draft lives on step 2 (Description, standard density); the workload hint becomes the text of step 1's outcome slot. 383 / 400 and 385 / 412 against 420." },
         { t: "7 · Briefing first, accepted Home below", b: "Made once per working day at first open; the ordinary panels are already live underneath, so nothing ever waits on AI." },
-        { t: "8 · Meetings AI never acts alone", b: "Agenda items are ticked, minutes accepted, action items confirmed one by one with a count before creation, and the absent-member summary reviewed before sending." }
+        { t: "8 · Meetings AI never acts alone", b: "Agenda items are ticked; minutes are accepted item by item; action items are accepted one by one as drafts, which become tasks only at Approve Minutes; the absent-member summary is reviewed before sending. Refreshed 18 Nov 2026." }
       ],
       patternNotes: [
         { k: "Trigger wording is the action.", v: "“Draft with AI”, “Summarize”, “Suggest agenda items”, “Draft minutes”. Always a word; the ✦ is decoration, aria-hidden." },
@@ -588,29 +844,29 @@ class Component extends DCLogic {
         { k: "Error", v: "No card, no error; the ordinary Home." }, { k: "Partial", v: "If notifications fail to load, the briefing is made from tasks only and its tag says “from your tasks”." }
       ],
       meetNotes: [
-        { k: "Agenda sources.", v: "The committee's open tasks, open actions in earlier minutes, and pending approvals. Each suggestion names its reason and links its source." },
-        { k: "Who sees it.", v: "The secretary, or whoever can edit the agenda; others never see the trigger." },
-        { k: "Minutes in the meeting's format.", v: "Per agenda item: discussion and decision, with decisions marked “Decision ▸”. Accepted text becomes ordinary minutes, editable until distributed." },
-        { k: "Action items one by one.", v: "Confirm, Edit (New task prefilled) or Drop each; a count in the footer; creation only after “Create 2 tasks?” confirms." },
-        { k: "From item n.", v: "Created action items carry their agenda item, as Meeting Screens decided." },
-        { k: "Absent members only.", v: "Members marked Apologies or Absent; guests never. They get a notification and an email with the summary and a link." },
-        { k: "Reviewed before sending.", v: "Edit, Discard or Send; the sent summary is recorded on the meeting with who sent it." },
-        { k: "Quorum not met.", v: "The minutes draft keeps the “Quorum not met” line; AI never removes it." }
+        { k: "On round 5's page.", v: "The stages, header, “who works this stage” line, side column and phone stack are Meeting Screens'. AI adds triggers and in-flow panels; it moves nothing." },
+        { k: "The Secretary's alone.", v: "Triggers show only to whoever works the stage: the Secretary in Planned and Minutes Draft, and the Secretary on the approved meeting. The Chair, members, guests and absent members see accepted text only." },
+        { k: "Agenda sources.", v: "The committee's open tasks and pending approvals, each with its reason and source. Never anything the fixed “Open actions from the last meeting” section already lists, or an item already on the agenda." },
+        { k: "Minutes per item.", v: "Each item's discussion and decision are suggested inside that item, and accepted, edited or discarded on their own. Nothing typed is replaced until Accept, which says so." },
+        { k: "Never AI.", v: "Attendance, the quorum line and “Taken without quorum”. Votes only when the notes state the counts; never guessed, never adjusted." },
+        { k: "Action items are drafts.", v: "What, owner (a person in the organisation, never an outside guest), due (never in the past). Accepting adds a draft with “Becomes a task when the minutes are approved”; Approve Minutes creates the tasks and its confirm counts them." },
+        { k: "Undecided isn't an action item.", v: "The count shows in the minutes header and the Action items card; whether it holds Distribute Minutes is M2." },
+        { k: "Absent members only.", v: "Names from attendance (Apologies or Absent); guests never. Reviewed, sent in the Secretary's language, no replies; recorded on the meeting." }
       ],
       outMeet: [
-        { k: "Loading", v: "Working state in each panel." }, { k: "Populated", v: "As drawn." },
-        { k: "Empty", v: "Agenda: “No open tasks, actions or approvals to suggest from.” Minutes: “Add notes first.”" },
-        { k: "Denied", v: "Triggers absent for anyone who can't edit the agenda or minutes; AI off hides them all." },
-        { k: "Error", v: "Refusal in the panel with Try again; rough notes are kept." }, { k: "Partial", v: "If one source fails (e.g. approvals), suggestions come from the rest and say “Approvals couldn't be checked.”" }
+        { k: "Loading", v: "Working state in each panel; the page stays usable (drawn for each)." }, { k: "Populated", v: "As drawn, on the page, desktop and phone." },
+        { k: "Empty", v: "Agenda: “No open tasks or approvals to suggest from.” Minutes: “Add notes first.” Not charged." },
+        { k: "Denied", v: "Triggers absent for anyone but the Secretary; AI not switched on hides them all; paused replaces each in place (drawn)." },
+        { k: "Error", v: "The failure refusal with Try again; rough notes and ticks are kept (drawn). Credits used up: the accepted refusal with its renewal date (drawn)." }, { k: "Partial", v: "If one source fails (e.g. approvals), agenda suggestions come from the rest and say “Approvals couldn't be checked.” A minutes draft cut short is discarded, never shown half." }
       ],
-      measures: [["New task · step 2 · suggestion showing", "560 · standard", 383, 400], ["New task · step 1 · workload hint", "560 · compact", 385, 412], ["Create action items", "420 · confirm", 94, 104], ["Send absent summary", "420 · confirm", 94, 104]].map(m => ({ d: m[0], s: m[1], en: m[2] + "", ar: m[3] + "" })),
+      measures: [["New task · step 2 · suggestion showing", "560 · standard", 383, 400], ["New task · step 1 · workload hint", "560 · compact", 385, 412], ["Send absent summary · measured 18 Nov (Create action items removed)", "420 · confirm", 90, 103]].map(m => ({ d: m[0], s: m[1], en: m[2] + "", ar: m[3] + "" })),
       changes: [
         { s: "New task · step 1 (Task Screens round 3)", w: "The Position | Person outcome slot grows from two lines to two lines plus one line of text buttons when AI shows a hint (357 → 385 EN, 382 → 412 AR). Due | Priority and the presets move down by 28 / 30. With AI off or no hint, step 1 is exactly as accepted." },
         { s: "New task · step 2 (Templates, standard density)", w: "“Draft with AI” added to the Description label row at label height; the suggestion card appears below the textarea only after a request (383 EN, 400 AR with it). No height change at rest." },
         { s: "Assignee picker (Task Screens)", w: "“12 open · 3 overdue” added at the end edge of each person row, inside the existing 44px (AR 48) row. Rows don't grow; the name and position lines keep their width minus the count's." },
         { s: "File Viewer header", w: "“✦ Summarize” added in the action group, after “← 2 / 5 →” and before “⤓ Download”, for PDF, TXT and CSV. The action group may wrap to two rows at the minimum drawer width; the file name, meta line and page toolbar are unchanged. The file area gains a collapsible panel at its top." },
         { s: "Home (App Shell)", w: "The briefing card is added above the accepted panels; the panels keep their size and order." },
-        { s: "Meeting page (Meeting Screens)", w: "AI triggers added to the Agenda and Minutes panel headers; suggestion panels open in flow inside those panels. The absent-member summary sits in the approved-minutes header area." }
+        { s: "Meeting page (Meeting Screens round 5)", w: "Refreshed 18 Nov 2026. Suggest agenda items on the Agenda panel header in Planned, suggestions in flow above “+ Add agenda item”. A Rough notes box with Draft minutes at the top of Agenda & minutes in Minutes Draft, a suggestion inside each item, action-item suggestions under it, and an undecided count in the panel header and the Action items card. Draft summary beside Print minutes on Minutes Approved, the panel under the locked line. The “Create 2 tasks?” confirm and the “Create action items” footer are removed: Approve Minutes creates the tasks." }
       ],
       questions: [
         { n: "Q1 · answered", q: "A saved AI result opened while AI is off for the organisation.", opts: ["Shown, marked as AI, with no new requests allowed."] },
