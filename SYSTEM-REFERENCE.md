@@ -18110,9 +18110,11 @@ one; Return for Correction moves the stage, so the page reads the meeting.
 
 - **The review banner** (`am-meeting-review-banner`), "Review the minutes by
   {date}": `may.review` (a member recorded present, while the stage takes
-  corrections). It says the person's own answer (`review.mine`); after "No
-  corrections" it offers only Suggest, which the server allows (it replaces the
-  answer). This round's changes are named by item ("item 2, decision").
+  corrections). It says the person's own answer (`review.mine`). "No
+  corrections" is offered only before any answer (`mine` null): after it, only
+  Suggest, which the server allows (it replaces the answer); after a suggestion
+  the server refuses it (`MEETING_REVIEW_SUGGESTED`). This round's changes are
+  named by item ("item 2, decision").
 - **The Review card** (`am-meeting-review-card`): whenever the minutes are in
   review or approved and a round has run. Whoever has the minutes read (§4.1)
   sees it: who answered, the open suggestions, the date, each reviewer, and the
@@ -18125,19 +18127,44 @@ one; Return for Correction moves the stage, so the page reads the meeting.
 **Edit to apply** (P212) opens the item's discussion and decision editors (the
 server allows those writes in review under `apply_suggestions`, recording a
 review change). The write goes FIRST; only once it succeeds is the suggestion
-marked applied (`…/apply`). A failed write applies nothing; a failed apply says
-the edit was saved, with Retry for the apply alone.
+marked applied (`…/apply`). A failed write applies nothing.
+
+**Marking applied is safe to press twice and after a lost answer** (P220), on
+an item (Edit to apply) and on the card (Mark applied): one apply request at a
+time, and `MEETING_SUGGESTION_DECIDED` reads as already applied (an earlier
+press reached the server), so the minutes are read again with no error. A
+failed apply is said from its code, by one rule, `meetingFailure()`
+(`meeting-refusal.ts`):
+
+- **Retry** only when the server could not be reached or timed out (status 0,
+  408, 502, 503 or 504, Design System rule 5.5): on an item "Your edit was saved,
+  but the suggestion couldn't be marked applied"; on the card "The suggestion
+  couldn't be marked applied", since nothing was edited;
+- **Reload** for a stale refusal;
+- any other refusal its own sentence, and nothing to press.
+
+**Stale refusals offer Reload, never Retry** (`meetingNeedsReload()`):
+`MEETING_CHANGED`, `MEETING_SUGGESTION_NOT_FOUND` and
+`MEETING_SUGGESTION_DECIDED`, beside the agenda's three. Reload reads the
+meeting again; in a dialog it takes the primary button's place and closes the
+dialog first. The banner, the card, an item's apply line and all three dialogs
+offer it.
 
 **The dialogs:**
 
 - **Suggest a correction** (`app-meeting-suggest-dialog`): About (an item, or
-  the minutes as a whole, sent as no item) and the suggestion, required.
+  the minutes as a whole, sent as no item) and the suggestion, required. Opened
+  from the banner only (plan 7c draws no per-item Suggest), so About starts on
+  the minutes as a whole.
 - **Decline this suggestion?** (`app-meeting-decline-dialog`): the suggestion
   quoted, and a REQUIRED reply its author reads; the server refuses an empty
-  one too.
+  one too. It keeps the last suggestion it was given while it closes, so the
+  quote does not blank as the page clears its own.
 - **Return for Correction?** (`app-meeting-return-dialog`): who is told (the
   present members, as the server tells them), the answers so far, and an
   optional reason.
+
+Every dialog says a refusal in its footer.
 
 Measured under the 420px cap at 1280 and 390, in both languages, each keeping
 20px (`meeting-review-dialogs.layout.spec.ts`).
