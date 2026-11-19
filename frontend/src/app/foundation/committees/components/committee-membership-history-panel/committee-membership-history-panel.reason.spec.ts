@@ -121,6 +121,8 @@ describe('CommitteeMembershipHistoryPanelComponent — a removal’s reason (ACC
     expect(rows.length).withContext('popup rows').toBe(2);
     const withReason = rows.find((r) => r.querySelector('[data-history-reason]'))!;
     const reason = withReason.querySelector<HTMLElement>('[data-history-reason]')!;
+    expect(reason.getClientRects().length).withContext('the reason is drawn').toBeGreaterThan(0);
+    expect(reason.getBoundingClientRect().width).withContext('the reason has a width').toBeGreaterThan(0);
     expect(text(reason)).toBe(`Reason: ${REASON}`);
     expect(reason.getAttribute('title')).toBe(REASON);
     expect(reason.classList).toContain('am-cp-cut');
