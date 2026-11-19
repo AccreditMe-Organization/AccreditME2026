@@ -35,7 +35,7 @@ describe('OrgPosition.roleId is the permission bridge (ACC-136, ACC-271)', () =>
   const roles = new RoleService(prisma, audit);
   // syncHeadAuthorityRoleGrant() reads only Prisma and the role service; nothing else is called.
   const unused = {} as never;
-  const users = new UserService(prisma, audit, unused, roles, unused, unused, unused, unused, unused, unused, unused, unused);
+  const users = new UserService(prisma, audit, unused, roles, unused, unused, unused, unused, unused, unused, unused, unused, unused);
 
   beforeAll(async () => {
     await prisma.onModuleInit();
