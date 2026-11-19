@@ -14426,12 +14426,11 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**Two panels are left OUT, not empty**: Tasks and Sessions. Both reads exist: a
-person's tasks through the task list's `person` filter and
-`GET /tasks/record-panel?person=` (#332), and Sessions through
-`GET /users/:userId/sessions` and its endings (below). Each panel is a later PR.
-A spec pins their absence. Committees and Access history were the other two;
-ACC-216 parts 1 and 2 built them (below).
+**One panel is left OUT, not empty**: Tasks. Its read exists: a person's tasks
+through the task list's `person` filter and `GET /tasks/record-panel?person=`
+(#332). Its panel is a later PR. A spec pins its absence. Committees, Access
+history and Sessions were the other three: ACC-216 parts 1 and 2 built the first
+two, and its Sessions panel is "Signed-in devices" (below).
 
 **The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
 `UserCommitteesService` (`foundation/user/committees/`, its own controller
@@ -14461,7 +14460,7 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 
 **A person's sign-ins, and ending them (ACC-216 Sessions, PR 1, the backend).**
 `UserSessionsService` (`foundation/user/sessions/`); plan and Ahmad's answers (17
-Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
+Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is "Signed-in devices", below.
 - **A sign-in is a chain of `RefreshToken` rows** (each renewal revokes one row and
   writes the next, copying `sessionStartedAt`); the row listed is its one live row.
   **Live** (`liveSessionWhere()`): not revoked, not expired, under 12 hours from its
@@ -14498,6 +14497,21 @@ Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
   `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`
   written directly, one audit row per tenant, refuses customers, skips the platform
   organisation; dry run by default).
+- **The panel** (`UserSessionsPanelComponent`, "Signed-in devices" / «أجهزة الدخول»)
+  on `am-capped-panel`, for the design thread to check (Ahmad, Q11). The record page
+  decides its mode (`sessionsMode`): `own` for yourself, `admin` for a `users:view` +
+  `users:manage_sessions` holder, and nothing (no panel, no request) for anyone
+  else; a 403 or 404 also hides it. Five rows (device, "This device" on yours, last
+  active through `FormatService.relative()`, and the address when the server sent
+  one), See all in `am-list-dialog` compact. Its own outcome (skeleton, error with
+  Retry, "Not signed in on any device"). **Own:** "Sign out" on each other device
+  and "Sign out other devices" (offered only when one exists), each confirmed
+  through `AmConfirmService.ask()` saying up to 15 minutes; nothing on this device.
+  **Admin:** one "Sign out everywhere" (only when they are signed in somewhere),
+  confirmed naming the person, at once, emailed. Every refusal is said from its code
+  (`sessions-refusal.ts`), in both languages. A layout spec at 988 and 358 in both
+  languages pins the header whole (the title never cut by its action) and one row
+  height.
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the

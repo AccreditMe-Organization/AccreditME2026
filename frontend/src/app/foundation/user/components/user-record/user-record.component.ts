@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -33,7 +33,8 @@ import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
 import { UserAccessHistoryPanelComponent } from './user-access-history-panel.component';
-import { USER_PANEL_GRID } from './user-panel-grid';
+import { UserSessionsPanelComponent } from './user-sessions-panel.component';
+import { observeTwoStepRow, twoStepBodyPx, USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /** One row of the Roles panel. */
@@ -84,9 +85,8 @@ interface Fact {
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Tasks and Sessions have no per-user endpoint, so they are absent — not a
- * placeholder, not a disabled panel. ACC-216 adds the reads, one at a time. A
- * spec pins their absence.
+ * Tasks has no panel here yet, so it is absent — not a placeholder, not a
+ * disabled panel. A spec pins its absence.
  *
  * Committees (ACC-216 part 1) is its own component with its own request, shown
  * only to a viewer holding committees:view: absent otherwise, never empty.
@@ -94,6 +94,11 @@ interface Fact {
  * Access history (ACC-216 part 2) is its own component too, on am-capped-panel,
  * shown to the person themself or a viewer holding users:view (the endpoint's
  * rule): absent otherwise, never empty.
+ *
+ * Sessions ("Signed-in devices", ACC-216) is its own component too, on
+ * am-capped-panel: for yourself (`own`: end your other devices) or for a
+ * users:view + users:manage_sessions holder (`admin`: sign out everywhere);
+ * absent otherwise, never empty (`sessionsMode`).
  *
  * ## Each panel owns its request (ACC-104)
  *
@@ -123,6 +128,7 @@ interface Fact {
     TwoStepResetDialogComponent,
     UserCommitteesPanelComponent,
     UserAccessHistoryPanelComponent,
+    UserSessionsPanelComponent,
   ],
   template: `
     @if (loadError()) {
@@ -270,7 +276,7 @@ interface Fact {
           <p-message severity="error" [text]="message | translate" data-user-action-error />
         }
 
-        <div class="grid gap-3" [style.grid-template-columns]="panelGrid" data-user-panels>
+        <div #panelsGrid class="grid gap-3" [style.grid-template-columns]="panelGrid" data-user-panels>
           @if (canViewRoles() && rolesHandle()) {
             <app-record-panel
               data-panel="roles"
@@ -336,6 +342,11 @@ interface Fact {
             <app-user-access-history-panel [userId]="userId" [personName]="user()?.name ?? ''" />
           }
 
+          <!-- ACC-216 Sessions — yourself, or users:view + users:manage_sessions; absent otherwise. -->
+          @if (sessionsMode(); as mode) {
+            <app-user-sessions-panel [userId]="userId" [mode]="mode" [personName]="user()?.name ?? ''" />
+          }
+
           @if (isOwn() && twoStepHandle()) {
             <app-record-panel
               data-panel="twoStep"
@@ -343,7 +354,7 @@ interface Fact {
               [outcome]="twoStepOutcome()"
               (retry)="twoStepHandle()?.retry()"
               [error]="'userRecord.twoStep.loadError'"
-              [bodyHeight]="120"
+              [bodyHeight]="twoStepBodyHeight()"
             >
               @if (canManageTwoStep() && twoStepEnabled() === false) {
                 <button
@@ -377,7 +388,11 @@ interface Fact {
                says this viewer may reset it (rule 4). Never "Off" for a viewer
                it is not shown to: no panel at all. -->
           @if (!isOwn() && u.twoStep; as ts) {
-            <app-record-panel data-panel="twoStepOther" [heading]="'userRecord.twoStep.heading' | translate" [bodyHeight]="120">
+            <app-record-panel
+              data-panel="twoStepOther"
+              [heading]="'userRecord.twoStep.heading' | translate"
+              [bodyHeight]="twoStepBodyHeight()"
+            >
               @if (ts.mayReset) {
                 <button
                   panelActions
@@ -509,6 +524,21 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   /** ACC-232 — never wider than the page; see user-panel-grid.ts. */
   protected readonly panelGrid = USER_PANEL_GRID;
 
+  /**
+   * ACC-216 (design review of #331) — the record-panel rule, equal heights in a
+   * row: while the Two-step card shares a row with the Signed-in devices card, its
+   * body is the capped panel's fixed body height. Alone (one column on a phone,
+   * or no devices card) it keeps its own 120. Measured from the grid as laid out,
+   * so any mix of panels and any width is right; re-measured when the grid resizes.
+   */
+  private readonly panelsGrid = viewChild<ElementRef<HTMLElement>>('panelsGrid');
+  readonly twoStepBesideSessions = signal(false);
+  readonly twoStepBodyHeight = computed(() => twoStepBodyPx(this.twoStepBesideSessions(), this.languageService.isRtl()));
+  private readonly observePanels = effect((onCleanup) => {
+    const grid = this.panelsGrid()?.nativeElement;
+    if (grid) onCleanup(observeTwoStepRow(grid, (beside) => this.twoStepBesideSessions.set(beside)));
+  });
+
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
@@ -576,6 +606,15 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canViewCommittees = computed(() => this.can('committees:view'));
   /** ACC-216 part 2 — GET /users/:id/access-history: yourself, or users:view. */
   readonly canViewAccessHistory = computed(() => this.isOwn() || this.can('users:view'));
+  /**
+   * ACC-216 Sessions — GET /users/:id/sessions: yourself ('own', who may end
+   * their other devices), or users:view + users:manage_sessions ('admin', who
+   * may sign them out everywhere). Null: no panel and no request.
+   */
+  readonly sessionsMode = computed<'own' | 'admin' | null>(() => {
+    if (this.isOwn()) return 'own';
+    return this.can('users:view') && this.can('users:manage_sessions') ? 'admin' : null;
+  });
   readonly canManageRoles = computed(() => this.can('roles:manage'));
   readonly canSeePermissions = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.can(p)));
   /** The two-step endpoints act on the CALLER, so only on your own record. */
