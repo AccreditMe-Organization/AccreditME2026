@@ -124,6 +124,22 @@ describe('FormatService (ACC-94)', () => {
       context.zone.set('America/New_York');
       expect(at(2026, 11, 1, 1, 30)).toBe('2026-11-01T05:30:00.000Z');
     });
+
+    // P198 — a zone EAST of UTC, where the offset grows across the gap. The Gulf
+    // zones keep no daylight saving, but the platform screens use the session's.
+    it('a skipped time moves forward east of UTC too: 02:30 on 29 Mar 2026 in Berlin is 03:30 CEST', () => {
+      context.zone.set('Europe/Berlin');
+      const iso = at(2026, 3, 29, 2, 30);
+      expect(iso).toBe('2026-03-29T01:30:00.000Z');
+      expect(format.wallClock(iso)).toEqual({ year: 2026, month: 3, day: 29, hour: 3, minute: 30 });
+      expect(at(2026, 3, 29, 1, 30)).toBe('2026-03-29T00:30:00.000Z');
+      expect(at(2026, 3, 29, 3, 30)).toBe('2026-03-29T01:30:00.000Z');
+    });
+
+    it('a repeated time east of UTC is its first occurrence: 02:30 on 25 Oct 2026 in Berlin is 02:30 CEST', () => {
+      context.zone.set('Europe/Berlin');
+      expect(at(2026, 10, 25, 2, 30)).toBe('2026-10-25T00:30:00.000Z');
+    });
   });
 
   describe('the empty value — owned by the layer', () => {

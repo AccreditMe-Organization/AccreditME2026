@@ -324,26 +324,28 @@ export class FormatService {
   /**
    * ACC-316 PR 6 — the instant whose wall clock in the TENANT's zone reads
    * this date and time: what a typed start means, whatever the browser's zone.
-   * Two candidates, from the zone's offset before and after the time: one that
-   * reads back as the time typed wins (a time the clocks repeat when they go
-   * back is its first, earlier, occurrence). A time the clocks SKIP when they go
-   * forward has none, and moves FORWARD by the gap: 02:30 on a night New York
-   * jumps from 02:00 to 03:00 is 03:30, never 01:30.
+   * Two candidates, from the zone's offset a day before and a day after the
+   * time, so both sides of a clock change are tried whichever side of UTC the
+   * zone is: one that reads back as the time typed wins, and a time the clocks
+   * repeat when they go back is its first, earlier, occurrence (01:30 on
+   * 1 Nov 2026 in New York is EDT; 02:30 on 25 Oct 2026 in Berlin is CEST). A
+   * time the clocks SKIP when they go forward reads back from neither, and
+   * moves FORWARD by the gap, taking the offset from before it: 02:30 on a
+   * night New York or Berlin jumps from 02:00 to 03:00 is 03:30, never 01:30.
    */
   instantAt(wall: WallClock): Date {
+    const DAY = 86_400_000;
     const guess = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute);
     const offsetAt = (t: number): number => {
       const w = this.wallClock(new Date(t))!;
       return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute) - t;
     };
-    const reads = (t: number): boolean => offsetAt(t) + t === guess;
-    const first = guess - offsetAt(guess);
-    const second = guess - offsetAt(first);
-    if (reads(first) && reads(second)) return new Date(Math.min(first, second));
-    if (reads(second)) return new Date(second);
-    if (reads(first)) return new Date(first);
-    // In the gap: the later candidate is the time typed, carried past the jump.
-    return new Date(Math.max(first, second));
+    const before = guess - offsetAt(guess - DAY);
+    const after = guess - offsetAt(guess + DAY);
+    const reading = [before, after].filter((t) => offsetAt(t) + t === guess);
+    if (reading.length > 0) return new Date(Math.min(...reading));
+    // In the gap: the time typed, on the clock from before the jump, carried past it.
+    return new Date(before);
   }
 
   private gregorianDate(at: Date, language: DisplayLanguage, timeZone: string): string {
