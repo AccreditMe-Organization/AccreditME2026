@@ -48,8 +48,12 @@ export type AccessHistoryKind =
   | 'TWO_STEP_RESET'
   | 'PASSWORD_RESET_REQUESTED'
   | 'PASSWORD_RESET'
+  | 'SESSIONS_ENDED'
   | 'SIGNED_IN_AS'
   | 'CHANGED';
+
+/** SESSIONS_ENDED: one of the person's own sign-ins, all but the one in use, or all (an administrator). */
+export type AccessHistorySessionsScope = 'one' | 'others' | 'all';
 
 export type AccessHistoryField =
   | 'name'
@@ -84,6 +88,9 @@ export interface IAccessHistoryRowDto {
     position: IAccessHistoryNameDto | null;
     headAppointment: 'NONE' | 'DONE' | 'FAILED';
   };
+  /** SESSIONS_ENDED only, both or neither: absent when the server could not read them. */
+  sessionsScope?: AccessHistorySessionsScope;
+  sessionsCount?: number;
 }
 
 export interface IUserAccessHistoryPageDto {
