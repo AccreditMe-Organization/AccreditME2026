@@ -14,8 +14,10 @@ export interface WorkflowMoveDto {
   toStageId: string;
   toStageNameEn: string;
   toStageNameAr: string | null;
-  /** ACC-316 PR 3a — the move refuses an empty comment (REASON_REQUIRED): a meeting's Cancel. Read by the meeting page (PR 4). */
+  /** ACC-316 PR 3a — the move refuses an empty comment (REASON_REQUIRED): a meeting's Cancel. Read by the move buttons (PR 6). */
   needsReason?: boolean;
+  /** ACC-316 PR 6 — the flags of the stage the move enters (its meaning, never its name). */
+  toStageFlags?: string[];
 }
 
 export interface WorkflowMovesDto {
