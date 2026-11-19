@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -92,10 +92,11 @@ const THREE = [
 @Component({
   standalone: true,
   imports: [StageTaskListComponent],
-  template: `<div style="width: 760px"><app-stage-task-list [stage]="stage" [template]="template" [canManage]="true" /></div>`,
+  template: `<div style="width: 760px"><app-stage-task-list [stage]="stage()" [template]="template" [canManage]="canManage()" /></div>`,
 })
 class HostComponent {
-  readonly stage = STAGE;
+  readonly stage = signal(STAGE);
+  readonly canManage = signal(true);
   readonly template = TEMPLATE;
 }
 
@@ -236,9 +237,7 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
       key(handle('def-1'), ' ');
       await settle();
       expect(handle('def-1').getAttribute('aria-pressed')).toBe('true');
-      expect(announced()).toBe(
-        '“Interview the staff involved” picked up, position 1 of 3. The arrow keys move it, Space drops it, Escape cancels.',
-      );
+      expect(announced()).toBe('“Interview the staff involved” picked up, position 1 of 3');
 
       key(handle('def-1'), 'ArrowDown');
       await settle();
@@ -376,5 +375,151 @@ describe('StageTaskListComponent — drag and keyboard pick-up (ACC-212)', () =>
     expect(order()).toEqual(['def-1', 'def-2', 'def-3']);
     expect(handle('def-1').getAttribute('aria-pressed')).toBe('false');
     http.expectNone(ORDER);
+  });
+
+  // ── P188 review fixes ────────────────────────────────────────────────────
+
+  describe('P188 review fixes', () => {
+    it('Enter drops a lifted row, and saves', async () => {
+      const { handle } = await setup();
+      handle('def-1').focus();
+      key(handle('def-1'), ' ');
+      await settle();
+      key(handle('def-1'), 'ArrowDown');
+      await settle();
+      key(handle('def-1'), 'Enter');
+      const req = http.expectOne(ORDER);
+      expect(req.request.body).toEqual({ ids: ['def-2', 'def-1', 'def-3'] });
+      req.flush([THREE[1], THREE[0], THREE[2]]);
+      await settle();
+      expect(handle('def-1').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('the keys are described by the hint only while nothing is lifted, and the pick-up says only the position', async () => {
+      const { el, handle, announced } = await setup();
+      const hint = handle('def-1').getAttribute('aria-describedby')!;
+      expect(el.querySelector('#' + hint)?.textContent?.trim()).toBe(
+        'Space picks it up, the arrow keys move it, Space drops it, Escape cancels.',
+      );
+      handle('def-1').focus();
+      key(handle('def-1'), ' ');
+      await settle();
+      expect(handle('def-1').hasAttribute('aria-describedby')).withContext('no hint while lifted').toBeFalse();
+      expect(announced()).toBe('“Interview the staff involved” picked up, position 1 of 3');
+      expect(announced()).not.toContain('Space');
+      key(handle('def-1'), 'Escape');
+      await settle();
+      expect(handle('def-1').getAttribute('aria-describedby')).withContext('the hint is back').toBe(hint);
+    });
+
+    for (const how of ['keyboard', 'pointer'] as const) {
+      it(`a list someone else changed: after the re-read, focus is on the moved row's handle (${how}), never the page body`, async () => {
+        const { order, handle } = await setup();
+        handle('def-1').focus();
+        if (how === 'keyboard') {
+          key(handle('def-1'), ' ');
+          await settle();
+          key(handle('def-1'), 'ArrowDown');
+          await settle();
+          key(handle('def-1'), ' ');
+        } else {
+          await dragBy(handle('def-1'), handle('def-1').closest('li')!.getBoundingClientRect().height * 1.6);
+        }
+        http
+          .expectOne(ORDER)
+          .flush({ statusCode: 400, code: 'STAGE_TASK_ORDER_MISMATCH', message: 'x' }, { status: 400, statusText: 'Bad Request' });
+        await settle();
+        http.expectOne(LIST).flush([THREE[2], THREE[0]]);
+        await settle();
+        expect(order()).toEqual(['def-3', 'def-1']);
+        expect(document.activeElement).withContext('focus on the moved row').toBe(handle('def-1'));
+      });
+    }
+
+    it('a list re-read WITHOUT the moved row: focus goes to the list, never the page body', async () => {
+      const { el, handle } = await setup();
+      handle('def-1').focus();
+      key(handle('def-1'), ' ');
+      await settle();
+      key(handle('def-1'), 'ArrowDown');
+      await settle();
+      key(handle('def-1'), ' ');
+      http
+        .expectOne(ORDER)
+        .flush({ statusCode: 400, code: 'STAGE_TASK_ORDER_MISMATCH', message: 'x' }, { status: 400, statusText: 'Bad Request' });
+      await settle();
+      http.expectOne(LIST).flush([THREE[1], THREE[2]]);
+      await settle();
+      expect(document.activeElement).toBe(el.querySelector('[data-stage-tasks-list]'));
+    });
+
+    it('a drag refused for another reason says the same refusal the arrows say', async () => {
+      const { order, handle, error, announced } = await setup();
+      await dragBy(handle('def-1'), handle('def-1').closest('li')!.getBoundingClientRect().height * 1.6);
+      http.expectOne(ORDER).flush(
+        { statusCode: 409, code: 'WORKFLOW_TEMPLATE_PROTECTED', edit: 'STAGE_TASKS', message: 'x' },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+      const said = 'Tasks cannot be added to the committee change request workflow' + "'" + 's stages: its moves are made by the request itself.';
+      expect(error()).toBe(said);
+      expect(announced()).toBe(said);
+      expect(order()).withContext('put back').toEqual(['def-1', 'def-2', 'def-3']);
+      http.expectNone(LIST);
+    });
+
+    it('a lifted row is put back when the viewer can no longer reorder', async () => {
+      const { order, handle } = await setup();
+      handle('def-1').focus();
+      key(handle('def-1'), ' ');
+      await settle();
+      key(handle('def-1'), 'ArrowDown');
+      await settle();
+      expect(order()).toEqual(['def-2', 'def-1', 'def-3']);
+      fixture.componentInstance.canManage.set(false);
+      await settle();
+      expect(order()).toEqual(['def-1', 'def-2', 'def-3']);
+      http.expectNone(ORDER);
+    });
+
+    it('a lifted row is put back when the stage changes under it', async () => {
+      const { order, handle } = await setup();
+      handle('def-1').focus();
+      key(handle('def-1'), ' ');
+      await settle();
+      key(handle('def-1'), 'ArrowDown');
+      await settle();
+      fixture.componentInstance.stage.set({ ...STAGE, slaWorkingHours: 48 });
+      await settle();
+      expect(order()).toEqual(['def-1', 'def-2', 'def-3']);
+      expect(handle('def-1').getAttribute('aria-pressed')).toBe('false');
+      http.expectNone(ORDER);
+    });
+
+    it('the drag preview carries the strong border on every side (no tie lost to the list row rule)', async () => {
+      const { el, handle } = await setup();
+      const h = handle('def-1');
+      const r = h.getBoundingClientRect();
+      const y = r.top + r.height / 2;
+      const mouse = (type: string, clientY: number) =>
+        new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY, button: 0, buttons: 1, detail: 1, view: window });
+      h.dispatchEvent(mouse('mousedown', y));
+      for (let step = 1; step <= 5; step++) {
+        document.dispatchEvent(mouse('mousemove', y + step * 6));
+        fixture.detectChanges();
+      }
+      const preview = el.querySelector<HTMLElement>('.cdk-drag-preview')!;
+      expect(preview).withContext('a drag is under way').not.toBeNull();
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--am-border-strong)';
+      document.body.appendChild(probe);
+      const strong = getComputedStyle(probe).color;
+      probe.remove();
+      const cs = getComputedStyle(preview);
+      expect([cs.borderTopColor, cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor]).toEqual([strong, strong, strong, strong]);
+      expect(cs.borderBottomWidth).toBe(cs.borderTopWidth);
+      document.dispatchEvent(mouse('mouseup', y));
+      await settle();
+    });
   });
 });
