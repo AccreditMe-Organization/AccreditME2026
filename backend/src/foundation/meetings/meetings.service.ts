@@ -12,7 +12,7 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { peopleDateIn } from '../task/task-sla.service';
-import { expectedMembers } from './invitees/meeting-invitee-sync.service';
+import { insertMeetingInTx } from './meeting-create';
 import { meetingAnswerSummary } from './meeting-people.service';
 import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
@@ -98,56 +98,19 @@ export class MeetingsService {
           lock: 'share',
         });
       }
-      const meeting = await tx.meeting.create({
-        data: {
-          id: meetingId,
-          organizationId,
-          committeeId: owner.committeeId,
-          orgUnitId: owner.committeeId ? null : owner.unitId,
-          organizerId: viewer.id,
-          title,
-          typeValueId: dto.typeValueId,
-          scheduledAt,
-          durationMinutes: dto.durationMinutes,
-          location: dto.location ?? null,
-          meetingUrl: dto.meetingUrl ?? null,
-          unitQuorum: owner.committeeId ? null : (dto.unitQuorum ?? null),
-        },
+      return insertMeetingInTx(tx, this.workflow, prepared, {
+        id: meetingId,
+        organizationId,
+        owner,
+        organizerId: viewer.id,
+        title,
+        typeValueId: dto.typeValueId,
+        scheduledAt,
+        durationMinutes: dto.durationMinutes,
+        location: dto.location ?? null,
+        meetingUrl: dto.meetingUrl ?? null,
+        unitQuorum: dto.unitQuorum ?? null,
       });
-      // ACC-316 PR 3b — the MEMBER invitees, from the owner as it stands now:
-      // a committee's active members with their seats, or the unit's own
-      // people. The invitee sync keeps them current from here.
-      const expected = await expectedMembers(tx, organizationId, [
-        { id: meetingId, committeeId: owner.committeeId, orgUnitId: owner.committeeId ? null : owner.unitId },
-      ]);
-      const members = [...expected.get(meetingId)!];
-      if (members.length > 0) {
-        await tx.meetingAttendee.createMany({
-          data: members.map(([userId, seatValueId]) => ({ organizationId, meetingId, kind: 'MEMBER' as const, userId, seatValueId })),
-        });
-      }
-      const instance = await this.workflow.insertInstanceStartInTx(tx, prepared, meetingId, organizationId, viewer.id);
-      await tx.auditLog.create({
-        data: {
-          organizationId,
-          actorId: viewer.id,
-          action: 'CREATE',
-          objectType: 'Meeting',
-          objectId: meetingId,
-          after: {
-            title: meeting.title,
-            committeeId: meeting.committeeId,
-            orgUnitId: meeting.orgUnitId,
-            typeValueId: meeting.typeValueId,
-            scheduledAt: meeting.scheduledAt.toISOString(),
-            durationMinutes: meeting.durationMinutes,
-            location: meeting.location,
-            meetingUrl: meeting.meetingUrl,
-            unitQuorum: meeting.unitQuorum,
-          },
-        },
-      });
-      return instance;
     }, { maxWait: 10_000, timeout: 30_000 });
     // The meeting's own notices come with the agenda (AGENDA_ISSUED); the
     // generic "new workflow assignment" would tell the scheduler about their own meeting.
@@ -156,7 +119,7 @@ export class MeetingsService {
   }
 
   /** The new meeting's owner: exactly one ACTIVE committee or unit of this organisation. */
-  private async resolveNewOwner(dto: Pick<ScheduleMeetingDto, 'committeeId' | 'orgUnitId'>, organizationId: string): Promise<MeetingOwner> {
+  async resolveNewOwner(dto: Pick<ScheduleMeetingDto, 'committeeId' | 'orgUnitId'>, organizationId: string): Promise<MeetingOwner> {
     if (!!dto.committeeId === !!dto.orgUnitId) throw new MeetingRefusal('MEETING_OWNER_REQUIRED');
     if (dto.committeeId) {
       const committee = await this.prisma.committee.findFirst({
@@ -172,7 +135,7 @@ export class MeetingsService {
   }
 
   /** An offered meeting_type value, shared or the organisation's own. */
-  private async assertMeetingType(typeValueId: string, organizationId: string): Promise<void> {
+  async assertMeetingType(typeValueId: string, organizationId: string): Promise<void> {
     const values = await committeeTypeValues(this.prisma, organizationId, [typeValueId], MEETING_TYPE);
     if (!values.get(typeValueId)?.offered) throw new MeetingRefusal('MEETING_TYPE_UNKNOWN');
   }
@@ -203,6 +166,8 @@ export class MeetingsService {
         orgUnit: { select: { id: true, nameEn: true, nameAr: true } },
         organizer: { select: { id: true, name: true } },
         reschedules: { orderBy: { createdAt: 'desc' }, take: 1, select: { fromAt: true, reason: true, createdAt: true } },
+        seriesIndex: true,
+        series: { select: { id: true, every: true, endedAt: true, _count: { select: { meetings: true } } } },
       },
     });
     if (!meeting) throw new NotFoundException(NOT_FOUND);
@@ -242,6 +207,9 @@ export class MeetingsService {
       },
       answers,
       myAnswer: mine ? { answer: mine.answer, note: mine.answerNote } : null,
+      series: meeting.series
+        ? { id: meeting.series.id, index: meeting.seriesIndex ?? 0, total: meeting.series._count.meetings, every: meeting.series.every, ended: meeting.series.endedAt !== null }
+        : null,
     };
   }
 
@@ -310,7 +278,8 @@ export class MeetingsService {
       : dto.orgUnitId
         ? Prisma.sql`m."orgUnitId" = ${dto.orgUnitId}`
         : Prisma.sql`TRUE`;
-    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner}`;
+    const series = dto.seriesId ? Prisma.sql`m."seriesId" = ${dto.seriesId}` : Prisma.sql`TRUE`;
+    const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series}`;
 
     const [rows, counts] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`
@@ -406,7 +375,11 @@ export class MeetingsService {
 
       await tx.meeting.update({
         where: { id },
-        data: Object.fromEntries(changed.map((f) => [f, next[f]])) as Prisma.MeetingUpdateInput,
+        data: {
+          ...(Object.fromEntries(changed.map((f) => [f, next[f]])) as Prisma.MeetingUpdateInput),
+          // ACC-316 PR 5 — a series meeting changed on its own keeps it: "this and all later" skips these.
+          ...(current.seriesId && { ownEdits: [...new Set([...current.ownEdits, ...changed])] }),
+        },
       });
       await tx.auditLog.create({
         data: {
@@ -439,7 +412,10 @@ export class MeetingsService {
       await tx.meetingReschedule.create({
         data: { organizationId, meetingId: id, fromAt: current.scheduledAt, toAt, reason, scope: 'THIS_ONLY', actorId: viewer.id },
       });
-      await tx.meeting.update({ where: { id }, data: { scheduledAt: toAt } });
+      await tx.meeting.update({
+        where: { id },
+        data: { scheduledAt: toAt, ...(current.seriesId && { ownEdits: [...new Set([...current.ownEdits, 'scheduledAt'])] }) },
+      });
       await tx.auditLog.create({
         data: {
           organizationId,
@@ -455,13 +431,18 @@ export class MeetingsService {
       return current.title;
     });
 
+    await this.tellRescheduled(id, title, toAt, reason, organizationId, viewer.id);
+    return this.getForViewer(id, organizationId, viewer, now);
+  }
+
+  /** After a commit: everyone invited is told the new time and the reason (outside guests by email, only if invited). */
+  async tellRescheduled(id: string, title: string, toAt: Date, reason: string, organizationId: string, actorId: string): Promise<void> {
     // The new time, absolute, in the organisation's zone, with Latin digits.
     const when = peopleDateIn(toAt, await this.calendar.getEffectiveTimeZone(organizationId));
     const invited = await this.invitedPeople(id, organizationId);
-    await notifyUsers(this.notifications, organizationId, id, viewer.id, invited.userIds, rescheduledNotice(title, when, reason));
+    await notifyUsers(this.notifications, organizationId, id, actorId, invited.userIds, rescheduledNotice(title, when, reason));
     // Outside guests only if they were invited (Answers, round 4).
     await emailOutsideGuests(this.notifications, organizationId, id, invited.outsideEmails, outsideRescheduledEmail(title, invited.organisation, when, reason));
-    return this.getForViewer(id, organizationId, viewer, now);
   }
 
   // ── Shared ──────────────────────────────────────────────────────────────────
@@ -472,11 +453,22 @@ export class MeetingsService {
     id: string,
     organizationId: string,
     expectedUpdatedAt: string | undefined,
-  ): Promise<Record<Editable, unknown> & { scheduledAt: Date; title: string }> {
+  ): Promise<Record<Editable, unknown> & { scheduledAt: Date; title: string; seriesId: string | null; ownEdits: string[] }> {
     await tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
     const row = await tx.meeting.findFirst({
       where: { id, organizationId },
-      select: { title: true, typeValueId: true, durationMinutes: true, location: true, meetingUrl: true, unitQuorum: true, scheduledAt: true, updatedAt: true },
+      select: {
+        title: true,
+        typeValueId: true,
+        durationMinutes: true,
+        location: true,
+        meetingUrl: true,
+        unitQuorum: true,
+        scheduledAt: true,
+        updatedAt: true,
+        seriesId: true,
+        ownEdits: true,
+      },
     });
     if (!row) throw new NotFoundException(NOT_FOUND);
     if (expectedUpdatedAt && new Date(expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new MeetingRefusal('MEETING_CHANGED');

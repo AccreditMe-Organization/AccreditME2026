@@ -10,6 +10,7 @@ import { MeetingPeopleService } from './meeting-people.service';
 import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
+import { MeetingSeriesService } from './meeting-series.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
 
 // ACC-316 PR 3a — one meeting's record. TenantModule for ObjectVisibilityService
@@ -18,7 +19,7 @@ import { FileStorageModule } from '../file-storage/file-storage.module';
 @Module({
   imports: [PrismaModule, forwardRef(() => TenantModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule],
   controllers: [MeetingsController],
-  providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService],
+  providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingSeriesService],
   exports: [MeetingsService],
 })
 export class MeetingsModule {}

@@ -25,6 +25,8 @@ import { trimToNull } from '../../../common/utils/trim-to-null.transform';
  * service's, refused with codes (meeting-refusal.ts).
  */
 
+export const MEETING_EDIT_SCOPES = ['THIS_ONLY', 'THIS_AND_LATER'] as const;
+
 // ACC-316 PR 3b — https only: the link goes into an outside guest's email (lane B's review, fix 5).
 const URL_OPTIONS = { protocols: ['https'], require_protocol: true };
 
@@ -122,6 +124,11 @@ export class UpdateMeetingDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   expectedUpdatedAt?: string;
+
+  /** ACC-316 PR 5 — a series meeting: this one only (default), or this one and every later one. */
+  @IsOptional()
+  @IsIn(MEETING_EDIT_SCOPES)
+  scope?: (typeof MEETING_EDIT_SCOPES)[number];
 }
 
 export class RescheduleMeetingDto {
@@ -137,6 +144,11 @@ export class RescheduleMeetingDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   expectedUpdatedAt?: string;
+
+  /** ACC-316 PR 5 — a series meeting: this one only (default), or this one and every later one. */
+  @IsOptional()
+  @IsIn(MEETING_EDIT_SCOPES)
+  scope?: (typeof MEETING_EDIT_SCOPES)[number];
 }
 
 /** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
@@ -147,6 +159,11 @@ export class ListMeetingsDto {
   @IsOptional()
   @IsIn(MEETING_LIST_VIEWS)
   view?: MeetingListView;
+
+  /** ACC-316 PR 5 — one series' meetings (the series view). */
+  @IsOptional()
+  @IsString()
+  seriesId?: string;
 
   /** Narrow to one owner (the committee or unit panel's "All 14 meetings"). */
   @IsOptional()
@@ -346,8 +363,143 @@ export class CheckMeetingClashesDto {
 
   /** A series' cap (CLASH_TIMES_CAP). */
   @IsArray()
-  @ArrayMaxSize(52)
+  @ArrayMaxSize(53)
   @ValidateNested({ each: true })
   @Type(() => ClashTimeDto)
   times!: ClashTimeDto[];
+}
+
+// ── ACC-316 PR 5 — series ─────────────────────────────────────────────────────
+
+export const SERIES_EVERY = ['WEEK_1', 'WEEK_2', 'MONTH_1', 'MONTH_3', 'MONTH_6', 'MONTH_12'] as const;
+export const SERIES_ON = ['WEEKDAY', 'DAY_OF_MONTH', 'ORDINAL_WEEKDAY'] as const;
+export const SERIES_ORDINAL = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'LAST'] as const;
+
+export class StandingAgendaItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  title!: string;
+
+  /** An organisation person; not yet an invitee, they become an organisation guest of each meeting. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  presenterUserId?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  durationMinutes?: number | null;
+}
+
+/** A series: the meeting's fields, the repeat and its end. Shape only; the rules are the service's, refused by code. */
+export class CreateMeetingSeriesDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  committeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  orgUnitId?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(180)
+  subject!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  typeValueId!: string;
+
+  /** HH:mm in the organisation's zone. */
+  @IsString()
+  @MaxLength(5)
+  startTime!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  durationMinutes!: number;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(300)
+  location?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsUrl(URL_OPTIONS)
+  @MaxLength(2000)
+  meetingUrl?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  unitQuorum?: number | null;
+
+  @IsIn(SERIES_EVERY)
+  every!: (typeof SERIES_EVERY)[number];
+
+  @IsIn(SERIES_ON)
+  onKind!: (typeof SERIES_ON)[number];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  weekday?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  dayOfMonth?: number | null;
+
+  @IsOptional()
+  @IsIn(SERIES_ORDINAL)
+  ordinal?: (typeof SERIES_ORDINAL)[number] | null;
+
+  /** yyyy-MM-dd. */
+  @IsISO8601({ strict: true })
+  @MaxLength(10)
+  firstDate!: string;
+
+  /** yyyy-MM-dd; exactly one of endsOn and count. */
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @MaxLength(10)
+  endsOn?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(53)
+  count?: number | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => StandingAgendaItemDto)
+  standingAgenda?: StandingAgendaItemDto[];
+}
+
+export class EndMeetingSeriesDto {
+  /** Sent to everyone invited to each meeting cancelled. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }
