@@ -5356,6 +5356,30 @@ NOT ungated — its permission check moved into the service (3.2).
   decides: 403 naming `tasks:create` when no task is named (ACC-101 clause a),
   the identical 404 otherwise (clause b). The committee variants also need
   `committees:view`, checked before anything is read.
+  - **ACC-291: the committee variants follow `create.types`' rule.**
+    - They admit `committees:view`, or an active member of THE committee named,
+      through the one membership rule (`common/services/committee-membership.ts`,
+      `isActiveMember()`).
+    - That is one indexed query inside the read, only for a caller without
+      `committees:view`. A holder pays nothing, and nothing runs on the
+      per-request path.
+    - A member sees only their own committee's seats. The catalogue with no
+      committee named (`?catalogue=true`, ACC-208's stage task definitions)
+      stays `committees:view` only.
+    - A refusal is today's 403 "Required permission: committees:view",
+      decided before anything else is read. It is the same for another
+      committee, another organisation's committee and an invented id.
+    - `POST /tasks` already applied the same rule, and is unchanged: the record
+      check admits a member, and a seat can be chosen only on the task's own
+      committee.
+    - **Not a seat action:** the ACC-283 plan (§17) keeps tasks out of
+      `seat-actions.ts`, so membership decides.
+    - **The picker** offers the committee route at once to a `committees:view`
+      holder. To anyone else it offers the route only after the server has
+      answered that committee's seats: one request per committee, and a refusal
+      leaves the route out. The screen keeps no copy of the rule.
+    - Specs: `task-assignment.member-seat.db-spec.ts` (real Postgres) and the
+      service and picker specs. Mutation-checked.
 
 **ACC-173 adds six more, again deliberately ungated** (`task.controller.spec.ts`
 asserts the absence). Every entitlement is knowable only from the row, so each
