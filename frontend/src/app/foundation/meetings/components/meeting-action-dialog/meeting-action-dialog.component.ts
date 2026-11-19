@@ -11,6 +11,7 @@ import { InlineCalendarComponent } from '../../../../shared/components/inline-ca
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { MeetingService, type MeetingAttendanceRowDto, type MeetingMinutesDto } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
+import { MinutesWriteOrder } from '../../minutes-write-order';
 import { MeetingWhenFieldComponent } from '../meeting-when-field/meeting-when-field.component';
 import { dayInstant, meetingStart, meetingTimeValidator, meetingToday } from '../../meeting-when';
 
@@ -94,6 +95,7 @@ export class MeetingActionDialogComponent {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
+  private readonly order = inject(MinutesWriteOrder, { optional: true }) ?? new MinutesWriteOrder();
 
   readonly visible = input.required<boolean>();
   readonly meetingId = input.required<string>();
@@ -170,13 +172,14 @@ export class MeetingActionDialogComponent {
       return;
     }
     const v = this.form.getRawValue();
+    const seq = this.order.begin();
     this.saving.set(true);
     this.error.set(null);
     this.meetings.addAction(this.meetingId(), it.id, { title: v.title!.trim(), ownerUserId: v.ownerUserId!, dueAt: due.toISOString() }).subscribe({
       next: (minutes) => {
         this.saving.set(false);
         this.form.markAsPristine();
-        this.saved.emit(minutes);
+        if (this.order.isNewest(seq)) this.saved.emit(minutes);
         this.visibleChange.emit(false);
       },
       error: (err: unknown) => {

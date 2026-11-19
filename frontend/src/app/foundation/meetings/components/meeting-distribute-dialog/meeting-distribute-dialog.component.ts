@@ -35,14 +35,23 @@ function isoDay(day: Date): string {
   imports: [TranslatePipe, ButtonModule, InputTextModule, EditDialogComponent, InlineCalendarComponent],
   template: `
     <ng-template #bodyTpl>
-      @if (blocked(); as missing) {
+      @if (blocked(); as b) {
         <div class="flex flex-col gap-2" data-testid="distribute-blocked">
-          <p class="m-0 text-[13px]">{{ 'meeting.distribute.recordFirst' | translate }}</p>
-          <ul class="m-0 ps-4 text-[13px]">
-            @for (p of missing; track p.attendeeId) {
-              <li>{{ p.name }}</li>
-            }
-          </ul>
+          @if (b.code === 'MEETING_ATTENDANCE_INCOMPLETE') {
+            <p class="m-0 text-[13px]">{{ 'meeting.distribute.recordFirst' | translate }}</p>
+            <ul class="m-0 ps-4 text-[13px]">
+              @for (p of b.missing; track p.attendeeId) {
+                <li>{{ p.name }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="m-0 text-[13px]">{{ 'meeting.distribute.votesAbove' | translate }}</p>
+            <ul class="m-0 ps-4 text-[13px]" data-testid="distribute-votes-above">
+              @for (i of b.items; track i.agendaItemId) {
+                <li>{{ 'meeting.distribute.votesAboveItem' | translate: { title: i.title, total: format.number(i.total), present: format.number(i.present) } }}</li>
+              }
+            </ul>
+          }
         </div>
       } @else if (dateView()) {
         <div class="flex flex-col gap-2" data-testid="distribute-date-view">
@@ -92,7 +101,7 @@ function isoDay(day: Date): string {
 })
 export class MeetingDistributeDialogComponent {
   private readonly meetings = inject(MeetingService);
-  private readonly format = inject(FormatService);
+  readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
 
   readonly visible = input.required<boolean>();
@@ -111,7 +120,8 @@ export class MeetingDistributeDialogComponent {
   readonly minDay = signal(this.tomorrow());
   private chosen = false;
 
-  readonly blocked = computed(() => this.minutes()?.distribute?.blockedBy?.missing ?? null);
+  /** What holds Distribute: attendance not recorded, or votes above the members present (the server's one check). */
+  readonly blocked = computed(() => this.minutes()?.distribute?.blockedBy ?? null);
 
   readonly reviewers = computed(() => {
     const present = (this.minutes()?.attendance ?? []).filter((r) => r.kind === 'MEMBER' && r.attendance === 'PRESENT').length;

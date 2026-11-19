@@ -83,4 +83,17 @@ describe('MeetingOpenActionsComponent (ACC-316 PR 7b)', () => {
     expect(el.querySelector('[data-open-action-note]')).toBeNull();
     expect(el.querySelector('[data-open-action-note-text]')?.textContent).toContain('Waiting for the vendor');
   });
+
+  it('a new read (the page reloaded) drops a note saved here: the read is the truth (P206)', () => {
+    const { el, fixture } = create({ mayRead: true, rows: [row()] }, true);
+    const input = el.querySelector<HTMLInputElement>('[data-open-action-note="t-1"]')!;
+    input.value = 'Chased on 2 Mar';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLElement>('[data-open-action-save="t-1"] button')!.click();
+    fixture.detectChanges();
+    fixture.componentRef.setInput('openActions', { mayRead: true, rows: [row({ note: 'Changed since' })] });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.rows()[0]!.note).toBe('Changed since');
+  });
 });

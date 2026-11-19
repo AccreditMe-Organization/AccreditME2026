@@ -77,4 +77,13 @@ describe('MeetingDistributeDialogComponent (ACC-316 PR 7b)', () => {
     c.submit();
     expect(c.error()).toBe('meeting.refusal.reviewDateInvalid');
   });
+
+  it('votes above the members present hold Distribute, naming the item and its numbers (P206)', () => {
+    const { fixture } = create(
+      aMinutes({ distribute: { ready: false, blockedBy: { code: 'MEETING_VOTES_EXCEED_PRESENT', items: [{ agendaItemId: 'i-1', title: 'Hand hygiene', total: 6, present: 4 }] }, defaultReviewBy: '2027-03-25' } }),
+    );
+    fixture.detectChanges();
+    expect(document.querySelector('[data-testid="distribute-votes-above"]')?.textContent).toContain('Hand hygiene: 6 votes, 4 members present');
+    expect(document.querySelector('[data-testid="distribute-submit"]')).toBeNull();
+  });
 });

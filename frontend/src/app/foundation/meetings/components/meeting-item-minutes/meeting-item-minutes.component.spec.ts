@@ -136,4 +136,89 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
     expect(el.querySelector('[data-decision-edit="d-1"]')).toBeNull();
     expect(el.querySelector('[data-action-raise]')).toBeNull();
   });
+
+  describe('P206', () => {
+    it('another write answering with the same stored discussion leaves typed text alone', async () => {
+      const { el, fixture } = create(aMinutesItem({ discussion: 'Alarm sounded twice.' }));
+      await fixture.whenStable();
+      const box = el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!;
+      type(box, 'Alarm sounded twice; the sensor was replaced on');
+      fixture.detectChanges();
+      // An attendance tap elsewhere: the whole minutes again, a NEW item object, the same stored text.
+      fixture.componentRef.setInput('item', aMinutesItem({ discussion: 'Alarm sounded twice.' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(box.value).toBe('Alarm sounded twice; the sensor was replaced on');
+      expect(el.querySelector('[data-item-discussion-elsewhere]')).toBeNull();
+    });
+
+    it('the stored text changing while the box is dirty keeps the typed text, says so, and Reload takes the stored one', async () => {
+      const { el, fixture } = create(aMinutesItem({ discussion: 'Alarm sounded twice.' }));
+      await fixture.whenStable();
+      const box = el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!;
+      type(box, 'My own notes');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('item', aMinutesItem({ discussion: 'Changed by the Chair.' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(box.value).toBe('My own notes');
+      expect(el.querySelector('[data-item-discussion-elsewhere]')).not.toBeNull();
+      el.querySelector<HTMLElement>('[data-item-discussion-reload] button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(box.value).toBe('Changed by the Chair.');
+      expect(el.querySelector('[data-item-discussion-elsewhere]')).toBeNull();
+    });
+
+    it('a clean box follows the stored text when it changes', async () => {
+      const { el, fixture } = create(aMinutesItem({ discussion: 'First.' }));
+      fixture.componentRef.setInput('item', aMinutesItem({ discussion: 'Second.' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!.value).toBe('Second.');
+    });
+
+    const tryVotes = (votes: [string, string, string]) => {
+      const { el, fixture } = create();
+      el.querySelector<HTMLElement>('[data-decision-add] button')!.click();
+      fixture.detectChanges();
+      type(el.querySelector('[data-decision-text]')!, 'Replace the sensor.');
+      type(el.querySelector('[data-vote="for"]')!, votes[0]);
+      type(el.querySelector('[data-vote="against"]')!, votes[1]);
+      type(el.querySelector('[data-vote="abstain"]')!, votes[2]);
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-decision-save] button')!.click();
+      fixture.detectChanges();
+      return el.querySelector('[data-votes-error]')?.textContent?.trim() ?? null;
+    };
+
+    it('votes: one or two counts are refused here, under the field, and nothing is sent', () => {
+      expect(tryVotes(['5', '', ''])).toBe(en.meeting.minutes.votesAllOrNone);
+      expect(svc['addDecision']).not.toHaveBeenCalled();
+    });
+
+    it('votes: a negative, a fraction or a word is refused here', () => {
+      expect(tryVotes(['5', '-1', '0'])).toBe(en.meeting.minutes.votesWhole);
+      TestBed.resetTestingModule();
+      expect(tryVotes(['5', '1.5', '0'])).toBe(en.meeting.minutes.votesWhole);
+      TestBed.resetTestingModule();
+      expect(tryVotes(['five', '1', '0'])).toBe(en.meeting.minutes.votesWhole);
+      expect(svc['addDecision']).not.toHaveBeenCalled();
+    });
+
+    it('MEETING_VOTES_EXCEED_PRESENT says its numbers', () => {
+      const { el, fixture } = create();
+      svc['addDecision']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'MEETING_VOTES_EXCEED_PRESENT', present: 4, total: 6 } })));
+      el.querySelector<HTMLElement>('[data-decision-add] button')!.click();
+      fixture.detectChanges();
+      type(el.querySelector('[data-decision-text]')!, 'Approved.');
+      type(el.querySelector('[data-vote="for"]')!, '4');
+      type(el.querySelector('[data-vote="against"]')!, '1');
+      type(el.querySelector('[data-vote="abstain"]')!, '1');
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-decision-save] button')!.click();
+      fixture.detectChanges();
+      expect(el.querySelector('[data-item-minutes-error]')?.textContent?.trim()).toBe('6 votes, but only 4 members present.');
+    });
+  });
 });

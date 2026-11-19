@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
@@ -124,5 +124,59 @@ describe('MeetingAttendanceComponent (ACC-316 PR 7b)', () => {
     const minutes = aMinutes({ may: { ...aMinutes().may, recordAttendance: false } });
     const { el } = create(minutes, '2099-01-01T08:00:00.000Z');
     expect(el.querySelector('[data-testid="meeting-attendance-opens"]')?.textContent).toContain('Attendance opens at the meeting');
+  });
+
+  describe('P206', () => {
+    it('a tap on another row while one saves is queued, never dropped, and sent once the save ends', () => {
+      const { el, fixture } = create();
+      const first = new Subject<MeetingMinutesDto>();
+      record.and.returnValues(first, of(aMinutes()));
+      segment(el, 'a-1', 'PRESENT').click();
+      fixture.detectChanges();
+      segment(el, 'a-2', 'ABSENT').click();
+      fixture.detectChanges();
+      expect(record).toHaveBeenCalledTimes(1);
+      // The queued tap shows on its row at once.
+      expect(segment(el, 'a-2', 'ABSENT').getAttribute('aria-checked')).toBe('true');
+      first.next(aMinutes());
+      first.complete();
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(record.calls.mostRecent().args).toEqual(['m-1', [{ attendeeId: 'a-2', attendance: 'ABSENT' }]]);
+    });
+
+    it('an arrow key that changes nothing moves no focus', () => {
+      const minutes = aMinutes({ attendance: [anAttendanceRow({ attendance: 'APOLOGIES' })] });
+      const { el } = create(minutes);
+      document.body.appendChild(el);
+      try {
+        // Press ArrowRight on Present while Apologies is recorded: Apologies is a no-op.
+        segment(el, 'a-1', 'PRESENT').focus();
+        segment(el, 'a-1', 'PRESENT').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+        expect(record).not.toHaveBeenCalled();
+        expect(document.activeElement).toBe(segment(el, 'a-1', 'PRESENT'));
+      } finally {
+        el.remove();
+      }
+    });
+
+    describe('at the start time', () => {
+      beforeEach(() => {
+        jasmine.clock().install();
+        jasmine.clock().mockDate(new Date('2027-03-18T07:00:00.000Z'));
+      });
+      afterEach(() => jasmine.clock().uninstall());
+
+      it('the "opens at" sentence goes and the page is asked to read the minutes again, without a reload', () => {
+        const minutes = aMinutes({ may: { ...aMinutes().may, recordAttendance: false } });
+        const { el, fixture } = create(minutes, '2027-03-18T07:01:00.000Z');
+        const reached = jasmine.createSpy('reached');
+        fixture.componentInstance.startReached.subscribe(reached);
+        expect(el.querySelector('[data-testid="meeting-attendance-opens"]')).not.toBeNull();
+        jasmine.clock().tick(61_000);
+        fixture.detectChanges();
+        expect(reached).toHaveBeenCalledTimes(1);
+        expect(el.querySelector('[data-testid="meeting-attendance-opens"]')).toBeNull();
+      });
+    });
   });
 });

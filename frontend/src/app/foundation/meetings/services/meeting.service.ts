@@ -252,7 +252,14 @@ export interface MeetingMinutesDto {
     changes: { round: number; agendaItemId: string | null; what: string }[];
     mine: 'NO_CORRECTIONS' | 'SUGGESTED' | null;
   };
-  distribute: { ready: boolean; blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null; defaultReviewBy: string } | null;
+  distribute: {
+    ready: boolean;
+    blockedBy:
+      | { code: 'MEETING_ATTENDANCE_INCOMPLETE'; missing: { attendeeId: string; name: string }[] }
+      | { code: 'MEETING_VOTES_EXCEED_PRESENT'; items: { agendaItemId: string; title: string; total: number; present: number }[] }
+      | null;
+    defaultReviewBy: string;
+  } | null;
   approvedAt: string | null;
   may: {
     recordAttendance: boolean;

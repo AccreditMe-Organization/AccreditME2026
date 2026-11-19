@@ -33,6 +33,7 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 import { MeetingAttendanceComponent } from '../meeting-attendance/meeting-attendance.component';
 import { MeetingActionDialogComponent } from '../meeting-action-dialog/meeting-action-dialog.component';
 import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/meeting-distribute-dialog.component';
+import { MinutesWriteOrder } from '../../minutes-write-order';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -44,6 +45,8 @@ import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/m
 @Component({
   selector: 'app-meeting-page',
   standalone: true,
+  // P206 — one order for the page's minutes writes: an older answer never puts back what a newer one changed.
+  providers: [MinutesWriteOrder],
   imports: [
     TranslatePipe,
     RouterLink,
@@ -215,7 +218,7 @@ import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/m
 
           @if (minutes(); as mm) {
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
-            <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" />
+            <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
           } @else {
           <!-- Invitees -->
           <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
@@ -468,6 +471,13 @@ export class MeetingPageComponent {
         if (this.readFailed() === 'files') this.readFailed.set(null);
       },
       error: () => this.readFailed.set('files'),
+    });
+  }
+
+  /** The minutes read again (attendance opens at the start time, without a reload). */
+  refreshMinutes(): void {
+    this.optional(this.meetings.minutes(this.id), 'minutes').subscribe((m) => {
+      if (m) this.minutes.set(m);
     });
   }
 

@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { FormatService } from '../../../../core/formatting';
 import { meetingRefusalKey } from '../../meeting-refusal';
+import { MinutesWriteOrder } from '../../minutes-write-order';
 import { MeetingService, type MeetingMinutesDto, type MeetingOpenActionRowDto, type MeetingOpenActionsDto } from '../../services/meeting.service';
 
 /**
@@ -95,6 +96,18 @@ export class MeetingOpenActionsComponent {
   private readonly drafts = signal<Record<string, string>>({});
   readonly saving = signal<string | null>(null);
   readonly error = signal<{ id: string; key: string } | null>(null);
+  private readonly order = inject(MinutesWriteOrder, { optional: true }) ?? new MinutesWriteOrder();
+
+  constructor() {
+    // A new read (the page reloaded) is the truth: notes saved here, and drafts, are dropped.
+    effect(() => {
+      this.openActions();
+      untracked(() => {
+        this.savedNotes.set({});
+        this.drafts.set({});
+      });
+    });
+  }
 
   readonly rows = computed(() => {
     const read = this.openActions();
@@ -131,6 +144,7 @@ export class MeetingOpenActionsComponent {
   saveNote(row: MeetingOpenActionRowDto): void {
     if (this.saving()) return;
     const note = this.draftOf(row).trim() || null;
+    const seq = this.order.begin();
     this.saving.set(row.taskId);
     this.error.set(null);
     this.meetings.saveOpenActionNote(this.meetingId(), row.taskId, note).subscribe({
@@ -143,7 +157,7 @@ export class MeetingOpenActionsComponent {
           delete next[row.taskId];
           return next;
         });
-        this.minutesChange.emit(minutes);
+        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
       },
       error: (err: unknown) => {
         this.saving.set(null);

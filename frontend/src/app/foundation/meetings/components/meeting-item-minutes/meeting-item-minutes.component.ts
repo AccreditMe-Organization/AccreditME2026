@@ -8,6 +8,9 @@ import { Observable } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
+import { MinutesWriteOrder } from '../../minutes-write-order';
+import { HttpErrorResponse } from '@angular/common/http';
 import { MeetingService, type MeetingDecisionDto, type MeetingDecisionRequest, type MeetingMinutesDto, type MeetingMinutesItemDto } from '../../services/meeting.service';
 
 interface DecisionDraft {
@@ -28,7 +31,13 @@ interface DecisionDraft {
  *
  * Whoever records the minutes writes here while the stage takes them
  * (`canWrite`, the minutes read's `may.recordMinutes`); anyone else reads.
- * Every write answers with the whole minutes, which the page shows.
+ * Every write answers with the whole minutes, which the page shows when it
+ * answers the page's newest write (MinutesWriteOrder, P206).
+ *
+ * P206: the discussion box follows the STORED discussion only while the person
+ * hasn't typed in it. If the stored text changes while they have, their text
+ * stays and a line says it changed elsewhere, with Reload. Vote counts are
+ * checked here first (whole numbers, 0 or more, all three or none).
  */
 @Component({
   selector: 'am-meeting-item-minutes',
@@ -36,7 +45,7 @@ interface DecisionDraft {
   imports: [NgTemplateOutlet, FormsModule, TranslatePipe, ButtonModule, TextareaModule],
   template: `
     <div class="flex flex-col gap-2" [attr.data-item-minutes]="item().id">
-      <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+      <div class="am-im__cols grid gap-3">
         <div class="flex min-w-0 flex-col gap-1">
           <span class="am-im__label">{{ 'meeting.minutes.discussion' | translate }}</span>
           @if (canWrite()) {
@@ -49,6 +58,12 @@ interface DecisionDraft {
               (ngModelChange)="discussion.set($event)"
               data-item-discussion
             ></textarea>
+            @if (changedElsewhere()) {
+              <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-warning-ink)]" role="status" data-item-discussion-elsewhere>
+                {{ 'meeting.minutes.changedElsewhere' | translate }}
+                <p-button size="small" [text]="true" [label]="'meeting.minutes.reloadDiscussion' | translate" data-item-discussion-reload (onClick)="reloadDiscussion()" />
+              </p>
+            }
             @if (discussionChanged()) {
               <p-button class="self-start" size="small" [label]="'common.save' | translate" [loading]="busy() === 'discussion'" data-item-discussion-save (onClick)="saveDiscussion()" />
             }
@@ -109,7 +124,7 @@ interface DecisionDraft {
         }
       </div>
       @if (error()) {
-        <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-item-minutes-error>{{ error()! | translate }}</p>
+        <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-item-minutes-error>{{ error()!.key | translate: error()!.params }}</p>
       }
     </div>
 
@@ -117,15 +132,27 @@ interface DecisionDraft {
       @if (draft(); as d) {
         <div class="flex flex-col gap-2 rounded border border-[var(--am-border)] p-2" data-decision-form>
           <textarea pTextarea rows="2" maxlength="4000" [attr.aria-label]="'meeting.minutes.decision' | translate" [ngModel]="d.text" (ngModelChange)="patchDraft({ text: $event })" data-decision-text></textarea>
-          <fieldset class="m-0 flex flex-wrap gap-2 border-0 p-0">
+          <fieldset class="m-0 flex flex-wrap gap-2 border-0 p-0" [attr.aria-describedby]="voteError() ? 'votes-error-' + item().id : null">
             <legend class="am-im__label mb-1">{{ 'meeting.minutes.votes' | translate }}</legend>
             @for (v of voteFields; track v.key) {
               <label class="flex items-center gap-1 text-meta">
                 {{ v.label | translate }}
-                <input type="text" inputmode="numeric" dir="ltr" class="am-im__vote" [ngModel]="d[v.key]" (ngModelChange)="patchVote(v.key, $event)" [attr.data-vote]="v.key" />
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  dir="ltr"
+                  class="am-im__vote"
+                  [attr.aria-invalid]="voteError() ? true : null"
+                  [ngModel]="d[v.key]"
+                  (ngModelChange)="patchVote(v.key, $event)"
+                  [attr.data-vote]="v.key"
+                />
               </label>
             }
           </fieldset>
+          @if (voteError()) {
+            <p class="m-0 text-meta text-[var(--am-danger-ink)]" [id]="'votes-error-' + item().id" data-votes-error>{{ voteError()! | translate }}</p>
+          }
           <span class="flex gap-2">
             <p-button size="small" [label]="'common.save' | translate" [loading]="busy() === 'decision'" data-decision-save (onClick)="saveDecision()" />
             <p-button size="small" [text]="true" severity="secondary" [label]="'common.cancel' | translate" (onClick)="draft.set(null)" />
@@ -136,17 +163,20 @@ interface DecisionDraft {
   `,
   styles: [
     `
+      .am-im__cols {
+        grid-template-columns: repeat(auto-fit, minmax(calc(var(--am-space-40) * 5 + var(--am-space-20)), 1fr));
+      }
       .am-im__label {
-        font-size: var(--am-type-meta-size);
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--am-ink-500);
+        font-size: var(--am-type-micro-size);
+        font-weight: var(--am-type-micro-weight);
+        letter-spacing: var(--am-type-micro-tracking);
+        text-transform: var(--am-type-micro-transform);
+        color: var(--am-type-micro-color);
       }
       .am-im__noquorum,
       .am-im__draft {
         padding-inline: var(--am-space-8);
-        border-radius: 999px;
+        border-radius: var(--am-radius-pill);
         font-size: var(--am-type-meta-size);
       }
       .am-im__noquorum {
@@ -158,7 +188,7 @@ interface DecisionDraft {
         background: var(--am-surface);
       }
       .am-im__vote {
-        inline-size: 56px;
+        inline-size: calc(var(--am-space-40) + var(--am-space-16));
         min-block-size: var(--am-control-height);
         padding-inline: var(--am-space-8);
         border: 1px solid var(--am-control-border);
@@ -188,19 +218,46 @@ export class MeetingItemMinutesComponent {
     { key: 'abstain' as const, label: 'meeting.minutes.votesAbstain' },
   ];
 
+  private readonly order = inject(MinutesWriteOrder, { optional: true }) ?? new MinutesWriteOrder();
+
   readonly discussion = signal('');
   readonly draft = signal<DecisionDraft | null>(null);
   readonly busy = signal<'discussion' | 'decision' | 'remove' | null>(null);
-  readonly error = signal<string | null>(null);
+  readonly error = signal<{ key: string; params?: Record<string, string> } | null>(null);
+  readonly voteError = signal<string | null>(null);
+  /** The stored discussion changed while the person had typed in the box. */
+  readonly changedElsewhere = signal(false);
+  /** The stored discussion the box last took (or was told about). */
+  private lastStored: string | null = null;
 
   readonly discussionChanged = computed(() => (this.discussion().trim() || null) !== (this.item().discussion ?? null));
 
   constructor() {
-    // The box follows the stored discussion whenever the server's changes.
+    // The box follows the STORED discussion, and only when that string changes:
+    // a new minutes object with the same text (any other write answers with the
+    // whole minutes) leaves typed text alone. A change while the box holds typed
+    // text keeps it and says so (P206).
     effect(() => {
       const stored = this.item().discussion ?? '';
-      untracked(() => this.discussion.set(stored));
+      untracked(() => {
+        if (this.lastStored === null) {
+          this.lastStored = stored;
+          this.discussion.set(stored);
+          return;
+        }
+        if (stored === this.lastStored) return;
+        const dirty = this.discussion() !== this.lastStored;
+        this.lastStored = stored;
+        if (dirty) this.changedElsewhere.set(true);
+        else this.discussion.set(stored);
+      });
     });
+  }
+
+  /** Reload: the box takes the stored discussion, dropping what was typed. */
+  reloadDiscussion(): void {
+    this.discussion.set(this.lastStored ?? '');
+    this.changedElsewhere.set(false);
   }
 
   votesLine(d: MeetingDecisionDto): string {
@@ -213,16 +270,24 @@ export class MeetingItemMinutesComponent {
   }
 
   saveDiscussion(): void {
-    this.run('discussion', this.meetings.saveDiscussion(this.meetingId(), this.item().id, this.discussion().trim() || null));
+    const value = this.discussion().trim() || null;
+    this.run('discussion', this.meetings.saveDiscussion(this.meetingId(), this.item().id, value), () => {
+      // The saved text is now the stored one: the box is clean.
+      this.lastStored = value ?? '';
+      this.discussion.set(value ?? '');
+      this.changedElsewhere.set(false);
+    });
   }
 
   newDecision(): void {
     this.error.set(null);
+    this.voteError.set(null);
     this.draft.set({ id: null, text: '', for: '', against: '', abstain: '' });
   }
 
   editDecision(d: MeetingDecisionDto): void {
     this.error.set(null);
+    this.voteError.set(null);
     this.draft.set({ id: d.id, text: d.text, for: d.votes ? String(d.votes.for) : '', against: d.votes ? String(d.votes.against) : '', abstain: d.votes ? String(d.votes.abstain) : '' });
   }
 
@@ -237,8 +302,20 @@ export class MeetingItemMinutesComponent {
   saveDecision(): void {
     const d = this.draft();
     if (!d) return;
-    const count = (s: string): number | null => (s.trim() === '' ? null : Number(s.trim()));
-    const body: MeetingDecisionRequest = { text: d.text.trim(), votesFor: count(d.for), votesAgainst: count(d.against), votesAbstain: count(d.abstain) };
+    // Checked here before sending: whole numbers, 0 or more, all three or none.
+    const typed = [d.for, d.against, d.abstain].map((s) => s.trim());
+    const given = typed.filter((s) => s !== '').length;
+    if (typed.some((s) => s !== '' && !/^\d+$/.test(s))) {
+      this.voteError.set('meeting.minutes.votesWhole');
+      return;
+    }
+    if (given !== 0 && given !== 3) {
+      this.voteError.set('meeting.minutes.votesAllOrNone');
+      return;
+    }
+    this.voteError.set(null);
+    const count = (s: string): number | null => (s === '' ? null : Number(s));
+    const body: MeetingDecisionRequest = { text: d.text.trim(), votesFor: count(typed[0]!), votesAgainst: count(typed[1]!), votesAbstain: count(typed[2]!) };
     const request = d.id
       ? this.meetings.updateDecision(this.meetingId(), this.item().id, d.id, body)
       : this.meetings.addDecision(this.meetingId(), this.item().id, body);
@@ -267,18 +344,30 @@ export class MeetingItemMinutesComponent {
 
   private run(kind: 'discussion' | 'decision' | 'remove', request: Observable<MeetingMinutesDto>, done?: () => void): void {
     if (this.busy()) return;
+    const seq = this.order.begin();
     this.busy.set(kind);
     this.error.set(null);
     request.subscribe({
       next: (minutes) => {
         this.busy.set(null);
         done?.();
-        this.minutesChange.emit(minutes);
+        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
       },
       error: (err: unknown) => {
         this.busy.set(null);
-        this.error.set(meetingRefusalKey(err) ?? 'meeting.minutes.error');
+        this.error.set(this.refusal(err));
       },
     });
+  }
+
+  /** A refusal from its code; the votes refusal says its numbers. */
+  private refusal(err: unknown): { key: string; params?: Record<string, string> } {
+    if (refusalCode(err) === 'MEETING_VOTES_EXCEED_PRESENT' && err instanceof HttpErrorResponse) {
+      const body = err.error as { total?: number; present?: number } | null;
+      if (typeof body?.total === 'number' && typeof body.present === 'number') {
+        return { key: 'meeting.refusal.votesExceedPresent', params: { total: this.format.number(body.total), present: this.format.number(body.present) } };
+      }
+    }
+    return { key: meetingRefusalKey(err) ?? 'meeting.minutes.error' };
   }
 }

@@ -1,10 +1,11 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingService, type MeetingAttendance, type MeetingAttendanceRowDto, type MeetingMinutesDto } from '../../services/meeting.service';
+import { MinutesWriteOrder } from '../../minutes-write-order';
 
 const CHOICES: { value: MeetingAttendance; key: string }[] = [
   { value: 'PRESENT', key: 'meeting.attendance.present' },
@@ -23,6 +24,12 @@ const CHOICES: { value: MeetingAttendance; key: string }[] = [
  * start the panel says when it opens; anyone else reads what was recorded.
  * The segments are a radiogroup: arrow keys move in reading direction. Under a
  * coarse pointer the segments are 44px tall and at least 72px wide.
+ *
+ * P206: a tap while another row saves is QUEUED for its row, never dropped, and
+ * sent when the save ends; focus moves only once a tap is accepted. An answer
+ * is shown only when it answers the page's newest minutes write
+ * (MinutesWriteOrder). At the start time the panel asks the page to read the
+ * minutes again (`startReached`), so attendance opens without a reload.
  */
 @Component({
   selector: 'am-meeting-attendance',
@@ -66,8 +73,8 @@ const CHOICES: { value: MeetingAttendance; key: string }[] = [
                       type="button"
                       role="radio"
                       class="am-segmented__option"
-                      [class.am-segmented__option--active]="row.attendance === c.value"
-                      [attr.aria-checked]="row.attendance === c.value"
+                      [class.am-segmented__option--active]="shown(row) === c.value"
+                      [attr.aria-checked]="shown(row) === c.value"
                       [attr.tabindex]="tabIndexOf(row, i)"
                       [attr.aria-disabled]="busy() === row.attendeeId || null"
                       [attr.data-attendance]="c.value"
@@ -95,6 +102,7 @@ const CHOICES: { value: MeetingAttendance; key: string }[] = [
   styles: [
     `
       .am-att__quorum {
+        margin: 0;
         padding: var(--am-space-8);
         border-radius: var(--am-radius-button);
         font-size: var(--am-type-value-size);
@@ -148,11 +156,11 @@ const CHOICES: { value: MeetingAttendance; key: string }[] = [
       /* The meeting room's tablet: a coarse pointer gets 44px segments, 72px wide, and 56px rows. */
       @media (pointer: coarse) {
         .am-att__row {
-          min-block-size: 56px;
+          min-block-size: calc(var(--am-space-40) + var(--am-space-16));
         }
         .am-att__seg .am-segmented__option {
-          min-block-size: 44px;
-          min-inline-size: 72px;
+          min-block-size: calc(var(--am-space-40) + var(--am-space-4));
+          min-inline-size: calc(var(--am-space-40) + var(--am-space-32));
         }
       }
     `,
@@ -170,6 +178,14 @@ export class MeetingAttendanceComponent {
   readonly scheduledAt = input.required<string>();
   /** The minutes as the server holds them after a recording. */
   readonly minutesChange = output<MeetingMinutesDto>();
+  /** The meeting's start time arrived while the panel was open: the page reads the minutes again. */
+  readonly startReached = output<void>();
+
+  private readonly order = inject(MinutesWriteOrder, { optional: true }) ?? new MinutesWriteOrder();
+  /** Taps made while a save was running, by row: sent together when it ends. */
+  readonly queued = signal<Record<string, MeetingAttendance>>({});
+  /** Now, moved forward by a timer to the meeting's start (opensAt reads it). */
+  private readonly now = signal(Date.now());
 
   readonly choices = CHOICES;
   /** The row being saved, or 'all' for Mark all present. */
@@ -185,9 +201,37 @@ export class MeetingAttendanceComponent {
   /** Before the start, in the draft, the time attendance opens; otherwise nothing. */
   readonly opensAt = computed(() => {
     const m = this.minutes();
-    if (m.may.recordAttendance || m.phase !== 'draft' || new Date(this.scheduledAt()).getTime() <= Date.now()) return null;
+    if (m.may.recordAttendance || m.phase !== 'draft' || new Date(this.scheduledAt()).getTime() <= this.now()) return null;
     return this.format.dateTime(this.scheduledAt());
   });
+
+  constructor() {
+    // A timer to the start: the sentence goes, and the page reads the minutes
+    // again so the controls arrive, without a reload. Cleared on destroy.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const clear = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    };
+    effect(() => {
+      clear();
+      const at = new Date(this.scheduledAt()).getTime();
+      const wait = at - Date.now();
+      if (!(wait > 0)) return;
+      // setTimeout holds at most 2^31 - 1 ms; a later start re-arms on the next read.
+      timer = setTimeout(() => {
+        timer = null;
+        this.now.set(Date.now());
+        if (Date.now() >= at) this.startReached.emit();
+      }, Math.min(wait, 2_147_483_647));
+    });
+    inject(DestroyRef).onDestroy(clear);
+  }
+
+  /** The value a row shows: a queued tap, else what is recorded. */
+  shown(row: MeetingAttendanceRowDto): MeetingAttendance | null {
+    return this.queued()[row.attendeeId] ?? row.attendance;
+  }
 
   readonly quorumLine = computed(() => {
     this.language.isArabic();
@@ -206,9 +250,9 @@ export class MeetingAttendanceComponent {
     return this.translate.instant(row.kind === 'OUTSIDE_GUEST' ? 'meeting.invitees.outsideGuest' : 'meeting.invitees.guest');
   }
 
-  /** The radiogroup's one tab stop: the recorded value, else the first. */
+  /** The radiogroup's one tab stop: the shown value, else the first. */
   tabIndexOf(row: MeetingAttendanceRowDto, index: number): number {
-    const at = CHOICES.findIndex((c) => c.value === row.attendance);
+    const at = CHOICES.findIndex((c) => c.value === this.shown(row));
     return index === (at < 0 ? 0 : at) ? 0 : -1;
   }
 
@@ -219,23 +263,31 @@ export class MeetingAttendanceComponent {
     if (!step) return;
     event.preventDefault();
     const next = (index + step + CHOICES.length) % CHOICES.length;
+    // Focus moves only once the tap is accepted (recorded, or queued).
+    if (!this.record(row, CHOICES[next]!.value)) return;
     const group = (event.currentTarget as HTMLElement).parentElement;
     (group?.children[next] as HTMLElement | undefined)?.focus();
-    this.record(row, CHOICES[next]!.value);
   }
 
-  record(row: MeetingAttendanceRowDto, value: MeetingAttendance): void {
-    if (this.busy() !== null || row.attendance === value) return;
+  /** A tap: sent at once, or queued for its row while another save runs. False when it changes nothing. */
+  record(row: MeetingAttendanceRowDto, value: MeetingAttendance): boolean {
+    if (this.shown(row) === value) return false;
+    if (this.busy() !== null) {
+      this.queued.update((q) => ({ ...q, [row.attendeeId]: value }));
+      return true;
+    }
     this.save([{ attendeeId: row.attendeeId, attendance: value }], row.attendeeId);
+    return true;
   }
 
   markAllPresent(): void {
     if (this.busy() !== null) return;
-    const rows = this.minutes().attendance.filter((r) => r.attendance !== 'PRESENT').map((r) => ({ attendeeId: r.attendeeId, attendance: 'PRESENT' as const }));
+    const rows = this.minutes().attendance.filter((r) => this.shown(r) !== 'PRESENT').map((r) => ({ attendeeId: r.attendeeId, attendance: 'PRESENT' as const }));
     if (rows.length) this.save(rows, 'all');
   }
 
   private save(rows: { attendeeId: string; attendance: MeetingAttendance }[], busy: string): void {
+    const seq = this.order.begin();
     this.busy.set(busy);
     this.rowError.set(null);
     this.saved.set(null);
@@ -243,12 +295,23 @@ export class MeetingAttendanceComponent {
       next: (minutes) => {
         this.busy.set(null);
         this.saved.set(busy === 'all' ? null : busy);
-        this.minutesChange.emit(minutes);
+        if (this.order.isNewest(seq)) this.minutesChange.emit(minutes);
+        this.flush();
       },
       error: (err: unknown) => {
         this.busy.set(null);
         this.rowError.set({ id: busy === 'all' ? rows[0]!.attendeeId : busy, key: meetingRefusalKey(err) ?? 'meeting.attendance.error' });
+        this.flush();
       },
     });
+  }
+
+  /** The taps queued during a save, sent together once it ends. */
+  private flush(): void {
+    const q = this.queued();
+    const rows = Object.entries(q).map(([attendeeId, attendance]) => ({ attendeeId, attendance }));
+    if (rows.length === 0) return;
+    this.queued.set({});
+    this.save(rows, rows.length === 1 ? rows[0]!.attendeeId : 'all');
   }
 }
