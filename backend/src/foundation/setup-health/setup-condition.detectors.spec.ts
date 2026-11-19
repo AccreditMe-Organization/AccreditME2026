@@ -84,8 +84,11 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   //
   // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT was on the list in PR 1; PR 2
   // took it off when it added the detector.
-  it('defers POSITION_WITHOUT_ROLE only, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
+  //
+  // ACC-307 — COMMITTEE_BELOW_QUORUM is on the list in PR 1, and PR 2 takes it
+  // off when it adds the detector.
+  it('defers POSITION_WITHOUT_ROLE and COMMITTEE_BELOW_QUORUM only, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE', 'COMMITTEE_BELOW_QUORUM']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }

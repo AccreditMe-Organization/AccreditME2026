@@ -1,4 +1,5 @@
 import { assertTransitionPreconditions, goesLive, hasTransitionPrecondition, TransitionPreconditionContext } from './transition-preconditions';
+import { Prisma } from '../../../generated/prisma/client';
 
 // ACC-286 — the COMMITTEE precondition, with the database answers faked by SQL
 // shape so each rule is pinned on its own. The real reads, the transaction and
@@ -16,8 +17,10 @@ interface World {
 }
 
 function client(world: World) {
-  const $queryRaw = jest.fn((strings: TemplateStringsArray) => {
-    const sql = strings.join('?');
+  // ACC-307 — the statement as Prisma sends it: a nested fragment (the shared
+  // active-member count) is flattened into the text.
+  const $queryRaw = jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const sql = Prisma.sql(strings, ...values).sql;
     if (sql.includes('"quorumCount"')) return Promise.resolve([{ quorumCount: world.quorumCount }]);
     if (sql.includes('COUNT(*)')) return Promise.resolve([{ n: world.members }]);
     if (sql.includes('"LookupCategory"')) return Promise.resolve(world.required);

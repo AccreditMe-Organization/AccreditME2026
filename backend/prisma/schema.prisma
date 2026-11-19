@@ -264,6 +264,10 @@ enum SetupConditionType {
   // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
   // reader; PR 2's detector is the first writer.
   COMMITTEE_MISSING_REQUIRED_SEAT
+  // ACC-307 — a committee in force with fewer active members (ACTIVE users)
+  // than its quorum. Expand first: PR 2's detector writes it, never before this
+  // value is deployed (ACC-173's rule).
+  COMMITTEE_BELOW_QUORUM
   // ACC-261 — the organisation has not confirmed where its files go
   // (storageConfirmedAt null), so every upload is refused. Written only by the
   // detector that deploys with it, never before (ACC-173's rule).
