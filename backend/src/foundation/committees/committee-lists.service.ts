@@ -4,6 +4,7 @@ import { LookupService } from '../lookup/lookup.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 import { ICommitteeMemberRow, ICommitteeMembershipEventRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { mayReadMembershipReasons } from './membership-reason-readers';
 import { CommitteeViewer, assertMaySeeCommittee, readableCommitteeIds } from '../../common/services/committee-membership';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
@@ -157,6 +158,12 @@ export class CommitteeListsService {
    * (Ahmad, 7 Nov), and needs neither users:view nor lookups:view for the names.
    * Queries: the events and, in parallel, the people (one) and the seats (three, in
    * lookups) — whatever the number of events.
+   *
+   * ACC-301 (Ahmad, 19 Nov) — the reasons go only to those mayReadMembershipReasons()
+   * admits (committees:view, this committee's Chairman or Secretary, an overseer);
+   * for anyone else every row's reason is null and `reasonWithheld` says one exists.
+   * Decided once per read: no query for committees:view, else at most the officer
+   * query and then the oversight reads.
    */
   async membershipEvents(committeeId: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeMembershipEventRow[]> {
     await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
@@ -174,8 +181,13 @@ export class CommitteeListsService {
     ]);
     const nameOf = new Map(users.map((u) => [u.id, u.name]));
     const seatOf = new Map(seats.map((s) => [s.id, s]));
+    const readsReasons = events.some((e) => e.reason)
+      ? await mayReadMembershipReasons(this.prisma, committeeId, organizationId, viewer, seats)
+      : true;
     return events.map((e) => ({
       ...e,
+      reason: readsReasons ? e.reason : null,
+      reasonWithheld: !readsReasons && !!e.reason,
       userName: nameOf.get(e.userId) ?? null,
       approvedByName: e.approvedBy ? (nameOf.get(e.approvedBy) ?? null) : null,
       roleLabelEn: seatOf.get(e.roleValueId)?.labelEn ?? null,

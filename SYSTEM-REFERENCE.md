@@ -7712,6 +7712,64 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
 - **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
+- **The reason in Membership history (ACC-301):**
+  - The committee page's Membership history panel shows the reason on a LEFT
+    row with no `cause` (a person's removal). See all shows it too.
+  - It is read from the history response (`reason`); there is no second read.
+  - **Who reads it (Ahmad, 19 Nov):** overseers and the committee's officers
+    only, decided on the server in ONE place, `mayReadMembershipReasons()`
+    (`committees/membership-reason-readers.ts`):
+    - a `committees:view` holder (no query);
+    - this committee's ACTIVE Chairman or Secretary (their seats found by the
+      lookup KEYS, `OFFICER_SEAT_KEYS`, never a label), one indexed query;
+    - a head or acting cover in force whose oversight covers the committee (the
+      existing `overseesCommittee()` clause), asked only when the first two said
+      no.
+    - **Anyone else who may read the history** (its other members) gets each row
+      with `reason: null` and `reasonWithheld: true`, and the screen says
+      "Reason not shown" / «السبب غير معروض». The screen only renders what it
+      gets.
+    - Decided once per read, never per row.
+    - `CommitteesService.listMembershipEvents()` is deleted: no route called it,
+      and it returned every reason unfiltered.
+    - The Remove dialog says who will read it: "Only people who oversee
+      committees, and this committee's Chairman and Secretary, will see this
+      reason."
+    - Spec: `membership-reason-readers.db-spec.ts` (real Postgres):
+      - a member gets null;
+      - the Chairman, the Secretary, a `committees:view` holder and the unit
+        head with oversight read it;
+      - an inactive Chairman does not;
+      - an acting cover in force reads it; an ended cover and an INACTIVE head
+        (both plain members) do not;
+      - oversight from a parent unit reads a sub-unit committee's reason;
+      - a Chairman seat renamed through an override still counts (key, not
+        label);
+      - another organisation's reason reaches nobody.
+      Mutation-checked.
+  - **Where it goes:**
+    - **Panel:** on line 2, after the change and a separator, labelled
+      "Reason:" / «السبب:». The change keeps up to 55% of the line and the
+      reason takes the rest; each is cut with an ellipsis and keeps its whole
+      text in a tooltip.
+    - **Why not a third line:** the panel's rows are a fixed two lines
+      (`am-capped-panel`), and a third line would push the fifth row out of the
+      body.
+    - **See all:** under the change, in the same cell, and it WRAPS (never cut),
+      so keyboard and touch readers get all of it.
+    - **Direction:** the reason is in a `bdi dir="auto"`, so an Arabic reason in
+      English (or the reverse, or mixed) keeps its own direction.
+  - **When nothing extra shows:**
+    - a removal from before ACC-298 (no reason): no separator, no "—";
+    - a seat the app ended (any `cause`, ACC-306): said from its cause, never
+      from a stored reason;
+    - a JOINED row.
+  - **Search:** See all's search matches the reason.
+  - **Measured** at 1280 (the page's 988px content column, one of three panel
+    columns, 321px wide) in both languages, with a long reason beside a long
+    seat: body 294 / 328, rows 52 / 58, and the reason on one cut line 122px
+    wide (`committee-membership-history-panel.layout.spec.ts`).
+  - Mutation-checked.
 
 ### 3.21.3 Telling a committee after a member is transferred (ACC-297)
 

@@ -89,7 +89,10 @@ describe('CommitteeRemoveMemberDialogComponent (ACC-298)', () => {
       "Their membership ends today and stays in the committee's history.",
     );
     expect(document.body.textContent).toContain('Reason for removing');
-    expect(document.body.textContent).toContain("Kept in the committee's membership history.");
+    // P185 (Ahmad, 19 Nov) — the dialog says who will read the reason.
+    expect(document.body.textContent).toContain(
+      "Only people who oversee committees, and this committee's Chairman and Secretary, will see this reason.",
+    );
   });
 
   it('Arabic: the same, in Arabic, with the name as stored', () => {
@@ -99,6 +102,7 @@ describe('CommitteeRemoveMemberDialogComponent (ACC-298)', () => {
       'تنتهي العضوية اليوم وتبقى في سجل اللجنة.',
     );
     expect(document.body.textContent).toContain('سبب الإزالة');
+    expect(document.body.textContent).toContain('لن يرى هذا السبب إلا من يشرف على اللجان، ورئيس هذه اللجنة وأمينها.');
   });
 
   it('Remove is never disabled', () => {

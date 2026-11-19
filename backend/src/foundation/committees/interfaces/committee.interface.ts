@@ -220,6 +220,12 @@ export interface ICommitteeMembershipEventRow extends ICommitteeMembershipEvent 
   /** The seat, as this tenant names it; null for a value it no longer offers. */
   roleLabelEn: string | null;
   roleLabelAr: string | null;
+  /**
+   * ACC-301 (Ahmad, 19 Nov) — the row has a reason this viewer may not read
+   * (mayReadMembershipReasons): `reason` is then null, and the screen says
+   * "Reason not shown". False when the viewer reads it, or when there is none.
+   */
+  reasonWithheld: boolean;
 }
 
 // ACC-230 — one row of the Sub-committees panel and its "See all" list.

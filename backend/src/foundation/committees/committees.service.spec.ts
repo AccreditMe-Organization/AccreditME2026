@@ -971,19 +971,6 @@ describe('CommitteesService', () => {
     });
   });
 
-  describe('listMembershipEvents', () => {
-    it('returns the full history, scoped to the tenant', async () => {
-      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
-      mockPrisma.committeeMembershipEvent.findMany.mockResolvedValue([]);
-
-      await service.listMembershipEvents('committee-1', ORG_A, { id: 'viewer-1', permissions: ['committees:view'] });
-
-      expect(mockPrisma.committeeMembershipEvent.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { committeeId: 'committee-1', organizationId: ORG_A } }),
-      );
-    });
-  });
-
   describe('addMember', () => {
     it('creates the member and a JOINED membership event', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
@@ -1132,7 +1119,7 @@ describe('CommitteesService', () => {
         );
       });
 
-      it('preserves the original LEFT event and appends a new JOINED event — full history readable via listMembershipEvents()', async () => {
+      it('preserves the original LEFT event and appends a new JOINED event — the history keeps both', async () => {
         const priorLeftEvent = {
           id: 'event-left-1',
           organizationId: ORG_A,
@@ -1159,7 +1146,6 @@ describe('CommitteesService', () => {
             return Promise.resolve(created);
           },
         );
-        mockPrisma.committeeMembershipEvent.findMany.mockImplementation(() => Promise.resolve([...events]));
 
         await service.addMember(
           'committee-1',
@@ -1168,7 +1154,8 @@ describe('CommitteesService', () => {
           ACTOR, HOLDER,
         );
 
-        const history = await service.listMembershipEvents('committee-1', ORG_A, { id: 'viewer-1', permissions: ['committees:view'] });
+        // The history read is CommitteeListsService.membershipEvents(); here, the rows written.
+        const history = events;
 
         expect(history).toHaveLength(2);
         expect(history[0]).toEqual(priorLeftEvent); // untouched by the reactivation

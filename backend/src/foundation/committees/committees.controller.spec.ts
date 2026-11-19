@@ -76,7 +76,6 @@ describe('CommitteesController', () => {
     createCommittee: jest.Mock;
     updateCommittee: jest.Mock;
     listMembers: jest.Mock;
-    listMembershipEvents: jest.Mock;
     addMember: jest.Mock;
     changeMemberRole: jest.Mock;
     removeMember: jest.Mock;
@@ -89,7 +88,6 @@ describe('CommitteesController', () => {
       createCommittee: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
       updateCommittee: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
       listMembers: jest.fn().mockResolvedValue([MOCK_MEMBER]),
-      listMembershipEvents: jest.fn().mockResolvedValue([MOCK_EVENT]),
       addMember: jest.fn().mockResolvedValue(MOCK_MEMBER),
       changeMemberRole: jest.fn().mockResolvedValue(MOCK_MEMBER),
       removeMember: jest.fn().mockResolvedValue(undefined),
