@@ -1,11 +1,20 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { Prisma } from '../../../generated/prisma/client';
 import { TaskService, TaskViewer } from './task.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, toPoolView } from './task-pool';
+import {
+  CURRENT_ACTIVE_ASSIGNEE,
+  POOL_LABEL_INCLUDE,
+  PICKABLE_STATUSES,
+  currentActiveAssigneeOfSql,
+  currentActiveAssigneeWhereSql,
+  poolTargetOf,
+  toPoolView,
+} from './task-pool';
 import { holdsCreateKey, holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
 import { TaskVisibilityService } from './task-visibility.service';
 import {
@@ -38,7 +47,7 @@ const RANK = Prisma.raw(
 interface Scope {
   sql: Prisma.Sql;
   kind: 'all' | 'own';
-  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created';
+  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created' | 'person';
   /** Organisation-wide: rows say which record they belong to. */
   orgWide: boolean;
   ctx: TaskVisibilityContext;
@@ -82,16 +91,31 @@ export class TaskRecordListService {
   ) {}
 
   async panel(dto: RecordPanelQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordPanel> {
+    // ACC-216 — a person's Tasks panel: the first five of the person scope
+    // (scope() below). A person is not a record, so nothing is created there:
+    // no New task (plan Q10), whatever the viewer holds.
+    if (dto.person) {
+      if (dto.sourceType || dto.sourceId) throw new BadRequestException('Name a record or a person, not both');
+      const list = await this.run({ person: dto.person, take: 5 }, organizationId, viewer, false);
+      return { total: list.total, scope: list.scope, rows: list.items, canCreate: false };
+    }
+    if (!dto.sourceType || !dto.sourceId) throw new BadRequestException('Name both the record type and the record, or a person');
     const list = await this.run({ sourceType: dto.sourceType, sourceId: dto.sourceId, take: 5 }, organizationId, viewer, false);
     // ACC-244 — New task on the record's own panel: Create tasks on its type
     // (the record is visible: run() refused it otherwise). ACC-280: the same rule
     // POST /tasks applies, holdsCreateKey(), so a member who holds the key without
     // committees:view is offered New task exactly when create would accept it.
+    // ACC-283 — and POST /tasks' record check, canViewForWrite(): the panel
+    // admits an overseeing head (a read), create does not (Q6). Asked only with
+    // the key; a committees:view holder pays no query, anyone else one.
+    const canCreate =
+      holdsCreateKey(viewer.permissions, dto.sourceType) &&
+      (await this.objectVisibility.canViewForWrite(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id));
     return {
       total: list.total,
       scope: list.scope,
       rows: list.items,
-      canCreate: holdsCreateKey(viewer.permissions, dto.sourceType),
+      canCreate,
     };
   }
 
@@ -176,6 +200,7 @@ export class TaskRecordListService {
   // ── Who sees which tasks ──────────────────────────────────────────────
 
   private async scope(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Scope> {
+    if (dto.person) return this.personScope(dto, organizationId, viewer);
     if (!!dto.sourceType !== !!dto.sourceId) {
       throw new BadRequestException('Name both the record type and the record, or neither');
     }
@@ -199,7 +224,7 @@ export class TaskRecordListService {
     // ACC-120 slice 3 — the viewer's own views: no permission, so never a 403.
     // An unpicked pool task is not "mine" (it waits in Available).
     if (view === 'mine' || view === 'created') {
-      const own = view === 'mine' ? activeAssignee(ctx.viewerId) : Prisma.sql`${createdBySql(ctx)} AND NOT ${workflowMadeSql()}`;
+      const own = view === 'mine' ? currentActiveAssigneeOfSql(ctx.viewerId) : Prisma.sql`${createdBySql(ctx)} AND NOT ${workflowMadeSql()}`;
       return {
         // The view's own condition AND the rule, as for every other view.
         sql: Prisma.sql`AND ${own} AND ${taskVisibleSql(ctx)}`,
@@ -232,6 +257,43 @@ export class TaskRecordListService {
     };
   }
 
+  /**
+   * ACC-216 (plan step-216 §5, Option A, decided 17 Nov) — A PERSON'S TASKS:
+   * the tasks `dto.person` is ON, by ACC-86's one definition (task-pool.ts,
+   * currentActiveAssigneeOfSql(): a current row, picked pool rows included, AND
+   * the person is ACTIVE, so someone deactivated has none), AND the viewer's own
+   * rule, taskVisibleSql(), in the WHERE
+   * before LIMIT. One condition beside today's rule and no new visibility code,
+   * so NOBODY GAINS ACCESS: every row is a task the viewer's task page already
+   * admits (TaskAdmissionService asks the same rule of one row).
+   *
+   * The gate runs before any read (ACC-101 clause a: the request names the
+   * parent, a person): yourself, or users:view, else a 403 naming it — the same
+   * for a real colleague and an invented id. Then the person is read with
+   * { id, organizationId }: an invented id and another organisation's person
+   * get the identical 404. Never with a record or a view (400).
+   */
+  private async personScope(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Scope> {
+    const person = dto.person!;
+    if (dto.sourceType || dto.sourceId || dto.view) {
+      throw new BadRequestException('A person is not combined with a record or a view');
+    }
+    if (person !== viewer.id && !viewer.permissions.includes(USERS_PERMISSIONS.VIEW)) {
+      throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.VIEW}`);
+    }
+    const found = await this.prisma.user.findFirst({ where: { id: person, organizationId }, select: { id: true } });
+    if (!found) throw new NotFoundException('User not found');
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    return {
+      sql: Prisma.sql`AND ${currentActiveAssigneeOfSql(person)} AND ${taskVisibleSql(ctx)}`,
+      // Every task the viewer may see that the person is on: the count says so.
+      kind: 'all',
+      view: 'person',
+      orgWide: true,
+      ctx,
+    };
+  }
+
   // ── The toolbar's filters ─────────────────────────────────────────────
 
   private async filters(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Prisma.Sql> {
@@ -254,8 +316,9 @@ export class TaskRecordListService {
         .map(([type, e]) => Prisma.sql`(t."sourceType"::text = ${type} AND ${e.ownerUnitSql!} = ${dto.unit})`);
       parts.push(owned.length ? Prisma.sql`(${Prisma.join(owned, ' OR ')})` : Prisma.sql`FALSE`);
     }
-    if (dto.assignee) parts.push(activeAssignee(dto.assignee));
-    if (dto.mine) parts.push(activeAssignee(viewer.id));
+    // ACC-315 — the person filters read ACC-86's one rule: someone no longer ACTIVE is on nothing.
+    if (dto.assignee) parts.push(currentActiveAssigneeOfSql(dto.assignee));
+    if (dto.mine) parts.push(currentActiveAssigneeOfSql(viewer.id));
     if (dto.pool) parts.push(poolClause(dto.pool));
     if (dto.required) {
       parts.push(Prisma.sql`t."workflowInstanceStageId" IS NOT NULL AND t."isMandatory" = ${dto.required === 'REQUIRED'}`);
@@ -280,8 +343,7 @@ export class TaskRecordListService {
       // see is not searched, so a search cannot reveal a hidden name.
       const byRecord = dto.sourceType ? null : recordNameMatchSql(pattern, organizationId, viewer.permissions);
       parts.push(Prisma.sql`(t.title ILIKE ${pattern} ESCAPE '\\' OR COALESCE(t."titleAr", '') ILIKE ${pattern} ESCAPE '\\'
-        OR EXISTS (SELECT 1 FROM "TaskAssignee" sa JOIN "User" su ON su.id = sa."userId"
-                   WHERE sa."taskId" = t.id AND sa."removedAt" IS NULL AND su.name ILIKE ${pattern} ESCAPE '\\')${byRecord ? Prisma.sql` OR ${byRecord}` : Prisma.empty})`);
+        OR ${currentActiveAssigneeWhereSql(Prisma.sql`xu.name ILIKE ${pattern} ESCAPE '\\'`)}${byRecord ? Prisma.sql` OR ${byRecord}` : Prisma.empty})`);
     }
     return parts.length ? Prisma.sql`AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
   }
@@ -297,7 +359,8 @@ export class TaskRecordListService {
         assignees: {
           include: { user: { select: { id: true, name: true, position: { select: { nameEn: true, nameAr: true } } } } },
         },
-        _count: { select: { evidence: { where: { deletedAt: null } } } },
+        // ACC-315 — someone is on it: ACC-86's one rule, counted in the same read.
+        _count: { select: { evidence: { where: { deletedAt: null } }, assignees: { where: CURRENT_ACTIVE_ASSIGNEE } } },
         ...POOL_LABEL_INCLUDE,
         ...OPEN_REQUEST_INCLUDE,
         createdBy: { select: { id: true, name: true, status: true } },
@@ -319,6 +382,8 @@ export class TaskRecordListService {
     for (const task of ordered) {
       const active = task.assignees.filter((a) => a.removedAt === null);
       const mine = active.find((a) => a.userId === viewer.id) ?? null;
+      // ACC-315 — a row held by someone no longer ACTIVE puts nobody on the task.
+      const anyoneOnIt = task._count.assignees > 0;
       const target = poolTargetOf(task);
       const pool = toPoolView(task);
       const openRequest = toOpenRequest(task.requests);
@@ -360,7 +425,7 @@ export class TaskRecordListService {
           positionNameAr: a.user.position?.nameAr ?? null,
         })),
         pool,
-        waitingInPool: !!target && active.length === 0 && (PICKABLE_STATUSES as readonly string[]).includes(task.status),
+        waitingInPool: !!target && !anyoneOnIt && (PICKABLE_STATUSES as readonly string[]).includes(task.status),
         pickedByViewer: !!mine?.pickedAt,
         openRequest,
         evidenceCount: task._count.evidence,
@@ -373,7 +438,7 @@ export class TaskRecordListService {
           viewerId: viewer.id,
           viewerIsActiveAssignee: !!mine,
           viewerPickedIt: !!mine?.pickedAt,
-          anyActiveAssignee: active.length > 0,
+          anyActiveAssignee: anyoneOnIt,
           hasPoolTarget: !!target,
           viewerInPool: inPool,
           openRequest,
@@ -439,9 +504,9 @@ export class TaskRecordListService {
     const [people, poolReps, types, units, statusRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string; name: string }[]>`
         SELECT DISTINCT u.id, u.name FROM "Task" t
-          JOIN "TaskAssignee" a ON a."taskId" = t.id AND a."removedAt" IS NULL
+          JOIN "TaskAssignee" a ON a."taskId" = t.id
           JOIN "User" u ON u.id = a."userId" AND u."organizationId" = t."organizationId"
-         WHERE ${scoped} LIMIT 200`,
+         WHERE ${scoped} AND ${currentActiveAssigneeWhereSql(Prisma.sql`xa.id = a.id`)} LIMIT 200`,
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT DISTINCT ON (t."assignedOrgUnitId", t."assignedPositionId", t."assignedCommitteeId", t."assignedCommitteeRoleValueId") t.id
           FROM "Task" t
@@ -495,10 +560,6 @@ export function statusCountsOf(rows: readonly { status: string; n: bigint }[]): 
     if ((RECORD_LIST_STATUSES as readonly string[]).includes(r.status)) counts[r.status as RecordListStatus] += Number(r.n);
   }
   return counts;
-}
-
-function activeAssignee(userId: string): Prisma.Sql {
-  return Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" fa WHERE fa."taskId" = t.id AND fa."userId" = ${userId} AND fa."removedAt" IS NULL)`;
 }
 
 export function poolKey(target: NonNullable<ReturnType<typeof poolTargetOf>>): string {

@@ -1,5 +1,6 @@
 import type { ILookupValue } from '../../lookup/interfaces/lookup-value.interface';
 import type { IOrgUnit } from '../../organization/interfaces/org-unit.interface';
+import type { CommitteeMemberActions } from '../member-actions';
 
 /**
  * ACC-283 — what each seat allows on this committee: every seat the
@@ -141,6 +142,14 @@ export interface ICommitteeDetail extends ICommittee {
   // only oversees the committee reads it with false. Each action's own permission
   // and the stage rules still apply on top; the screens combine them.
   mayWrite: boolean;
+  // ACC-283 PR 6 — what this viewer may do on this committee, by the one rule
+  // (member-actions.ts): their role's permission on a committee they may write to,
+  // OR their seat here allows it. The stage rules still apply on top (stageRules).
+  // A seat never changes the viewer's OWN seat (Q-A): change_member_seat granted by
+  // a seat alone is refused on their own row.
+  // ACC-320 — plus `change_own_seat`: may the viewer change their OWN seat
+  // (Q-A, from the same rule as the write). The page reads it, not a permission.
+  memberActions: CommitteeMemberActions;
 }
 
 /** ACC-265 — the committee's owning unit, as the record page names it. */
@@ -183,6 +192,9 @@ export interface ICommitteeMembershipEvent {
   effectiveDate: Date;
   reason: string | null;
   approvedBy: string | null;
+  // ACC-306 — why the seat ended when not by hand: DEACTIVATION when the
+  // holder's account was deactivated; null for every change a person made.
+  cause: 'DEACTIVATION' | null;
   createdAt: Date;
 }
 

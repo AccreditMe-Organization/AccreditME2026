@@ -5,6 +5,7 @@ import { ObjectVisibilityService } from '../../../common/services/object-visibil
 import { TaskVisibilityService } from '../task-visibility.service';
 import { taskKeyOf } from '../task-record-types';
 import { WorkingCalendarService } from '../../working-calendar/working-calendar.service';
+import { hoursPerDayOf } from '../../working-calendar/working-time';
 import { AssignmentViewer, TaskAssignmentService } from '../task-assignment.service';
 import { IAssignableHolder } from '../interfaces/task-assignment.interface';
 import {
@@ -166,7 +167,8 @@ export class TaskWorkloadService {
   /** "Within the next 2 working days", by the tenant's calendar — never wall-clock arithmetic. */
   private async dueSoonBefore(organizationId: string, now: Date): Promise<Date> {
     const calendar = await this.workingCalendar.getOrCreate(organizationId);
-    const hoursPerDay = workingHoursPerDay(calendar.workingHoursStart, calendar.workingHoursEnd);
+    // ACC-313 — the one working-day rule (working-time.ts), never below an hour.
+    const hoursPerDay = Math.max(1, hoursPerDayOf(calendar));
     const deadline = await this.workingCalendar.calculateDeadline(DateTime.fromJSDate(now), 2 * hoursPerDay, organizationId);
     return deadline.toJSDate();
   }
@@ -184,12 +186,4 @@ export function canSuggestFor(person: IWorkloadPerson, everyone: readonly IWorkl
   if (person.holder.cover) return false;
   const others = everyone.filter((p) => p !== person && !p.outOfOffice).map((p) => p.workload.open);
   return isPastThreshold(person.workload.open, others);
-}
-
-function workingHoursPerDay(start: string, end: string): number {
-  const minutes = (hhmm: string): number => {
-    const [h, m] = hhmm.split(':').map(Number);
-    return (h ?? 0) * 60 + (m ?? 0);
-  };
-  return Math.max(1, (minutes(end) - minutes(start)) / 60);
 }

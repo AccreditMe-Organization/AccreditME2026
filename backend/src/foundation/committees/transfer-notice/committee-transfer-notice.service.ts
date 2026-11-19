@@ -2,15 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { COMMITTEES_PERMISSIONS } from '../../../common/constants/permissions';
 import { LookupService } from '../../lookup/lookup.service';
 import { NotificationService } from '../../notification/notification.service';
-import { findCurrentHeadHoldersForUnits, findRunningActingCoversForUnits } from '../../organization/unit-headship';
+import { OFFICER_SEAT_KEYS, committeeAudiences, committeeReaders } from '../committee-audience';
 import { seatOrderedMemberships } from '../committee-memberships';
 import {
   recipientsByCommittee,
   transferNoticeText,
-  type CommitteeAudience,
   type Named,
   type TransferNoticeLine,
 } from './committee-transfer-notice';
@@ -26,8 +24,9 @@ export const COMMITTEE_TRANSFER_NOTICE_ENQUEUE_TIMEOUT_MS = 3000;
 export const TRANSFER_NOTICE_SEATS_CAP = 200;
 export const TRANSFER_NOTICE_LEFT_CAP = 200;
 
-/** The seats whose holders are told (lookup keys, the committee_member_role seed). */
-export const OFFICER_SEAT_KEYS: readonly string[] = ['chairman', 'secretary'];
+// ACC-306 — the officer seats and the audience reads moved to committee-audience.ts,
+// shared with the deactivation notice; re-exported here for the specs that name it.
+export { OFFICER_SEAT_KEYS };
 
 export interface TransferNoticeJob {
   organizationId: string;
@@ -156,6 +155,7 @@ export class CommitteeTransferNoticeService {
           roleValueId: true,
           reason: true,
           approvedBy: true,
+          cause: true,
           committee: { select: { nameEn: true, nameAr: true, orgUnitId: true } },
         },
         // Newest first: the latest removal from a committee is the one told.
@@ -190,8 +190,11 @@ export class CommitteeTransferNoticeService {
       if (lines.has(e.committeeId)) continue;
       const seat = seatName(e.roleValueId);
       const reason = e.reason?.trim() ?? '';
+      // ACC-306 — a seat a deactivation ended is said as that, whoever deactivated.
       const build = (committee: Named | null): TransferNoticeLine =>
-        e.approvedBy === actorId
+        e.cause === 'DEACTIVATION'
+          ? { kind: 'ENDED_BY_DEACTIVATION', committee, seat }
+          : e.approvedBy === actorId
           ? { kind: 'REMOVED_IN_TRANSFER', committee, seat }
           : reason
             ? { kind: 'REMOVED_WITH_REASON', committee, seat, reason }
@@ -204,71 +207,25 @@ export class CommitteeTransferNoticeService {
     }
     if (lines.size === 0) return 0;
 
-    // Wave 2 — the officers of these committees, and their owning units' heads and covers.
+    // Wave 2 — the officers of these committees, and their owning units' heads
+    // and covers (committee-audience.ts, the rule the deactivation notice shares).
     const committeeIds = [...lines.keys()];
-    const unitIds = [...new Set([...lines.values()].map((l) => l.orgUnitId))];
     const officerSeatIds = [...held.seatById.values()].filter((s) => OFFICER_SEAT_KEYS.includes(s.key)).map((s) => s.id);
-    const [officers, heads, covers] = await Promise.all([
-      officerSeatIds.length === 0
-        ? Promise.resolve([] as { committeeId: string; userId: string }[])
-        : this.prisma.committeeMember.findMany({
-            where: {
-              organizationId,
-              committeeId: { in: committeeIds },
-              isActive: true,
-              roleValueId: { in: officerSeatIds },
-              user: { organizationId, status: 'ACTIVE' },
-            },
-            select: { committeeId: true, userId: true },
-          }),
-      findCurrentHeadHoldersForUnits(this.prisma, organizationId, unitIds),
-      findRunningActingCoversForUnits(this.prisma, organizationId, unitIds),
-    ]);
-
-    const officersOf = new Map<string, string[]>();
-    for (const o of officers) officersOf.set(o.committeeId, [...(officersOf.get(o.committeeId) ?? []), o.userId]);
-    const audiences: CommitteeAudience[] = [...lines.entries()].map(([committeeId, line]) => ({
-      committeeId,
-      officerIds: officersOf.get(committeeId) ?? [],
-      headIds: (heads.get(line.orgUnitId) ?? []).map((h) => h.id),
-      coverId: covers.get(line.orgUnitId)?.userId ?? null,
-    }));
+    const audiences = await committeeAudiences(
+      this.prisma,
+      organizationId,
+      [...lines.entries()].map(([committeeId, line]) => ({ committeeId, orgUnitId: line.orgUnitId })),
+      officerSeatIds,
+    );
     const byRecipient = recipientsByCommittee(audiences, { personId: userId, actorId });
     const recipients = [...byRecipient.keys()];
     if (recipients.length === 0) return 0;
 
     // Wave 3 — who is ACTIVE, and who may open which committee (committees:view, or an active member of it).
-    const [module, action] = COMMITTEES_PERMISSIONS.VIEW.split(':') as [string, string];
-    const [active, viewers, memberships] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { organizationId, id: { in: recipients }, status: 'ACTIVE' },
-        select: { id: true },
-      }),
-      this.prisma.userRole.findMany({
-        where: {
-          userId: { in: recipients },
-          role: { organizationId, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
-        },
-        select: { userId: true },
-      }),
-      this.prisma.committeeMember.findMany({
-        where: {
-          organizationId,
-          userId: { in: recipients },
-          committeeId: { in: committeeIds },
-          isActive: true,
-          committee: { organizationId, isActive: true },
-        },
-        select: { userId: true, committeeId: true },
-      }),
-    ]);
-    const isActive = new Set(active.map((u) => u.id));
-    const seesEvery = new Set(viewers.map((v) => v.userId));
-    const memberOf = new Set(memberships.map((m) => `${m.userId}|${m.committeeId}`));
-    const mayOpen = (readerId: string, committeeId: string) => seesEvery.has(readerId) || memberOf.has(`${readerId}|${committeeId}`);
+    const { isActive, mayOpen } = await committeeReaders(this.prisma, organizationId, recipients, committeeIds);
 
     const rows = [...byRecipient.entries()]
-      .filter(([readerId]) => isActive.has(readerId))
+      .filter(([readerId]) => isActive(readerId))
       .map(([readerId, ids]) => {
         const shown = ids.map((id) => {
           const line = lines.get(id)!;

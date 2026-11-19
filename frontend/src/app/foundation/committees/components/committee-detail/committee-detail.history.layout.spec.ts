@@ -118,7 +118,7 @@ const COMMITTEE: CommitteeDetailDto = {
   isDissolving: false,
   stageRules: ACTIVE_RULES,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: 'لجنة الجودة', offered: true },
-  orgUnit: { id: 'unit-1', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي' }, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true,
+  orgUnit: { id: 'unit-1', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي' }, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true },
 };
 
 @Component({
@@ -148,7 +148,7 @@ describe('CommitteeDetailComponent — Stage history beside the Lifecycle card (
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p === 'committees:view' || p === 'workflows:view' } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => p === 'committees:view' || p === 'workflows:view' } },
         {
           provide: CommitteeService,
           useValue: {

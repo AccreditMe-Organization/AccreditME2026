@@ -11,6 +11,7 @@ import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { getMetadataStorage } from 'class-validator';
 import { UpdateWorkflowStageDto } from './dto/update-workflow-stage.dto';
 import { WorkflowObjectType } from '../../../generated/prisma/enums';
+import { answerRoleShareLock } from '../roles/role-active.testing';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,11 @@ describe('WorkflowTemplateService', () => {
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
     mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
+    // ACC-316 — the seed's seat-narrowed COMMITTEE entries resolve their shared
+    // committee_member_role value by key (workflow-seed-apply.ts).
+    mockPrisma.lookupValue.findMany.mockImplementation((args?: { where?: { key?: { in?: string[] } } }) =>
+      Promise.resolve((args?.where?.key?.in ?? []).map((key) => ({ id: `lookup-${key}-id`, key }))),
+    );
     // ACC-57 / ACC-191 — clearAllMocks keeps implementations a test set, so
     // the reads the new checks make start empty in every test: no stages read
     // back (readStartEnd), no lock rows, nothing referencing, nothing run.
@@ -369,7 +375,7 @@ describe('WorkflowTemplateService', () => {
 
       const created = mockPrisma.workflowTransition.create.mock.calls.map(([arg]: [{ data: { kind: string } }]) => arg.data.kind);
       // ACC-190's 14 and 8, plus ACC-239's change request: one return, four exits.
-      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(15);
+      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(14); // ACC-316: the meeting's draft-to-draft Return is gone
       expect(created.filter((k: string) => k === 'EXIT')).toHaveLength(12);
       expect(created.every((k: string) => ['ADVANCE', 'RETURN', 'EXIT'].includes(k))).toBe(true);
       const actionTypes = mockPrisma.workflowTransitionAction.create.mock.calls.map(([arg]: [{ data: { actionType: string } }]) => arg.data.actionType);
@@ -407,7 +413,41 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
     });
 
-    it("writes the seed key on every COMMITTEE and COMMITTEE_CHANGE_REQUEST stage, and on no other template's", async () => {
+    // ACC-316 — the meeting's Minutes Review names the Chair's seat by its
+    // lookup key; the seed writes the shared value's id, resolved once.
+    it("writes Minutes Review's Chair entry with the shared chairman seat, and the meeting's own kinds", async () => {
+      installFakeStore();
+
+      await service.seedDefaultWorkflows(ORG_A);
+
+      expect(mockPrisma.lookupValue.findMany).toHaveBeenCalledWith({
+        where: { organizationId: null, key: { in: ['chairman'] }, category: { key: 'committee_member_role', organizationId: null } },
+        select: { id: true, key: true },
+      });
+      const entries = mockPrisma.workflowStageAssignee.createMany.mock.calls.flatMap(
+        ([arg]: [{ data: { kind: string; committeeRoleValueId?: string; organizationId: string }[] }]) => arg.data,
+      );
+      expect(entries.every((e: { organizationId: string }) => e.organizationId === ORG_A)).toBe(true);
+      expect(entries.filter((e: { kind: string }) => e.kind === 'COMMITTEE')).toEqual([
+        expect.objectContaining({ kind: 'COMMITTEE', committeeRoleValueId: 'lookup-chairman-id', order: 1 }),
+      ]);
+      expect(entries.filter((e: { kind: string }) => e.kind.startsWith('MEETING_')).map((e: { kind: string }) => e.kind)).toEqual([
+        'MEETING_SCHEDULERS',
+        'MEETING_SCHEDULERS',
+        'MEETING_RECORDERS',
+        'MEETING_RECORDERS',
+        'MEETING_APPROVERS',
+      ]);
+    });
+
+    it('refuses to seed when a seat the seed names is not a shared committee_member_role value', async () => {
+      installFakeStore();
+      mockPrisma.lookupValue.findMany.mockResolvedValueOnce([]);
+
+      await expect(service.seedDefaultWorkflows(ORG_A)).rejects.toThrow("Workflow seed names the seat 'chairman'");
+    });
+
+    it("writes the seed key on every COMMITTEE, COMMITTEE_CHANGE_REQUEST and MEETING stage, and on no other template's", async () => {
       installFakeStore();
 
       await service.seedDefaultWorkflows(ORG_A);
@@ -415,8 +455,8 @@ describe('WorkflowTemplateService', () => {
       const created = mockPrisma.workflowStage.create.mock.calls.map(
         ([arg]: [{ data: { nameEn: string; key?: string } }]) => arg.data,
       );
-      // ACC-233 keyed the committee lifecycle; ACC-239 the change request's six stages.
-      const keyedSeeds = SYSTEM_WORKFLOW_SEED.filter((w) => w.objectType === 'COMMITTEE' || w.objectType === 'COMMITTEE_CHANGE_REQUEST');
+      // ACC-233 keyed the committee lifecycle; ACC-239 the change request's six stages; ACC-316 the meeting's.
+      const keyedSeeds = SYSTEM_WORKFLOW_SEED.filter((w) => ['COMMITTEE', 'COMMITTEE_CHANGE_REQUEST', 'MEETING'].includes(w.objectType));
       const keyedStages = keyedSeeds.flatMap((w) => w.stages);
       const keyed = created.filter((d: { key?: string }) => d.key !== undefined);
       expect(keyed.map((d: { key?: string }) => d.key)).toEqual(keyedStages.map((st) => st.key));
@@ -529,6 +569,21 @@ describe('WorkflowTemplateService', () => {
           },
         }),
       );
+    });
+
+    // ACC-294 — the template read names its fields; isApprovalPath is not one. A row
+    // that still carries the column (the database keeps it until PR B) never leaks it.
+    it('a template read carries no isApprovalPath, even from a row that still has the column', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { ...BASE_STAGE, transitionsFrom: [{ ...BASE_TRANSITION, isApprovalPath: true, actions: [] }] },
+      ]);
+
+      const result = await service.getTemplateById('template-1', ORG_A);
+
+      const transition = result.stages?.[0]?.transitions?.[0];
+      expect(transition?.id).toBe(BASE_TRANSITION.id); // non-vacuity: the move is read
+      expect(transition).not.toHaveProperty('isApprovalPath');
     });
 
     it('throws NotFoundException when the template does not exist', async () => {
@@ -793,6 +848,119 @@ describe('WorkflowTemplateService', () => {
 
   });
 
+  // ── escalationConfig (ACC-105) ───────────────────────────────────────────────
+
+  // ACC-105 (defect 4) — the stage's escalation rules are checked on every write,
+  // like its other ids: their shape, and each person (ACTIVE, in the
+  // organisation) and role (active, in the organisation), in one read each.
+  describe('escalation rules on a stage write (ACC-105)', () => {
+    const NEW = { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } };
+    const refusal = async (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: { getResponse?: () => unknown }) => (e.getResponse ? e.getResponse() : e),
+      );
+    beforeEach(() => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.create.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStage.update.mockResolvedValue(BASE_STAGE);
+    });
+
+    it.each([
+      ['not a list of rules', { notifyUserId: 'user-a', afterHours: 4 }],
+      ['afterHours missing', [{ notifyUserId: 'user-a' }]],
+      ['afterHours not a number', [{ afterHours: '4', notifyUserId: 'user-a' }]],
+      ['afterHours not positive', [{ afterHours: 0, notifyUserId: 'user-a' }]],
+      ['nobody to tell', [{ afterHours: 4 }]],
+      ['an unknown key', [{ afterHours: 4, notifyUserId: 'user-a', notifyEmail: 'x@example.test' }]],
+      ['an id that is not text', [{ afterHours: 4, notifyUserId: 42 }]],
+    ])('refuses a rule with %s (STAGE_ESCALATION_INVALID, SHAPE), writing nothing', async (_case, escalationConfig) => {
+      const got = await refusal(service.addStage('template-1', { ...NEW, escalationConfig } as never, ORG_A, ACTOR));
+      expect(got).toEqual(expect.objectContaining({ statusCode: 400, code: 'STAGE_ESCALATION_INVALID', reason: 'SHAPE' }));
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a person who is not an ACTIVE user of this organisation (USER), on add and on update', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      const config = [{ afterHours: 4, notifyUserId: 'user-elsewhere' }];
+      expect(await refusal(service.addStage('template-1', { ...NEW, escalationConfig: config } as never, ORG_A, ACTOR))).toEqual(
+        expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'USER', rule: 0 }),
+      );
+      expect(await refusal(service.updateStage('stage-1', { escalationConfig: config } as never, ORG_A, ACTOR))).toEqual(
+        expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'USER', rule: 0 }),
+      );
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['user-elsewhere'] }, organizationId: ORG_A, status: 'ACTIVE' } }),
+      );
+    });
+
+    /** ACC-154 — the role reads are the FOR SHARE lock, inside the save's transaction. */
+    const roleLocks = () =>
+      mockPrisma.$queryRaw.mock.calls
+        .map(([q]) => q as { sql?: string; values?: unknown[] })
+        .filter((q) => q.sql?.includes('FROM "Role"') && q.sql.includes('FOR SHARE'));
+
+    it('refuses a role that is not an active role of this organisation (ROLE)', async () => {
+      for (const answer of [answerRoleShareLock(new Set(['role-elsewhere'])), async () => []]) {
+        jest.clearAllMocks();
+        mockPrisma.$queryRaw.mockImplementation(answer);
+        const got = await refusal(
+          service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-elsewhere' }] } as never, ORG_A, ACTOR),
+        );
+        expect(got).toEqual(expect.objectContaining({ code: 'STAGE_ESCALATION_INVALID', reason: 'ROLE', rule: 0 }));
+        // Locked by id AND organisation.
+        expect(roleLocks().map((q) => q.values)).toEqual([['role-elsewhere', ORG_A]]);
+        expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      }
+    });
+
+    it('locks the roles inside the save’s transaction, before the stage is written (ACC-154)', async () => {
+      const order: string[] = [];
+      mockPrisma.$transaction.mockImplementation(async (arg) => {
+        order.push('begin');
+        const out = await (arg as (tx: unknown) => Promise<unknown>)(mockPrisma);
+        order.push('commit');
+        return out;
+      });
+      mockPrisma.$queryRaw.mockImplementation(async (q: unknown) => {
+        const rows = await answerRoleShareLock()(q);
+        if (rows.length > 0) order.push('lock role');
+        return rows;
+      });
+      mockPrisma.workflowStage.update.mockImplementation(async () => {
+        order.push('write stage');
+        return BASE_STAGE;
+      });
+      await service.updateStage('stage-1', { escalationConfig: [{ afterHours: 4, notifyRoleId: 'role-q' }] } as never, ORG_A, ACTOR);
+      expect(order.slice(0, 4)).toEqual(['begin', 'lock role', 'write stage', 'commit']);
+    });
+
+    it('saves valid rules, reading the people and the roles once each, however many rules', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-a' }, { id: 'user-b' }]);
+      mockPrisma.$queryRaw.mockImplementation(answerRoleShareLock());
+      const escalationConfig = [
+        { afterHours: 4, notifyUserId: 'user-a' },
+        { afterHours: 8, notifyRoleId: 'role-q' },
+        { afterHours: 16, notifyUserId: 'user-b', notifyRoleId: 'role-q' },
+      ];
+      await service.addStage('template-1', { ...NEW, escalationConfig } as never, ORG_A, ACTOR);
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ escalationConfig }) }),
+      );
+      expect(mockPrisma.user.findMany.mock.calls.filter(([a]) => JSON.stringify(a).includes('"status":"ACTIVE"'))).toHaveLength(1);
+      expect(roleLocks()).toHaveLength(1);
+    });
+
+    it('clears the rules with an empty list or null, checking nothing', async () => {
+      for (const escalationConfig of [[], null]) {
+        await expect(service.updateStage('stage-1', { escalationConfig } as never, ORG_A, ACTOR)).resolves.toBeDefined();
+      }
+    });
+  });
+
   // ── updateStage ──────────────────────────────────────────────────────────────
 
   describe('updateStage', () => {
@@ -898,8 +1066,9 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
     });
 
-    // ACC-271 PR 5b — the transition panel sets Approval path when adding.
-    it('stores isApprovalPath when sent on create, and leaves the default when not', async () => {
+    // ACC-294 — isApprovalPath is gone. The DTO refuses one (dto/is-approval-path.dto.spec.ts);
+    // and if one ever reached the service, nothing writes it.
+    it('never writes isApprovalPath on create, even when one reaches the service', async () => {
       const add = async (extra: Record<string, unknown>): Promise<Record<string, unknown>> => {
         mockPrisma.workflowStage.findFirst
           .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
@@ -913,7 +1082,7 @@ describe('WorkflowTemplateService', () => {
         const calls = mockPrisma.workflowTransition.create.mock.calls;
         return (calls[calls.length - 1]![0] as { data: Record<string, unknown> }).data;
       };
-      expect((await add({ isApprovalPath: true })).isApprovalPath).toBe(true);
+      expect(await add({ isApprovalPath: true })).not.toHaveProperty('isApprovalPath');
       expect(await add({})).not.toHaveProperty('isApprovalPath');
     });
 
@@ -1446,11 +1615,11 @@ describe('WorkflowTemplateService', () => {
 
     // ACC-239 added one return (Return for changes) and four exits (Reject, and
     // Withdraw from each of the three open stages) to ACC-190's 14 and 8.
-    it('marks 15 returns and 12 exits, and leaves every other transition an ADVANCE', () => {
+    it('marks 14 returns and 12 exits, and leaves every other transition an ADVANCE (ACC-316 removed the meeting draft-to-draft Return)', () => {
       const kinds = transitions.map((t) => t.kind ?? 'ADVANCE');
-      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(15);
+      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(14);
       expect(kinds.filter((k) => k === 'EXIT')).toHaveLength(12);
-      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 27);
+      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 26);
     });
 
     it.each([
@@ -1489,7 +1658,7 @@ describe('WorkflowTemplateService', () => {
 
         const result = await service.getTemplateById('template-1', ORG_A);
 
-        expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
+        expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change', 'schedule_meeting']);
         // ACC-255 PR 4b-be (G1) — each action carries the permission it pairs with.
         expect(result.recordActions?.[0]).toEqual({
           key: 'edit_details',
@@ -1502,6 +1671,7 @@ describe('WorkflowTemplateService', () => {
           'committees:remove_member',
           'committees:change_member_role',
           'committees:edit_details',
+          'meetings:schedule',
         ]);
         expect(result.stageFlags).toEqual([
           { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },

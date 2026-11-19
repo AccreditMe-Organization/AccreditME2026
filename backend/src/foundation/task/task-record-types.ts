@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
-import { COMMITTEE_TASKS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEE_TASKS_PERMISSIONS, MEETING_TASKS_PERMISSIONS } from '../../common/constants/permissions';
+import { meetingMemberSql } from '../../common/services/meeting-membership';
 import { RECORD_VIEW_PERMISSION } from '../../common/services/object-visibility.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 
@@ -92,6 +93,39 @@ export const TASK_RECORD_TYPES: Readonly<Record<string, TaskRecordType>> = {
         SELECT 1 FROM "CommitteeMember" m
         WHERE m."committeeId" = r.id AND m."organizationId" = r."organizationId" AND m."userId" = ${viewerId} AND m."isActive"
       ))`,
+    },
+  },
+  // ACC-316 PR 3a — a meeting's action items and any task raised on it.
+  MEETING: {
+    keys: {
+      VIEW_ALL: MEETING_TASKS_PERMISSIONS.VIEW_ALL,
+      CREATE: MEETING_TASKS_PERMISSIONS.CREATE,
+      MANAGE: MEETING_TASKS_PERMISSIONS.MANAGE,
+      VIEW_UNIT: MEETING_TASKS_PERMISSIONS.VIEW_UNIT,
+    },
+    // The OWNING unit: the meeting's own, or its committee's.
+    ownerUnitSql: Prisma.sql`(SELECT COALESCE(om."orgUnitId", (SELECT oc."orgUnitId" FROM "Committee" oc WHERE oc.id = om."committeeId" AND oc."organizationId" = om."organizationId")) FROM "Meeting" om WHERE om.id = t."sourceId" AND om."organizationId" = t."organizationId")`,
+    recordInOrgSql: Prisma.sql`EXISTS (SELECT 1 FROM "Meeting" rm WHERE rm.id = t."sourceId" AND rm."organizationId" = t."organizationId")`,
+    choices: {
+      // The picker lists by name: a meeting's title, with no Arabic name of its own.
+      fromSql: Prisma.sql`(SELECT m.id, m."organizationId", m."committeeId", m."orgUnitId", m.title AS "nameEn", NULL::text AS "nameAr" FROM "Meeting" m) r`,
+      // A meeting takes new tasks unless it is cancelled: its newest instance's
+      // current stage carries MEETING_CANCELLED. Read from the flag, never a name.
+      acceptsTasksSql: Prisma.sql`(NOT EXISTS (
+        SELECT 1
+        FROM (
+          SELECT wi."currentStageId"
+          FROM "WorkflowInstance" wi
+          WHERE wi."organizationId" = r."organizationId" AND wi."objectType"::text = 'MEETING' AND wi."objectId" = r.id
+          ORDER BY wi."createdAt" DESC
+          LIMIT 1
+        ) latest
+        JOIN "WorkflowStage" s ON s.id = latest."currentStageId"
+        JOIN "WorkflowTemplate" wt ON wt.id = s."workflowTemplateId" AND wt."organizationId" = r."organizationId"
+        WHERE ${STAGE_FLAG.MEETING_CANCELLED} = ANY(s.flags)
+      ))`,
+      // Without meetings:view: a member of its committee, a person of its unit, or an invitee.
+      memberSql: (viewerId) => meetingMemberSql('r', viewerId),
     },
   },
 };

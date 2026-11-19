@@ -48,27 +48,30 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     // stops reading it.
     //
     // ACC-283 — the seat's DEFAULT actions (SEAT_ACTIONS, seat-actions.ts), one
-    // boolean each, named in both languages (ACC-310's labelEn/labelAr; `label`
-    // too, which the value form reads today). Copied into a committee when it is
+    // boolean each, named in both languages (ACC-310's labelEn/labelAr; the old
+    // single `label` is gone since the value form stopped reading it). Copied into a committee when it is
     // created; changing a default never reaches an existing committee. The
     // values below are plan Q10's recommendation (Chairman all five, Secretary
     // the four member actions), confirmed by Ahmad (16 Nov).
     attributeSchema: {
       type: 'object',
       properties: {
-        required: { type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
-        seatAddsMember:              { type: 'boolean', label: 'Add members',                                     labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
-        seatRemovesMember:           { type: 'boolean', label: 'Remove members',                                  labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
-        seatChangesSeat:             { type: 'boolean', label: "Change a member's seat",                          labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
-        seatRequestsChange:          { type: 'boolean', label: 'Request a change',                                labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
-        seatDecidesReportingChanges: { type: 'boolean', label: 'Decide changes of committees that report to it', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
+        required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
+        seatAddsMember:              { type: 'boolean', labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
+        seatRemovesMember:           { type: 'boolean', labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
+        seatChangesSeat:             { type: 'boolean', labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
+        seatRequestsChange:          { type: 'boolean', labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
+        seatDecidesReportingChanges: { type: 'boolean', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
+        // ACC-316 — the meeting seat actions (seat-actions.ts).
+        seatSchedulesMeetings:       { type: 'boolean', labelEn: 'Schedule meetings',                               labelAr: 'جدولة الاجتماعات' },
+        seatRecordsMinutes:          { type: 'boolean', labelEn: 'Record the minutes',                              labelAr: 'تسجيل المحضر' },
       },
     },
     sortOrder: 20,
     values: [
-      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatDecidesReportingChanges: true } },
+      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatDecidesReportingChanges: true, seatSchedulesMeetings: true } },
       { key: 'vice_chairman', labelEn: 'Vice Chairman', labelAr: 'نائب الرئيس', sortOrder: 20 },
-      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true } },
+      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatSchedulesMeetings: true, seatRecordsMinutes: true } },
       { key: 'member',        labelEn: 'Member',        labelAr: 'عضو',         sortOrder: 40 },
       { key: 'observer',      labelEn: 'Observer',      labelAr: 'مراقب',       sortOrder: 50 },
       { key: 'advisor',       labelEn: 'Advisor',       labelAr: 'مستشار',      sortOrder: 60 },

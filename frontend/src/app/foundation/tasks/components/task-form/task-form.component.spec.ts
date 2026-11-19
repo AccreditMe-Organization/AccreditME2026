@@ -106,7 +106,13 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     fixture.detectChanges();
   });
 
-  afterEach(() => httpMock.verify());
+  // ACC-291 — a picker on a committee task, for a caller without committees:view,
+  // asks the server once whether this committee's seats are open to them (the
+  // membership rule stays the server's). These specs are not about that answer.
+  afterEach(() => {
+    httpMock.match((r) => r.url.endsWith('/tasks/assignment/committee-roles')).filter((r) => !r.cancelled).forEach((r) => r.flush([]));
+    httpMock.verify();
+  });
 
   // ── The date view substitutes, and does not dismiss itself ──────────────
 

@@ -36,9 +36,8 @@ type HandlerName = 'createCommittee' | 'updateCommittee' | 'addMember' | 'change
 const CASES: Array<[HandlerName, string]> = [
   ['createCommittee', COMMITTEES_PERMISSIONS.CREATE],
   ['updateCommittee', COMMITTEES_PERMISSIONS.EDIT_DETAILS],
-  ['addMember', COMMITTEES_PERMISSIONS.ADD_MEMBER],
-  ['changeMemberRole', COMMITTEES_PERMISSIONS.CHANGE_MEMBER_ROLE],
-  ['removeMember', COMMITTEES_PERMISSIONS.REMOVE_MEMBER],
+  // ACC-283 PR 6 — addMember, changeMemberRole and removeMember are NOT here any
+  // more: a seat may allow them without the key, so the service decides (below).
   // ACC-283 — seat actions are part of the terms of reference: the edit's own key.
   ['replaceSeatActions', COMMITTEES_PERMISSIONS.EDIT_DETAILS],
 ];
@@ -74,6 +73,17 @@ describe('CommitteesController — the committee reads decide in the service (AC
   );
 });
 
+// ACC-283 PR 6 — the three member writes carry NO route permission: a member's
+// SEAT may allow them without the key, so the guard admits every caller and the
+// service decides by the one rule (member-actions.ts, proved in its db-spec), with
+// today's refusals. Pinned so the gate cannot quietly come back.
+describe('CommitteesController — the member writes decide in the service (ACC-283 PR 6)', () => {
+  const guard = new PermissionGuard(new Reflector());
+  it.each(['addMember', 'changeMemberRole', 'removeMember'] as const)('%s passes the guard for a caller with no committees key', (name) => {
+    expect(guard.canActivate(buildContext(name, ['tasks:view']))).toBe(true);
+  });
+});
+
 describe('CommitteesController permission wiring (ACC-28 correction — Retrospective Note 2)', () => {
   const guard = new PermissionGuard(new Reflector());
 
@@ -93,7 +103,7 @@ describe('CommitteesController permission wiring (ACC-28 correction — Retrospe
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
-  it('a role holding the full committees:* bundle (as role.seed.ts grants PLATFORM_ADMIN/TENANT_ADMIN/QUALITY_MANAGER) performs all 6 actions', () => {
+  it('a role holding the full committees:* bundle (as role.seed.ts grants PLATFORM_ADMIN/TENANT_ADMIN/QUALITY_MANAGER) passes every gated action', () => {
     // Simulates the real seeded shape: literal RolePermission rows for
     // every committees:* string via role.seed.ts's
     // Object.values(COMMITTEES_PERMISSIONS) spread — not the old design's

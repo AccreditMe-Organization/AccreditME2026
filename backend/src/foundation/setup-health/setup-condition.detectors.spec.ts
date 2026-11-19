@@ -5,6 +5,7 @@ import {
 } from './setup-condition.detectors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { OWNERLESS_SQL } from '../task/task-pool';
 
 const ORG_A = 'cmtr9x7zq0000ocp1am2rs14o';
 const ORG_B = 'cmtr9x80q0001ocp1bq3kd2rz';
@@ -55,6 +56,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   it('covers every condition type with a detector, except the deferred ones', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
       'ACTING_HEAD_OPEN_ENDED',
+      'COMMITTEE_BELOW_QUORUM',
       'COMMITTEE_MISSING_REQUIRED_SEAT',
       'ORG_UNIT_WITHOUT_HEAD',
       'ORG_UNIT_WITHOUT_TYPE',
@@ -62,6 +64,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       'STAGE_WITHOUT_ASSIGNEE',
       'STORAGE_ACCESS_WITHDRAWN',
       'STORAGE_ALMOST_FULL',
+      'STORAGE_NOT_CONFIRMED',
       'STORAGE_SECRET_EXPIRING',
       'TASK_WITHOUT_OWNER',
     ]);
@@ -82,6 +85,9 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   //
   // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT was on the list in PR 1; PR 2
   // took it off when it added the detector.
+  //
+  // ACC-307 — COMMITTEE_BELOW_QUORUM was on the list in PR 1, and PR 2 took it
+  // off when it added the detector.
   it('defers POSITION_WITHOUT_ROLE only, and gives no deferred type a detector', () => {
     expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
@@ -232,13 +238,15 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       },
     });
 
-    it("queries open, unassigned stages of the tenant's instances only", async () => {
+    // ACC-312 — and never a final stage's entry: nothing waits on it.
+    it("queries open, unassigned, non-final stages of the tenant's instances only", async () => {
       await detectors.stagesWithoutAssignee(ORG_A);
       expect(
         prisma.workflowInstanceStage.findMany.mock.calls[0][0].where,
       ).toEqual({
         exitedAt: null,
         isUnassigned: true,
+        stage: { isFinal: false },
         workflowInstance: { organizationId: ORG_A },
       });
     });
@@ -296,90 +304,50 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   });
 
   describe('tasksWithoutOwner', () => {
-    // ACC-167 — a pool task nobody holds, in a pool nobody is in right now, is
-    // the same condition: work nobody can pick up. A staffed pool is not.
-    it('also lists an open pool task whose pool nobody is in, and not one whose pool is staffed', async () => {
-      const waiting = (id: string, positionId: string) => ({
-        id,
-        title: `Pool task ${id}`,
-        sourceType: 'COMMITTEE',
-        sourceId: 'cmte-1',
-        dueAt: null,
-        assignedOrgUnitId: 'unit-1',
-        assignedPositionId: positionId,
-        assignedCommitteeId: null,
-        assignedCommitteeRoleValueId: null,
-      });
-      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
-        Promise.resolve(
-          where.status === 'UNASSIGNED' ? [] : [waiting('empty', 'p-empty'), waiting('staffed', 'p-held')],
-        ),
-      );
-      prisma.user.findMany.mockResolvedValue([{ positionId: 'p-held', primaryOrgUnitId: 'unit-1' }]);
-
-      const result = await detectors.tasksWithoutOwner(ORG_A);
-
-      expect(result.map((c) => c.objectId)).toEqual(['empty']);
-      // Counted by tenant, among ACTIVE users only.
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, status: 'ACTIVE' }) }),
-      );
+    // ACC-86 — one raw query: OWNERLESS_SQL (task-pool.ts), the very definition
+    // the Unassigned view reads, scoped by organisation. Which tasks it matches
+    // (UNASSIGNED, nobody ACTIVE on it, an empty pool, ON_HOLD) is proved against
+    // a real Postgres in ownerless-tasks.db-spec.ts; this pins the wiring.
+    const row = (id: string, organizationId: string) => ({
+      organizationId,
+      id,
+      title: `Task ${id}`,
+      sourceType: 'COMMITTEE',
+      sourceId: 'cmte-1',
+      dueAt: null,
     });
+    /** Behaves like a table: filters by the organisation only when the query passes one. */
+    const rawTable = (rows: ReturnType<typeof row>[]) =>
+      jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const scoped = strings.join('?').includes('t."organizationId" = ?');
+        return Promise.resolve(scoped ? rows.filter((r) => r.organizationId === values[0]) : rows);
+      });
 
-    it('queries UNASSIGNED tasks of the tenant and records no opened-at', async () => {
-      // The first query is UNASSIGNED; the second, ACC-167's, finds tasks
-      // waiting in a pool — none here.
-      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
-        Promise.resolve(
-          where.status === 'UNASSIGNED'
-            ? [
-                {
-                  id: 'task-1',
-                  title: 'Chase December figures',
-                  sourceType: 'COMMITTEE',
-                  sourceId: 'cmte-1',
-                  dueAt: null,
-                },
-              ]
-            : [],
-        ),
-      );
+    it('runs OWNERLESS_SQL in the tenant, and records no opened-at', async () => {
+      const queryRaw = rawTable([row('task-1', ORG_A)]);
+      (prisma as unknown as { $queryRaw: jest.Mock }).$queryRaw = queryRaw;
 
       const result = await detectors.tasksWithoutOwner(ORG_A);
 
-      expect(prisma.task.findMany.mock.calls[0][0].where).toEqual({
-        organizationId: ORG_A,
-        status: 'UNASSIGNED',
-      });
+      const [strings, ...values] = queryRaw.mock.calls[0]! as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toContain('FROM "Task" t');
+      expect(values[0]).toBe(ORG_A);
+      expect(values).toContain(OWNERLESS_SQL);
       // §13.3 — no on-write stamp exists, so age is first detection.
       expect(result).toEqual([
         {
           objectId: 'task-1',
           severity: 'BLOCKS_WORK',
           openedAt: null,
-          subject: {
-            title: 'Chase December figures',
-            sourceType: 'COMMITTEE',
-            sourceId: 'cmte-1',
-            dueAt: null,
-          },
+          subject: { title: 'Task task-1', sourceType: 'COMMITTEE', sourceId: 'cmte-1', dueAt: null },
         },
       ]);
+      // No Prisma task read any more: one query, the shared definition.
+      expect(prisma.task.findMany).not.toHaveBeenCalled();
     });
 
     itEnforcesTenantIsolation('tasksWithoutOwner', async () => {
-      prisma.task.findMany.mockImplementation(
-        tenantTable([
-          {
-            organizationId: ORG_B,
-            id: 'task-b',
-            title: 'Other tenant task',
-            sourceType: 'COMMITTEE',
-            sourceId: 'x',
-            dueAt: null,
-          },
-        ]),
-      );
+      (prisma as unknown as { $queryRaw: jest.Mock }).$queryRaw = rawTable([row('task-b', ORG_B)]);
       expect(await detectors.tasksWithoutOwner(ORG_A)).toEqual([]);
     });
   });
@@ -584,5 +552,37 @@ describe('SetupConditionDetectors — storageAlmostFull (ACC-177)', () => {
     await detectors.storageAlmostFull(ORG_B);
     expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_B }, select: { maxStorageGb: true } });
     expect(prisma.storedFile.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
+  });
+});
+
+// ACC-261 — "File storage not confirmed": open while the organisation's
+// storageConfirmedAt is null (every upload refused), cleared by Confirm.
+describe('SetupConditionDetectors — storageNotConfirmed (ACC-261)', () => {
+  const prisma = { organization: { findFirst: jest.fn() } };
+  const detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('opens one BLOCKS_WORK condition, on the organisation, while storage is unconfirmed', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: null });
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([
+      { objectId: ORG_A, severity: 'BLOCKS_WORK', openedAt: null, subject: {} },
+    ]);
+  });
+
+  it('opens nothing once storage is confirmed, so the condition clears on the next pass', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: new Date('2026-11-17T09:00:00Z') });
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([]);
+  });
+
+  it('opens nothing for an organisation that does not exist', async () => {
+    prisma.organization.findFirst.mockResolvedValue(null);
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([]);
+  });
+
+  itEnforcesTenantIsolation('storageNotConfirmed reads only the organisation it is asked about', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: null });
+    expect((await detectors.storageNotConfirmed(ORG_B))[0]!.objectId).toBe(ORG_B);
+    expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_B }, select: { storageConfirmedAt: true } });
   });
 });

@@ -11,6 +11,14 @@ import { IUserDto } from '../../../user/services/user.service';
 import { CommitteeMembershipEventDto } from '../../services/committee.service';
 
 /**
+ * ACC-306 — a LEFT event's cause, said from its code (never a stored English
+ * reason). A cause not listed here reads as a plain "Left".
+ */
+const LEFT_BY_CAUSE: Readonly<Record<string, string>> = {
+  DEACTIVATION: 'committee.leftDeactivated',
+};
+
+/**
  * A committee's MEMBERSHIP HISTORY, capped at five like Members (the drawing's
  * Compact List Panel), newest first, with "See all" for the rest.
  *
@@ -43,7 +51,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
           <span class="am-cp-l1">
             <span class="am-cmh__dot" [style.background]="color(e.action)" aria-hidden="true"></span>
             <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
-            <span class="am-cmh__date" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
+            <span class="am-cmh__date">{{ format.date(e.effectiveDate) }}</span>
           </span>
           <span class="am-cp-l2"><span class="am-cp-cut" [title]="detail(e)">{{ detail(e) }}</span></span>
         </li>
@@ -56,7 +64,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
         <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
       </span>
       <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)">{{ detail(e) }}</span>
-      <span class="text-[var(--am-ink-700)] whitespace-nowrap" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
+      <span class="text-[var(--am-ink-700)] whitespace-nowrap" data-history-date>{{ format.date(e.effectiveDate) }}</span>
     </ng-template>
     <ng-template #popupBody>
       <am-simple-list
@@ -144,16 +152,21 @@ export class CommitteeMembershipHistoryPanelComponent {
     return e.userName ?? this.users().find((u) => u.id === e.userId)?.name ?? '—';
   }
 
-  /** "Joined — Member · by {approver}": what happened, in which seat, and who authorised it. */
+  /**
+   * "Joined — Member · by {approver}": what happened, in which seat, and who
+   * authorised it. A seat a deactivation ended reads "Left — account
+   * deactivated · Member · by {approver}" (ACC-306).
+   */
   detail(e: CommitteeMembershipEventDto): string {
     this.translate.currentLang();
-    const action = this.translate.instant(`committee.action.${e.action.toLowerCase()}`) as string;
+    const causeKey = e.action === 'LEFT' && e.cause ? LEFT_BY_CAUSE[e.cause] : undefined;
+    const action = this.translate.instant(causeKey ?? `committee.action.${e.action.toLowerCase()}`) as string;
     const seat = e.roleLabelEn
       ? { labelEn: e.roleLabelEn, labelAr: e.roleLabelAr ?? null }
       : this.memberRoles().find((v) => v.id === e.roleValueId);
     const seatName = seat ? this.language.bilingual(seat.labelEn, seat.labelAr) : '—';
     const approver = e.approvedBy ? (e.approvedByName ?? this.users().find((u) => u.id === e.approvedBy)?.name) : undefined;
-    const parts = [`${action} — ${seatName}`];
+    const parts = causeKey ? [action, seatName] : [`${action} — ${seatName}`];
     if (approver) parts.push(this.translate.instant('committee.approvedBy', { name: approver }) as string);
     return parts.join(' · ');
   }

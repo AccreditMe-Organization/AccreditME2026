@@ -3,7 +3,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import { recordTypesVisibleTo } from '../../common/services/object-visibility.service';
 import { findUnitHeadedBy, findUnitSubtreeIds, findUnitsCoveredBy } from '../organization/unit-headship';
 import type { TaskAuthorityService } from './task-authority.service';
-import { PoolTarget, poolTargetsOfUser } from './task-pool';
+import { OWNERLESS_SQL, PoolTarget, WAITING_IN_POOL_SQL, poolTargetsOfUser } from './task-pool';
 import { holdsTaskKey, TASK_RECORD_TYPES, typesHolding } from './task-record-types';
 
 /**
@@ -128,27 +128,9 @@ function onRecordsOf(types: readonly string[]): Prisma.Sql {
   return parts.length ? Prisma.sql`(${Prisma.join(parts, ' OR ')})` : Prisma.sql`FALSE`;
 }
 
-/** Has a pool and nobody active on it, in a status a pick can take. */
-export const WAITING_IN_POOL_SQL = Prisma.sql`(t.status::text IN ('PENDING','OVERDUE','UNASSIGNED')
-  AND (t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)
-  AND NOT EXISTS (SELECT 1 FROM "TaskAssignee" wa WHERE wa."taskId" = t.id AND wa."removedAt" IS NULL))`;
-
-/**
- * No actionable owner: UNASSIGNED, or waiting (PENDING / OVERDUE) in a pool
- * nobody is in right now — findEmptyPoolTasks()' rule, in SQL. The Unassigned
- * view, and what Manage tasks reaches besides requests and departed creators.
- */
-export const UNOWNED_SQL = Prisma.sql`(t.status::text = 'UNASSIGNED'
-  OR (t.status::text IN ('PENDING','OVERDUE')
-      AND (t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)
-      AND NOT EXISTS (SELECT 1 FROM "TaskAssignee" ua WHERE ua."taskId" = t.id AND ua."removedAt" IS NULL)
-      AND CASE WHEN t."assignedPositionId" IS NOT NULL
-        THEN NOT EXISTS (SELECT 1 FROM "User" pu WHERE pu."organizationId" = t."organizationId" AND pu.status::text = 'ACTIVE'
-                          AND pu."positionId" = t."assignedPositionId" AND pu."primaryOrgUnitId" = t."assignedOrgUnitId")
-        ELSE NOT EXISTS (SELECT 1 FROM "CommitteeMember" cm JOIN "User" cu ON cu.id = cm."userId"
-                          WHERE cm."organizationId" = t."organizationId" AND cm."isActive" AND cu.status::text = 'ACTIVE'
-                            AND cm."committeeId" = t."assignedCommitteeId" AND cm."roleValueId" = t."assignedCommitteeRoleValueId")
-      END))`;
+// ACC-86 — WAITING_IN_POOL_SQL and OWNERLESS_SQL (the Unassigned view and Manage tasks'
+// reach) live in task-pool.ts beside CURRENT_ACTIVE_ASSIGNEE: "nobody is on it" means no
+// current row held by an ACTIVE user, and Setup health reads the same OWNERLESS_SQL.
 
 const OPEN_REQUEST_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskRequest" vr WHERE vr."taskId" = t.id AND vr.status::text = 'PENDING')`;
 const CREATOR_GONE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "User" vc WHERE vc.id = t."createdById" AND vc."organizationId" = t."organizationId" AND vc.status::text <> 'ACTIVE')`;
@@ -181,7 +163,7 @@ export function taskVisibleSql(ctx: TaskVisibilityContext): Prisma.Sql {
   if (pool) parts.push(Prisma.sql`(${WAITING_IN_POOL_SQL} AND ${pool})`);
   if (ctx.viewAllTypes.length) parts.push(onRecordsOf(ctx.viewAllTypes));
   if (ctx.manageTypes.length) {
-    parts.push(Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND (${OPEN_REQUEST_SQL} OR ${CREATOR_GONE_SQL} OR ${UNOWNED_SQL}))`);
+    parts.push(Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND (${OPEN_REQUEST_SQL} OR ${CREATOR_GONE_SQL} OR ${OWNERLESS_SQL}))`);
   }
   if (ctx.unitScope.length) parts.push(unitScopeSql(ctx));
   return Prisma.sql`(${Prisma.join(parts, ' OR ')})`;
@@ -189,7 +171,7 @@ export function taskVisibleSql(ctx: TaskVisibilityContext): Prisma.Sql {
 
 /** The Unassigned view's own condition: unowned, on a type the viewer manages. FALSE without Manage. */
 export function unassignedSql(ctx: TaskVisibilityContext): Prisma.Sql {
-  return ctx.manageTypes.length ? Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND ${UNOWNED_SQL})` : Prisma.sql`FALSE`;
+  return ctx.manageTypes.length ? Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND ${OWNERLESS_SQL})` : Prisma.sql`FALSE`;
 }
 
 /** The All tasks view's own condition: the types the viewer holds View all tasks on. */

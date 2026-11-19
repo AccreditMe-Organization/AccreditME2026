@@ -35,6 +35,8 @@ import { WorkflowTransitionActionsComponent } from '../../../workflow/components
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { isNavModuleOpen } from '../../../../core/navigation/nav-items';
+import { MeetingsPanelComponent } from '../../../meetings/components/meetings-panel/meetings-panel.component';
 import { FormatService } from '../../../../core/formatting';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -76,6 +78,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     EditDialogComponent,
     ChangeRequestBannerComponent,
     CommitteeChangeRequestsPanelComponent,
+    MeetingsPanelComponent,
   ],
   template: `
     <!-- ACC-298 — a refused removal is said in its own dialog, so the page's
@@ -172,8 +175,9 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                 />
               }
               <!-- ACC-240 — Request a change follows the server's canRaise
-                   (its permission, the stage policy and no open request), and
-                   shows only once the open read has answered. -->
+                   (since ACC-283 PR 6: memberActions.request_change, the stage
+                   policy and no open request), and shows only once the open
+                   read has answered. The page copies none of it. -->
               @if (openState() === 'ready' && canRaise()) {
                 <p-button
                   [label]="'committee.changeRequest.requestChange' | translate"
@@ -325,13 +329,15 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
         <section class="grid gap-3" [style.grid-template-columns]="panelGrid" data-fill-panels data-committee-panels>
 
           <!-- ACC-230 — Members, capped at five, ordered by seat; Change role and
-               Remove in a worded ⋯ menu (Q12), with the same permissions as
-               before. The page owns the dialogs. -->
+               Remove in a worded ⋯ menu (Q12). ACC-283 PR 6 — offered from the
+               server's memberActions and the stage (committee-offers.ts), with
+               the own-row rule for Change seat. The page owns the dialogs. -->
           <app-committee-members-panel
             [committeeId]="committeeId"
             [committeeName]="committee() ? displayName(committee()!) : ''"
             [canAddMember]="offers().addMember"
             [canChangeRole]="offers().changeMemberRole"
+            [canChangeOwnSeat]="offers().changeOwnSeat"
             [canRemove]="offers().removeMember"
             (addRequested)="onAddMember()"
             (changeRoleRequested)="onChangeMemberRoleRow($event)"
@@ -362,13 +368,21 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
           <!-- Four of the seven things a surveyor checks for a committee live
                here (module-designs.md:880-887): attendance, quorum
                confirmation, decisions with vote counts, action items. -->
-          <am-capped-panel
-            [heading]="'committee.meetings' | translate"
-            state="ready"
-            [emptyText]="'committee.noMeetings' | translate"
-            [emptyBody]="'committee.meetingsDescription' | translate"
-            testIdPrefix="committee-meetings"
-          />
+          <!-- ACC-316 PR 6 — this committee's meetings, as the server lets this
+               person see them, while the Meetings module is open (the rail
+               item's own module, as Home asks, ACC-279). Closed, the panel
+               stays the placeholder it was. -->
+          @if (meetingsOpen()) {
+            <app-meetings-panel [owner]="{ kind: 'COMMITTEE', id: c.id, name: displayName(c) }" />
+          } @else {
+            <am-capped-panel
+              [heading]="'committee.meetings' | translate"
+              state="ready"
+              [emptyText]="'committee.noMeetings' | translate"
+              [emptyBody]="'committee.meetingsDescription' | translate"
+              testIdPrefix="committee-meetings"
+            />
+          }
 
           <!-- Terms of Reference and reports to the parent body — the other
                two. Committee.termsOfReferenceDocumentId is already in the
@@ -578,21 +592,23 @@ export class CommitteeDetailComponent implements OnInit {
   // computed at runtime, and since ACC-271 PR 6b it grants nothing at all (a
   // seed-time umbrella, not in use). So the specific string is the only check.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
+  /** ACC-316 PR 6 — the Meetings panel follows the rail item's module (ACC-279's rule). */
+  readonly meetingsOpen = computed(() => isNavModuleOpen('meetings', this.navigationAccess));
   // ACC-255 — Edit, the locked line and the member actions: the server's
-  // stageRules for the committee's current stage, with each action's own
-  // permission (committee-offers.ts). No stage key is read.
-  // ACC-283 — and the server's mayWrite: a head who only oversees the committee
-  // is offered no write, whatever they hold.
+  // stageRules for the committee's current stage (committee-offers.ts). No
+  // stage key is read.
+  // ACC-283 — Edit also needs the server's mayWrite: a head who only oversees
+  // the committee is offered no Edit, whatever they hold.
+  // ACC-283 PR 6 — Add member, Remove, Change seat and Request a change come
+  // from the server's memberActions (a seat can grant them), never from the
+  // viewer's permission strings; ACC-320 — Change seat on your own row too
+  // (memberActions.change_own_seat).
   readonly offers = computed(() =>
     committeeOffers(
       this.committee()?.stageRules,
-      {
-        editDetails: this.canEdit(),
-        addMember: this.canAddMember(),
-        removeMember: this.canRemoveMember(),
-        changeMemberRole: this.canChangeMemberRole(),
-      },
+      { editDetails: this.canEdit() },
       this.committee()?.mayWrite ?? false,
+      this.committee()?.memberActions,
     ),
   );
 
@@ -603,13 +619,6 @@ export class CommitteeDetailComponent implements OnInit {
   readonly canRaise = signal(false);
   /** Bumped so the Change requests panel reads its list again. */
   readonly changeRequestsReload = signal(0);
-  readonly canAddMember = computed(() => this.navigationAccess.hasPermission('committees:add_member'));
-  readonly canRemoveMember = computed(() =>
-    this.navigationAccess.hasPermission('committees:remove_member'),
-  );
-  readonly canChangeMemberRole = computed(() =>
-    this.navigationAccess.hasPermission('committees:change_member_role'),
-  );
   // POST /tasks gates on Create tasks. The button now genuinely works — the
   // form has a real assignee picker as of ACC-76 — so showing it is correct
   // where it was not before.

@@ -8,13 +8,17 @@ import { IPublicHoliday } from './interfaces/public-holiday.interface';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
 import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
+import { holidayDateAt } from './dto/holiday-date';
+import {
+  GCC_DEFAULT_CALENDAR,
+  LoadedCalendar,
+  deadlineWith,
+  hoursBetweenWith,
+  isWorkingDay,
+  readWorkingHoursPerDay,
+} from './working-time';
 
-const GCC_DEFAULT = {
-  timezone: 'Asia/Riyadh',
-  workingDays: [0, 1, 2, 3, 4] as number[],
-  workingHoursStart: '08:00',
-  workingHoursEnd: '16:00',
-};
+const GCC_DEFAULT = { ...GCC_DEFAULT_CALENDAR, workingDays: [...GCC_DEFAULT_CALENDAR.workingDays] };
 
 @Injectable()
 export class WorkingCalendarService {
@@ -77,16 +81,22 @@ export class WorkingCalendarService {
     }));
   }
 
+  // ACC-317 — the row is created in ONE atomic step that cannot fail on the
+  // unique key: INSERT … ON CONFLICT DO NOTHING (`createMany` with
+  // `skipDuplicates`), then the row is read. First reads at the same moment
+  // therefore all get the one row. Not `upsert` with an empty `update`: measured
+  // on Postgres, Prisma sends that as a read, an insert and a read (an emulated
+  // upsert, the same race), and a non-empty `update` would rewrite updatedAt on
+  // every read. An existing calendar costs one read, as before.
   async getOrCreate(organizationId: string): Promise<IWorkingCalendar> {
-    const existing = await this.prisma.workingCalendar.findUnique({
-      where: { organizationId },
-    });
+    const existing = await this.prisma.workingCalendar.findUnique({ where: { organizationId } });
     if (existing) return this.toInterface(existing);
 
-    const created = await this.prisma.workingCalendar.create({
-      data: { organizationId, ...GCC_DEFAULT },
+    await this.prisma.workingCalendar.createMany({
+      data: [{ organizationId, ...GCC_DEFAULT }],
+      skipDuplicates: true,
     });
-    return this.toInterface(created);
+    return this.toInterface(await this.prisma.workingCalendar.findUniqueOrThrow({ where: { organizationId } }));
   }
 
   // ACC-94 (D3) — the tenant's time zone for display. It must be the zone the
@@ -114,10 +124,15 @@ export class WorkingCalendarService {
     });
     if (!calendar) throw new NotFoundException('Working calendar not found');
 
-    if (dto.timezone !== undefined) {
-      if (!IANAZone.isValidZone(dto.timezone)) {
-        throw new BadRequestException(`Invalid timezone: ${dto.timezone}`);
-      }
+    // ACC-318 — only a real IANA zone, checked with the library the deadline
+    // maths uses, so a zone saved here is one every due date can be computed in.
+    if (dto.timezone !== undefined && !IANAZone.isValidZone(dto.timezone)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'timezone must be a real IANA time zone, such as Asia/Riyadh',
+        error: 'Bad Request',
+        code: 'WORKING_CALENDAR_TIMEZONE_INVALID',
+      });
     }
 
     if (dto.workingHoursStart !== undefined && dto.workingHoursEnd !== undefined) {
@@ -168,7 +183,7 @@ export class WorkingCalendarService {
         workingCalendarId: calendar.id,
         nameEn: dto.nameEn,
         nameAr: dto.nameAr ?? null,
-        date: new Date(dto.date),
+        date: holidayDateAt(dto.date),
         isRecurring: dto.isRecurring ?? false,
       },
     });
@@ -206,7 +221,7 @@ export class WorkingCalendarService {
       data: {
         ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
         ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.date !== undefined && { date: holidayDateAt(dto.date) }),
         ...(dto.isRecurring !== undefined && { isRecurring: dto.isRecurring }),
       },
     });
@@ -272,6 +287,41 @@ export class WorkingCalendarService {
       .map((h) => this.holidayToInterface(h));
   }
 
+  /**
+   * ACC-313 — the calendar and its holidays, loaded once, for the pure
+   * working-time helpers (working-time.ts). The SLA sweep calls this once per
+   * organisation per pass and reuses it for every task.
+   *
+   * READ-ONLY, like getEffectiveTimeZone(): an organisation with no calendar
+   * row reads the default getOrCreate() would store, and nothing is created.
+   * Two workers sweeping at once would otherwise both create the row, and one
+   * would fail on its unique key.
+   */
+  async loadCalendar(organizationId: string): Promise<LoadedCalendar> {
+    const row = await this.prisma.workingCalendar.findUnique({ where: { organizationId } });
+    if (!row) return { calendar: { ...GCC_DEFAULT }, holidays: [] };
+    const holidays = await this.prisma.publicHoliday.findMany({
+      where: { workingCalendarId: row.id },
+      orderBy: { date: 'asc' },
+    });
+    return { calendar: this.toInterface(row), holidays: holidays.map((h) => this.holidayToInterface(h)) };
+  }
+
+  /** ACC-313 — working hours in one working day (end − start), read without creating a row. */
+  workingHoursPerDay(organizationId: string): Promise<number> {
+    return readWorkingHoursPerDay(this.prisma, organizationId);
+  }
+
+  /** Pure: `workingHours` working hours after `start`, on a calendar already loaded. */
+  deadlineWith(loaded: LoadedCalendar, start: DateTime, workingHours: number): DateTime {
+    return deadlineWith(loaded, start, workingHours);
+  }
+
+  /** Pure: the working hours in [from, to), on a calendar already loaded. */
+  hoursBetweenWith(loaded: LoadedCalendar, from: DateTime, to: DateTime): number {
+    return hoursBetweenWith(loaded, from, to);
+  }
+
   // THE CRITICAL METHOD — used by every module that needs SLA/due dates.
   // Returns the DateTime that is `workingHours` working hours after `start`.
   // O(days) algorithm: accounts for remaining hours in the current working day first,
@@ -281,44 +331,13 @@ export class WorkingCalendarService {
   // (ACC-175), else the next working day's opening.
   // A start before opening on a working day counts that day's full working hours
   // (ACC-175), so this stays the inverse of workingHoursBetween().
+  // ACC-313 — the arithmetic is deadlineWith() (working-time.ts), shared with the sweep.
   async calculateDeadline(
     start: DateTime,
     workingHours: number,
     organizationId: string,
   ): Promise<DateTime> {
-    const calendar = await this.getOrCreate(organizationId);
-    const holidays = await this.listHolidays(organizationId);
-
-    const [startHour, startMin] = this.parseHHmm(calendar.workingHoursStart);
-    const [endHour, endMin] = this.parseHHmm(calendar.workingHoursEnd);
-    const workingHoursPerDay = (endHour * 60 + endMin - (startHour * 60 + startMin)) / 60;
-
-    // Normalize: advance to next valid working period if start is outside one
-    let current: DateTime = start.setZone(calendar.timezone);
-    current = this.nextWorkingStart(current, calendar, holidays, startHour, startMin, endHour, endMin);
-
-    // Hours remaining in the current working day from `current`
-    const todayEnd = current.startOf('day').set({ hour: endHour, minute: endMin }) as DateTime;
-    const remainingInToday = todayEnd.diff(current, 'hours').hours;
-
-    let remainingHours = workingHours;
-
-    // Fits entirely within today's remaining working hours
-    if (remainingHours <= remainingInToday) {
-      return current.plus({ hours: remainingHours }).toUTC();
-    }
-
-    // Use up today, then advance to the next working day
-    remainingHours -= remainingInToday;
-    current = this.nextWorkingDayStart(current, calendar, holidays, startHour, startMin);
-
-    // Subtract full working days until less than one day remains
-    while (remainingHours > workingHoursPerDay) {
-      remainingHours -= workingHoursPerDay;
-      current = this.nextWorkingDayStart(current, calendar, holidays, startHour, startMin);
-    }
-
-    return current.plus({ hours: remainingHours }).toUTC();
+    return deadlineWith(await this.loadCalendar(organizationId), start, workingHours);
   }
 
   // ACC-173 — the WORKING hours between two instants: how much of the
@@ -327,96 +346,63 @@ export class WorkingCalendarService {
   // calculateDeadline(): a task held from `from` to `to` resumes with its due
   // date moved forward by exactly this many working hours.
   //
-  // Day by day, summing the overlap of each working day's window with the
-  // interval. Holds are capped at 90 days, so the loop is short. A `to` at or
-  // before `from` is zero.
+  // Holds are capped at 90 days, so the loop is short. A `to` at or before
+  // `from` is zero, and reads nothing. ACC-313 — the arithmetic is
+  // hoursBetweenWith() (working-time.ts), shared with the sweep.
   async workingHoursBetween(from: DateTime, to: DateTime, organizationId: string): Promise<number> {
     if (to <= from) return 0;
-    const calendar = await this.getOrCreate(organizationId);
-    const holidays = await this.listHolidays(organizationId);
-    const [startHour, startMin] = this.parseHHmm(calendar.workingHoursStart);
-    const [endHour, endMin] = this.parseHHmm(calendar.workingHoursEnd);
-
-    const start = from.setZone(calendar.timezone);
-    const end = to.setZone(calendar.timezone);
-
-    let total = 0;
-    for (let day = start.startOf('day'); day < end; day = day.plus({ days: 1 })) {
-      if (!this.isWorkingDay(day, calendar, holidays)) continue;
-      const open = day.set({ hour: startHour, minute: startMin });
-      const close = day.set({ hour: endHour, minute: endMin });
-      const overlapStart = open > start ? open : start;
-      const overlapEnd = close < end ? close : end;
-      if (overlapEnd > overlapStart) {
-        total += overlapEnd.diff(overlapStart, 'hours').hours;
-      }
-    }
-    return total;
+    return hoursBetweenWith(await this.loadCalendar(organizationId), from, to);
   }
 
-  private isWorkingDay(
-    dt: DateTime,
-    calendar: IWorkingCalendar,
-    holidays: IPublicHoliday[],
-  ): boolean {
-    // Luxon weekday: 1=Mon…7=Sun. Modulo 7 maps Sunday (7) → 0, matching our 0=Sun convention.
-    if (!calendar.workingDays.includes(dt.weekday % 7)) return false;
+  // ACC-316 — WORKING DAYS, not hours, for a meeting series and the minutes
+  // review. A day is an ISO date (yyyy-MM-dd) in the organisation's own zone,
+  // the calendar's; no time is involved. Both read the calendar once
+  // (loadCalendar(), read-only) and stop after a year of days, so a calendar
+  // with no working day refuses rather than loops.
+  private static readonly DAY_SEARCH_LIMIT = 366;
 
-    const month = dt.month;
-    const day = dt.day;
-    const year = dt.year;
-
-    return !holidays.some((h) => {
-      const hDate = DateTime.fromJSDate(h.date).setZone(calendar.timezone);
-      if (h.isRecurring) return hDate.month === month && hDate.day === day;
-      return hDate.month === month && hDate.day === day && hDate.year === year;
-    });
+  /** The first working day ON or AFTER `day`: where a weekend or holiday meeting moves to. */
+  async nextWorkingDay(day: string, organizationId: string): Promise<string> {
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    for (let i = 0; i <= WorkingCalendarService.DAY_SEARCH_LIMIT; i++) {
+      if (isWorkingDay(candidate, loaded)) return candidate.toISODate()!;
+      candidate = candidate.plus({ days: 1 });
+    }
+    throw new BadRequestException('The working calendar has no working day within a year.');
   }
 
-  private nextWorkingStart(
-    dt: DateTime,
-    calendar: IWorkingCalendar,
-    holidays: IPublicHoliday[],
-    startHour: number,
-    startMin: number,
-    endHour: number,
-    endMin: number,
-  ): DateTime {
-    const todayStart = dt.startOf('day').set({ hour: startHour, minute: startMin }) as DateTime;
-    const todayEnd = dt.startOf('day').set({ hour: endHour, minute: endMin }) as DateTime;
-
-    if (this.isWorkingDay(dt, calendar, holidays)) {
-      // ACC-175 — before opening, the whole working day is still ahead: the
-      // clock starts at today's opening, not the next working day's.
-      if (dt < todayStart) return todayStart;
-      if (dt < todayEnd) return dt;
+  /** The date `count` working days after `day` (`day` itself never counts): the review date's default. */
+  /**
+   * ACC-316 PR 4 — the last working day BEFORE `day` (yyyy-MM-dd), in the
+   * organisation's calendar: when a meeting's review reminder is due.
+   */
+  async previousWorkingDay(day: string, organizationId: string): Promise<string> {
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    for (let i = 0; i <= WorkingCalendarService.DAY_SEARCH_LIMIT; i++) {
+      candidate = candidate.minus({ days: 1 });
+      if (isWorkingDay(candidate, loaded)) return candidate.toISODate()!;
     }
-
-    let candidate = dt.plus({ days: 1 }).startOf('day') as DateTime;
-    while (!this.isWorkingDay(candidate, calendar, holidays)) {
-      candidate = candidate.plus({ days: 1 }) as DateTime;
-    }
-    return candidate.set({ hour: startHour, minute: startMin }) as DateTime;
+    throw new BadRequestException('The working calendar has no working day within a year.');
   }
 
-  // Always advances to the START of the next working day — never returns the current day.
-  private nextWorkingDayStart(
-    current: DateTime,
-    calendar: IWorkingCalendar,
-    holidays: IPublicHoliday[],
-    startHour: number,
-    startMin: number,
-  ): DateTime {
-    let candidate = current.plus({ days: 1 }).startOf('day') as DateTime;
-    while (!this.isWorkingDay(candidate, calendar, holidays)) {
-      candidate = candidate.plus({ days: 1 }) as DateTime;
+  async addWorkingDays(day: string, count: number, organizationId: string): Promise<string> {
+    if (!Number.isInteger(count) || count < 1) throw new BadRequestException('count must be a whole number of at least 1.');
+    const loaded = await this.loadCalendar(organizationId);
+    let candidate = this.dayInZone(day, loaded.calendar.timezone);
+    let left = count;
+    for (let i = 0; i < WorkingCalendarService.DAY_SEARCH_LIMIT * count; i++) {
+      candidate = candidate.plus({ days: 1 });
+      if (isWorkingDay(candidate, loaded) && --left === 0) return candidate.toISODate()!;
     }
-    return candidate.set({ hour: startHour, minute: startMin }) as DateTime;
+    throw new BadRequestException('The working calendar has no working day within a year.');
   }
 
-  private parseHHmm(value: string): [number, number] {
-    const [h, m] = value.split(':');
-    return [parseInt(h ?? '0', 10), parseInt(m ?? '0', 10)];
+  private dayInZone(day: string, timezone: string): DateTime {
+    const parsed = DateTime.fromISO(day, { zone: timezone });
+    if (!parsed.isValid || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('A day is a date written yyyy-MM-dd.');
+    return parsed.startOf('day');
   }
 
   private toInterface(record: {

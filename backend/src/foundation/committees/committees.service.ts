@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, Optional } from '@nestjs/common';
+import { MeetingInviteeSyncService, refreshMeetingInvitees } from '../meetings/invitees/meeting-invitee-sync.service';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCommitteeReferences, CommitteeTx, lockCommitteeHierarchy } from './committee-reference-checks';
@@ -36,6 +37,7 @@ import { committeeStagesAndCounts } from './committee-stage-counts';
 import { committeeTypeValues } from './committee-type-values';
 import { CommitteeChangedException } from './committee-edit-refusal';
 import { committeeStageRefusalMessage } from './committee-stage-refusal';
+import { assertMemberAction, committeeMemberActionsFor } from './member-actions';
 import {
   CommitteeViewer,
   assertMaySeeCommittee,
@@ -77,6 +79,10 @@ export class CommitteesService {
     private readonly auditLog: AuditLogService,
     private readonly workflowService: WorkflowService,
     private readonly stageRules: StageRulesService,
+    // ACC-316 PR 3b — a meeting's MEMBER invitees follow this change (after the
+    // commit, never failing it; the SLA sweep is the backstop). Optional so a
+    // service built by hand in a spec needs no sync.
+    @Optional() private readonly meetingInvitees?: MeetingInviteeSyncService,
   ) {}
 
   // ── Committee CRUD ───────────────────────────────────────────────────────────
@@ -158,7 +164,7 @@ export class CommitteesService {
       viewer,
     );
     const committee = await this.getCommitteeById(id, organizationId);
-    const [facts, types, rules, orgUnit, related] = await Promise.all([
+    const [facts, types, rules, orgUnit, related, memberActions] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
       committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
       this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [committee.id]),
@@ -172,6 +178,11 @@ export class CommitteesService {
       // ACC-281 — the parent and Reports to, named by the record itself, so the
       // page reads no committee list. Two queries at most, whatever the record.
       this.relatedCommittees(organizationId, [committee.parentCommitteeId, committee.reportingToCommitteeId], viewer),
+      // ACC-283 PR 6 — what this viewer may do here, by the one rule, from the seat
+      // the access check just read: no query for a holder of every key, one seat
+      // read for a member short of one.
+      // ACC-320 — and change_own_seat, from the same pass.
+      committeeMemberActionsFor(this.prisma, organizationId, committee.id, viewer, { seat: access.seat }),
     ]);
     const fact = facts.get(committee.id);
     return {
@@ -186,6 +197,7 @@ export class CommitteesService {
       // ACC-255 — the same answer PR 2's writes will assert.
       stageRules: committeeStageRules(rules.get(committee.id)),
       mayWrite: access.write,
+      memberActions,
     };
   }
 
@@ -490,10 +502,11 @@ export class CommitteesService {
     actorId: string,
     viewerPermissions: readonly string[],
   ): Promise<ICommitteeMember> {
-    // ACC-281 — the action's own permission was checked at the route; this adds
-    // "committees:view OR an active member of THIS committee". Anyone else gets the
-    // identical 404 a missing committee gets. The stage rules still apply below.
-    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
+    // ACC-283 PR 6 — the one rule (member-actions.ts): the role's permission on a
+    // committee they may write to, OR their seat here allows it. It replaces the
+    // route's gate and ACC-281's precondition; the refusals are unchanged. Before
+    // the transaction (Q-C); the stage rules still apply below.
+    await assertMemberAction(this.prisma, organizationId, committeeId, { id: actorId, permissions: viewerPermissions }, 'add_member');
     await this.getCommitteeById(committeeId, organizationId);
     await this.validateUserReference(dto.userId, organizationId);
 
@@ -563,6 +576,7 @@ export class CommitteesService {
       ...(existing && { before: existing as unknown as Record<string, unknown> }),
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'adding a committee member', (s) => s.forCommittee(organizationId, committeeId));
 
     return member;
   }
@@ -575,10 +589,11 @@ export class CommitteesService {
     actorId: string,
     viewerPermissions: readonly string[],
   ): Promise<ICommitteeMember> {
-    // ACC-281 — the action's own permission was checked at the route; this adds
-    // "committees:view OR an active member of THIS committee". Anyone else gets the
-    // identical 404 a missing committee gets. The stage rules still apply below.
-    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
+    // ACC-283 PR 6 — the one rule (member-actions.ts): the role's permission on a
+    // committee they may write to, OR their seat here allows it. It replaces the
+    // route's gate and ACC-281's precondition; the refusals are unchanged. Before
+    // the transaction (Q-C); the stage rules still apply below.
+    await assertMemberAction(this.prisma, organizationId, committeeId, { id: actorId, permissions: viewerPermissions }, 'change_member_seat', { targetMemberId: memberId });
     await this.getCommitteeById(committeeId, organizationId);
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
@@ -622,6 +637,7 @@ export class CommitteesService {
       before: existing as unknown as Record<string, unknown>,
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'a committee seat change', (s) => s.forCommittee(organizationId, committeeId));
 
     return member;
   }
@@ -634,10 +650,11 @@ export class CommitteesService {
     actorId: string,
     viewerPermissions: readonly string[],
   ): Promise<void> {
-    // ACC-281 — the action's own permission was checked at the route; this adds
-    // "committees:view OR an active member of THIS committee". Anyone else gets the
-    // identical 404 a missing committee gets. The stage rules still apply below.
-    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
+    // ACC-283 PR 6 — the one rule (member-actions.ts): the role's permission on a
+    // committee they may write to, OR their seat here allows it. It replaces the
+    // route's gate and ACC-281's precondition; the refusals are unchanged. Before
+    // the transaction (Q-C); the stage rules still apply below.
+    await assertMemberAction(this.prisma, organizationId, committeeId, { id: actorId, permissions: viewerPermissions }, 'remove_member');
     await this.getCommitteeById(committeeId, organizationId);
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
@@ -682,6 +699,7 @@ export class CommitteesService {
       before: existing as unknown as Record<string, unknown>,
       after: member,
     });
+    await refreshMeetingInvitees(this.meetingInvitees, this.logger, 'removing a committee member', (s) => s.forCommittee(organizationId, committeeId));
   }
 
   // ── Internal helpers ─────────────────────────────────────────────────────────

@@ -94,10 +94,12 @@ describe('backfill:acc244-grant-task-keys, on a real database (ACC-244)', () => 
     expect(planned).toEqual(
       [
         `A:TENANT_ADMIN ${VIEW_ALL}`, `A:TENANT_ADMIN ${CREATE}`, `A:TENANT_ADMIN ${MANAGE}`, `A:TENANT_ADMIN ${VIEW_UNIT}`,
-        `A:QUALITY_MANAGER ${VIEW_ALL}`, `A:QUALITY_MANAGER ${CREATE}`, `A:QUALITY_MANAGER ${MANAGE}`,
+        // ACC-77 — the seed's Quality Manager holds View unit tasks too (Manage
+        // tasks is its umbrella), and this script grants the seed's share.
+        `A:QUALITY_MANAGER ${VIEW_ALL}`, `A:QUALITY_MANAGER ${CREATE}`, `A:QUALITY_MANAGER ${MANAGE}`, `A:QUALITY_MANAGER ${VIEW_UNIT}`,
         `A:READ_ONLY_ADMIN ${VIEW_ALL}`, `A:READ_ONLY_ADMIN ${VIEW_UNIT}`,
-        // B's edited Quality Manager keeps exactly the reach it chose: View all only.
-        `B:QUALITY_MANAGER ${VIEW_ALL}`,
+        // B's edited Quality Manager keeps exactly the reach it chose: the view keys only.
+        `B:QUALITY_MANAGER ${VIEW_ALL}`, `B:QUALITY_MANAGER ${VIEW_UNIT}`,
         `B:TENANT_ADMIN ${CREATE}`, `B:TENANT_ADMIN ${MANAGE}`, `B:TENANT_ADMIN ${VIEW_UNIT}`,
       ].sort(),
     );
@@ -112,7 +114,7 @@ describe('backfill:acc244-grant-task-keys, on a real database (ACC-244)', () => 
     // ONE transaction, with the explicit limit: Prisma's default 5 seconds
     // rolled the first shared-database run back (20 Oct).
     const tx = jest.spyOn(prisma, '$transaction');
-    expect(await applyGrants(prisma, plan)).toBe(13);
+    expect(await applyGrants(prisma, plan)).toBe(15); // 13 before ACC-77, + the two Quality Manager View unit keys
     expect(tx).toHaveBeenCalledTimes(1);
     expect(tx).toHaveBeenCalledWith(expect.any(Function), BACKFILL_TX);
     expect(BACKFILL_TX.timeout).toBeGreaterThanOrEqual(60_000);
@@ -120,7 +122,7 @@ describe('backfill:acc244-grant-task-keys, on a real database (ACC-244)', () => 
 
     // One audit row per grant, naming the new row, in the role's own organisation.
     const audits = await prisma.auditLog.findMany({ where: { organizationId: { in: [A, B] } }, orderBy: { createdAt: 'asc' } });
-    expect(audits).toHaveLength(auditBefore + 13);
+    expect(audits).toHaveLength(auditBefore + 15);
     for (const a of audits.slice(auditBefore)) {
       expect(a).toMatchObject({ action: 'CREATE', objectType: 'RolePermission', actorId: null, metadata: expect.objectContaining({ source: SCRIPT_NAME }) });
       const row = await prisma.rolePermission.findUnique({ where: { id: a.objectId! }, include: { role: { select: { organizationId: true } } } });
@@ -139,6 +141,6 @@ describe('backfill:acc244-grant-task-keys, on a real database (ACC-244)', () => 
     expect(again.grants).toEqual([]);
     expect(again.missingCatalogue).toEqual([]);
     expect(await applyGrants(prisma, again)).toBe(0);
-    expect(await prisma.auditLog.count({ where: { organizationId: { in: [A, B] } } })).toBe(auditBefore + 13);
+    expect(await prisma.auditLog.count({ where: { organizationId: { in: [A, B] } } })).toBe(auditBefore + 15);
   });
 });

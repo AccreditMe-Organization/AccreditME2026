@@ -43,8 +43,17 @@ import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
 import { ChangeRequestDepartureService, PreparedDeparture } from './departure/change-request-departure.service';
+import { UserService } from '../../user/user.service';
+import type { RoleService } from '../../roles/role.service';
+import type { OrganizationService } from '../../organization/organization.service';
+import type { OrgUnitHeadService } from '../../organization/org-unit-head.service';
+import type { OrgPositionService } from '../../org-position/org-position.service';
+import type { AuthProvider } from '../../../providers/auth/auth.provider';
+import type { CommitteeTransferNoticeService } from '../transfer-notice/committee-transfer-notice.service';
+import { TENANT_ADMIN_KEY } from '../../roles/tenant-administrator.invariant';
 import { findUnitHeadedBy, findUnitsCoveredBy } from '../../organization/unit-headship';
 import { SEAT_ACTIONS } from '../seat-actions';
+import { CommitteeSeatDepartureService } from '../../committees/departure/committee-seat-departure.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -1481,6 +1490,67 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       // or task-closed notices), and no pool told about the Withdrawn stage.
       expect(notices).toEqual([]);
       expect(inApp).toEqual([]);
+    });
+
+    // ── ACC-216 (CC-301, CC-302): the REAL UserService.deactivate(), whose one
+    // transaction (DEACTIVATION_TX) now also ends the leaver's sign-ins
+    // (endEverySessionInTx). The withdrawal and the session ending commit
+    // together and roll back together.
+    describe('with the session ending (ACC-216)', () => {
+      const users = new UserService(
+        prisma,
+        audit,
+        notifications,
+        { getUserPermissions: async () => [] } as unknown as RoleService,
+        tasks,
+        { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService,
+        {} as unknown as AuthProvider,
+        {} as OrgUnitHeadService,
+        {} as OrgPositionService,
+        new StagePoolService(prisma),
+        { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
+        departure,
+        // ACC-306 — the real seat ending: these people hold no committee seat ended here.
+        new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
+      );
+      const signIn = (w: World, userId: string) =>
+        prisma.refreshToken.create({
+          data: { userId, organizationId: w.org, tokenHash: randomUUID(), tokenVersion: 0, expiresAt: new Date(Date.now() + 3_600_000) },
+        });
+      const live = (w: World, userId: string) => prisma.refreshToken.count({ where: { userId, organizationId: w.org, revokedAt: null } });
+
+      it("commit together: the leaver's draft is withdrawn AND every sign-in ends", async () => {
+        const w = await world();
+        const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+        await signIn(w, w.requester.userId);
+        await signIn(w, w.requester.userId);
+        const version = (await prisma.user.findFirstOrThrow({ where: { id: w.requester.userId } })).tokenVersion;
+
+        await users.deactivate(w.requester.userId, w.org, w.approver.userId);
+
+        expect(await stageKey(w, draft.id)).toBe('withdrawn');
+        expect(await live(w, w.requester.userId)).toBe(0);
+        const leaver = await prisma.user.findFirstOrThrow({ where: { id: w.requester.userId } });
+        expect(leaver).toMatchObject({ status: 'INACTIVE', tokenVersion: version + 1 });
+      });
+
+      it('roll back together: a refusal later in the transaction (the last administrator) keeps the draft AND the sign-ins', async () => {
+        const w = await world();
+        const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+        await signIn(w, w.requester.userId);
+        // The leaver is the organisation's only active administrator: the
+        // invariant refuses AFTER the ending and the withdrawal ran in the transaction.
+        const role = await prisma.role.create({ data: { organizationId: w.org, key: TENANT_ADMIN_KEY, nameEn: 'Organization Administrator', isSystem: true } });
+        await prisma.userRole.create({ data: { userId: w.requester.userId, roleId: role.id } });
+        const version = (await prisma.user.findFirstOrThrow({ where: { id: w.requester.userId } })).tokenVersion;
+
+        await expect(users.deactivate(w.requester.userId, w.org, w.approver.userId)).rejects.toThrow();
+
+        expect(await stageKey(w, draft.id)).toBe('draft');
+        expect(await live(w, w.requester.userId)).toBe(1);
+        const leaver = await prisma.user.findFirstOrThrow({ where: { id: w.requester.userId } });
+        expect(leaver).toMatchObject({ status: 'ACTIVE', tokenVersion: version });
+      });
     });
 
     it('leaves a request already sent for decision to its deciders', async () => {

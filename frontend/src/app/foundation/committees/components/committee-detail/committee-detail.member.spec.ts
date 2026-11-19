@@ -52,7 +52,7 @@ const COMMITTEE = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto =
   parent: { id: 'c-parent', nameEn: 'Quality Council', nameAr: 'مجلس الجودة', mayOpen: true },
   reportsTo: { id: 'c-board', nameEn: 'Board of Directors', nameAr: null, mayOpen: false },
   currentStageNameEn: 'Active',
-  currentStageNameAr: 'نشطة', mayWrite: true,
+  currentStageNameAr: 'نشطة', mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true },
   ...over,
 });
 
@@ -106,7 +106,7 @@ describe('CommitteeDetailComponent — a member without committees:view (ACC-281
         provideFormatTesting(),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => held.includes(p) } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => held.includes(p) } },
         {
           provide: CommitteeService,
           useValue: {

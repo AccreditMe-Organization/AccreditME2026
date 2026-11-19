@@ -519,6 +519,11 @@ describe('TenantService', () => {
               taskSla: expect.objectContaining({
                 CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
               }),
+              // ACC-313 — and the notices: every reminder Off, due-date notices on.
+              taskSlaNotices: {
+                warnBeforeDue: { LOW: 'OFF', MEDIUM: 'OFF', HIGH: 'OFF', CRITICAL: 'OFF' },
+                notifyOnDueChange: true,
+              },
             }),
           }),
         }),

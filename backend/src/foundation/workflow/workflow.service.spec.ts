@@ -115,7 +115,6 @@ const BASE_TRANSITION = {
   labelEn: 'Submit',
   labelAr: 'إرسال',
   validatorConfig: null as unknown,
-  isApprovalPath: false,
   kind: 'ADVANCE' as 'ADVANCE' | 'RETURN' | 'EXIT',
   // ACC-271 PR 6b — the mover is read alone.
   mover: 'PERSON' as string | null,
@@ -984,7 +983,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(instance);
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-parallel' }),
@@ -1017,7 +1016,7 @@ describe('WorkflowService', () => {
         ),
       );
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-parallel' }),
@@ -1060,7 +1059,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-parallel' }),
@@ -1079,7 +1078,6 @@ describe('WorkflowService', () => {
         id: 'approve-transition',
         fromStageId: 'stage-parallel',
         toStageId: 'stage-target',
-        isApprovalPath: true,
       });
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
       mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
@@ -1131,7 +1129,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-committee' }),
@@ -1159,7 +1157,6 @@ describe('WorkflowService', () => {
           id: 'approve-transition',
           fromStageId: 'stage-committee',
           toStageId: 'stage-target',
-          isApprovalPath: true,
         }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
@@ -1183,7 +1180,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-committee' }),
@@ -1211,7 +1208,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-committee' }),
@@ -1427,7 +1424,7 @@ describe('WorkflowService', () => {
           Promise.resolve({ 'stage-parallel': PARALLEL_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null),
         );
         mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-          makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: true }),
+          makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target' }),
         );
         mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-parallel' }));
         mockStagePool.resolve.mockResolvedValue(poolOf(holders));
@@ -1463,7 +1460,7 @@ describe('WorkflowService', () => {
       it('lets submitApproval record a RETURN vote with mandatory tasks open', async () => {
         arrangeParallel([ACTOR, 'user-2'], []);
         mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-parallel' }));
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ isApprovalPath: false, kind: 'RETURN' }));
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ kind: 'RETURN' }));
         mockPrisma.task.findMany.mockResolvedValue(openMandatory);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
 
@@ -2256,7 +2253,7 @@ describe('WorkflowService', () => {
     });
 
     describe('how the people decide (plan §4.3)', () => {
-      const approve = { isApprovalPath: true };
+      const approve = {};
       const approved = (approverId: string) => makeApproval({ approverId, decision: 'APPROVED' });
 
       it('Any one of them: the first press decides, however many work the stage', async () => {
@@ -2311,7 +2308,7 @@ describe('WorkflowService', () => {
       });
 
       it('All of them: a send-back by any member fires at once', async () => {
-        arrange(ALL_STAGE, { isApprovalPath: false, kind: 'RETURN' });
+        arrange(ALL_STAGE, { kind: 'RETURN' });
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3']));
 
         await trigger();
@@ -2469,6 +2466,75 @@ describe('WorkflowService', () => {
       });
     });
 
+    // ACC-95 — both notices in both languages: the record type in words, never
+    // the stored code, and each stored name's Arabic, else its English, never blank.
+    describe('the workflow notices, in both languages (ACC-95)', () => {
+      const sentTo = (userId: string): Record<string, unknown>[] =>
+        (mockNotificationService.create.mock.calls as [Record<string, unknown>, string][]).filter(([n]) => n['userId'] === userId).map(([n]) => n);
+
+      it('"New workflow assignment" names the first stage by its Arabic name in the Arabic text', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+        mockPrisma.workflowStage.findFirst.mockResolvedValue({ ...POOL_STAGE, isInitial: true });
+        mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['member-1']));
+
+        await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+        expect(sentTo('member-1')).toEqual([
+          {
+            userId: 'member-1',
+            titleEn: 'New workflow assignment',
+            titleAr: 'تكليف جديد في سير العمل',
+            bodyEn: 'You have been assigned to Quality review',
+            bodyAr: 'تم تكليفك بمرحلة «مراجعة الجودة»',
+            objectType: 'DOCUMENT',
+            objectId: 'object-1',
+          },
+        ]);
+      });
+
+      it("a move's Send notification says the record type in words, never its code", async () => {
+        arrange(POOL_STAGE, {}, { ...TARGET_STAGE, nameEn: 'Terms Review', whoMode: 'ALL' });
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : poolOf(['member-1'])),
+        );
+
+        await trigger();
+
+        // The target stage has no Arabic name: the English one, in «…».
+        expect(sentTo('member-1')).toEqual([
+          {
+            userId: 'member-1',
+            titleEn: 'Submit',
+            titleAr: 'إرسال',
+            bodyEn: 'Document: moved to Terms Review',
+            bodyAr: 'وثيقة: الانتقال إلى مرحلة «Terms Review»',
+            objectType: 'DOCUMENT',
+            objectId: 'object-1',
+          },
+        ]);
+      });
+
+      it('a move with no Arabic label is titled by its English one, never blank', async () => {
+        arrange(POOL_STAGE, { labelAr: null }, { ...TARGET_STAGE, nameEn: 'Terms Review', nameAr: 'مراجعة الشروط', whoMode: 'ALL' });
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : poolOf(['member-1'])),
+        );
+
+        await trigger();
+
+        expect(sentTo('member-1')).toEqual([
+          expect.objectContaining({ titleAr: 'Submit', bodyAr: 'وثيقة: الانتقال إلى مرحلة «مراجعة الشروط»' }),
+        ]);
+      });
+    });
+
     // ACC-271 PR 2 — what the record page's buttons show comes from here.
     // ACC-271 PR 4 — the closed-task notices go out after the stage change
     // commits, never inside it: a change that fails tells nobody.
@@ -2523,7 +2589,7 @@ describe('WorkflowService', () => {
         labelAr: null,
         kind: 'ADVANCE',
         toStageId: `to-${id}`,
-        toStage: { nameEn: `Stage ${id}`, nameAr: null },
+        toStage: { nameEn: `Stage ${id}`, nameAr: null, flags: [] },
       });
       const moves = [
         move('move-approve', 'PERSON'),
@@ -2540,6 +2606,11 @@ describe('WorkflowService', () => {
         toStageId: `to-${id}`,
         toStageNameEn: `Stage ${id}`,
         toStageNameAr: null,
+        // ACC-316 PR 3a — a committee move needs no reason.
+        needsReason: false,
+        // ACC-316 PR 4 — nothing holds these moves.
+        blockedBy: null,
+        toStageFlags: [],
       });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
@@ -2585,7 +2656,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({
             where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } },
             // ACC-282 — the label and the next stage come with the move, in the same read.
-            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true } } }),
+            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true, flags: true } } }),
           }),
         );
       });

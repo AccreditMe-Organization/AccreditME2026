@@ -40,6 +40,7 @@ import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
+import { CommitteeSeatDepartureService } from '../committees/departure/committee-seat-departure.service';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 
 const TENANT_ID = 'org-a';
@@ -82,6 +83,7 @@ describe("A user's roles are gated by that user's own visibility (ACC-101)", () 
         { provide: CommitteeTransferNoticeService, useValue: { schedule: jest.fn() } },
         // ACC-283 PR 2b — no deactivation here, so nothing is withdrawn.
         { provide: ChangeRequestDepartureService, useValue: { prepare: jest.fn(), withdrawInTx: jest.fn(), finish: jest.fn() } },
+        { provide: CommitteeSeatDepartureService, useValue: { prepare: jest.fn(), endSeatsInTx: jest.fn(), finish: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)

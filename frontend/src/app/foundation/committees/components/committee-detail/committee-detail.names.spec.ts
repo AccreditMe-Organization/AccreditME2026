@@ -48,7 +48,7 @@ const COMMITTEE = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto =
   stageRules: ACTIVE_RULES,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: 'لجنة الجودة', offered: true },
   orgUnit: { id: 'unit-qa', nameEn: 'Quality Department', nameAr: 'إدارة الجودة' },
-  parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, ...over,
+  parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true }, ...over,
 });
 
 describe('CommitteeDetailComponent — the type and owning unit come with the committee (ACC-265)', () => {
@@ -72,7 +72,7 @@ describe('CommitteeDetailComponent — the type and owning unit come with the co
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
         // A reader with committees:view and nothing else: no lookups:view, no org:view.
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p === 'committees:view' } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => p === 'committees:view' } },
         {
           provide: CommitteeService,
           useValue: {

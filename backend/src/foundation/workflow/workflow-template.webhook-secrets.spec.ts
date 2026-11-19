@@ -75,7 +75,7 @@ describe('WorkflowTemplateService — webhook header values are never sent back 
             {
               id: 't-1', fromStageId: 'stage-1', toStageId: 'stage-1', labelEn: 'Go', labelAr: null,
               validatorConfig: null,
-              isApprovalPath: false, kind: 'ADVANCE', mover: 'PERSON', actions: [ACTION],
+              kind: 'ADVANCE', mover: 'PERSON', actions: [ACTION],
             },
           ],
         },

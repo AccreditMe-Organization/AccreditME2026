@@ -9,7 +9,13 @@ import { of } from 'rxjs';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
-import { CommitteeDetailDto, CommitteeMemberRowDto, CommitteeService, CommitteeStageRulesDto } from '../../services/committee.service';
+import {
+  CommitteeDetailDto,
+  CommitteeMemberActionsDto,
+  CommitteeMemberRowDto,
+  CommitteeService,
+  CommitteeStageRulesDto,
+} from '../../services/committee.service';
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { UserService } from '../../../user/services/user.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
@@ -47,10 +53,27 @@ const COMMITTEE = (stageRules: CommitteeStageRulesDto): CommitteeDetailDto => ({
   isDissolving: stageRules.flags.includes('DISSOLVING'),
   stageRules,
   typeValue: null,
-  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: byRole(ALL, true),
 });
 
 const ALL = ['committees:edit_details', 'committees:add_member', 'committees:remove_member', 'committees:change_member_role'];
+
+/**
+ * ACC-283 PR 6 — what the server's memberActions says for someone with no seat
+ * grant: the role's path, each key AND the right to write here (mayWrite). A
+ * test that needs a seat grant passes memberActions itself.
+ */
+function byRole(held: readonly string[], mayWrite: boolean): CommitteeMemberActionsDto {
+  const has = (p: string) => mayWrite && held.includes(p);
+  return {
+    add_member: has('committees:add_member'),
+    remove_member: has('committees:remove_member'),
+    change_member_seat: has('committees:change_member_role'),
+    request_change: has('committees:edit_details'),
+    // ACC-320 — the role's path reaches the viewer's own row too.
+    change_own_seat: has('committees:change_member_role'),
+  };
+}
 
 describe('CommitteeDetailComponent — the header and members panel by the stage’s rules (ACC-255)', () => {
   let fixture: ComponentFixture<CommitteeDetailComponent>;
@@ -58,7 +81,7 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
   function render(
     stageRules: CommitteeStageRulesDto,
     held: readonly string[] = ALL,
-    opts: { mayWrite?: boolean; members?: CommitteeMemberRowDto[] } = {},
+    opts: { mayWrite?: boolean; members?: CommitteeMemberRowDto[]; memberActions?: CommitteeMemberActionsDto } = {},
   ): HTMLElement {
     const members = opts.members ?? [];
     TestBed.configureTestingModule({
@@ -72,11 +95,16 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
         provideFormatTesting(),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => held.includes(p) } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => held.includes(p) } },
         {
           provide: CommitteeService,
           useValue: {
-            getById: () => of({ ...COMMITTEE(stageRules), mayWrite: opts.mayWrite ?? true }),
+            getById: () =>
+              of({
+                ...COMMITTEE(stageRules),
+                mayWrite: opts.mayWrite ?? true,
+                memberActions: opts.memberActions ?? byRole(held, opts.mayWrite ?? true),
+              }),
             listCommittees: () => of([]),
             listMembers: () => of([]),
             listMembershipEvents: () => of([]),
@@ -136,6 +164,41 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
     expect(has(page, 'committee-members-add')).toBeFalse();
     expect(panel().canChangeRole()).toBeFalse();
     expect(panel().canRemove()).toBeFalse();
+  });
+
+  // ACC-283 PR 6 — the offers read the server's memberActions, never the
+  // viewer's keys: a Secretary holding none is offered what their seat allows.
+  it('a seat-only Secretary (no keys) is offered what memberActions grants, where the stage allows it', () => {
+    // The server: a seat grants the four, never the holder's own seat (change_own_seat false).
+    const all = { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: false };
+    const page = render(FORMATION_RULES, [], { memberActions: all });
+    expect(has(page, 'committee-members-add')).withContext('Add member').toBeTrue();
+    expect(panel().canChangeRole()).withContext('Change seat (another row)').toBeTrue();
+    expect(panel().canChangeOwnSeat()).withContext('Change seat (own row): never by the seat').toBeFalse();
+    expect(panel().canRemove()).withContext('Remove').toBeTrue();
+    expect(has(page, 'committee-edit')).withContext('Edit is not a seat action').toBeFalse();
+    TestBed.resetTestingModule();
+    // The stage still narrows it: a dissolved committee offers none.
+    render(SEEDED_STAGE_RULES.find((s) => s.stage === 'Dissolved')!.rules, [], { memberActions: all });
+    expect([panel().canAddMember(), panel().canChangeRole(), panel().canRemove()]).withContext('Dissolved').toEqual([false, false, false]);
+  });
+
+  it('holding the keys is not enough when the server says no', () => {
+    render(FORMATION_RULES, ALL, { memberActions: { add_member: false, remove_member: false, change_member_seat: false, request_change: false, change_own_seat: false } });
+    expect([panel().canAddMember(), panel().canChangeRole(), panel().canChangeOwnSeat(), panel().canRemove()]).toEqual([false, false, false, false]);
+  });
+
+  // ACC-320 — Change seat on your own row is the server's change_own_seat, never a
+  // permission string the page reads.
+  it('your own row: the server says change_own_seat true → offered, with no key held', () => {
+    render(FORMATION_RULES, [], { memberActions: { add_member: false, remove_member: false, change_member_seat: false, request_change: false, change_own_seat: true } });
+    expect(panel().canChangeOwnSeat()).toBeTrue();
+  });
+
+  it('your own row: the server says change_own_seat false → not offered, though the viewer holds committees:change_member_role', () => {
+    render(FORMATION_RULES, ALL, { memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: false } });
+    expect(panel().canChangeRole()).withContext('another row').toBeTrue();
+    expect(panel().canChangeOwnSeat()).withContext('your own row').toBeFalse();
   });
 
   it('each member action follows its own permission', () => {
@@ -203,18 +266,19 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
   });
 
   describe('committeeOffers()', () => {
-    const everything = { editDetails: true, addMember: true, removeMember: true, changeMemberRole: true };
+    const everything = { editDetails: true };
+    const member = { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true };
 
     it('the locked line is "no edit here, not in force, not being dissolved"', () => {
-      expect(committeeOffers(tenantStageRules([]), everything, true).lockedLine).toBeTrue();
-      expect(committeeOffers(tenantStageRules([], ['IN_FORCE']), everything, true).lockedLine).toBeFalse();
-      expect(committeeOffers(tenantStageRules([], ['DISSOLVING']), everything, true).lockedLine).toBeFalse();
-      expect(committeeOffers(tenantStageRules(['edit_details']), everything, true).lockedLine).toBeFalse();
+      expect(committeeOffers(tenantStageRules([]), everything, true, member).lockedLine).toBeTrue();
+      expect(committeeOffers(tenantStageRules([], ['IN_FORCE']), everything, true, member).lockedLine).toBeFalse();
+      expect(committeeOffers(tenantStageRules([], ['DISSOLVING']), everything, true, member).lockedLine).toBeFalse();
+      expect(committeeOffers(tenantStageRules(['edit_details']), everything, true, member).lockedLine).toBeFalse();
     });
 
     it('a committee with no rules offers nothing to edit or change', () => {
       for (const rules of [null, undefined, NO_STAGE_RULES]) {
-        const offers = committeeOffers(rules, everything, true);
+        const offers = committeeOffers(rules, everything, true, member);
         expect([offers.edit, offers.addMember, offers.removeMember, offers.changeMemberRole]).toEqual([false, false, false, false]);
       }
     });

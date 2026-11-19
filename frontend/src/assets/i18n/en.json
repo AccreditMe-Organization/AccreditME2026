@@ -38,7 +38,9 @@
     "yes": "Yes",
     "notActiveYet": "Not active yet",
     "actions": "Actions",
-    "stepOf": "Step {{step}} of {{steps}}"
+    "stepOf": "Step {{step}} of {{steps}}",
+    "on": "On",
+    "off": "Off"
   },
   "tasks": {
     "title": "Tasks",
@@ -541,7 +543,6 @@
     "addRole": "New Role",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
-    "confirmDeactivateRole": "{{holders}} The role stays assigned, so reactivating it gives those permissions back.",
     "confirmRemoveAssignment": "Remove this role assignment?",
     "customBadge": "Custom",
     "deactivateRole": "Deactivate Role",
@@ -674,7 +675,16 @@
         "positions:view": "See the organization’s positions",
         "positions:manage": "Add and change positions",
         "setup:view": "See Setup health",
-        "admin:access": "Open the Administration area"
+        "admin:access": "Open the Administration area",
+        "meetings:schedule": "Schedule meetings for your unit and the committees it owns",
+        "meetings:schedule_subunits": "Schedule meetings for units below the one you head",
+        "meetings:record_minutes": "Record the minutes of your unit's meetings",
+        "meetings:approve_minutes": "Approve the minutes of your unit's meetings",
+        "meetings:approve_subunits": "Approve the minutes of meetings of units below the one you head",
+        "meetings:view_all_tasks": "See every task on meetings",
+        "meetings:create_tasks": "Create tasks on meetings",
+        "meetings:manage_tasks": "Reassign meeting tasks and decide their requests",
+        "meetings:view_unit_tasks": "See tasks on meetings of your unit or its sub-units"
       },
       "find": "Find a permission",
       "clearSearch": "Clear the search",
@@ -707,6 +717,11 @@
         "users": {
           "people": "People and profiles",
           "access": "Account access"
+        },
+        "meetings": {
+          "meetings": "Meetings",
+          "minutes": "Minutes",
+          "tasks": "Tasks on meetings"
         }
       }
     },
@@ -718,7 +733,18 @@
     },
     "refusal": {
       "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
-      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
+      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first.",
+      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first.",
+      "roleInactive": "This role has been deactivated, so it can't be given out. Reactivate it on Roles, or choose another role."
+    },
+    "inUse": {
+      "title": "“{{name}}” can't be deactivated yet",
+      "lead": "It's still in use. Remove each of these first, then deactivate it.",
+      "stageName": "{{workflow}} — {{stage}}",
+      "hint": {
+        "POSITION_GRANTS": "Removed by ending that headship.",
+        "POSITIONS": "Removed by changing the position's role."
+      }
     },
     "form": {
       "nameRequired": "Enter the role's name in English.",
@@ -727,7 +753,6 @@
     },
     "deactivateHeader": "Deactivate the role “{{name}}”?",
     "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
-    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back.",
     "userPermissions": {
       "title": "A user's permissions",
       "lookUp": "Look up a user's permissions",
@@ -871,16 +896,33 @@
         "add_member": "Add a person to a seat.",
         "remove_member": "End a person's membership; it stays in Membership history.",
         "change_member_role": "Move a member to another seat (Chair, Secretary, Member…).",
-        "request_change": "Open a committee change request with its own approval."
+        "request_change": "Open a committee change request with its own approval.",
+        "schedule_meeting": "Schedule a meeting for this committee."
+      },
+      "MEETING": {
+        "edit_details": "Change the meeting's title, type, time, place and link.",
+        "manage_agenda": "Add, reorder and remove agenda items and their papers.",
+        "manage_guests": "Invite people from the organization and outside guests.",
+        "reschedule": "Move the meeting to another date and time, with a reason.",
+        "answer_invitation": "Invitees say whether they're attending.",
+        "record_attendance": "Mark each invitee present, sent apologies or absent.",
+        "record_minutes": "Write the discussion, decisions, votes and action items for each item.",
+        "apply_suggestions": "Apply or decline reviewers' suggested corrections.",
+        "change_action_dates": "Change an action item's due date during review.",
+        "suggest_correction": "Present members answer the review: no corrections, or a suggestion."
       }
     },
     "stageFlagHint": {
       "DISSOLVING": "Committees here can't be a parent or be reported to.",
       "IN_FORCE": "Counted as active in lists. Change requests can be submitted and decided here.",
-      "APPLIES_APPROVED_CHANGE": "A change request's values are applied to the committee when it reaches this stage. Exactly one stage."
+      "APPLIES_APPROVED_CHANGE": "A change request's values are applied to the committee when it reaches this stage. Exactly one stage.",
+      "AGENDA_ISSUED": "Invitees are told when the meeting reaches this stage.",
+      "MEETING_CANCELLED": "Meetings here are cancelled and take no new tasks.",
+      "MINUTES_FINAL": "Reaching this stage approves the minutes and turns their action items into tasks. Exactly one stage."
     },
     "stageFlagNeed": {
-      "APPLIES_APPROVED_CHANGE": "applies the approved change"
+      "APPLIES_APPROVED_CHANGE": "applies the approved change",
+      "MINUTES_FINAL": "approves the minutes"
     },
     "strip": {
       "label": "Stages in order",
@@ -933,18 +975,37 @@
         "add_member": "Add member",
         "remove_member": "Remove member",
         "change_member_role": "Change member role",
-        "request_change": "Request a change"
+        "request_change": "Request a change",
+        "schedule_meeting": "Schedule a meeting"
+      },
+      "MEETING": {
+        "edit_details": "Edit details",
+        "manage_agenda": "Edit the agenda",
+        "manage_guests": "Add and remove guests",
+        "reschedule": "Reschedule",
+        "answer_invitation": "Answer the invitation",
+        "record_attendance": "Record attendance",
+        "record_minutes": "Write the minutes",
+        "apply_suggestions": "Apply or decline suggestions",
+        "change_action_dates": "Change action item dates",
+        "suggest_correction": "Suggest a correction"
       }
     },
     "stageFlag": {
       "DISSOLVING": "Dissolving",
       "IN_FORCE": "Record is in force",
-      "APPLIES_APPROVED_CHANGE": "Applies the approved change"
+      "APPLIES_APPROVED_CHANGE": "Applies the approved change",
+      "AGENDA_ISSUED": "Agenda issued",
+      "MEETING_CANCELLED": "Meeting cancelled",
+      "MINUTES_FINAL": "Minutes approved"
     },
     "recordField": {
       "COMMITTEE": {
         "typeValueId": "Committee type",
         "orgUnitId": "Owning unit"
+      },
+      "MEETING": {
+        "typeValueId": "Meeting type"
       }
     },
     "actionCreateTask": "Create Task",
@@ -973,7 +1034,6 @@
     "errorLoad": "Failed to load workflow data.",
     "errorTransition": "Unable to complete this action.",
     "escalation": "Escalation",
-    "isApprovalPath": "This is the approval path (advances the workflow)",
     "isDefault": "Default",
     "isFinal": "Final Stage",
     "isInitial": "Initial Stage",
@@ -1210,7 +1270,10 @@
         "POSITION_IN_UNIT": "Fixed position",
         "ORG_UNIT_HEAD": "Org unit head",
         "CREATOR": "Creator",
-        "COMMITTEE": "Committee"
+        "COMMITTEE": "Committee",
+        "MEETING_SCHEDULERS": "Who may schedule the meeting",
+        "MEETING_RECORDERS": "Who records the minutes",
+        "MEETING_APPROVERS": "Who approves the minutes"
       },
       "mode": {
         "ANY_ONE": "Any one of them",
@@ -1288,6 +1351,14 @@
       "remove": "Remove transition",
       "openNamed": "Open the transition {{name}}",
       "viewNamed": "View the transition {{name}}"
+    },
+    "moveReason": {
+      "title": "Give a reason",
+      "lead": "The people told about this move read your reason.",
+      "label": "Reason",
+      "hint": "Sent to the people told about this move",
+      "required": "Give a reason for this move.",
+      "confirm": "Confirm"
     }
   },
   "notification": {
@@ -1307,6 +1378,7 @@
     "addCommittee": "Add Committee",
     "addMember": "Add Member",
     "approvedBy": "by {{name}}",
+    "leftDeactivated": "Left — account deactivated",
     "changeRoleFor": "Change role for {{name}}",
     "confirmRemoveMember": "Remove {{name}} from this committee?",
     "confirmRemoveMemberMessage": "Their membership ends today and stays in the committee's history.",
@@ -1759,7 +1831,8 @@
       },
       "noMatch": "Nothing matches “{{q}}”.",
       "closeList": "Close",
-      "closed": "This committee is dissolved or inactive, so it takes no new tasks."
+      "closed": "This committee is dissolved or inactive, so it takes no new tasks.",
+      "closedMeeting": "This meeting is cancelled, so it takes no new tasks."
     },
     "title": "Title",
     "newTask": "New Task",
@@ -2326,11 +2399,7 @@
     "errorLoad": "Failed to load settings.",
     "errorSave": "Failed to save changes.",
     "provider": "Provider",
-    "taskSla": "Task SLA & Escalation",
-    "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
-    "dueAfterHours": "Due After (hours)",
-    "managerEscalationAfterHours": "Manager Escalation (hours after due)",
-    "headEscalationAfterHours": "Head Escalation (hours after manager)",
+    "taskSla": "Task SLA & escalation",
     "orgNameEn": "Name (English)",
     "orgNameEnRequired": "An English name is required.",
     "orgNameAr": "Name (Arabic)",
@@ -2343,6 +2412,104 @@
       "lead": "{{priority}} would become {{due}}, which passes the deadline of:",
       "stage": "{{template}} · {{stage}} ({{deadline}})",
       "wayOut": "Raise those deadlines first, or keep {{priority}} at {{max}} or less."
+    },
+    "taskSlaPage": {
+      "purpose": "How long work may sit, and who hears about it when it does not move",
+      "lastChangedBy": "Last changed by {{who}} on",
+      "neverChanged": "Nothing on this page has been changed yet.",
+      "changeHistory": "Change history",
+      "historyFailed": "The change history couldn't be loaded.",
+      "loadFailed": "The task SLA policy couldn't be loaded.",
+      "saveFailed": "This couldn't be saved. The values entered are still here.",
+      "limits": {
+        "title": "Time limits",
+        "help": "Counted in working hours from the Working calendar, not clock hours.",
+        "low": "Low priority",
+        "medium": "Medium priority",
+        "high": "High priority",
+        "critical": "Critical priority",
+        "unit": "working hours",
+        "unitDefault": "working hours · the default on new tasks",
+        "scope": "Applies to tasks created after saving — open tasks keep the limit they were created under.",
+        "save": "Save time limits",
+        "required": "Enter the working hours.",
+        "min": "At least 1 working hour."
+      },
+      "escalation": {
+        "title": "Reminders and escalation per priority",
+        "help": "Who is reminded before a task is due, and who hears about it once it is overdue. Each priority has its own.",
+        "chain": "An overdue task goes first to the assignee's manager, then to the unit head.",
+        "limit": "Limit",
+        "manager": "Manager told after (working hours overdue)",
+        "head": "Head told after (working hours after the manager)",
+        "managerCell": "{{priority}} · Manager told after (working hours overdue)",
+        "headCell": "{{priority}} · Head told after (working hours after the manager)",
+        "save": "Save reminders and escalation",
+        "required": "Enter the working hours.",
+        "min": "0 or more working hours.",
+        "warn": "Warn before due",
+        "warnCell": "{{priority}} · Warn before due"
+      },
+      "history": {
+        "kindAll": "Whole policy",
+        "legacy": "Saved; the values were not recorded for this change.",
+        "noFieldsChanged": "No value changed in this entry.",
+        "fieldLabel": "{{priority}} · {{field}}",
+        "was": "was",
+        "now": "now",
+        "kindReset": "Reset to defaults",
+        "nameNotRecorded": "Name not recorded"
+      },
+      "fields": {
+        "dueAfterHours": "Due after",
+        "managerEscalationAfterHours": "Manager told after",
+        "headEscalationAfterHours": "Head told after",
+        "warnBeforeDue": "Warn before due",
+        "notifyOnDueChange": "Due-date change notices"
+      },
+      "leave": {
+        "header": "Leave without saving?",
+        "message": "Unsaved changes in {{sections}} will be lost.",
+        "accept": "Leave",
+        "reject": "Stay"
+      },
+      "warn": {
+        "off": "Off",
+        "workingDay": "1 working day"
+      },
+      "warnNotShorter": "Not shorter than the limit of {{limit}}",
+      "warnRefusal": {
+        "lead": "{{priority}}: the warning, {{warning}}, must be shorter than the limit, {{limit}}.",
+        "limitWayOut": "Keep the limit longer than the warning, or first choose a shorter warning under Reminders and escalation.",
+        "warnWayOut": "Choose a shorter warning, or first raise the limit under Time limits.",
+        "invalid": "Choose a warning shorter than this priority's limit."
+      },
+      "notices": {
+        "title": "Notifications",
+        "help": "These take effect as soon as they are switched, with no Save.",
+        "dueChange": "Notify assignees when a due date changes",
+        "dueChangeHelp": "In the app, for every task. A change of priority is still announced.",
+        "failed": "This couldn't be changed. The setting is as it was."
+      },
+      "reset": {
+        "title": "Reset to defaults",
+        "help": "Returns every value on this page to the defaults a new organisation gets. Tasks created afterwards use them; open tasks keep the limits they were created with.",
+        "recorded": "Recorded in the change history with your name and the previous values.",
+        "open": "Reset to defaults…",
+        "confirmHeader": "Reset to defaults?",
+        "confirmBody": "New tasks use these values; open tasks keep the limits they were created with.",
+        "confirmAccept": "Reset to defaults",
+        "confirmDetails": {
+          "limits": "Time limits: back to the defaults",
+          "escalation": "Escalation hours: back to the defaults",
+          "reminders": "Reminders before due: all off",
+          "notices": "Due-date change notices: on"
+        },
+        "conflictLead": "Nothing was reset. The default limits would pass the deadline of:",
+        "conflictWayOut": "Raise those stage deadlines first, then reset again.",
+        "failed": "The policy couldn't be reset. Nothing changed.",
+        "done": "The policy is back to the defaults."
+      }
     }
   },
   "home": {
@@ -2479,11 +2646,13 @@
     },
     "types": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Committee missing a required seat",
+      "COMMITTEE_BELOW_QUORUM": "Committee below quorum",
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
       "TASK_WITHOUT_OWNER": "Task with no actionable owner",
       "STORAGE_ALMOST_FULL": "File storage almost full",
+      "STORAGE_NOT_CONFIRMED": "File storage not confirmed",
       "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
       "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon",
       "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date",
@@ -2499,6 +2668,7 @@
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
       "task": "No one is assigned, so it is in no one’s task list.",
       "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.",
+      "storageNotConfirmed": "Uploads are blocked: nobody in the organization can add files until a location is confirmed.",
       "sharePointWithdrawn": {
         "SECRET_INVALID": "The client secret is invalid or has expired. Uploads and downloads of files stored in SharePoint are paused.",
         "CONSENT_REVOKED": "The app's permission was removed in your Microsoft tenant, or the app was disabled or deleted. Uploads and downloads of files stored in SharePoint are paused.",
@@ -2513,6 +2683,7 @@
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
       "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage.",
+      "STORAGE_NOT_CONFIRMED": "Choose where files go and confirm it on File storage. AccreditMe cloud needs no test; another location is confirmed after a passing connection test.",
       "STORAGE_ACCESS_WITHDRAWN": "Ask your Microsoft administrator to restore the app's access, or enter a new client secret under Replace secret. Files stored there are safe.",
       "STORAGE_SECRET_EXPIRING": "Ask your Microsoft administrator for a new client secret and enter it under Replace secret before then."
     },
@@ -2524,6 +2695,7 @@
     },
     "fix": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Appoint members",
+      "COMMITTEE_BELOW_QUORUM": "Add members",
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
@@ -2532,10 +2704,12 @@
       "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
       "STORAGE_SECRET_EXPIRING": "Open file storage",
       "STORAGE_ALMOST_FULL": "Open recycle bin",
+      "STORAGE_NOT_CONFIRMED": "Set up file storage",
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "Fixing this needs permission to add committee members.",
+      "COMMITTEE_BELOW_QUORUM": "Fixing this needs permission to add committee members.",
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
@@ -2544,6 +2718,7 @@
       "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STORAGE_NOT_CONFIRMED": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STAGE_ON_STARTING_ASSIGNMENT": "Fixing this needs permission to manage workflows."
     },
     "freshness": {
@@ -2824,9 +2999,23 @@
         "one": "Your {{count}} change is still here.",
         "other": "Your {{count}} changes are still here."
       },
-      "deactivateHolders": {
-        "one": "{{count}} person holds it and loses its permissions now.",
-        "other": "{{count}} people hold it and lose its permissions now."
+      "inUse": {
+        "USER_GRANTS": {
+          "one": "Given directly to {{count}} user",
+          "other": "Given directly to {{count}} users"
+        },
+        "POSITION_GRANTS": {
+          "one": "Given to {{count}} user through a head position",
+          "other": "Given to {{count}} users through a head position"
+        },
+        "POSITIONS": {
+          "one": "Set on {{count}} position",
+          "other": "Set on {{count}} positions"
+        },
+        "STAGE_ESCALATIONS": {
+          "one": "Named in the escalation of {{count}} workflow stage",
+          "other": "Named in the escalation of {{count}} workflow stages"
+        }
       },
       "filterActs": {
         "one": "Acts only on the {{count}} row shown by the current filter.",
@@ -3044,6 +3233,10 @@
       }
     },
     "setupHealth": {
+      "committeeBelowQuorum": {
+        "one": "The quorum needs {{count}} member, and the committee has {{members}} active.",
+        "other": "The quorum needs {{count}} members, and the committee has {{members}} active."
+      },
       "stageItemsBlocked": {
         "one": "{{count}} open item cannot advance: no one can act on this stage.",
         "other": "{{count}} open items cannot advance: no one can act on this stage."
@@ -3434,6 +3627,42 @@
         "one": "{{count}} at risk",
         "other": "{{count}} at risk"
       }
+    },
+    "taskSla": {
+      "clockHours": {
+        "one": "{{count}} clock hour",
+        "other": "{{count}} clock hours"
+      },
+      "problems": {
+        "one": "{{count}} problem",
+        "other": "{{count}} problems"
+      }
+    },
+    "meeting": {
+      "attending": {
+        "one": "{{count}} attending",
+        "other": "{{count}} attending"
+      },
+      "cantAttend": {
+        "one": "{{count}} can't attend",
+        "other": "{{count}} can't attend"
+      },
+      "noAnswer": {
+        "one": "{{count}} no answer",
+        "other": "{{count}} no answer"
+      },
+      "quorum": {
+        "one": "quorum {{count}}",
+        "other": "quorum {{count}}"
+      },
+      "minutes": {
+        "one": "{{count}} min",
+        "other": "{{count}} min"
+      },
+      "people": {
+        "one": "{{count}} person",
+        "other": "{{count}} people"
+      }
     }
   },
   "datePicker": {
@@ -3754,18 +3983,70 @@
     "editProfile": "Edit profile",
     "roles": {
       "heading": "Roles",
-      "empty": "No roles",
-      "emptyBody": "Roles decide what this person can see and do.",
+      "empty": "No roles.",
       "fromPosition": "Comes with the head position {{position}}",
       "fromPositionUnnamed": "Comes with a head position"
     },
     "committees": {
       "heading": "Committees",
-      "empty": "Not on any committee",
+      "empty": "Not on any committee.",
       "loadError": "Committees couldn't be loaded.",
       "since": "Since {{date}}",
       "range": "{{from}} – {{to}}",
       "inactiveCommittee": "Committee inactive"
+    },
+    "accessHistory": {
+      "heading": "Access history",
+      "loading": "Loading access history",
+      "loadError": "Access history couldn't be loaded.",
+      "empty": "No changes recorded",
+      "popupTitle": "Access history of {{name}}",
+      "close": "Close",
+      "by": "{{when}} · by {{name}}",
+      "byYou": "{{when}} · by you",
+      "listSeparator": ", ",
+      "unknownUnit": "a unit no longer in the organisation",
+      "headDone": "appointed head of the unit",
+      "headFailed": "head appointment didn't complete",
+      "field": {
+        "name": "name",
+        "language": "language",
+        "calendar": "calendar",
+        "position": "position",
+        "unit": "unit",
+        "manager": "manager",
+        "actingUnit": "acting unit",
+        "outOfOffice": "out of office",
+        "cover": "cover person"
+      },
+      "kind": {
+        "invited": "Invited",
+        "invitationAccepted": "Invitation accepted",
+        "invitationRevoked": "Invitation withdrawn",
+        "profileEdited": "Profile saved",
+        "profileEditedFields": "Profile edited: {{fields}}",
+        "outOfOfficeChanged": "Out of office changed",
+        "transferred": "Transferred",
+        "transferredFromTo": "Transferred from {{from}} to {{to}}",
+        "headAppointmentFailed": "Head appointment after a transfer didn't complete",
+        "deactivated": "Account deactivated",
+        "reactivated": "Account reactivated",
+        "roleGranted": "A role granted",
+        "roleGrantedNamed": "Role granted: {{role}}",
+        "roleGrantedHeadship": "A role granted with a head position",
+        "roleGrantedHeadshipNamed": "Role granted with a head position: {{role}}",
+        "roleRemoved": "A role removed",
+        "roleRemovedNamed": "Role removed: {{role}}",
+        "roleRemovedHeadship": "A role removed with a head position",
+        "roleRemovedHeadshipNamed": "Role removed with a head position: {{role}}",
+        "twoStepOn": "Two-step sign-in turned on",
+        "twoStepOff": "Two-step sign-in turned off",
+        "twoStepReset": "Two-step sign-in reset",
+        "passwordResetRequested": "Password reset link sent",
+        "passwordReset": "Password reset",
+        "signedInAs": "AccreditMe support signed in as this person",
+        "changed": "Changed"
+      }
     },
     "sessions": {
       "heading": "Signed-in devices",
@@ -4562,6 +4843,178 @@
       "title": "Setup health",
       "open": "Open Setup health",
       "quiet": "Setup health: nothing open."
+    }
+  },
+  "meeting": {
+    "title": "Meetings",
+    "list": {
+      "order": "Sorted by when: upcoming soonest first, then past most recent first.",
+      "search": "Search title…",
+      "emptyTitle": "No meetings here yet",
+      "emptyBody": "Meetings of your committees and your unit are listed here.",
+      "noMatchTitle": "No meetings match",
+      "noMatchBody": "Try another search, or clear it.",
+      "col": {
+        "meeting": "Meeting · committee or unit",
+        "when": "When",
+        "stage": "Stage"
+      },
+      "view": {
+        "mine": "Mine, upcoming first",
+        "past": "Past",
+        "minutes": "Minutes I record",
+        "all": "All meetings",
+        "subunits": "Sub-units' meetings"
+      }
+    },
+    "page": {
+      "loading": "Loading the meeting…",
+      "notFound": "You can't open this meeting.",
+      "back": "Back to Meetings",
+      "loadError": "The meeting couldn't be loaded.",
+      "eyebrow": "Meeting · {{type}}",
+      "rescheduledFrom": "Rescheduled from {{from}} · {{reason}}",
+      "committee": "Committee",
+      "unit": "Unit",
+      "quorum": "Quorum {{n}}",
+      "where": "Where",
+      "organiser": "Organiser"
+    },
+    "answer": {
+      "title": "Your answer to the invitation",
+      "attending": "Attending",
+      "cant_attend": "Can't attend",
+      "note": "Note to the organiser · optional",
+      "closed": "Answers close when the meeting starts.",
+      "error": "Your answer couldn't be saved."
+    },
+    "agenda": {
+      "title": "Agenda",
+      "empty": "No items yet.",
+      "standing": "Standing"
+    },
+    "invitees": {
+      "title": "Invitees",
+      "addGuest": "Guest",
+      "guest": "Guest",
+      "outsideGuest": "Outside guest",
+      "guestsNoQuorum": "Guests don't count toward quorum.",
+      "removeGuest": "Remove {{name}}",
+      "removeError": "The guest couldn't be removed."
+    },
+    "cancel": {
+      "title": "Cancel this meeting?",
+      "lead": "It stays in the list as Cancelled, with your reason. Everyone invited is told.",
+      "hint": "Sent to invitees with the cancellation",
+      "confirm": "Cancel Meeting",
+      "keep": "Keep meeting"
+    },
+    "issue": {
+      "title": "Issue Agenda?",
+      "lead": "Members and guests are notified with the agenda and its papers. An outside guest gets the invitation by email, without papers.",
+      "confirm": "Issue Agenda",
+      "keep": "Not yet"
+    },
+    "reschedule": {
+      "open": "Reschedule…",
+      "title": "Reschedule meeting",
+      "when": "New date and time",
+      "reason": "Reason",
+      "reasonHint": "Sent to invitees with the new date",
+      "reasonRequired": "Give a reason: the invitees read it.",
+      "submit": "Reschedule",
+      "error": "The meeting couldn't be rescheduled."
+    },
+    "schedule": {
+      "title": "Schedule meeting",
+      "subject": "Subject",
+      "subjectHint": "Shown as the meeting’s title.",
+      "subjectRequired": "Give the meeting a subject.",
+      "type": "Type",
+      "typeRequired": "Choose a type.",
+      "duration": "Duration",
+      "quorum": "Quorum",
+      "quorumNone": "None",
+      "starts": "Starts",
+      "location": "Location",
+      "link": "Online link",
+      "placeHint": "At least one of the two.",
+      "submit": "Schedule",
+      "error": "The meeting couldn't be scheduled.",
+      "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
+      "typesError": "The meeting types couldn't be loaded.",
+      "maybeScheduled": "Check the list before trying again, it may have been scheduled."
+    },
+    "when": {
+      "back": "← Back to details",
+      "day": "Date",
+      "dayPlaceholder": "Choose a date",
+      "pickDay": "Choose the date on a calendar",
+      "timePlaceholder": "HH:MM",
+      "required": "Choose a date and a time.",
+      "time": "Give the time as hours and minutes, such as 13:00."
+    },
+    "guest": {
+      "title": "Add a guest",
+      "kind": {
+        "label": "Guest is",
+        "person": "Person in the organisation",
+        "outside": "Outside guest"
+      },
+      "person": "Person",
+      "personHint": "Told in the app and by email, like every user.",
+      "personPlaceholder": "Choose a person",
+      "personRequired": "Choose a person.",
+      "search": "Search people",
+      "searchPlaceholder": "Search by name",
+      "pickerTitle": "Choose a person",
+      "noPeople": "Everyone is already invited.",
+      "noMatch": "Nobody matches.",
+      "col": {
+        "person": "Person",
+        "place": "Position · unit"
+      },
+      "outsideHelp": "Someone outside the organisation, with no account. Shown with an “Outside guest” chip; doesn’t count toward quorum.",
+      "name": "Name",
+      "nameRequired": "Give the guest’s name.",
+      "email": "Email",
+      "emailRequired": "Give the guest’s email address.",
+      "organisation": "Organisation",
+      "role": "Role",
+      "emailAtIssue": "AccreditMe emails the invitation to this address when the agenda is issued.",
+      "emailNow": "AccreditMe emails the invitation to this address as soon as you add the guest.",
+      "add": "Add guest",
+      "addAndSend": "Add and send invitation",
+      "error": "The guest couldn't be added."
+    },
+    "panel": {
+      "title": "Meetings",
+      "schedule": "Schedule meeting",
+      "loading": "Loading meetings…",
+      "error": "Meetings couldn't be loaded.",
+      "empty": "No meetings yet.",
+      "emptyBody": "Meetings held here are listed with their date and stage."
+    },
+    "refusal": {
+      "ownerRequired": "A meeting belongs to one committee or one unit.",
+      "ownerNotFound": "This committee or unit is no longer available.",
+      "notAllowed": "You can't schedule or change meetings for this committee or unit.",
+      "typeUnknown": "Choose a meeting type from the list.",
+      "timeInPast": "Choose a time in the future.",
+      "placeRequired": "Give a location, a link, or both.",
+      "quorumUnitOnly": "A committee meeting takes the committee's quorum.",
+      "changed": "This meeting changed since you opened it. Reload it and try again.",
+      "sameTime": "Choose a different date or time.",
+      "titleRequired": "Give the meeting a subject.",
+      "guestRequired": "Choose a person, or give an outside guest's name and email.",
+      "personNotFound": "That person is no longer available.",
+      "alreadyInvited": "This person is already invited.",
+      "attendeeNotFound": "This invitee is no longer on the meeting.",
+      "memberNotRemovable": "A member is invited by their committee or unit and can't be removed here.",
+      "guestPresents": "This guest presents an agenda item. Choose another presenter first.",
+      "notInvited": "You aren't invited to this meeting.",
+      "started": "This meeting has started.",
+      "stageActionNotAllowed": "This meeting's stage doesn't allow that now."
     }
   }
 }

@@ -52,7 +52,6 @@ const PERSON: WorkflowTransitionDto = {
   labelEn: LONG.en,
   labelAr: LONG.ar,
   validatorConfig: null,
-  isApprovalPath: true,
   kind: 'EXIT',
   mover: 'PERSON',
   actions: [

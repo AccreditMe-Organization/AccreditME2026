@@ -19,6 +19,9 @@ export const KEYED_SEED_TEMPLATES: ReadonlySet<WorkflowObjectType> = new Set<Wor
   'COMMITTEE',
   // ACC-239 — keyed from its first seed: code recognises every stage of it.
   'COMMITTEE_CHANGE_REQUEST',
+  // ACC-316 PR 2 — its app-run moves are found by stage key (APP_MOVES).
+  // Existing organisations get the keys from backfill-acc316-meeting-workflow.
+  'MEETING',
 ]);
 
 /** Every stage of the committee lifecycle, by the seed's key. */

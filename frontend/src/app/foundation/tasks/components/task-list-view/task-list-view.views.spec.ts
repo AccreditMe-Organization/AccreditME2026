@@ -411,6 +411,7 @@ describe('TaskListViewComponent — the views of /tasks (ACC-120 slice 3)', () =
                 recordRow('c', { record: named }),
                 recordRow('u', { record: { type: 'COMMITTEE', id: 'c-hidden', nameEn: null, nameAr: null } }),
                 recordRow('m', { sourceType: 'MEETING', record: { type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null } }),
+                recordRow('d', { sourceType: 'DOCUMENT', record: { type: 'DOCUMENT', id: 'd-1', nameEn: 'Hand hygiene policy', nameAr: null } }),
               ],
               { view: 'created' },
             ),
@@ -422,9 +423,12 @@ describe('TaskListViewComponent — the views of /tasks (ACC-120 slice 3)', () =
           // No name: the type word, as plain text, never the code.
           expect(recordOf('u')!.tagName).toBe('SPAN');
           expect(text(recordOf('u'))).toBe('Committee');
+          // ACC-316 PR 6 — a meeting has its page now.
+          expect(recordOf('m')!.tagName).toBe('A');
+          expect(recordOf('m')!.getAttribute('href')).toBe('/meetings/m-1');
           // A record type with no page today: its name, as plain text.
-          expect(recordOf('m')!.tagName).toBe('SPAN');
-          expect(text(recordOf('m'))).toBe('Board meeting');
+          expect(recordOf('d')!.tagName).toBe('SPAN');
+          expect(text(recordOf('d'))).toBe('Hand hygiene policy');
         });
       }
 

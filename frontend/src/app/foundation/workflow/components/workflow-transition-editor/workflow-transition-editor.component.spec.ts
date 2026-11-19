@@ -24,7 +24,6 @@ const PERSON: WorkflowTransitionDto = {
   labelEn: 'Approve Committee',
   labelAr: 'اعتماد اللجنة',
   validatorConfig: null,
-  isApprovalPath: false,
   kind: 'ADVANCE',
   mover: 'PERSON',
   actions: [{ id: 'a1', workflowTransitionId: 'transition-1', actionType: 'LOG_AUDIT', order: 10, isEnabled: true, configJson: null }],
@@ -113,8 +112,8 @@ describe('WorkflowTransitionEditorComponent — a stage’s transitions list (AC
   });
 
   // ACC-284 — Kind says whether a press is a vote; the old flag is not shown, even when stored.
-  it('shows no "Approval Path" tag, even for a move stored with isApprovalPath true', () => {
-    const el = setup({ transitions: [{ ...PERSON, isApprovalPath: true }] });
+  it('shows no "Approval Path" tag', () => {
+    const el = setup({ transitions: [{ ...PERSON }] });
     expect(text(row(el, 'transition-1').querySelector('[data-tr-kind]'))).toBe('workflow.kind.advance');
     expect(el.querySelector('p-tag')).toBeNull();
     expect(text(el)).not.toContain('workflow.approvalPath');

@@ -44,6 +44,7 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
   let prisma: {
     $transaction: jest.Mock;
     workflowStageTaskDefinition: { findMany: jest.Mock };
+    workingCalendar: { findUnique: jest.Mock };
     auditLog: { findMany: jest.Mock; count: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
@@ -64,6 +65,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
     prisma = {
       $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
       workflowStageTaskDefinition: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-313 PR 4 — no calendar row: the default working day, 8 hours.
+      workingCalendar: { findUnique: jest.fn().mockResolvedValue(null) },
       auditLog: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     };
     auditLog = { log: jest.fn().mockResolvedValue(undefined) };
@@ -125,14 +128,6 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       expect(written().LOW).toEqual({ dueAfterHours: DEFAULT_TASK_SLA_SETTINGS.LOW.dueAfterHours, ...ESCALATION.LOW });
     });
 
-    it('the old whole-policy save writes all three values of every priority', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      expect(written()).toEqual(CUSTOM_SLA);
-    });
-
     it('a missing organisation is a 404, with nothing written and nothing logged', async () => {
       stored(null);
 
@@ -158,7 +153,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
         tenantId: 'org-a',
         before: { LOW: { dueAfterHours: 80 }, MEDIUM: { dueAfterHours: 40 }, HIGH: { dueAfterHours: 12 }, CRITICAL: { dueAfterHours: 2 } },
         after: { LOW: { dueAfterHours: 60 }, MEDIUM: { dueAfterHours: 30 }, HIGH: { dueAfterHours: 12 }, CRITICAL: { dueAfterHours: 2 } },
-        metadata: { event: 'task_sla_limits_updated' },
+        // CC-332 — every row since PR 4 says its escalation hours are working hours.
+        metadata: { event: 'task_sla_limits_updated', escalationHoursUnit: 'WORKING' },
       });
     });
 
@@ -168,19 +164,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       await service.saveEscalation('org-a', ESCALATION, 'user-1');
 
       const entry = auditLog.log.mock.calls[0][0] as { before: Record<string, object>; metadata: object };
-      expect(entry.metadata).toEqual({ event: 'task_sla_escalation_updated' });
+      expect(entry.metadata).toEqual({ event: 'task_sla_escalation_updated', escalationHoursUnit: 'WORKING' });
       expect(entry.before['LOW']).toEqual({ managerEscalationAfterHours: 48, headEscalationAfterHours: 96 });
-    });
-
-    it('the old save is recorded the same way, as task_sla_updated', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      const entry = auditLog.log.mock.calls[0][0] as { objectType: string; after: object; metadata: object };
-      expect(entry.objectType).toBe(TASK_SLA_AUDIT_OBJECT_TYPE);
-      expect(entry.after).toEqual(CUSTOM_SLA);
-      expect(entry.metadata).toEqual({ event: 'task_sla_updated' });
     });
 
     it('a save that changes nothing writes nothing and logs nothing', async () => {
@@ -233,9 +218,10 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
     // ACC-208 (B6) — the settings screen names the stage in either language,
     // links to its row, and puts the message under the priority that breaks it.
     it('gives each conflict its template id, its Arabic names and the priority behind it', async () => {
-      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours - 1)]);
+      stored({});
+      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', LIMITS.HIGH.dueAfterHours - 1)]);
 
-      const error = await service.replaceAll('org-a', CUSTOM_SLA, 'user-1').catch((e: unknown) => e);
+      const error = await service.saveLimits('org-a', LIMITS, 'user-1').catch((e: unknown) => e);
 
       const body = (error as WorkflowRefusalException).getResponse() as { stages: unknown[] };
       expect(body.stages).toEqual([
@@ -246,8 +232,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
           templateName: 'Committee lifecycle',
           templateNameAr: null,
           workflowTemplateId: 'template-committee',
-          stageHours: CUSTOM_SLA.HIGH.dueAfterHours - 1,
-          longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours,
+          stageHours: LIMITS.HIGH.dueAfterHours - 1,
+          longestTaskHours: LIMITS.HIGH.dueAfterHours,
           priority: 'HIGH',
         },
       ]);
@@ -330,9 +316,56 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
         kind: 'limits',
         before: { LOW: { dueAfterHours: 80 } },
         after: { LOW: { dueAfterHours: 60 } },
+        escalationHoursUnit: null,
       });
       expect(page.rows[2]?.actorName).toBeNull();
       expect(page.rows[3]).toEqual(expect.objectContaining({ kind: 'legacy', before: null, after: null }));
+    });
+
+    // CC-332 — the stamp is read from the row's metadata: 'WORKING' when a
+    // writer since PR 4 stamped it, null on an older row (and a legacy one).
+    it('returns each row\'s escalation hours unit from its metadata', async () => {
+      prisma.auditLog.findMany.mockResolvedValue([
+        row({ id: 'new', metadata: { event: 'task_sla_escalation_updated', escalationHoursUnit: 'WORKING' } }),
+        row({ id: 'old', metadata: { event: 'task_sla_escalation_updated' } }),
+        row({ id: 'odd', metadata: { event: 'task_sla_escalation_updated', escalationHoursUnit: 'CLOCK' } }),
+        row({ id: 'legacy', objectType: 'Organization', before: null, after: null, metadata: { event: 'task_sla_updated' } }),
+      ]);
+      prisma.auditLog.count.mockResolvedValue(4);
+
+      const page = await service.history('org-a');
+
+      expect(page.rows.map((r) => [r.id, r.escalationHoursUnit])).toEqual([
+        ['new', 'WORKING'],
+        ['old', null],
+        ['odd', null],
+        ['legacy', null],
+      ]);
+    });
+
+    it('names the due-date switch and Reset, with their values', async () => {
+      const policyBefore = { tiers: CUSTOM_SLA, notices: { notifyOnDueChange: false } };
+      prisma.auditLog.findMany.mockResolvedValue([
+        row({ id: 'a-5', metadata: { event: 'task_sla_reset' }, before: policyBefore, after: { tiers: DEFAULT_TASK_SLA_SETTINGS } }),
+        row({
+          id: 'a-4',
+          metadata: { event: 'task_sla_notices_updated' },
+          before: { notifyOnDueChange: true },
+          after: { notifyOnDueChange: false },
+        }),
+      ]);
+      prisma.auditLog.count.mockResolvedValue(2);
+
+      const page = await service.history('org-a');
+
+      expect(page.rows.map((r) => [r.id, r.kind])).toEqual([
+        ['a-5', 'reset'],
+        ['a-4', 'notices'],
+      ]);
+      expect(page.rows[0]?.before).toEqual(policyBefore);
+      expect(page.rows[1]).toEqual(
+        expect.objectContaining({ before: { notifyOnDueChange: true }, after: { notifyOnDueChange: false } }),
+      );
     });
 
     it('is newest first, 20 a page by default, never more than 50, and counts the same rows', async () => {

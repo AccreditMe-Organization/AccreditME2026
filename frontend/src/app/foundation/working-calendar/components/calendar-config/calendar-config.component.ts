@@ -155,7 +155,7 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
             'workingCalendar.lastChangedBy'
               | translate: { who: change.actorName || notRecorded() }
           }}
-          <span dir="ltr">{{ change.changedAt | amDateTime }}</span>
+          <span>{{ change.changedAt | amDateTime }}</span>
         </span>
         <p-button
           [label]="'workingCalendar.changeHistory' | translate"
@@ -403,7 +403,7 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
         @for (change of changes(); track change.id) {
           <li class="am-history__entry">
             <div class="am-history__meta">
-              <span dir="ltr">{{ change.changedAt | amDateTime }}</span>
+              <span>{{ change.changedAt | amDateTime }}</span>
               <span>{{ change.actorName || notRecorded() }}</span>
             </div>
             @if (fieldsOf(change).length === 0) {
@@ -679,7 +679,9 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 
       .am-history__from {
         color: var(--am-ink-500);
-        text-decoration: line-through;
+        /* No strikethrough (CC-324): <del> strikes by default, and the muted
+           colour, the arrow and the word "was" already say it is the old value. */
+        text-decoration: none;
       }
 
       .am-history__to {

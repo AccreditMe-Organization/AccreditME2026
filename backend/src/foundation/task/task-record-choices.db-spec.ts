@@ -225,7 +225,8 @@ describe('New task picks its record: the choices, the create types and the close
     }) as (organizationId: string, viewer: TaskViewer) => Promise<unknown>;
     const run = jest.fn(() => Promise.reject(new Error('the AI must not be called by this spec')));
     const drafts = new TaskDraftService(prisma, { run } as unknown as AiService, new ObjectVisibilityService(prisma));
-    const REFUSAL = `403 Required permission: ${KEY}`;
+    // ACC-316 PR 3a — the refusal names every type's create key.
+    const REFUSAL = `403 Required permission: ${KEY} or meetings:create_tasks`;
 
     /** Each read's answer: 'OK', or the refusal's status and message. */
     const reads = async (v: TaskViewer): Promise<string[]> => {

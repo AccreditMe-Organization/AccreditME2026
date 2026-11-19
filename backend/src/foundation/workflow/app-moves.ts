@@ -83,6 +83,24 @@ export const APP_MOVES: readonly AppMove[] = [
     en: 'Runs when the returned change request is withdrawn.',
     ar: 'يحدث عند سحب طلب التغيير المُعاد.',
   },
+  // ACC-316 — the meeting's own writes ride these moves (the review date and
+  // round; resetting the answers), so the meeting page fires them (PR 4).
+  {
+    key: 'meeting.distribute',
+    objectType: 'MEETING',
+    fromStageKey: 'minutes_draft',
+    toStageKey: 'minutes_review',
+    en: "Runs when the minutes are distributed for review on the meeting's page.",
+    ar: 'يحدث عند توزيع المحضر للمراجعة من صفحة الاجتماع.',
+  },
+  {
+    key: 'meeting.return_for_correction',
+    objectType: 'MEETING',
+    fromStageKey: 'minutes_review',
+    toStageKey: 'minutes_draft',
+    en: "Runs when the minutes are returned for correction on the meeting's page.",
+    ar: 'يحدث عند إعادة المحضر للتصحيح من صفحة الاجتماع.',
+  },
 ];
 
 /** The entry for an APP transition, by record type and stage keys; undefined when none. */

@@ -793,7 +793,7 @@ because nothing deployed reads it.
 | **3** backend | **Dropped** (§16, Q7): there is no Setup health condition. Numbers are kept so the later PRs keep their names. | — | — |
 | **4** backend | **[x] Built** (branch `feature/ACC-283-pr4-retire-approve`). Home and the Awaiting page, which asked for change requests only of `committees:approve` holders, were changed by lane A's #315 to ask while the Committees module is open (the server's chain answers who); PR 4 takes #315's version of those files. Retire `committees:approve`: out of `COMMITTEES_PERMISSIONS` and the seed; `backfill:acc283-retire-committees-approve` (dry run first, refuses customers, after PR 2 deploys); a spec failing if any non-spec source names it (`retired-task-keys.spec.ts`'s shape); the sentence table. Terms Review's seed assignment for new organisations (§10). | no | the backfill |
 | **5** backend | **[x] Built** (branch `feature/ACC-283-pr5-seat-actions-request`, Prompt 95). Seat actions as a change-request field (the whole map is one field, Q12): preview, drift check, apply on approval, labels. As built: the Formation edit and the approval share one writer, `writeSeatActions()`; Approve reads the request first and locks its row after the seat-action writes (§7); seat actions are read only when a request names them. | no | none |
-| **6** backend | Section 1 enforcement: on their committee, a member may add, remove, change a seat and request a change where their seat allows it OR their role does (Ahmad, 10 Nov, item 1), replacing ACC-281's interim write rule (Q1). | no | none |
+| **6** backend | **[x] Built** (branch `feature/ACC-283-pr6-seat-actions`, Prompt 105, per §17 and lane B's answers Q-A to Q-D). Section 1 enforcement: on their committee, a member may add, remove, change a seat and request a change where their seat allows it OR their role does (Ahmad, 10 Nov, item 1), replacing ACC-281's interim write rule (Q1). One rule, `member-actions.ts`; the three member route gates removed; `memberActions` on the committee read; `canRaise` from it. | no | none |
 | screens | One per backend PR, by lane: the seat-actions editor in Formation and its lookup defaults; Awaiting for everyone, "Awaiting …" on the request, the new codes in both languages; "Send for decision" and "Approve now" for a root head; heads opening their units' committees (the list and the page read only); the request dialog's seat-actions field. | — | — |
 
 Order: PR 1, then 2a, then 2, then 2b; 4, 5 and 6 after 2. 2a ships on its own
@@ -1102,3 +1102,309 @@ committees only; existing ones keep their copy, by design.
     A's `user.service.ts`.
   - **Nobody else** may withdraw another person's draft;
     `CHANGE_REQUEST_NOT_REQUESTER` keeps its old meaning.
+
+---
+
+## 17. PR 6: seats grant members their committee actions (plan, 17 Nov)
+
+Decided (§9 and §16, Q1; Ahmad, 10 Nov, item 1): **on their own committee, a
+member may add a member, remove a member, change a seat and request a change
+where their SEAT allows it OR their role's permission does.** It replaces
+ACC-281's interim write rule for those four actions. The seat only ever adds
+(§0): nobody loses an action they have today.
+
+Line numbers are against dev `f77773a`. **#325** (an overseeing head is
+offered neither write; `canViewForWrite()`) is open and not yet merged; where
+it moves a line, both are given.
+
+### 17.1 What the interim rule touches today
+
+**The rule.** "The action's own permission AND (`committees:view` OR an active
+member of THIS committee)". The permission is checked first, at the route or in
+the service. The second half is one function:
+
+| Where | What it does |
+| -- | -- |
+| `common/services/committee-membership.ts:285` `maySeeCommittee()` | `committees:view` → true, no query; else `isActiveMember()` (`:51`, one query, selects only `id`) |
+| `committee-membership.ts:326` `assertMayWriteCommittee()` | `maySeeCommittee()`, else the 404 a missing committee gets |
+| `committee-membership.ts:260` `committeeAccess()` | `{ read, write }`; `write` is `maySeeCommittee()` (#316) |
+
+**The four seat actions' write paths.**
+
+| Action | Route gate (`committees.controller.ts`) | Service (`committees.service.ts` / `committee-change-request.service.ts`) | Then |
+| -- | -- | -- | -- |
+| Add a member | `:222-223` `@Permissions(committees:add_member)` | `addMember()` `:486`; precondition `:496` | `assertStage(ADD_MEMBER)` `:506` |
+| Change a seat | `:234-235` `@Permissions(committees:change_member_role)` | `changeMemberRole()` `:570`; precondition `:581` | `assertStage(CHANGE_MEMBER_ROLE)` `:588`, committee row lock `:590` |
+| Remove a member | `:247-248` `@Permissions(committees:remove_member)` | `removeMember()` `:629`; precondition `:640` | `assertStage(REMOVE_MEMBER)` `:646`, committee row lock `:648` |
+| Request a change: create | none | `create()` `:294`; `requirePermission(EDIT_DETAILS)` `:295`; precondition `:298` | `assertCommitteeAllowsRaise()` inside the transaction |
+| … edit a draft | none | `update()` `:366`; `:367`; precondition `:369` (`assertMayWriteRequest()` `:1059`) | the request stage policy |
+| … submit | none | `submit()` `:415`; `:416`; `:418` | the policy, the chain |
+| … approve now (root head's own) | none | `approveNow()` `:565`; `:566`; `:568` | requester only, the chain |
+
+**Not seat actions; they keep the interim rule unchanged:**
+- **Edit details:** `updateCommittee()` `:261`, `:271`; route `:129-130`.
+- **The seat-actions editor:** `replaceSeatActions()` `:388`, `:395`; route `:156-157`.
+- **Withdraw** (`:507`): requester only, no permission.
+- **Deciding:** the chain (approve `:546`, return `:738`, reject `:775`).
+
+**The offers (what the screens are told).**
+
+| Offer | Where | Today |
+| -- | -- | -- |
+| `mayWrite` on `GET /committees/:id` | `committees.service.ts:188`, from `committeeAccess()` at `:154` | `committees:view` or a member |
+| `canRaise` on `…/change-requests/open` | `committee-change-request.service.ts:873` (#325: `access.write` added) | `committees:edit_details` (and, with #325, `access.write`), the stage, no open request |
+| Request `actions.edit`, `submit`, `approveNow` | `toDto()` `:1418`; `editor` `:1428`, `rootHeadOwn` `:1434` | `own && committees:edit_details && …` |
+| Member-row Change role and Remove, and Add member | frontend `committee-offers.ts:66` (`if (!mayWrite)` `:71`), fed by `committee-detail.component.ts:586-596` from `canAddMember` / `canRemoveMember` / `canChangeMemberRole` (`:606-612`, the viewer's OWN permissions) | each permission AND the stage AND `mayWrite` |
+| Tasks panel `canCreate` (#325) | `task-record-list.service.ts` `panel()` | the create key AND `canViewForWrite()`. **Not a seat action, so unchanged.** |
+
+There are no per-row action flags on the server. The members list
+(`committee-lists.service.ts`) returns none. The row menu reads the page's
+`offers()`, which is computed from the viewer's own permissions. That is
+exactly what a seat grant cannot reach.
+
+### 17.2 The new rule: one function, one seat read
+
+**New file `foundation/committees/member-actions.ts`.** Its parts:
+
+- **The map**, `MEMBER_ACTIONS`: the one place each action's three names meet.
+
+  | Action | Seat key | Stage key | Permission |
+  | -- | -- | -- | -- |
+  | Add a member | `add_member` | `add_member` | `committees:add_member` |
+  | Remove a member | `remove_member` | `remove_member` | `committees:remove_member` |
+  | Change a seat | `change_member_seat` | `change_member_role` | `committees:change_member_role` |
+  | Request a change | `request_change` | `request_change` | `committees:edit_details` |
+
+- **`memberActionsFor(client, organizationId, committeeId, viewer, actions?)`**
+  returns `Record<MemberAction, boolean>` for the viewer on one committee:
+
+  ```
+  allowed(action) =
+       (holds permission(action) AND (committees:view OR seat !== null))   // the role, today's rule
+    OR (seat !== null AND seat allows action on THIS committee)            // the seat
+  where seat = the viewer's ACTIVE membership's roleValueId on this ACTIVE
+        committee in this organisation, or null
+  ```
+
+- **`assertMemberAction(client, organizationId, committeeId, viewer, action, notFoundMessage?)`**
+  is the write's refusal (§17.4). It calls `memberActionsFor()`; it never
+  decides on its own.
+
+**Reads, batched, and none for a full permission holder:**
+1. **The viewer holds `committees:view` and the permission of every asked
+   action:** all true, **no query**. Today's cost.
+2. **Anyone else:** ONE query for the viewer's seat.
+   - `activeSeatOf()`: the `isActiveMember()` query with `roleValueId`
+     selected instead of `id`.
+   - `isActiveMember()` and `maySeeCommittee()` are rebuilt on it, so there is
+     still one membership query, never two.
+   - `seat === null` with no `committees:view`: all false, stop.
+3. **Only when some asked action is still undecided** (a member lacking its
+   permission): ONE more query, `seatActionsFor(client, organizationId,
+   [committeeId])`.
+   - It is §2's one reader.
+   - It reads every row on the committee, filtered in memory to the viewer's
+     seat.
+   - So asking four actions is still one query.
+
+So the committee read's flags cost at most one query more than today, and only
+for a member short of a key. A write costs at most two. **Nothing touches the
+per-request path**: no guard, interceptor or middleware changes. The three
+route gates come off (§17.3), and their check moves into the service.
+
+`seatActionsFor()` keeps its signature. `activeSeatOf()` lives in
+`committee-membership.ts` beside `isActiveMember()`, the one place membership
+is read.
+
+### 17.3 How every path uses it
+
+- **Add, change a seat, remove.**
+  - The three `@Permissions` gates come off the routes (`:222-223`, `:234-235`,
+    `:247-248`), as PR 2 did for deciding.
+  - The routes keep passing `@CurrentUserPermissions()`.
+  - In the service, `assertMemberAction(…)` replaces `assertMayWriteCommittee()`
+    at `:496`, `:581` and `:640`, in the same place: before the transaction,
+    so the stage check still runs inside it, as today.
+  - `committees.permissions.spec.ts` (`:34`, `:39`) pins the route metadata;
+    it is updated to say the three routes carry no `@Permissions`, and why.
+- **Request a change** (create, update, submit, approve now).
+  - `requirePermission(EDIT_DETAILS)` and `assertMayWriteCommittee()` /
+    `assertMayWriteRequest()` become one `assertMemberAction(…,
+    'request_change', …)`.
+  - The "Change request not found" message stays for the by-id paths.
+  - **Edit details itself is not opened**: the seat grants raising a request,
+    never the direct edit in Formation.
+- **The committee read** (`getCommitteeDetail()` `:151`) gains
+  **`memberActions: { add_member, remove_member, change_member_seat,
+  request_change }`**. It comes from `memberActionsFor()`, using the seat that
+  `committeeAccess()` has just read: `committeeAccess()` returns the seat, so
+  the read makes no second membership query. `mayWrite` stays as it is, for
+  Edit and the seat-actions editor.
+- **`canRaise`** = `memberActions.request_change && committeeAllowsRaise(stage)
+  && !open`.
+  - This replaces both `hasPermission(EDIT_DETAILS)` and #325's `access.write`:
+    `memberActionsFor()` contains the write precondition.
+  - `openSummary()` asks only `request_change`.
+- **The request's `actions`** (`toDto()`): `editor` becomes "this viewer may
+  request a change on the request's committee". It is computed once per
+  `toDtos()` call:
+  - one `memberActionsFor()` per committee among the viewer's OWN rows (a
+    list on one committee: one);
+  - the awaiting list is decisions, not own rows: zero.
+- **The screens** (the screens PR, by lane; the committee page is lane A's).
+  - `committeeOffers()` takes `memberActions` for Add, Remove and Change role,
+    instead of the viewer's own permissions and `mayWrite`.
+  - Edit and the locked line keep `committees:edit_details` + `mayWrite`.
+  - The three `canAddMember` / `canRemoveMember` / `canChangeMemberRole`
+    computeds are deleted.
+  - Until that PR ships, a seat-granted member who lacks the key is simply
+    not offered the button. The server accepts the write, so nothing breaks;
+    the offer lags.
+
+### 17.4 How it composes
+
+- **The stage rules, after.** `assertMemberAction()` runs first; `assertStage()`
+  still refuses inside the transaction with `STAGE_ACTION_NOT_ALLOWED`, for a
+  seat-granted member as for anyone. The offers combine both: `memberActions`
+  AND `stageRules`, as `committeeOffers()` does today.
+- **Oversight stays read only.**
+  - A head who oversees but is not a member has `seat === null`, so every
+    action is false.
+  - `committeeAccess().read` is untouched.
+  - A head who IS a member of the committee gets their seat's actions, as any
+    member does.
+- **The chain's deciders are not opened.** `decide_reporting_changes` is read
+  only by the chain (`change-request-chain.ts`); `MEMBER_ACTIONS` does not
+  list it, and approve, return and reject do not call `memberActionsFor()`.
+  Approve now stays the root head's on their OWN request, and now also needs
+  `request_change`.
+- **#325.**
+  - `canRaise` moves onto `memberActions.request_change` (above).
+  - `canCreate` and `canViewForWrite()` are untouched: tasks are not a seat
+    action, and `POST /tasks` keeps its rule.
+  - PR 6 must branch from a dev that has #325, or merge it in, since both edit
+    `openSummary()`.
+
+### 17.5 The refusal
+
+One check, two outcomes, so every refusal a person can get today stays word for
+word. The only change is that some people who were refused are now admitted.
+
+- **Neither the role nor the seat allows it,** and the viewer is a member or
+  holds `committees:view`: **403 "Required permission: {key}"**. That is the
+  message the route gate gave, with the same key named, for example
+  `committees:add_member`.
+- **Not a member, no `committees:view`:**
+  - **without the key:** the same 403, which is what the route gate answered
+    first today;
+  - **with the key:** **404 "Committee not found"** (or "Change request not
+    found"), today's precondition.
+- **Existence.** The membership and seat queries answer the same for an
+  invented id, so the 403/404 split depends only on the viewer's own
+  permissions, never on whether the committee exists. That is ACC-101 clause
+  (a), as today.
+
+**Recommendation: no new code.** The screens never offer a refused action (the
+flags come from the same function), so a 403 there is a stale page or a crafted
+call, and naming the permission is the honest answer. Q-B below has the
+alternative.
+
+### 17.6 Specs and mutation checks
+
+**Specs:**
+- **`member-actions.spec.ts` (unit):** the truth table per action:
+  - holder with the key: true, **no query**;
+  - holder without the key and not a member: false, one query;
+  - member with the key and no seat row: true;
+  - member without the key, seat allows: true;
+  - member without the key, seat does not: false;
+  - non-member with the key: false.
+
+  The seat read happens only when undecided, and once for four actions.
+- **`member-actions.db-spec.ts` (test:db):** one organisation; a committee
+  with a Chairman, a Secretary and a Member seat (the seeded defaults: Chairman
+  all five, Secretary the four member actions, Member none). The people:
+  - a Secretary without any key: add, change a seat, remove and request a
+    change all succeed (each against its live stage);
+  - a Member without a key: each refused with today's 403;
+  - a member holding the key with a seat that allows nothing: each succeeds
+    (the seat never takes away);
+  - a `committees:view` holder with the keys: succeeds, with **0** seat and
+    membership queries (spied);
+  - an overseeing head with every key: the 404, every time;
+  - a Secretary in a stage that disallows the action:
+    `STAGE_ACTION_NOT_ALLOWED`;
+  - a seat granted on ANOTHER committee: does not count;
+  - an inactive membership or an inactive committee: false;
+  - **parity:** for every person × action, `memberActions` on
+    `GET /committees/:id` equals the write's outcome; `canRaise` equals
+    `create()`'s;
+  - **isolation:** another organisation's seat rows and memberships never
+    admit, named with the gate's phrase.
+- **Updated specs:**
+  - `committees.permissions.spec.ts` (three gates removed);
+  - `committee-change-request.*` specs that pin `requirePermission`;
+  - `overseer-writes.db-spec.ts` (#325): it stays green unchanged, because its
+    head is not a member.
+
+**Mutations, each must go red:**
+1. Drop the seat clause (only the role grants).
+2. Drop the role clause (only the seat grants): the "seat never takes away"
+   case fails.
+3. Read seat rows for any committee (`committeeIds` unscoped): the
+   other-committee case.
+4. Admit oversight (seat from `committeeAccess().read`).
+5. Compute `memberActions` with a second copy instead of `memberActionsFor()`:
+   the parity case.
+6. Leave `@Permissions` on one route: the Secretary-without-key case.
+
+### 17.7 Performance
+
+- **Per-request path:** nothing added. The three route gates are removed, so
+  `PermissionGuard` does less.
+- **The committee read:** unchanged for a full permission holder. Plus one
+  indexed query (`CommitteeSeatAction` by `(committeeId)`, organisation
+  scoped) for a member who lacks a key.
+- **A write:** at most two indexed queries before the transaction. The
+  membership query replaces today's; the seat read is new and only for a
+  keyless member.
+- **Lists:** `toDtos()` adds at most one seat read per committee among the
+  viewer's own requests. The awaiting list adds none.
+- **No polling, no new list.**
+
+### 17.8 Open questions (recommendation first)
+
+**Q-A. May a seat grant act on the actor's own membership?** A Secretary whose
+seat allows `change_member_seat` could move themselves into the Chairman seat
+and gain its actions.
+- **Recommend:** a SEAT grant never covers the actor's own membership row for
+  `change_member_seat`. They get today's 403 for their own row; the role grant
+  is unchanged. Removing oneself (`remove_member`) stays allowed: leaving is
+  not an escalation.
+- **Alternative:** no exception, trusting the seat defaults (Chairman and
+  Secretary only).
+
+**Q-B. The refusal for a member whose seat does not allow the action.**
+- **Recommend:** today's 403 naming the permission (§17.5): no new code, no new
+  wording, and the screens never offer it.
+- **Alternative:** a new `SEAT_ACTION_NOT_ALLOWED` (403, `{ action }`) saying
+  "Your seat on this committee doesn't allow this". It is clearer to a member,
+  but it costs both languages' wording for a case no screen reaches.
+
+**Q-C. Where the check runs: before the transaction, or under the committee
+row lock.** Change a seat and Remove already take the committee row lock, and
+the seat-actions editor and an approved request's seat-action writes take it
+too (`writeSeatActions()`).
+- **Recommend:** before the transaction, where ACC-281's precondition runs
+  today. A seat map changing in the same instant as a member's write is a race
+  between two legitimate actions, and either order is a valid history.
+- **Alternative:** check again inside, after `lockCommitteeRow()`, for the two
+  paths that lock it. Add member does not lock the committee row, so it would
+  need the lock added.
+
+**Q-D. The screens.** `memberActions` on the committee read, and
+`committeeOffers()` reading it.
+- **Recommend:** the backend ships first (no offer change; the server simply
+  accepts more). The committee page change follows in lane A's screens PR,
+  with its parity spec against the backend's flags.
+- **Alternative:** one PR across both lanes.

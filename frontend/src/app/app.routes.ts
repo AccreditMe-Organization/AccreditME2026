@@ -126,6 +126,13 @@ export const routes: Routes = [
           ),
       },
       {
+        // ACC-316 PR 6 — Meetings. No route permission (plan §4.1, §4.3): who may
+        // see a meeting is the server's parent rule, the tasks routes' shape.
+        path: 'meetings',
+        canActivate: [permissionGuard],
+        loadChildren: () => import('./foundation/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
+      },
+      {
         path: 'tasks',
         canActivate: [permissionGuard],
         loadChildren: () =>
