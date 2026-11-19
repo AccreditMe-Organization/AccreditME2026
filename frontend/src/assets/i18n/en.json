@@ -1358,6 +1358,14 @@
       "remove": "Remove transition",
       "openNamed": "Open the transition {{name}}",
       "viewNamed": "View the transition {{name}}"
+    },
+    "moveReason": {
+      "title": "Give a reason",
+      "lead": "The people told about this move read your reason.",
+      "label": "Reason",
+      "hint": "Sent to the people told about this move",
+      "required": "Give a reason for this move.",
+      "confirm": "Confirm"
     }
   },
   "notification": {
@@ -3625,6 +3633,32 @@
         "one": "{{count}} problem",
         "other": "{{count}} problems"
       }
+    },
+    "meeting": {
+      "attending": {
+        "one": "{{count}} attending",
+        "other": "{{count}} attending"
+      },
+      "cantAttend": {
+        "one": "{{count}} can't attend",
+        "other": "{{count}} can't attend"
+      },
+      "noAnswer": {
+        "one": "{{count}} no answer",
+        "other": "{{count}} no answer"
+      },
+      "quorum": {
+        "one": "quorum {{count}}",
+        "other": "quorum {{count}}"
+      },
+      "minutes": {
+        "one": "{{count}} min",
+        "other": "{{count}} min"
+      },
+      "people": {
+        "one": "{{count}} person",
+        "other": "{{count}} people"
+      }
     }
   },
   "datePicker": {
@@ -4759,6 +4793,178 @@
       "title": "Setup health",
       "open": "Open Setup health",
       "quiet": "Setup health: nothing open."
+    }
+  },
+  "meeting": {
+    "title": "Meetings",
+    "list": {
+      "order": "Sorted by when: upcoming soonest first, then past most recent first.",
+      "search": "Search title…",
+      "emptyTitle": "No meetings here yet",
+      "emptyBody": "Meetings of your committees and your unit are listed here.",
+      "noMatchTitle": "No meetings match",
+      "noMatchBody": "Try another search, or clear it.",
+      "col": {
+        "meeting": "Meeting · committee or unit",
+        "when": "When",
+        "stage": "Stage"
+      },
+      "view": {
+        "mine": "Mine, upcoming first",
+        "past": "Past",
+        "minutes": "Minutes I record",
+        "all": "All meetings",
+        "subunits": "Sub-units' meetings"
+      }
+    },
+    "page": {
+      "loading": "Loading the meeting…",
+      "notFound": "You can't open this meeting.",
+      "back": "Back to Meetings",
+      "loadError": "The meeting couldn't be loaded.",
+      "eyebrow": "Meeting · {{type}}",
+      "rescheduledFrom": "Rescheduled from {{from}} · {{reason}}",
+      "committee": "Committee",
+      "unit": "Unit",
+      "quorum": "Quorum {{n}}",
+      "where": "Where",
+      "organiser": "Organiser"
+    },
+    "answer": {
+      "title": "Your answer to the invitation",
+      "attending": "Attending",
+      "cant_attend": "Can't attend",
+      "note": "Note to the organiser · optional",
+      "closed": "Answers close when the meeting starts.",
+      "error": "Your answer couldn't be saved."
+    },
+    "agenda": {
+      "title": "Agenda",
+      "empty": "No items yet.",
+      "standing": "Standing"
+    },
+    "invitees": {
+      "title": "Invitees",
+      "addGuest": "Guest",
+      "guest": "Guest",
+      "outsideGuest": "Outside guest",
+      "guestsNoQuorum": "Guests don't count toward quorum.",
+      "removeGuest": "Remove {{name}}",
+      "removeError": "The guest couldn't be removed."
+    },
+    "cancel": {
+      "title": "Cancel this meeting?",
+      "lead": "It stays in the list as Cancelled, with your reason. Everyone invited is told.",
+      "hint": "Sent to invitees with the cancellation",
+      "confirm": "Cancel Meeting",
+      "keep": "Keep meeting"
+    },
+    "issue": {
+      "title": "Issue Agenda?",
+      "lead": "Members and guests are notified with the agenda and its papers. An outside guest gets the invitation by email, without papers.",
+      "confirm": "Issue Agenda",
+      "keep": "Not yet"
+    },
+    "reschedule": {
+      "open": "Reschedule…",
+      "title": "Reschedule meeting",
+      "when": "New date and time",
+      "reason": "Reason",
+      "reasonHint": "Sent to invitees with the new date",
+      "reasonRequired": "Give a reason: the invitees read it.",
+      "submit": "Reschedule",
+      "error": "The meeting couldn't be rescheduled."
+    },
+    "schedule": {
+      "title": "Schedule meeting",
+      "subject": "Subject",
+      "subjectHint": "Shown as the meeting’s title.",
+      "subjectRequired": "Give the meeting a subject.",
+      "type": "Type",
+      "typeRequired": "Choose a type.",
+      "duration": "Duration",
+      "quorum": "Quorum",
+      "quorumNone": "None",
+      "starts": "Starts",
+      "location": "Location",
+      "link": "Online link",
+      "placeHint": "At least one of the two.",
+      "submit": "Schedule",
+      "error": "The meeting couldn't be scheduled.",
+      "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
+      "typesError": "The meeting types couldn't be loaded.",
+      "maybeScheduled": "Check the list before trying again, it may have been scheduled."
+    },
+    "when": {
+      "back": "← Back to details",
+      "day": "Date",
+      "dayPlaceholder": "Choose a date",
+      "pickDay": "Choose the date on a calendar",
+      "timePlaceholder": "HH:MM",
+      "required": "Choose a date and a time.",
+      "time": "Give the time as hours and minutes, such as 13:00."
+    },
+    "guest": {
+      "title": "Add a guest",
+      "kind": {
+        "label": "Guest is",
+        "person": "Person in the organisation",
+        "outside": "Outside guest"
+      },
+      "person": "Person",
+      "personHint": "Told in the app and by email, like every user.",
+      "personPlaceholder": "Choose a person",
+      "personRequired": "Choose a person.",
+      "search": "Search people",
+      "searchPlaceholder": "Search by name",
+      "pickerTitle": "Choose a person",
+      "noPeople": "Everyone is already invited.",
+      "noMatch": "Nobody matches.",
+      "col": {
+        "person": "Person",
+        "place": "Position · unit"
+      },
+      "outsideHelp": "Someone outside the organisation, with no account. Shown with an “Outside guest” chip; doesn’t count toward quorum.",
+      "name": "Name",
+      "nameRequired": "Give the guest’s name.",
+      "email": "Email",
+      "emailRequired": "Give the guest’s email address.",
+      "organisation": "Organisation",
+      "role": "Role",
+      "emailAtIssue": "AccreditMe emails the invitation to this address when the agenda is issued.",
+      "emailNow": "AccreditMe emails the invitation to this address as soon as you add the guest.",
+      "add": "Add guest",
+      "addAndSend": "Add and send invitation",
+      "error": "The guest couldn't be added."
+    },
+    "panel": {
+      "title": "Meetings",
+      "schedule": "Schedule meeting",
+      "loading": "Loading meetings…",
+      "error": "Meetings couldn't be loaded.",
+      "empty": "No meetings yet.",
+      "emptyBody": "Meetings held here are listed with their date and stage."
+    },
+    "refusal": {
+      "ownerRequired": "A meeting belongs to one committee or one unit.",
+      "ownerNotFound": "This committee or unit is no longer available.",
+      "notAllowed": "You can't schedule or change meetings for this committee or unit.",
+      "typeUnknown": "Choose a meeting type from the list.",
+      "timeInPast": "Choose a time in the future.",
+      "placeRequired": "Give a location, a link, or both.",
+      "quorumUnitOnly": "A committee meeting takes the committee's quorum.",
+      "changed": "This meeting changed since you opened it. Reload it and try again.",
+      "sameTime": "Choose a different date or time.",
+      "titleRequired": "Give the meeting a subject.",
+      "guestRequired": "Choose a person, or give an outside guest's name and email.",
+      "personNotFound": "That person is no longer available.",
+      "alreadyInvited": "This person is already invited.",
+      "attendeeNotFound": "This invitee is no longer on the meeting.",
+      "memberNotRemovable": "A member is invited by their committee or unit and can't be removed here.",
+      "guestPresents": "This guest presents an agenda item. Choose another presenter first.",
+      "notInvited": "You aren't invited to this meeting.",
+      "started": "This meeting has started.",
+      "stageActionNotAllowed": "This meeting's stage doesn't allow that now."
     }
   }
 }

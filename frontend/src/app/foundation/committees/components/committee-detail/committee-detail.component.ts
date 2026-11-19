@@ -35,6 +35,8 @@ import { WorkflowTransitionActionsComponent } from '../../../workflow/components
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { isNavModuleOpen } from '../../../../core/navigation/nav-items';
+import { MeetingsPanelComponent } from '../../../meetings/components/meetings-panel/meetings-panel.component';
 import { FormatService } from '../../../../core/formatting';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -76,6 +78,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     EditDialogComponent,
     ChangeRequestBannerComponent,
     CommitteeChangeRequestsPanelComponent,
+    MeetingsPanelComponent,
   ],
   template: `
     <!-- ACC-298 — a refused removal is said in its own dialog, so the page's
@@ -365,13 +368,21 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
           <!-- Four of the seven things a surveyor checks for a committee live
                here (module-designs.md:880-887): attendance, quorum
                confirmation, decisions with vote counts, action items. -->
-          <am-capped-panel
-            [heading]="'committee.meetings' | translate"
-            state="ready"
-            [emptyText]="'committee.noMeetings' | translate"
-            [emptyBody]="'committee.meetingsDescription' | translate"
-            testIdPrefix="committee-meetings"
-          />
+          <!-- ACC-316 PR 6 — this committee's meetings, as the server lets this
+               person see them, while the Meetings module is open (the rail
+               item's own module, as Home asks, ACC-279). Closed, the panel
+               stays the placeholder it was. -->
+          @if (meetingsOpen()) {
+            <app-meetings-panel [owner]="{ kind: 'COMMITTEE', id: c.id, name: displayName(c) }" />
+          } @else {
+            <am-capped-panel
+              [heading]="'committee.meetings' | translate"
+              state="ready"
+              [emptyText]="'committee.noMeetings' | translate"
+              [emptyBody]="'committee.meetingsDescription' | translate"
+              testIdPrefix="committee-meetings"
+            />
+          }
 
           <!-- Terms of Reference and reports to the parent body — the other
                two. Committee.termsOfReferenceDocumentId is already in the
@@ -581,6 +592,8 @@ export class CommitteeDetailComponent implements OnInit {
   // computed at runtime, and since ACC-271 PR 6b it grants nothing at all (a
   // seed-time umbrella, not in use). So the specific string is the only check.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
+  /** ACC-316 PR 6 — the Meetings panel follows the rail item's module (ACC-279's rule). */
+  readonly meetingsOpen = computed(() => isNavModuleOpen('meetings', this.navigationAccess));
   // ACC-255 — Edit, the locked line and the member actions: the server's
   // stageRules for the committee's current stage (committee-offers.ts). No
   // stage key is read.

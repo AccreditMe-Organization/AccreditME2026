@@ -72,7 +72,7 @@ describe('CommitteeDetailComponent — the type and owning unit come with the co
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
         // A reader with committees:view and nothing else: no lookups:view, no org:view.
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p === 'committees:view' } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => p === 'committees:view' } },
         {
           provide: CommitteeService,
           useValue: {

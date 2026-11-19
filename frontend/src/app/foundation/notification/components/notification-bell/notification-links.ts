@@ -9,10 +9,12 @@ export function notificationLink(item: NotificationDto): string[] | null {
   if (!item.objectId) return null;
   if (item.objectType === 'Task') return ['/tasks', item.objectId];
   if (item.objectType === 'COMMITTEE') return ['/committees', item.objectId];
+  // ACC-316 PR 6 — every meeting notice names its meeting.
+  if (item.objectType === 'MEETING') return ['/meetings', item.objectId];
   return null;
 }
 
 /** ACC-271 PR 4 — a closed-task notice opens the record it is about. */
 export function isNotificationRecordLink(item: NotificationDto): boolean {
-  return item.objectType === 'COMMITTEE' && !!item.objectId;
+  return (item.objectType === 'COMMITTEE' || item.objectType === 'MEETING') && !!item.objectId;
 }

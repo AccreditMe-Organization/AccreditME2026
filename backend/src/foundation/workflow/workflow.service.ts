@@ -408,6 +408,9 @@ export class WorkflowService {
         // ACC-316 PR 3a — the press must carry a reason (MOVE_REASON_FLAGS).
         needsReason: moveNeedsReason(instance.objectType as WorkflowObjectType, t.toStage.flags),
         blockedBy: blocked[i] ?? null,
+        // ACC-316 PR 6 — what the stage entered means, so a record's page can
+        // word its confirm by meaning (a meeting's Issue Agenda), never by name.
+        toStageFlags: t.toStage.flags,
       })),
     };
   }
