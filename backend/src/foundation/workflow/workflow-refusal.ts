@@ -245,7 +245,7 @@ const PROTECTED_REFUSALS = {
   REPLACE_DEFAULT: 'The committee change request workflow cannot be replaced by another workflow.',
   DEACTIVATE: 'The committee change request workflow cannot be switched off: changes to approved committees depend on it.',
   CHANGE_TYPE: 'A workflow cannot be changed to or from the committee change request type.',
-  ADD_STAGE: 'Only review stages can be added to the committee change request workflow, between Draft and Under review. You can rename its other stages and set their deadlines.',
+  ADD_STAGE: 'Only review stages can be added to the committee change request workflow, after a request is drafted and before it is decided. You can rename its other stages and set their deadlines.',
   REMOVE_STAGE: 'This stage is part of how a committee change request is decided, so it cannot be deleted.',
   STAGE_FIELD:
     "In the committee change request workflow only a stage's names, description and deadline can be changed.",
