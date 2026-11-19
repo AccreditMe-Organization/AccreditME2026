@@ -307,6 +307,7 @@ describe('UserAccessHistoryService (ACC-216 part 2)', () => {
       [{ metadata: { event: 'mfa_reset' } }, 'TWO_STEP_RESET'],
       [{ metadata: { event: 'password_reset_requested' } }, 'PASSWORD_RESET_REQUESTED'],
       [{ metadata: { event: 'password_reset' } }, 'PASSWORD_RESET'],
+      [{ metadata: { event: 'sessions_ended', scope: 'all', count: 3 } }, 'SESSIONS_ENDED'],
       [{ metadata: { transferPromotionFailed: true, reason: 'boom' } }, 'HEAD_APPOINTMENT_FAILED'],
       [{ before: userCopy(), after: userCopy({ name: 'Huda A.' }) }, 'PROFILE_EDITED'],
       [{ before: userCopy(), after: userCopy({ outOfOfficeFrom: '2026-12-01', actingUserId: ME }) }, 'OUT_OF_OFFICE_CHANGED'],
@@ -334,6 +335,47 @@ describe('UserAccessHistoryService (ACC-216 part 2)', () => {
       }),
     );
     expect(c).toEqual({ kind: 'PROFILE_EDITED', fields: ['name', 'language', 'manager'] });
+  });
+
+  describe('ended sign-ins (SESSIONS_ENDED)', () => {
+    const ended = (metadata: Record<string, unknown>) =>
+      classifyAccessRow(audit({ metadata: { event: 'sessions_ended', ...metadata } }));
+
+    it('each scope is read with its count', () => {
+      expect(ended({ scope: 'one', count: 1 })).toEqual({ kind: 'SESSIONS_ENDED', sessionsScope: 'one', sessionsCount: 1 });
+      expect(ended({ scope: 'others', count: 2 })).toEqual({ kind: 'SESSIONS_ENDED', sessionsScope: 'others', sessionsCount: 2 });
+      expect(ended({ scope: 'all', count: 0 })).toEqual({ kind: 'SESSIONS_ENDED', sessionsScope: 'all', sessionsCount: 0 });
+    });
+
+    it('a scope of another value: still SESSIONS_ENDED, with neither field', () => {
+      expect(ended({ scope: 'everyone', count: 2 })).toEqual({ kind: 'SESSIONS_ENDED' });
+      expect(ended({ count: 2 })).toEqual({ kind: 'SESSIONS_ENDED' });
+    });
+
+    it('a count that is not a whole number of zero or more: still SESSIONS_ENDED, with neither field', () => {
+      expect(ended({ scope: 'all', count: '3' })).toEqual({ kind: 'SESSIONS_ENDED' });
+      expect(ended({ scope: 'all', count: 1.5 })).toEqual({ kind: 'SESSIONS_ENDED' });
+      expect(ended({ scope: 'all', count: -1 })).toEqual({ kind: 'SESSIONS_ENDED' });
+      expect(ended({ scope: 'others' })).toEqual({ kind: 'SESSIONS_ENDED' });
+    });
+
+    it('the row carries the scope and count, never the stored metadata', async () => {
+      const { service } = makeService({
+        audits: [
+          audit({ metadata: { event: 'sessions_ended', scope: 'others', count: 2, note: 'SECRET METADATA' } }),
+          audit({ metadata: { event: 'sessions_ended', scope: 'nobody', count: 2 } }),
+        ],
+      });
+      const page = await service.forUser(ORG, ADMIN_VIEW, COLLEAGUE);
+      expect(page.rows.map((r) => r.kind)).toEqual(['SESSIONS_ENDED', 'SESSIONS_ENDED']);
+      const read = page.rows.filter((r) => r.sessionsScope !== undefined);
+      expect(read.map((r) => [r.sessionsScope, r.sessionsCount])).toEqual([['others', 2]]);
+      const unread = page.rows.find((r) => r.sessionsScope === undefined)!;
+      expect(unread).not.toHaveProperty('sessionsScope');
+      expect(unread).not.toHaveProperty('sessionsCount');
+      for (const row of page.rows) expect(row).not.toHaveProperty('metadata');
+      expect(JSON.stringify(page)).not.toContain('SECRET METADATA');
+    });
   });
 
   it('a key only one copy holds is not a change', () => {
@@ -496,15 +538,17 @@ describe('UserAccessHistoryService (ACC-216 part 2)', () => {
         audit({ before: userCopy(), after: userCopy({ name: 'Huda A.' }) }),
         audit({ metadata: { transferPromotionFailed: true, reason: 'SECRET ERROR TEXT' } }),
         audit({ action: 'DELETE', before: userCopy(), metadata: { event: 'invitation_revoked', email: 'huda@example.test' } }),
+        audit({ metadata: { event: 'sessions_ended', scope: 'all', count: 3 } }),
       ],
     });
     const page = await service.forUser(ORG, ADMIN_VIEW, COLLEAGUE);
     const body = JSON.stringify(page);
-    for (const secret of ['SECRET-INVITE-TOKEN', 'SECRET ERROR TEXT', 'huda@example.test', 'tokenVersion']) {
+    for (const secret of ['SECRET-INVITE-TOKEN', 'SECRET ERROR TEXT', 'huda@example.test', 'tokenVersion', 'sessions_ended']) {
       expect(body).not.toContain(secret);
     }
+    const allowed = ['id', 'at', 'kind', 'actor', 'fields', 'role', 'viaHeadship', 'transfer', 'sessionsScope', 'sessionsCount'];
     for (const row of page.rows) {
-      expect(Object.keys(row).every((k) => ['id', 'at', 'kind', 'actor', 'fields', 'role', 'viaHeadship', 'transfer'].includes(k))).toBe(true);
+      expect(Object.keys(row).every((k) => allowed.includes(k))).toBe(true);
     }
   });
 

@@ -1,3 +1,4 @@
+import type { PluralKey } from '../../../../core/formatting/plural-key';
 import type { AccessHistoryField, IAccessHistoryNameDto, IAccessHistoryRowDto } from '../../services/user.service';
 
 /**
@@ -12,6 +13,8 @@ export interface AccessHistoryTextDeps {
   t: (key: string, params?: Record<string, unknown>) => string;
   bilingual: (en: string, ar: string | null) => string;
   dateTime: (value: string) => string;
+  /** A counted string from the plural sections (FormatService.count). */
+  count: (key: PluralKey, n: number) => string;
   /** The signed-in person: their own acts read "by you". */
   viewerId: string | null;
 }
@@ -71,6 +74,16 @@ export function accessHistoryWhat(row: IAccessHistoryRowDto, deps: AccessHistory
       if (tr.headAppointment === 'DONE') parts.push(deps.t(`${K}.headDone`));
       if (tr.headAppointment === 'FAILED') parts.push(deps.t(`${K}.headFailed`));
       return parts.join(' · ');
+    }
+    // Which sign-ins were ended, and how many, when the server could read them;
+    // the generic sentence otherwise. Who ended them is line 2's.
+    case 'SESSIONS_ENDED': {
+      if (row.sessionsScope === 'one') return deps.t(`${K}.kind.sessionsEndedOne`);
+      if (typeof row.sessionsCount === 'number') {
+        if (row.sessionsScope === 'others') return deps.count('user.accessHistory.sessionsEndedOthers', row.sessionsCount);
+        if (row.sessionsScope === 'all') return deps.count('user.accessHistory.sessionsEndedAll', row.sessionsCount);
+      }
+      return deps.t(`${K}.kind.sessionsEnded`);
     }
     default:
       return deps.t(SIMPLE[row.kind] ?? SIMPLE['CHANGED']!);
