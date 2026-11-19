@@ -1391,9 +1391,6 @@ model WorkflowTransition {
   labelEn         String
   labelAr         String?
   validatorConfig Json?
-  // ACC-294 PR A — out of the generated client, still in the database; PR B drops
-  // it. Nothing has read it since ACC-284 (the move's kind decides).
-  isApprovalPath  Boolean                @default(false) @ignore
   kind            WorkflowTransitionKind @default(ADVANCE) // ACC-190
   // ACC-271 — who moves the record along it (transitionMover() in
   // workflow-pool.ts). NOT NULL since ACC-278 PR B, which dropped the old
