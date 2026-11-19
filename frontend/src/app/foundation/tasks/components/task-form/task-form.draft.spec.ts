@@ -136,7 +136,13 @@ describe('TaskFormComponent — Draft with AI (ACC-197)', () => {
     await settle();
   }
 
-  afterEach(() => http.verify());
+  // ACC-291 — a picker on a committee task, for a caller without committees:view,
+  // asks the server once whether this committee's seats are open to them (the
+  // membership rule stays the server's). These specs are not about that answer.
+  afterEach(() => {
+    http.match((r) => r.url.endsWith('/tasks/assignment/committee-roles')).filter((r) => !r.cancelled).forEach((r) => r.flush([]));
+    http.verify();
+  });
 
   // ── Where it is, and when it is not ────────────────────────────────────
 

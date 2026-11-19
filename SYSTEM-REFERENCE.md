@@ -2024,7 +2024,6 @@ model WorkflowTransition {
   triggerUserId      String?
   triggerRoleId      String?
   validatorConfig    Json?
-  isApprovalPath     Boolean                    @default(false)
 }
 ```
 
@@ -3872,6 +3871,9 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     permission or validator, so the stored values are left as they are.
   - **`isApprovalPath` is accepted on create** (it was update-only), so Add
     can set it.
+    Superseded (ACC-294): the API no longer accepts `isApprovalPath` (a sent
+    value is the whitelist's 400), and PR B dropped the column. See "A press on
+    a stage decided together" in §2.19.
   - **A move the app runs (`mover` APP) is read-only:** "Done by the app" /
     «يُنفّذها النظام» in the list, with no Edit and no ⋯; its name opens the
     panel showing the server's `appMove` line, "The app runs this move itself,
@@ -4170,9 +4172,26 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - return → its RETURN;
   - not exactly one → 409 `VOTE_MOVE_AMBIGUOUS`, naming the stage.
 - **`isApprovalPath` is no longer read** by anything that decides.
-  - The API still accepts, stores, returns and audits it (expand).
   - The transition panel no longer offers it, and the list no longer tags it.
-  - Lane B's follow-up ticket drops it (contract).
+  - **Removed by ACC-294, in two deploys (ACC-278's shape):**
+    - **PR A (no migration):** the column is `@ignore` in `schema.prisma`, so
+      it is out of the generated client and still in the database.
+      - A transition create or update that sends it is the global
+        whitelist's 400, "property isApprovalPath should not exist".
+      - The template read, the audits, the seed and the frontend models no
+        longer name it, and the unused `workflow.isApprovalPath` key is gone.
+      - `submitApproval()` never named it.
+      - Specs: `is-approval-path.client.spec.ts` and
+        `dto/is-approval-path.dto.spec.ts`, plus the template read and create
+        tests in `workflow-template.service.spec.ts`. Mutation-checked.
+    - **PR B, migration `20261119094215_acc294_drop_is_approval_path`:** one
+      statement, `ALTER TABLE "WorkflowTransition" DROP COLUMN
+      "isApprovalPath"`, and nothing else. The field is gone from
+      `schema.prisma`, and `is-approval-path.client.spec.ts` now pins it out of
+      the schema. It runs only after PR A has deployed. **Never roll Railway
+      back past PR A:** on a scratch
+      database with the column dropped, PR A's client made 9 real calls, all
+      OK, while the client before PR A made 2 of 9 (7 P2022).
 - **No backfill:** on the shared database (10 Nov), 0 stored moves change behaviour.
   Every seeded stage decided together already had its one ADVANCE marked.
 - **Specs:**
@@ -4219,6 +4238,8 @@ has and keeps no copy.
   affected.
   **Fixed (ACC-284):** the engine decides by the move's kind, so the seeded Approve
   is a vote on a stage decided together (§2.19, "A press on a stage decided together").
+  Superseded (ACC-294): `isApprovalPath` itself is gone, out of the client and the
+  API in PR A and dropped from the database in PR B.
 - **Specs:** `instance-access.spec.ts`; `pool-member-moves.db-spec.ts` (a pool member,
   a member outside the pool, a former member named directly, a `workflows:view`
   holder, a vote on an ALL stage, a change request, and another organisation's
@@ -5356,6 +5377,30 @@ NOT ungated — its permission check moved into the service (3.2).
   decides: 403 naming `tasks:create` when no task is named (ACC-101 clause a),
   the identical 404 otherwise (clause b). The committee variants also need
   `committees:view`, checked before anything is read.
+  - **ACC-291: the committee variants follow `create.types`' rule.**
+    - They admit `committees:view`, or an active member of THE committee named,
+      through the one membership rule (`common/services/committee-membership.ts`,
+      `isActiveMember()`).
+    - That is one indexed query inside the read, only for a caller without
+      `committees:view`. A holder pays nothing, and nothing runs on the
+      per-request path.
+    - A member sees only their own committee's seats. The catalogue with no
+      committee named (`?catalogue=true`, ACC-208's stage task definitions)
+      stays `committees:view` only.
+    - A refusal is today's 403 "Required permission: committees:view",
+      decided before anything else is read. It is the same for another
+      committee, another organisation's committee and an invented id.
+    - `POST /tasks` already applied the same rule, and is unchanged: the record
+      check admits a member, and a seat can be chosen only on the task's own
+      committee.
+    - **Not a seat action:** the ACC-283 plan (§17) keeps tasks out of
+      `seat-actions.ts`, so membership decides.
+    - **The picker** offers the committee route at once to a `committees:view`
+      holder. To anyone else it offers the route only after the server has
+      answered that committee's seats: one request per committee, and a refusal
+      leaves the route out. The screen keeps no copy of the rule.
+    - Specs: `task-assignment.member-seat.db-spec.ts` (real Postgres) and the
+      service and picker specs. Mutation-checked.
 
 **ACC-173 adds six more, again deliberately ungated** (`task.controller.spec.ts`
 asserts the absence). Every entitlement is knowable only from the row, so each

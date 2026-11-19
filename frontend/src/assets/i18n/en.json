@@ -1034,7 +1034,6 @@
     "errorLoad": "Failed to load workflow data.",
     "errorTransition": "Unable to complete this action.",
     "escalation": "Escalation",
-    "isApprovalPath": "This is the approval path (advances the workflow)",
     "isDefault": "Default",
     "isFinal": "Final Stage",
     "isInitial": "Initial Stage",
