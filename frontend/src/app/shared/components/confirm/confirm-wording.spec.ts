@@ -275,20 +275,21 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
   const result = { succeeded: () => undefined, failed: () => undefined };
   const user = { id: 'u9', name: 'Nora Al-Otaibi', email: 'nora@example.test', status: 'ACTIVE' } as never;
 
-  both('#14 Deactivate user says what happens to sessions and to each kind of task', (lang) => {
+  // ACC-306 — and that their committee seats end, as its own last paragraph.
+  both('#14 Deactivate user says what happens to sessions, to each kind of task and to committee seats', (lang) => {
     TestBed.inject(UserStatusActionsService).confirmDeactivate(user, result);
     expect(said()).toEqual(
       lang === 'en'
         ? {
             header: 'Deactivate Nora Al-Otaibi?',
             message:
-              "They're signed out at once and can't sign in. A task from a pool goes back to it, unless someone else is still on it. Their other tasks go to their acting user if they have one; otherwise a task nobody else is on is left unassigned for you to reassign.\n\nYou can reactivate them later, and they come back with the roles they have now.",
+              "They're signed out at once and can't sign in. A task from a pool goes back to it, unless someone else is still on it. Their other tasks go to their acting user if they have one; otherwise a task nobody else is on is left unassigned for you to reassign.\n\nYou can reactivate them later, and they come back with the roles they have now.\n\nAny committee seats this person holds end too.",
             accept: 'Deactivate',
           }
         : {
             header: 'إلغاء تنشيط Nora Al-Otaibi؟',
             message:
-              'تُنهى جلسات هذا الحساب فورًا، ويتعذّر تسجيل الدخول به. تعود مهمة المجموعة إلى مجموعتها، ما لم يكن شخص آخر يعمل عليها. وتنتقل مهام هذا الحساب الأخرى إلى المستخدم البديل إن وُجد، وإلا تبقى المهمة التي لا يعمل عليها أحد آخر بلا مُسنَد إليه لتعيد إسنادها.\n\nيمكنك إعادة تنشيط هذا الحساب لاحقًا، وسيعود بالأدوار المُسندة إليه الآن.',
+              'تُنهى جلسات هذا الحساب فورًا، ويتعذّر تسجيل الدخول به. تعود مهمة المجموعة إلى مجموعتها، ما لم يكن شخص آخر يعمل عليها. وتنتقل مهام هذا الحساب الأخرى إلى المستخدم البديل إن وُجد، وإلا تبقى المهمة التي لا يعمل عليها أحد آخر بلا مُسنَد إليه لتعيد إسنادها.\n\nيمكنك إعادة تنشيط هذا الحساب لاحقًا، وسيعود بالأدوار المُسندة إليه الآن.\n\nتنتهي أيضًا أي مقاعد في اللجان لهذا الحساب.',
             accept: 'إلغاء التفعيل',
           },
     );
