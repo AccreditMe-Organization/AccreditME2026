@@ -1100,6 +1100,13 @@
       "editNamed": "Edit {{title}}",
       "deleteNamed": "Delete {{title}}",
       "moved": "“{{title}}” moved to position {{position}} of {{of}}",
+      "reorderNamed": "Reorder task {{position}}: {{title}}",
+      "handleHint": "Space picks it up, the arrow keys move it, Space drops it, Escape cancels.",
+      "pickedUp": "“{{title}}” picked up, position {{position}} of {{of}}",
+      "movingTo": "“{{title}}”, position {{position}} of {{of}}",
+      "droppedUnchanged": "“{{title}}” stays at position {{position}} of {{of}}",
+      "dropCancelled": "Reorder cancelled. “{{title}}” is back at position {{position}} of {{of}}",
+      "orderNotSaved": "The new order couldn’t be saved. The tasks are back in their previous order.",
       "orderChanged": "Someone else changed this list, so it has been reloaded.",
       "delete": {
         "title": "Delete this task?",
