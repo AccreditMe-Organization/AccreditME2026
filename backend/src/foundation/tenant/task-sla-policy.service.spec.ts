@@ -128,14 +128,6 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       expect(written().LOW).toEqual({ dueAfterHours: DEFAULT_TASK_SLA_SETTINGS.LOW.dueAfterHours, ...ESCALATION.LOW });
     });
 
-    it('the old whole-policy save writes all three values of every priority', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      expect(written()).toEqual(CUSTOM_SLA);
-    });
-
     it('a missing organisation is a 404, with nothing written and nothing logged', async () => {
       stored(null);
 
@@ -174,17 +166,6 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       const entry = auditLog.log.mock.calls[0][0] as { before: Record<string, object>; metadata: object };
       expect(entry.metadata).toEqual({ event: 'task_sla_escalation_updated', escalationHoursUnit: 'WORKING' });
       expect(entry.before['LOW']).toEqual({ managerEscalationAfterHours: 48, headEscalationAfterHours: 96 });
-    });
-
-    it('the old save is recorded the same way, as task_sla_updated', async () => {
-      stored({ taskSla: DEFAULT_TASK_SLA_SETTINGS });
-
-      await service.replaceAll('org-a', CUSTOM_SLA, 'user-1');
-
-      const entry = auditLog.log.mock.calls[0][0] as { objectType: string; after: object; metadata: object };
-      expect(entry.objectType).toBe(TASK_SLA_AUDIT_OBJECT_TYPE);
-      expect(entry.after).toEqual(CUSTOM_SLA);
-      expect(entry.metadata).toEqual({ event: 'task_sla_updated', escalationHoursUnit: 'WORKING' });
     });
 
     it('a save that changes nothing writes nothing and logs nothing', async () => {
@@ -237,9 +218,10 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
     // ACC-208 (B6) — the settings screen names the stage in either language,
     // links to its row, and puts the message under the priority that breaks it.
     it('gives each conflict its template id, its Arabic names and the priority behind it', async () => {
-      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours - 1)]);
+      stored({});
+      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', LIMITS.HIGH.dueAfterHours - 1)]);
 
-      const error = await service.replaceAll('org-a', CUSTOM_SLA, 'user-1').catch((e: unknown) => e);
+      const error = await service.saveLimits('org-a', LIMITS, 'user-1').catch((e: unknown) => e);
 
       const body = (error as WorkflowRefusalException).getResponse() as { stages: unknown[] };
       expect(body.stages).toEqual([
@@ -250,8 +232,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
           templateName: 'Committee lifecycle',
           templateNameAr: null,
           workflowTemplateId: 'template-committee',
-          stageHours: CUSTOM_SLA.HIGH.dueAfterHours - 1,
-          longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours,
+          stageHours: LIMITS.HIGH.dueAfterHours - 1,
+          longestTaskHours: LIMITS.HIGH.dueAfterHours,
           priority: 'HIGH',
         },
       ]);
