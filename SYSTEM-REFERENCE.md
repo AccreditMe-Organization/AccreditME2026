@@ -7019,9 +7019,19 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   applies.
 - **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
   and its owning unit.
-- **Known gap until PR 2:** the awaiting-decision lists read Under review
-  only, and `awaitingDecisionBy` is null in an added stage. The screens are
-  PR 3.
+- **The awaiting list (PR 2).** `GET /committee-change-requests/awaiting-decision`
+  takes, in ONE capped SQL query, requests Under review (for a possible chain
+  decider) and requests in an added review stage (for anyone); a review row is
+  kept only where the viewer is in its pool (one batched read) and may open the
+  committee (one `readableCommitteeIds()` read). The gate is still one query,
+  `awaitingDecisionGate()`: the chain's three arms plus "any request in an added
+  stage here". Home's counts read the same API; `awaiting-me` never lists a
+  review stage (app moves only), so nothing counts twice. `awaitingDecisionBy`
+  gains `REVIEW_STAGE` (the stage's names), in the list, a read and the
+  NOT_DECIDER refusal. The screens are PR 3.
+- **A cover gives reach only while its person is ACTIVE** (PR 2):
+  `findUnitsCoveredBy()`, `findUnitLeadersAmong()` and the gate's cover arm;
+  `findRunningActingCoversForUnits()` (what a unit's cover IS) is unchanged.
 - **Real-database specs:** the "added review stages (ACC-245)" block of
   `committee-change-request.db-spec.ts`, 17 tests, two of them concurrent (an
   add while a Submit moves, a remove while a request enters the stage; each

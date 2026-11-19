@@ -5295,7 +5295,12 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   recommended by lane B, open to change: Approve now skips added stages; a
   stage nobody can decide waits; Submit after a Return starts at the first
   added stage; committee members may review; no reordering.
-- **No migration.** The awaiting-decision lists are PR 2; the screens PR 3.
+- **PR 2: the awaiting list includes added stages.** One capped SQL query
+  takes both kinds; a review row is kept for a viewer in its pool who may open
+  the committee. The gate is still one query (`awaitingDecisionGate()`).
+  `awaitingDecisionBy` gains `REVIEW_STAGE`. A cover gives reach only while its
+  person is ACTIVE (`findUnitsCoveredBy()`, `findUnitLeadersAmong()`).
+- **No migration.** The screens are PR 3.
 
 ## Open / Deferred Items
 
