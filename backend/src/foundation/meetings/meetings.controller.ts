@@ -28,12 +28,15 @@ import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingReviewService } from './meeting-review.service';
 import { MeetingSeriesService } from './meeting-series.service';
+import { MeetingFormChoicesService, type IMeetingFormChoices } from './meeting-form-choices.service';
 import {
   AddMeetingGuestDto,
   AnswerMeetingDto,
   CheckMeetingClashesDto,
   CreateMeetingSeriesDto,
   EndMeetingSeriesDto,
+  GuestCandidatesQueryDto,
+  MayScheduleQueryDto,
   CreateAgendaItemDto,
   ListMeetingsDto,
   OrderAgendaDto,
@@ -48,6 +51,7 @@ import type {
   IMeetingAttendee,
   IMeetingAwaitingMe,
   IMeetingClash,
+  IMeetingGuestCandidates,
   IMeetingFile,
   IMeetingFiles,
   IMeetingList,
@@ -75,6 +79,7 @@ export class MeetingsController {
     private readonly clashes: MeetingClashService,
     private readonly review: MeetingReviewService,
     private readonly series: MeetingSeriesService,
+    private readonly formChoices: MeetingFormChoicesService,
   ) {}
 
   // ── Series (PR 5) ────────────────────────────────────────────────────────────
@@ -113,6 +118,12 @@ export class MeetingsController {
     return this.series.end(seriesId, dto, tenantId, { id: userId, permissions });
   }
 
+  /** ACC-316 PR 6 — the meeting types Schedule meeting offers. Before ':id'. */
+  @Get('form-choices')
+  getFormChoices(@CurrentTenant() tenantId: string): Promise<IMeetingFormChoices> {
+    return this.formChoices.forOrganization(tenantId);
+  }
+
   @Get()
   list(
     @Query() query: ListMeetingsDto,
@@ -139,6 +150,17 @@ export class MeetingsController {
   @Get('awaiting-me')
   awaitingMe(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMeetingAwaitingMe> {
     return this.review.awaitingMe(tenantId, userId);
+  }
+
+  /** ACC-316 PR 6 — whether Schedule meeting is offered for this owner. Before ':id'. */
+  @Get('may-schedule')
+  maySchedule(
+    @Query() query: MayScheduleQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<{ may: boolean }> {
+    return this.meetings.maySchedule(query, tenantId, { id: userId, permissions });
   }
 
   @Get(':id')
@@ -196,6 +218,18 @@ export class MeetingsController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IMeetingAttendee[]> {
     return this.people.attendees(id, tenantId, { id: userId, permissions });
+  }
+
+  /** ACC-316 PR 6 — Add a guest's person search, for whoever may write the meeting. */
+  @Get(':id/guest-candidates')
+  guestCandidates(
+    @Param('id') id: string,
+    @Query() query: GuestCandidatesQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingGuestCandidates> {
+    return this.people.guestCandidates(id, query, tenantId, { id: userId, permissions });
   }
 
   @Post(':id/guests')

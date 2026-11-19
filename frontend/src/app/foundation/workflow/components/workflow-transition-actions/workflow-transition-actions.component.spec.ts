@@ -18,6 +18,7 @@ import { WorkflowInstanceDto, WorkflowMoveDto } from '../../services/workflow.se
 import { provideRouter } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
+import type { MoveConfirmCopy } from '../move-confirm-dialog/move-confirm-dialog.component';
 
 const INSTANCE: WorkflowInstanceDto = {
   id: 'instance-1',
@@ -237,6 +238,82 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
       refuse({ code: 'STAGE_TASK_ROUTE_NOT_AVAILABLE' }, 400);
       expect(component.error()).toBe('workflow.refusal.routeNotAvailable');
       expect(component.cantMove()).toBeNull();
+    });
+  });
+
+  // ACC-316 PR 6 — a move the server says needs a reason, or one the record asks
+  // to confirm, opens the confirm before it is pressed; the reason is sent as
+  // the press's comment. Any other move is pressed at once, as before.
+  describe('the confirm before a press (ACC-316 PR 6)', () => {
+    const CANCEL: WorkflowMoveDto = { ...TRANSITION, id: 'transition-cancel', kind: 'EXIT', needsReason: true };
+    const ISSUE: WorkflowMoveDto = { ...TRANSITION, id: 'transition-issue', toStageFlags: ['AGENDA_ISSUED'] };
+
+    function setupWith(moves: WorkflowMoveDto[], confirmFor: ((m: WorkflowMoveDto) => MoveConfirmCopy | null) | null = null): void {
+      TestBed.configureTestingModule({
+        imports: [WorkflowTransitionActionsComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+          provideRouter([]),
+          ConfirmationService,
+        ],
+      });
+      httpMock = TestBed.inject(HttpTestingController);
+      fixture = TestBed.createComponent(WorkflowTransitionActionsComponent);
+      component = fixture.componentInstance;
+      fixture.componentRef.setInput('instance', INSTANCE);
+      fixture.componentRef.setInput('confirmFor', confirmFor);
+      fixture.detectChanges();
+      httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds: moves.map((m) => m.id), moves });
+      fixture.detectChanges();
+    }
+    const transitions = () => `${environment.apiUrl}/workflows/instances/instance-1/transitions`;
+    const ISSUE_COPY: MoveConfirmCopy = { titleKey: 'meeting.issue.title', leadKey: 'meeting.issue.lead', confirmKey: 'meeting.issue.confirm', keepKey: 'meeting.issue.keep', danger: false };
+
+    afterEach(() => document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove()));
+
+    it('a move with no confirm and no reason is pressed at once', () => {
+      setupWith([TRANSITION]);
+      component.onPress(TRANSITION);
+      expect(component.pending()).toBeNull();
+      const req = httpMock.expectOne(transitions());
+      expect(req.request.body).toEqual({ transitionId: TRANSITION.id });
+      req.flush(INSTANCE);
+    });
+
+    it('a move that needs a reason waits for one, even with no words from its record, and sends it as the comment', () => {
+      setupWith([CANCEL]);
+      component.onPress(CANCEL);
+      expect(component.pending()?.copy.titleKey).withContext('the generic words').toBe('workflow.moveReason.title');
+      httpMock.expectNone(transitions());
+
+      component.confirmPending('The chair is away.');
+      const req = httpMock.expectOne(transitions());
+      expect(req.request.body).toEqual({ transitionId: CANCEL.id, comment: 'The chair is away.' });
+      req.flush(INSTANCE);
+      expect(component.pending()).toBeNull();
+    });
+
+    it("a move its record asks to confirm uses the record's words and sends no comment", () => {
+      setupWith([ISSUE], (m) => ((m.toStageFlags ?? []).includes('AGENDA_ISSUED') ? ISSUE_COPY : null));
+      component.onPress(ISSUE);
+      expect(component.pending()?.copy).toEqual(ISSUE_COPY);
+      httpMock.expectNone(transitions());
+
+      component.confirmPending(null);
+      const req = httpMock.expectOne(transitions());
+      expect(req.request.body).toEqual({ transitionId: ISSUE.id });
+      req.flush(INSTANCE);
+    });
+
+    it('a refused press closes the confirm and says the refusal on the page', () => {
+      setupWith([CANCEL]);
+      component.onPress(CANCEL);
+      component.confirmPending('Reason');
+      httpMock.expectOne(transitions()).flush({ code: 'REASON_REQUIRED' }, { status: 400, statusText: 'Bad Request' });
+      expect(component.pending()).toBeNull();
+      expect(component.error()).not.toBeNull();
     });
   });
 });

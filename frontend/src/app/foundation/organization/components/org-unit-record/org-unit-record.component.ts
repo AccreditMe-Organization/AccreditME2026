@@ -9,6 +9,8 @@ import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { isNavModuleOpen } from '../../../../core/navigation/nav-items';
+import { MeetingsPanelComponent } from '../../../meetings/components/meetings-panel/meetings-panel.component';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { BreadcrumbParentService } from '../../../../core/navigation/breadcrumb-parent.service';
 import { ADMIN_ACCESS } from '../../../../core/navigation/admin-access';
@@ -86,6 +88,7 @@ interface RelationView {
     OrgUnitBlockersDialogComponent,
     UnitListPanelComponent,
     UnitHistoryPanelComponent,
+    MeetingsPanelComponent,
   ],
   template: `
     @switch (state()) {
@@ -265,6 +268,12 @@ interface RelationView {
             [countText]="committeeCount"
           />
 
+          <!-- ACC-316 PR 6 — this unit's meetings, as the server lets this person
+               see them, while the Meetings module is open (ACC-279's rule). -->
+          @if (meetingsOpen()) {
+            <app-meetings-panel [owner]="{ kind: 'UNIT', id: s.unit.id, name: primaryName() }" />
+          }
+
           <am-unit-history-panel
             [unitId]="s.unit.id"
             [unitName]="primaryName()"
@@ -334,6 +343,8 @@ export class OrgUnitRecordComponent {
   private readonly router = inject(Router);
   private readonly orgUnits = inject(OrgUnitService);
   private readonly access = inject(NavigationAccessService);
+  /** ACC-316 PR 6 — the Meetings panel follows the rail item's module (ACC-279's rule). */
+  readonly meetingsOpen = computed(() => isNavModuleOpen('meetings', this.access));
   private readonly language = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);

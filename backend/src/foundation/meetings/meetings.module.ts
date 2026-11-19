@@ -11,6 +11,8 @@ import { MeetingPeopleService } from './meeting-people.service';
 import { MeetingAgendaService } from './meeting-agenda.service';
 import { MeetingFilesService } from './meeting-files.service';
 import { MeetingClashService } from './meeting-clash.service';
+import { MeetingFormChoicesService } from './meeting-form-choices.service';
+import { LookupModule } from '../lookup/lookup.module';
 import { MeetingMinutesService } from './meeting-minutes.service';
 import { MeetingReviewService } from './meeting-review.service';
 import { MeetingSeriesService } from './meeting-series.service';
@@ -20,9 +22,9 @@ import { FileStorageModule } from '../file-storage/file-storage.module';
 // (forwardRef, as CommitteesModule takes it); WorkflowModule for the instance
 // start and the stage rules. NotificationService is @Global (NotificationModule).
 @Module({
-  imports: [PrismaModule, forwardRef(() => TenantModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule],
+  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule],
   controllers: [MeetingsController, MeetingMinutesController],
-  providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingMinutesService, MeetingReviewService, MeetingSeriesService],
+  providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingMinutesService, MeetingReviewService, MeetingSeriesService, MeetingFormChoicesService],
   exports: [MeetingsService],
 })
 export class MeetingsModule {}

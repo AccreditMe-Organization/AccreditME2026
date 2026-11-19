@@ -10,6 +10,9 @@ export function recordPageLink(type: string, id: string): string[] | null {
   switch (type) {
     case 'COMMITTEE':
       return ['/committees', id];
+    // ACC-316 PR 6 — a meeting's own page.
+    case 'MEETING':
+      return ['/meetings', id];
     default:
       return null;
   }

@@ -95,7 +95,7 @@ describe('CommitteeDetailComponent — the header and members panel by the stage
         provideFormatTesting(),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => held.includes(p) } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: (p: string) => held.includes(p) } },
         {
           provide: CommitteeService,
           useValue: {

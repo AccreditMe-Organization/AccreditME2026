@@ -81,7 +81,7 @@ describe('CommitteeDetailComponent — Remove member opens the reason dialog (AC
         provideFormatTesting(),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { isModuleEnabled: () => false, hasPermission: () => true } },
         {
           provide: CommitteeService,
           useValue: {

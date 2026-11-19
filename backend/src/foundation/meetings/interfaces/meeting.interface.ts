@@ -28,6 +28,8 @@ export interface IMeetingListItem {
 export interface IMeetingList {
   items: IMeetingListItem[];
   total: number;
+  /** ACC-316 PR 6 — whether this viewer may list All meetings (meetings:view), so the screen offers it without a copy of the rule. */
+  canSeeAll: boolean;
 }
 
 export interface IMeeting extends IMeetingListItem {
@@ -78,6 +80,13 @@ export interface IMeetingAnswerSummary {
   /** The committee's quorum, or the unit meeting's own; null when it has none. */
   quorum: number | null;
   belowQuorum: boolean;
+}
+
+/** ACC-316 PR 6 — who Add a guest may choose: never an email. */
+export interface IMeetingGuestCandidates {
+  items: { id: string; name: string; unit: { nameEn: string; nameAr: string | null } | null; position: { nameEn: string; nameAr: string | null } | null }[];
+  total: number;
+  matching: number;
 }
 
 /** ACC-316 PR 3b — one invitee: a MEMBER, an organisation guest, or an outside guest. */

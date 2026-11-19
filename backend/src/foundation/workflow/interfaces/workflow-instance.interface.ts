@@ -66,6 +66,8 @@ export interface IWorkflowMove {
    * read-only, only for a viewer in the stage's pool.
    */
   blockedBy: ({ code: string } & Record<string, unknown>) | null;
+  /** ACC-316 PR 6 — the flags of the stage the move enters. */
+  toStageFlags: string[];
 }
 
 export interface IWorkflowMoves {

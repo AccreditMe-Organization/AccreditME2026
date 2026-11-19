@@ -11,7 +11,7 @@ import { MeetingRefusal } from './meeting-refusal';
 import { cantAttendNotice, invitationNotice, outsideInvitationEmail } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames } from './meeting-send';
 import type { AddMeetingGuestDto, AnswerMeetingDto } from './dto/meeting.dto';
-import type { IMeetingAnswerSummary, IMeetingAttendee } from './interfaces/meeting.interface';
+import type { IMeetingAnswerSummary, IMeetingAttendee, IMeetingGuestCandidates } from './interfaces/meeting.interface';
 
 /** The MEMBER answers of one meeting, in one grouped query (the record read and the "Can't attend" flag share it). */
 export async function meetingAnswerSummary(
@@ -241,6 +241,52 @@ export class MeetingPeopleService {
    * and everyone's answer, are shown only to whoever may edit the meeting; a
    * person always sees their own answer.
    */
+  /**
+   * ACC-316 PR 6 — who Add a guest may choose: ACTIVE people of the organisation
+   * not already invited, for whoever may write the meeting (else
+   * MEETING_NOT_ALLOWED). Name, unit and position only: never an email. Paged
+   * on the server, at most 50.
+   */
+  async guestCandidates(
+    id: string,
+    query: { q?: string; skip?: number; take?: number },
+    organizationId: string,
+    viewer: MeetingViewer,
+    now: Date = new Date(),
+  ): Promise<IMeetingGuestCandidates> {
+    await this.access.writing(id, organizationId, viewer, now);
+    const take = Math.min(Math.max(query.take ?? 20, 1), 50);
+    const skip = Math.max(query.skip ?? 0, 0);
+    const term = query.q?.trim();
+    const where = {
+      organizationId,
+      status: 'ACTIVE' as const,
+      meetingInvitations: { none: { meetingId: id, organizationId } },
+      ...(term && { name: { contains: term, mode: 'insensitive' as const } }),
+    };
+    const [rows, matching, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+        select: {
+          id: true,
+          name: true,
+          primaryOrgUnit: { select: { nameEn: true, nameAr: true } },
+          position: { select: { nameEn: true, nameAr: true } },
+        },
+      }),
+      this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: { organizationId, status: 'ACTIVE', meetingInvitations: { none: { meetingId: id, organizationId } } } }),
+    ]);
+    return {
+      items: rows.map((r) => ({ id: r.id, name: r.name, unit: r.primaryOrgUnit, position: r.position })),
+      total,
+      matching,
+    };
+  }
+
   async attendees(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingAttendee[]> {
     const owner = await this.access.seeing(id, organizationId, viewer, now);
     const [rows, mayEdit] = await Promise.all([
