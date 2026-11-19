@@ -20,7 +20,6 @@ import { TenantService } from './tenant.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
-import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
   TaskSlaHistoryQueryDto,
   UpdateTaskSlaEscalationDto,
@@ -134,18 +133,6 @@ export class TenantController {
   @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
   getTaskSla(@CurrentTenant() tenantId: string): Promise<ITaskSlaSettings> {
     return this.tenantService.getTaskSla(tenantId);
-  }
-
-  // The whole-policy save the current screen uses. ACC-313 keeps it, under
-  // the same lock and audit as the section routes, until the new screen ships.
-  @Patch('task-sla')
-  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
-  async updateTaskSla(
-    @Body() dto: UpdateTaskSlaDto,
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() userId: string,
-  ): Promise<void> {
-    await this.taskSlaPolicy.replaceAll(tenantId, dto, userId);
   }
 
   // ACC-313 — the page saves by section; each route merges only its fields.
