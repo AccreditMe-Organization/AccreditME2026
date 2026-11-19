@@ -180,6 +180,7 @@ All are under `TenantController`, `@Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG
 | `POST /tenant/task-sla/reset` | No body. Writes the defaults (§5). | No | 3 |
 
 - **Old `PATCH /tenant/task-sla` stays** through PR 2, so the old screen keeps working while PR 1 deploys. In PR 1 it gains the same lock, key-atomic write and before/after audit, so it is never the weaker path meanwhile. It is removed in PR 3, once nothing calls it.
+  **Removed (18 Nov), as ACC-313's follow-up rather than in PR 3:** the route, `replaceAll()` and `UpdateTaskSlaDto` are gone; the screen saves through `/task-sla/limits`, `/escalation`, `/notices` and `/reset`. `GET /tenant/task-sla` stays.
 - **Two section routes, not one PATCH:** the drawn page has two Saves, and a whole-object PATCH would write the other section's unsaved or stale values.
 - **Answer:** `limits` and `escalation` answer the saved tiers, so the screen shows what was stored.
 

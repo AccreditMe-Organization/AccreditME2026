@@ -19,7 +19,6 @@ describe('Task SLA section routes (ACC-313)', () => {
   const policy = {
     saveLimits: jest.fn().mockResolvedValue(saved),
     saveEscalation: jest.fn().mockResolvedValue(saved),
-    replaceAll: jest.fn().mockResolvedValue(saved),
     history: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
     policy: jest.fn().mockResolvedValue({ tiers: saved, notices: {} }),
     saveNotices: jest.fn().mockResolvedValue({}),
