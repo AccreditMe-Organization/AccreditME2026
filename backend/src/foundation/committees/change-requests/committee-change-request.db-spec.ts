@@ -1316,30 +1316,30 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(await prisma.workflowTemplate.count({ where: { organizationId: org } })).toBe(0);
     });
   });
+  /** The service over a Prisma that counts every query it is asked for. */
+  const countedRequests = () => {
+    const log: string[] = [];
+    const counting = new Proxy(prisma, {
+      get(t, k) {
+        const v = (t as unknown as Record<string | symbol, unknown>)[k];
+        if (k === '$queryRaw') return (...a: unknown[]) => (log.push('$queryRaw'), (v as (...x: unknown[]) => unknown).apply(t, a));
+        if (typeof k === 'string' && !k.startsWith('$') && v && typeof v === 'object') {
+          return new Proxy(v as object, {
+            get(d, m) {
+              const f = (d as Record<string | symbol, unknown>)[m];
+              return typeof f === 'function' ? (...a: unknown[]) => (log.push(`${k}.${String(m)}`), (f as (...x: unknown[]) => unknown).apply(d, a)) : f;
+            },
+          });
+        }
+        return v;
+      },
+    }) as unknown as PrismaService;
+    return { svc: new CommitteeChangeRequestService(counting, workflow, tasks, audit, notifications, new StageRulesService(counting)), log };
+  };
+
   // ── Prompt 85: awaiting-decision costs a non-decider ONE query ──────────────
   describe('awaiting decision — one query for someone who decides nothing (Prompt 85)', () => {
     const DAY = 24 * 60 * 60 * 1000;
-
-    /** The service over a Prisma that counts every query it is asked for. */
-    const countedRequests = () => {
-      const log: string[] = [];
-      const counting = new Proxy(prisma, {
-        get(t, k) {
-          const v = (t as unknown as Record<string | symbol, unknown>)[k];
-          if (k === '$queryRaw') return (...a: unknown[]) => (log.push('$queryRaw'), (v as (...x: unknown[]) => unknown).apply(t, a));
-          if (typeof k === 'string' && !k.startsWith('$') && v && typeof v === 'object') {
-            return new Proxy(v as object, {
-              get(d, m) {
-                const f = (d as Record<string | symbol, unknown>)[m];
-                return typeof f === 'function' ? (...a: unknown[]) => (log.push(`${k}.${String(m)}`), (f as (...x: unknown[]) => unknown).apply(d, a)) : f;
-              },
-            });
-          }
-          return v;
-        },
-      }) as unknown as PrismaService;
-      return { svc: new CommitteeChangeRequestService(counting, workflow, tasks, audit, notifications, new StageRulesService(counting)), log };
-    };
 
     const person = async (w: World, name: string, data: Record<string, unknown> = {}) =>
       (await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-${name}@example.test`, name, status: 'ACTIVE', ...data } })).id;
@@ -1405,6 +1405,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         'cover, not started': await person(w, 'c4'),
         'cover, lapsed': await person(w, 'c5'),
         'substantive, not a cover': await person(w, 'c6'),
+        // ACC-245 PR 2 — a cover in force whose person is deactivated: neither side counts it.
+        'cover, person inactive': await person(w, 'c7', { status: 'INACTIVE' }),
       };
       await cover(w, cases['cover, open-ended']!);
       await cover(w, cases['cover, ends later']!, { validTo: new Date(now.getTime() + DAY) });
@@ -1412,6 +1414,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await cover(w, cases['cover, not started']!, { validFrom: new Date(now.getTime() + DAY) });
       await cover(w, cases['cover, lapsed']!, { validTo: new Date(now.getTime() - 1000) });
       await cover(w, cases['substantive, not a cover']!, { kind: 'SUBSTANTIVE' });
+      await cover(w, cases['cover, person inactive']!);
 
       const seen: Record<string, [boolean, boolean]> = {};
       for (const [name, id] of Object.entries(cases)) {
@@ -1423,6 +1426,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(seen['head holder']).toEqual([true, true]);
       expect(seen['cover, ends later']).toEqual([true, true]);
       expect(seen['cover, lapsed']).toEqual([false, false]);
+      expect(seen['cover, person inactive']).toEqual([false, false]);
     });
 
     itEnforcesTenantIsolation("the one query never counts another organisation's cover, membership or seat", async () => {
@@ -2108,6 +2112,100 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       // Having read the request again, B decides it.
       expect(await outcome(requests.approve(r.id, w.org, { userId: b, permissions: [VIEW] }))).toBe('OK');
       expect(await statusOf(w, r.id)).toBe('under_review');
+    });
+
+    // ── ACC-245 PR 2: the awaiting list, and awaitingDecisionBy, for added review stages ──
+
+    const awaitingIds = async (w: World, viewer: { userId: string; permissions: string[] }) =>
+      (await requests.awaitingDecision(w.org, viewer)).map((x) => x.id);
+
+    it('PR 2: a request in an added stage waits for that stage’s people, named by the stage; not for the chain until it reaches Under review', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      const asLegal = { userId: legal, permissions: [VIEW] };
+      const stage = await addReview(w, 'Legal review', [legal]);
+      const r = await submitted(w);
+
+      expect(await awaitingIds(w, asLegal)).toEqual([r.id]);
+      const [row] = await requests.awaitingDecision(w.org, asLegal);
+      expect(row!.awaitingDecisionBy).toEqual({ kind: 'REVIEW_STAGE', stage: { id: stage.id, nameEn: 'Legal review', nameAr: null } });
+      expect((await requests.getOne(r.id, w.org, w.approver)).awaitingDecisionBy).toEqual(row!.awaitingDecisionBy);
+      // The chain decides only once the reviews are done.
+      expect(await awaitingIds(w, w.approver)).toEqual([]);
+
+      await requests.approve(r.id, w.org, asLegal);
+      expect(await awaitingIds(w, asLegal)).toEqual([]);
+      expect(await awaitingIds(w, w.approver)).toEqual([r.id]);
+    });
+
+    it('PR 2: the list keeps only reviewers who may open the committee, never the requester, and nobody outside the pool', async () => {
+      const w = await world();
+      const [outsider, member] = [await person(w, 'Outsider'), await person(w, 'Member')];
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.committee, userId: member, roleValueId: 'seat-m' } });
+      await addReview(w, 'Legal review', [outsider, member, w.requester.userId]);
+      const r = await submitted(w);
+      // A member reads the committee without committees:view: listed.
+      expect(await awaitingIds(w, { userId: member, permissions: [] })).toEqual([r.id]);
+      // In the pool, but cannot open the committee: not listed (they could not decide it).
+      expect(await awaitingIds(w, { userId: outsider, permissions: [] })).toEqual([]);
+      // The requester, though named on the stage.
+      expect(await awaitingIds(w, w.requester)).toEqual([]);
+      // A reader who is in no pool and no chain.
+      expect(await awaitingIds(w, w.reader)).toEqual([]);
+    });
+
+    it('PR 2: Under review and added stages in one list, oldest submitted first', async () => {
+      const w = await world();
+      // Before any added stage: Under review, the chain (the approver) decides.
+      const first = await submitted(w);
+      // Then an added stage with the approver on it, and a request on the other committee.
+      await addReview(w, 'Quality review', [w.approver.userId]);
+      const second = await requests.create(w.other, { changes: { quorumCount: 7 }, reason: 'r', submit: true } as never, w.org, w.requester);
+      expect(await stageNow(w, first.id)).not.toBe(await stageNow(w, second.id)); // non-vacuity: two kinds of row
+      expect(await awaitingIds(w, w.approver)).toEqual([first.id, second.id]);
+      const rows = await requests.awaitingDecision(w.org, w.approver);
+      expect(rows.map((x) => x.awaitingDecisionBy?.kind)).toEqual(['UNIT_HEAD', 'REVIEW_STAGE']);
+    });
+
+    it('PR 2: a chain decider who refuses in an added stage is told which stage decides', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      const stage = await addReview(w, 'Legal review', [legal]);
+      const r = await submitted(w);
+      const refusal = await requests.approve(r.id, w.org, w.approver).then(
+        () => null,
+        (e: { getResponse?: () => unknown }) => e.getResponse?.() as Record<string, unknown>,
+      );
+      expect(refusal).toMatchObject({
+        code: 'CHANGE_REQUEST_NOT_DECIDER',
+        awaitingDecisionBy: { kind: 'REVIEW_STAGE', stage: { id: stage.id, nameEn: 'Legal review', nameAr: null } },
+      });
+    });
+
+    it('PR 2: someone in no chain, in an organisation with no request in an added stage, still costs exactly ONE query', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      await addReview(w, 'Legal review', [legal]); // a stage exists, but no request stands in it
+      const { svc, log } = countedRequests();
+      expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
+      expect(log).toEqual(['$queryRaw']);
+      // Once a request stands in it, the reader is still not listed (no pool, no chain).
+      await submitted(w);
+      expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
+    });
+
+    it('should NOT return records belonging to a different tenant — the awaiting list’s review stages: another organisation’s request never reaches a reviewer here', async () => {
+      const w = await world();
+      const other = await world();
+      const legal = await person(w, 'Legal');
+      // The same person named on BOTH organisations' added stages (an id from another organisation is refused by the stage save, so the other names its own).
+      await addReview(w, 'Legal review', [legal]);
+      const otherLegal = await person(other, 'Legal');
+      await addReview(other, 'Legal review', [otherLegal]);
+      const theirs = await submitted(other);
+      expect(await awaitingIds(w, { userId: legal, permissions: [VIEW] })).toEqual([]);
+      expect(await awaitingIds(other, { userId: otherLegal, permissions: [VIEW] })).toEqual([theirs.id]);
+      expect((await requests.awaitingDecision(w.org, { userId: otherLegal, permissions: [VIEW] })).length).toBe(0);
     });
 
     it('B2: a review notice goes only to the stage’s people who may open the committee', async () => {
