@@ -32,6 +32,15 @@ export const EMPTY_VALUE = '—';
 
 export type DateInput = string | number | Date | null | undefined;
 
+/** ACC-316 PR 6 — a date and time on a wall clock, as numbers (month 1–12, hour 0–23). */
+export interface WallClock {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}
+
 // Arabic formats as ar-SA, a GCC region whose DEFAULT digits are Arabic-Indic.
 // With numberingSystem pinned the text is identical to plain 'ar' (checked),
 // and the pin is then load-bearing: remove it and the Latin-digits spec fails.
@@ -289,6 +298,45 @@ export class FormatService {
     if (!at) return '';
     const timeZone = this.snapshot().timeZone;
     return `${this.gregorianDate(at, 'en', timeZone)}, ${this.time(at, 'en', timeZone)}`;
+  }
+
+  /**
+   * ACC-316 PR 6 — an instant's date and time on the TENANT's wall clock, as
+   * numbers: what a field editing a start in the tenant's day shows (a
+   * meeting's), so it reads as every display of the same instant does.
+   */
+  wallClock(value: DateInput): WallClock | null {
+    const at = toDate(value);
+    if (!at) return null;
+    const p = this.parts(at, 'en', {
+      timeZone: this.snapshot().timeZone,
+      calendar: 'gregory',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23',
+    });
+    return { year: Number(p.year), month: Number(p.month), day: Number(p.day), hour: Number(p.hour), minute: Number(p.minute) };
+  }
+
+  /**
+   * ACC-316 PR 6 — the instant whose wall clock in the TENANT's zone reads
+   * this date and time: what a typed start means, whatever the browser's zone.
+   * The zone's offset is read at the guess and again at the answer, so a time
+   * near a clock change lands on the right side of it; a time the change skips
+   * moves on by the gap.
+   */
+  instantAt(wall: WallClock): Date {
+    const guess = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute);
+    const offsetAt = (t: number): number => {
+      const w = this.wallClock(new Date(t))!;
+      return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute) - t;
+    };
+    const first = guess - offsetAt(guess);
+    const second = guess - offsetAt(first);
+    return new Date(second);
   }
 
   private gregorianDate(at: Date, language: DisplayLanguage, timeZone: string): string {
