@@ -15,6 +15,7 @@ import {
   findUnitHeadedBy,
   findUnitLeadersAmong,
   findUnitsCoveredBy,
+  findUnitsLedBy,
   findUnitSubtreeIds,
 } from './unit-headship';
 
@@ -166,6 +167,18 @@ describe('unit-headship on a real database (ACC-244)', () => {
       } finally {
         await prisma.user.update({ where: { id: user['coverInactive']! }, data: { status: 'INACTIVE' } });
       }
+    });
+
+    // ACC-245 PR 2 (P203) — the units these people lead, for many at once.
+    it('findUnitsLedBy: a head’s unit and a cover in force count; a deactivated cover and another organisation’s head do not', async () => {
+      const people = [user['deptHead']!, user['coverNow']!, user['coverInactive']!, user['headInB']!, user['plainInWard']!];
+      expect(await findUnitsLedBy(prisma, A, people, NOW)).toEqual([unit['DEPT'], unit['WARD']].sort());
+      // Each alone, so a wrong union cannot pass by luck.
+      expect(await findUnitsLedBy(prisma, A, [user['deptHead']!], NOW)).toEqual([unit['DEPT']]);
+      expect(await findUnitsLedBy(prisma, A, [user['coverNow']!], NOW)).toEqual([unit['WARD']]);
+      expect(await findUnitsLedBy(prisma, A, [user['coverInactive']!, user['headInB']!], NOW)).toEqual([]);
+      // Asked in B, B's head leads B's unit.
+      expect(await findUnitsLedBy(prisma, B, [user['headInB']!], NOW)).toEqual([unit['BUNIT']]);
     });
 
     it('both reasons count, unless one is asked for', async () => {

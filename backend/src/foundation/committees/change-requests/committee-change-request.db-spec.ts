@@ -42,7 +42,7 @@ import { AWAITING_DECISION_CAP, ChangeRequestViewer, CommitteeChangeRequestServi
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
 import * as candidates from './awaiting-decision-candidates';
-import { chainCandidateIds, reviewCandidates } from './awaiting-decision-candidates';
+import { chainCandidates, reviewCandidates } from './awaiting-decision-candidates';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
 import { ChangeRequestDepartureService, PreparedDeparture } from './departure/change-request-departure.service';
 import { UserService } from '../../user/user.service';
@@ -1829,6 +1829,20 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       'workflowStage.findMany',
       'workflowStage.findMany',
     ];
+    /** P203 — a chain page: its candidates, its rows, ONE chain resolution (5). */
+    const CHAIN_PAGE = ['$queryRaw', 'committeeChangeRequest.findMany', 'committee.findMany', 'committeeMember.findMany', '$queryRaw', 'user.findMany', 'orgUnitHeadAssignment.findMany'];
+    /** The gate, two chain pages (the second short, so the last), then the response. */
+    const CHAIN_TWO_PAGES_QUERIES = [
+      '$queryRaw',
+      ...CHAIN_PAGE,
+      ...CHAIN_PAGE,
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'workflowStageRecordAction.findMany',
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'orgUnit.findMany',
+    ];
     const CHAIN_DECIDER_QUERIES = [
       '$queryRaw', // the gate
       '$queryRaw', // the chain arm's candidates
@@ -2304,7 +2318,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const foreign = await rawRequest(other.org, other.committee, other.requester.userId);
       await rawInstance(w.org, a.tpl.id, foreign.id, a.byKey('under_review').id);
 
-      expect(await chainCandidateIds(prisma, w.org, viewerId, AWAITING_DECISION_CAP)).toEqual([plain.id]);
+      expect((await chainCandidates(prisma, w.org, viewerId, null, AWAITING_DECISION_CAP)).map((c) => c.id)).toEqual([plain.id]);
     });
 
     it('should NOT return records belonging to a different tenant — the review arm’s query: each organisation predicate is load-bearing', async () => {
@@ -2356,6 +2370,143 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await addReview(w, 'Legal review', [w.approver.userId]);
       const r = await submitted(w);
       expect(await awaitingIds(w, { userId: w.approver.userId, permissions: [] })).toEqual([r.id]);
+    });
+
+    // ── P203: paging both arms, and each review route end to end ──
+
+    const MINUTE = 60_000;
+    /** A stage naming any `who` entries, after the last review stage. */
+    const addReviewWho = async (w: World, nameEn: string, entries: Record<string, unknown>[]) => {
+      const { tpl } = await shape(w);
+      return templates.addStage(tpl.id, { nameEn, order: 0, who: { mode: 'ANY_ONE', entries } } as never, w.org, w.approver.userId);
+    };
+    /** A committee owned by `orgUnitId`, In force (the world's own lifecycle stage). */
+    const committeeIn = async (w: World, orgUnitId: string, nameEn: string) => {
+      const c = await prisma.committee.create({
+        data: { organizationId: w.org, nameEn, typeValueId: 'type', orgUnitId, quorumCount: 3, meetingFrequency: 'MONTHLY' },
+      });
+      const tpl = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE' } });
+      await prisma.workflowInstance.create({
+        data: { organizationId: w.org, workflowTemplateId: tpl.id, objectType: 'COMMITTEE', objectId: c.id, status: 'IN_PROGRESS', currentStageId: w.stageOf['active'] },
+      });
+      return c.id;
+    };
+    /** A sub-unit of the root with its own head holder (ACTIVE, a head position, primary unit there). */
+    const unitWithHead = async (w: World, nameEn: string) => {
+      const unit = (await prisma.orgUnit.create({ data: { organizationId: w.org, nameEn, code: `${nameEn}-${w.slug}`.slice(0, 20), parentId: w.unit } })).id;
+      const position = (await prisma.orgPosition.create({ data: { organizationId: w.org, nameEn: `${nameEn} head`, grade: 5, isUnitHeadPosition: true } })).id;
+      const head = (
+        await prisma.user.create({
+          data: { organizationId: w.org, email: `${w.slug}-${nameEn}-head@example.test`, name: `${nameEn} head`, status: 'ACTIVE', positionId: position, primaryOrgUnitId: unit },
+        })
+      ).id;
+      return { unit, head };
+    };
+    /** A submitted request on `committeeId`, its submittedAt set `minutesAgo` back so the order is certain. */
+    const submittedOn = async (w: World, committeeId: string, minutesAgo: number) => {
+      const r = await requests.create(committeeId, { changes: { quorumCount: 6 + minutesAgo }, reason: 'r', submit: true } as never, w.org, w.requester);
+      await prisma.committeeChangeRequest.update({ where: { id: r.id }, data: { submittedAt: new Date(Date.now() - minutesAgo * MINUTE) } });
+      return r;
+    };
+    const seat = (w: World, committeeId: string, userId: string) =>
+      prisma.committeeMember.create({ data: { organizationId: w.org, committeeId, userId, roleValueId: 'seat-r' } });
+    /** `userId` is away now, covered by `actingUserId`. */
+    const away = (userId: string, actingUserId: string) =>
+      prisma.user.update({
+        where: { id: userId },
+        data: { outOfOfficeFrom: new Date(Date.now() - 24 * 60 * MINUTE), outOfOfficeTo: new Date(Date.now() + 24 * 60 * MINUTE), actingUserId },
+      });
+    const idsFor = async (svc: CommitteeChangeRequestService, w: World, userId: string, permissions: string[] = []) =>
+      (await svc.awaitingDecision(w.org, { userId, permissions })).map((x) => x.id);
+
+    it('P203: the chain arm pages — a decider whose request sits behind a page of older ones they do not decide still sees it', async () => {
+      const w = await world();
+      const ward = await unitWithHead(w, 'Ward');
+      const wardCommittee = await committeeIn(w, ward.unit, 'Ward committee');
+      // Two older requests the root's heads decide, then the ward head's own.
+      await submittedOn(w, w.committee, 3);
+      await submittedOn(w, w.other, 2);
+      const mine = await submittedOn(w, wardCommittee, 1);
+      const { svc, log } = countedRequests();
+      svc.awaitingPageSize = 2;
+      expect(await idsFor(svc, w, ward.head)).toEqual([mine.id]);
+      expect(log).toEqual(CHAIN_TWO_PAGES_QUERIES);
+    });
+
+    it('P203: a COMMITTEE entry naming the request’s committee: a seat holder there sees it; a seat holder elsewhere does not', async () => {
+      const w = await world();
+      const [holder, elsewhere] = [await person(w, 'Holder'), await person(w, 'Elsewhere')];
+      await seat(w, w.committee, holder);
+      await seat(w, w.other, elsewhere);
+      await addReviewWho(w, 'Seats review', [{ kind: 'COMMITTEE' }]);
+      const r = await submitted(w);
+      const { svc } = countedRequests();
+      expect(await idsFor(svc, w, holder)).toEqual([r.id]);
+      expect(await idsFor(svc, w, elsewhere)).toEqual([]);
+    });
+
+    it('P203: an ORG_UNIT_HEAD entry naming the request’s unit: that unit’s head sees it; the head above it does not', async () => {
+      const w = await world();
+      const ward = await unitWithHead(w, 'Ward');
+      const wardCommittee = await committeeIn(w, ward.unit, 'Ward committee');
+      await addReviewWho(w, 'Head review', [{ kind: 'ORG_UNIT_HEAD' }]);
+      const r = await submittedOn(w, wardCommittee, 1);
+      const { svc } = countedRequests();
+      expect(await idsFor(svc, w, ward.head)).toEqual([r.id]);
+      // The root's head: the record's unit is the ward, and the route never walks up.
+      expect(await idsFor(svc, w, w.approver.userId)).toEqual([]);
+    });
+
+    it('P203: the out-of-office cover of a seat holder, and of the unit’s head, sees it (one hop); someone else does not', async () => {
+      const w = await world();
+      const ward = await unitWithHead(w, 'Ward');
+      const wardCommittee = await committeeIn(w, ward.unit, 'Ward committee');
+      const [holder, seatCover, headCover, other] = [await person(w, 'Holder'), await person(w, 'SeatCover'), await person(w, 'HeadCover'), await person(w, 'Other')];
+      await seat(w, wardCommittee, holder);
+      await away(holder, seatCover);
+      await away(ward.head, headCover);
+      await addReviewWho(w, 'Seats review', [{ kind: 'COMMITTEE' }]);
+      await addReviewWho(w, 'Head review', [{ kind: 'ORG_UNIT_HEAD' }]);
+      const r = await submittedOn(w, wardCommittee, 1); // stands in Seats review
+      const { svc } = countedRequests();
+      expect(await idsFor(svc, w, seatCover, [VIEW])).toEqual([r.id]);
+      expect(await idsFor(svc, w, other, [VIEW])).toEqual([]);
+      expect(await idsFor(svc, w, headCover, [VIEW])).toEqual([]); // not this stage's
+      await requests.approve(r.id, w.org, { userId: seatCover, permissions: [VIEW] }); // on to Head review
+      expect(await idsFor(svc, w, headCover, [VIEW])).toEqual([r.id]);
+      expect(await idsFor(svc, w, other, [VIEW])).toEqual([]);
+    });
+
+    it('P203: a POSITION_IN_UNIT entry: its holder in that unit sees it; the same position in another unit does not', async () => {
+      const w = await world();
+      const ward = await unitWithHead(w, 'Ward');
+      const position = (await prisma.orgPosition.create({ data: { organizationId: w.org, nameEn: 'Legal officer', grade: 3, isUnitHeadPosition: false } })).id;
+      const holder = (
+        await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-lo1@example.test`, name: 'LO 1', status: 'ACTIVE', positionId: position, primaryOrgUnitId: w.unit } })
+      ).id;
+      const inWard = (
+        await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-lo2@example.test`, name: 'LO 2', status: 'ACTIVE', positionId: position, primaryOrgUnitId: ward.unit } })
+      ).id;
+      await addReviewWho(w, 'Legal review', [{ kind: 'POSITION_IN_UNIT', positionId: position, orgUnitId: w.unit }]);
+      const r = await submitted(w);
+      const { svc } = countedRequests();
+      expect(await idsFor(svc, w, holder, [VIEW])).toEqual([r.id]);
+      expect(await idsFor(svc, w, inWard, [VIEW])).toEqual([]);
+    });
+
+    it('P203: the review arm pages — the viewer’s request beyond the first page is still found', async () => {
+      const w = await world();
+      const v = await person(w, 'V');
+      const third = await committeeIn(w, w.unit, 'Third');
+      await seat(w, third, v); // V opens only this committee
+      await addReview(w, 'Legal review', [v]);
+      // Two older requests in V's stage, on committees V cannot open, then V's.
+      await submittedOn(w, w.committee, 3);
+      await submittedOn(w, w.other, 2);
+      const mine = await submittedOn(w, third, 1);
+      const { svc } = countedRequests();
+      svc.awaitingPageSize = 2;
+      expect(await idsFor(svc, w, v)).toEqual([mine.id]);
     });
 
     describe('PR 2 cost: the query counts, pinned (P200)', () => {
