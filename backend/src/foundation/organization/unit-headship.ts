@@ -348,3 +348,31 @@ export async function findUnitLeadersAmong(
   ]);
   return new Set([...heads.map((h) => h.id), ...covers.map((c) => c.userId)]);
 }
+
+/**
+ * ACC-245 PR 2 — the units these people lead NOW: the unit each head holder
+ * heads (headHolderWhere(), their primary unit) and every unit with a cover in
+ * force whose person is one of them and ACTIVE (ACTIVE_COVER_PERSON,
+ * runningActingCoverWhere(now)). The reverse of findUnitLeadersAmong(), with the
+ * same filters, for many people at once. Two queries, run together.
+ */
+export async function findUnitsLedBy(
+  prisma: Pick<PrismaService, 'user' | 'orgUnitHeadAssignment'>,
+  organizationId: string,
+  userIds: readonly string[],
+  now: Date,
+): Promise<string[]> {
+  const people = [...new Set(userIds)];
+  if (people.length === 0) return [];
+  const [heads, covers] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: people }, organizationId, primaryOrgUnitId: { not: null }, ...headHolderWhere() },
+      select: { primaryOrgUnitId: true },
+    }),
+    prisma.orgUnitHeadAssignment.findMany({
+      where: { organizationId, userId: { in: people }, ...ACTIVE_COVER_PERSON, ...runningActingCoverWhere(now) },
+      select: { orgUnitId: true },
+    }),
+  ]);
+  return [...new Set([...heads.flatMap((h) => (h.primaryOrgUnitId ? [h.primaryOrgUnitId] : [])), ...covers.map((c) => c.orgUnitId)])].sort();
+}
