@@ -7946,7 +7946,7 @@ recommendations before Ahmad confirmed them (P163). Each answer is one switch in
 - **How it is recorded.** Per seat:
   - **The membership row:** `leftAt` = the deactivation's time, and `isActive: false`.
   - **One `LEFT` event:** `CommitteeMembershipEvent` with `cause: DEACTIVATION` (a nullable column; null for every change a person makes), `approvedBy` = the person deactivating, and `reason: null`.
-  - **After commit:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`.
+  - **In the same transaction, batched:** one `UPDATE` audit row per seat on the `CommitteeMember`, with `metadata: { cause, userId, committeeId }`, so a rolled-back deactivation leaves no audit row for a seat it did not end (P167).
   - **On the person's own `deactivated` audit row:** `endedCommitteeSeats: n`.
 - **Never blocked.** The ending checks:
   - no stage rule;
@@ -7956,8 +7956,14 @@ recommendations before Ahmad confirmed them (P163). Each answer is one switch in
   Only the deactivation's existing refusals (account owner, last administrator, root unit's head) stop it, and the seats roll back with them.
 - **The hook** (`CommitteeSeatDepartureService`, the ACC-283 PR 2b shape):
   - **`prepare()`:** before the transaction, while the person is ACTIVE. One indexed query, scoped by organisation.
-  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal. It takes the committees' rows FOR UPDATE in one statement, in id order, re-reads the memberships still active (a seat removed by hand meanwhile is skipped), then makes one `updateMany` and one `createMany`.
-  - **`finish()`:** after commit. The audit rows and the notices; it never throws.
+  - **`endSeatsInTx()`:** the transaction's last statement, after the change-request withdrawal (P167):
+    - it re-reads the person's active seats on active committees by `userId`, so a seat added since `prepare()` is ended too;
+    - it takes EVERY committee involved (prepared, or added since) FOR UPDATE in one sorted statement;
+    - under the lock, it skips a committee that is now inactive;
+    - it reads the seats again (a seat removed by hand meanwhile is skipped);
+    - then one `updateMany` and one `createMany` each for the events and the audit rows.
+    - **The Dissolved check stays `prepare()`'s.** A committee that reaches Dissolved inside that window has its seats ended, because re-reading its stage there would take its workflow instance after its row, an edge no other path has.
+  - **`finish()`:** after commit. The officers' notices only; it never throws.
 - **Lock order.** After everything the deactivation already locks, each committee's **row** only, never its workflow instance (no stage rule is read). The other paths that lock these rows:
   - member writes: the instance FOR SHARE, then the row;
   - going live: the instance, then the row FOR SHARE;
@@ -16929,7 +16935,7 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
 
 ---
 
-## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b)
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4)
 
 Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
 built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
@@ -17285,3 +17291,132 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   - on cancel (the reason).
 
   The last two go only to those already invited.
+
+### 18.13 Minutes and review (PR 4)
+
+Plan §3.4–§3.9, §4.1, §4.2. Code: `meeting-minutes-rules.ts` (the rules, one
+home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
+`meeting-review-reminder.service.ts`, `meeting-minutes.controller.ts`.
+
+- **The phase is read from the stage's rules, never a key:**
+  - `approved`: the stage is flagged `MINUTES_FINAL`;
+  - `review`: it allows `suggest_correction` or `apply_suggestions`;
+  - `draft`: it allows `record_minutes` or `record_attendance`;
+  - Planned and Cancelled have none.
+- **Who reads `GET /meetings/:id/minutes` (§4.1):**
+  - whoever records the minutes (`MEETING_RECORDERS`), in any phase;
+  - from `review`: the committee's members (or the unit's own people), Minutes
+    Review's pool, and the approvers (heads above holding `approve_subunits`
+    included);
+  - once `approved`: everyone who may see the meeting.
+
+  Anyone else who sees the meeting gets 403 `MEETING_MINUTES_NOT_OPEN`; anyone
+  who doesn't, the identical 404.
+- **Who writes:** `MEETING_RECORDERS` (else 403 `MEETING_NOT_RECORDER`), and
+  what the stage allows:
+  - attendance: `record_attendance`, from the start time only
+    (`MEETING_NOT_STARTED`);
+  - the minutes, decisions and action items: `record_minutes`;
+  - in Minutes Review:
+    - the minutes and decisions under `apply_suggestions`;
+    - an action's due date under `change_action_dates`;
+    - each write records a `MeetingReviewChange` (`DISCUSSION`, `DECISION` or
+      `ACTION_DATE`).
+- **Lock order:** the instance FOR SHARE, the meeting row FOR UPDATE, then the
+  agenda item FOR UPDATE.
+- **Every minutes write records ONE Meeting audit row** through `minutesAudit()`,
+  with fields and ids, never the text. ACC-322 adds its `aiDraft` there.
+- **Attendance:**
+  - one row (saved on tap) or several;
+  - "Can't attend" shows as `suggested: APOLOGIES` until something is recorded;
+  - the quorum is frozen in `quorumAtAttendance` at the first recording.
+- **The quorum line** counts MEMBERS recorded present. Below the quorum, every
+  decision reads `takenWithoutQuorum`.
+- **Votes:** all three or none (`MEETING_VOTES_PARTIAL`). The sum may not exceed
+  the members present (`MEETING_VOTES_EXCEED_PRESENT`, with `present` and
+  `total`), counted under the meeting row's lock.
+- **An item's discussion is replaced whole** (`PUT …/agenda/:itemId/minutes`).
+- **Action items:**
+  - title, owner (an ACTIVE person of the organisation) and a future due date
+    (`MEETING_ACTION_DUE_IN_PAST`);
+  - an owner is never an outside guest, who has no user;
+  - PR 1's columns make both the owner and the due date required (plan §6a).
+- **Open actions from the last meeting:**
+  - the newest earlier meeting of the same committee or unit whose minutes were
+    approved;
+  - its action items whose task is still open;
+  - a note on each (`PUT …/open-actions/:taskId/note`).
+- **Distribute (`POST /meetings/:id/distribute`, the app's move into Minutes
+  Review):**
+  - only Minutes Draft's pool may press it;
+  - attendance must be recorded for every member and organisation guest
+    (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`), checked inside the move
+    under the meeting row's lock, so nothing is written;
+  - the review date (`reviewBy`, a day after today, default 5 working days) and
+    the round (`reviewRound` + 1) are written with the move (`inTx`);
+  - the members recorded present are told after the commit.
+- **Return (`POST /meetings/:id/return`, the app's move back to Minutes
+  Draft):**
+  - Minutes Review's pool, or whoever records the minutes;
+  - the reason is the entry's comment, and the present members are told;
+  - `reviewBy` is cleared. The round's answers and suggestions stay with it, and
+    the next distribution opens a new round.
+- **Review answers:**
+  - only a member recorded PRESENT answers (`MEETING_NOT_REVIEWER`), while the
+    stage allows `suggest_correction`;
+  - "No corrections" is a `MeetingReviewAnswer`;
+  - a suggestion counts as the member's answer and deletes their "No
+    corrections" in the round;
+  - "No corrections" after suggesting is `MEETING_REVIEW_SUGGESTED`.
+  - Apply and decline are the recorders', under `apply_suggestions`. A declined
+    suggestion's author is told, with the reply.
+- **Approve Minutes is held** by `TRANSITION_PRECONDITIONS` MEETING (a move that
+  enters `MINUTES_FINAL`), in this order:
+  1. the review is open: not every present member answered, and the date has
+     not passed in the organisation's zone (`MEETING_REVIEW_OPEN`, with
+     `waitingFor`);
+  2. an OPEN suggestion (`MEETING_SUGGESTION_OPEN`);
+  3. a draft due now or before (`MEETING_ACTION_PAST_DUE`);
+  4. a draft due after its task's SLA limit, MEDIUM counted from now
+     (`MEETING_ACTION_PAST_SLA_LIMIT`, with `limit`).
+
+  The moves list reads it as `blockedBy` (below).
+- **Entering `MINUTES_FINAL` (`TRANSITION_EFFECTS`):**
+  - every draft becomes a task in the move's transaction: the owner its only
+    assignee, MEDIUM, due when the draft says, its limit the MEDIUM window;
+  - each draft's owner must still be ACTIVE, and the drafts must be as they were
+    prepared; otherwise `MEETING_CHANGED`, with nothing written;
+  - the item is linked (`taskId`), `minutesApprovedAt` / `approvedById` are
+    stamped, and the approval's Meeting audit row is written, all in the move's
+    transaction;
+  - each task is announced after the commit, on its own: one failure is logged
+    and the others still go.
+  - A failed task insert rolls the whole approval back. A second press is
+    refused, and a linked draft is never read again, so no second task.
+- **The reminder:** the `sla-monitor` sweep (`sweepMeetingReviewReminders`). On
+  the working day before the review date (or on it, if missed), it tells the
+  present members who haven't answered:
+  - never on the day the minutes went out (the current stage entry's day, in the
+    organisation's zone);
+  - once per round, by one conditional UPDATE of `reviewRemindedRound`;
+  - a failed send is logged, and stays stamped.
+- **Home:** `GET /meetings/awaiting-me` is self-scoped and needs no permission:
+  - reviews to answer;
+  - invitations not answered before the start;
+  - each part is one SQL read, every filter (the stage's action, the round
+    unanswered, the start) before its cap of 200.
+
+**The engine, for every record type:**
+
+- `TransitionEffectDeps` gained `tasks`, and every part of an effect gets the
+  deps.
+- `TRANSITION_PRECONDITIONS` take `PreconditionServices` (now, the
+  organisation's zone, a task's SLA limit).
+- `GET /workflows/instances/:id/moves` gives each ADVANCE move `blockedBy`: the
+  precondition's refusal, run read-only (`readOnly`, no row lock), for a viewer
+  in the pool, and only for a type with a precondition. A committee's moves
+  carry it too: the same quorum precondition.
+- `WorkflowService.currentStagePool()` lets a module's own endpoint say who may
+  press its APP move.
+- `TaskService.slaLimitFrom()`, and `RecordTaskDraft.dueAt`.
+- `WorkingCalendarService.previousWorkingDay()`.

@@ -1,7 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Prisma } from '../../../../generated/prisma/client';
 import type { PrismaService } from '../../../prisma/prisma.service';
-import type { AuditLogService } from '../../../common/services/audit-log.service';
 import type { LookupService } from '../../lookup/lookup.service';
 import type { NotificationService } from '../../notification/notification.service';
 import { itEnforcesTenantIsolation } from '../../../common/testing/tenant-isolation';
@@ -9,8 +8,8 @@ import { CommitteeSeatDepartureService, SEAT_DEPARTURE_POLICY, type PreparedSeat
 import { departureNoticeText } from './committee-seat-departure-notice';
 
 // ACC-306 — the seat departure's own rules, with the database mocked. The real
-// database proofs (what ends, never blocked, the race, the lock order) are in
-// committee-seat-departure.db-spec.ts.
+// database proofs (what ends, never blocked, the races, the lock order, the
+// rollback) are in committee-seat-departure.db-spec.ts.
 
 const ORG = 'org-a';
 const OTHER_ORG = 'org-b';
@@ -28,20 +27,19 @@ function build() {
     $queryRaw: jest.fn().mockResolvedValue([]),
     committeeMember: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn(), count: jest.fn() },
     committeeMembershipEvent: { createMany: jest.fn() },
+    auditLog: { createMany: jest.fn() },
     user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     userRole: { findMany: jest.fn().mockResolvedValue([]) },
     orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   };
-  const audit = { log: jest.fn().mockResolvedValue(undefined) };
   const lookups = { getValues: jest.fn().mockResolvedValue([]) };
   const notifications = { createInAppMany: jest.fn().mockResolvedValue(0) };
   const service = new CommitteeSeatDepartureService(
     prisma as unknown as PrismaService,
-    audit as unknown as AuditLogService,
     lookups as unknown as LookupService,
     notifications as unknown as NotificationService,
   );
-  return { prisma, audit, lookups, notifications, service };
+  return { prisma, lookups, notifications, service };
 }
 
 const seat = (memberId: string, committeeId: string) => ({
@@ -52,11 +50,20 @@ const seat = (memberId: string, committeeId: string) => ({
   orgUnitId: 'unit-1',
 });
 
-const prepared = (seats: ReturnType<typeof seat>[]): PreparedSeatDeparture => ({
+/** A membership row as endSeatsInTx() reads it under the locks. */
+const row = (id: string, committeeId: string) => ({
+  id,
+  committeeId,
+  roleValueId: 'member',
+  committee: { nameEn: `Committee ${committeeId}`, nameAr: null, orgUnitId: 'unit-1' },
+});
+
+const prepared = (seats: ReturnType<typeof seat>[], keptCommitteeIds: string[] = []): PreparedSeatDeparture => ({
   organizationId: ORG,
   leaverId: 'leaver',
   actorId: 'admin',
   seats,
+  keptCommitteeIds,
   applied: [],
 });
 
@@ -66,12 +73,16 @@ describe('CommitteeSeatDepartureService (ACC-306)', () => {
   });
 
   describe('prepare()', () => {
-    it('reads the leaver’s seats in ONE query', async () => {
+    it('reads the leaver’s seats in ONE query, and keeps a Dissolved roster apart', async () => {
       const { prisma, service } = build();
-      prisma.$queryRaw.mockResolvedValue([seat('m1', 'c1')]);
+      prisma.$queryRaw.mockResolvedValue([
+        { ...seat('m1', 'c1'), dissolved: false },
+        { ...seat('m2', 'c-dissolved'), dissolved: true },
+      ]);
       const p = await service.prepare(ORG, 'leaver', 'admin');
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       expect(p.seats).toEqual([seat('m1', 'c1')]);
+      expect(p.keptCommitteeIds).toEqual(['c-dissolved']);
       expect(p.applied).toEqual([]);
     });
 
@@ -92,47 +103,70 @@ describe('CommitteeSeatDepartureService (ACC-306)', () => {
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('keeps Dissolved rosters only while the policy says so', async () => {
+    it('keeps no roster when the policy says so: a Dissolved committee’s seat ends too', async () => {
       const { prisma, service } = build();
-      await service.prepare(ORG, 'leaver', 'admin');
-      expect(statement(prisma.$queryRaw.mock.calls[0]!).sql).toContain('AND NOT (COALESCE(st."isFinal"');
-      prisma.$queryRaw.mockClear();
       service.policy = { ...SEAT_DEPARTURE_POLICY, keepDissolvedRosters: false };
-      await service.prepare(ORG, 'leaver', 'admin');
-      expect(statement(prisma.$queryRaw.mock.calls[0]!).sql).not.toContain('AND NOT (COALESCE(st."isFinal"');
+      prisma.$queryRaw.mockResolvedValue([{ ...seat('m2', 'c-dissolved'), dissolved: true }]);
+      const p = await service.prepare(ORG, 'leaver', 'admin');
+      expect(p.seats).toEqual([seat('m2', 'c-dissolved')]);
+      expect(p.keptCommitteeIds).toEqual([]);
     });
   });
 
   describe('endSeatsInTx()', () => {
-    it('does nothing for a leaver with no seat', async () => {
+    it('re-reads the leaver’s seats on active committees, scoped by organisation, and locks nothing when there are none', async () => {
       const { prisma, service } = build();
       await service.endSeatsInTx(prisma as never, prepared([]));
+      expect(prisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: { organizationId: ORG, userId: 'leaver', isActive: true, committee: { organizationId: ORG, isActive: true } },
+        select: { committeeId: true },
+      });
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
       expect(prisma.committeeMember.updateMany).not.toHaveBeenCalled();
     });
 
-    it('locks the committees’ rows in ONE statement, in id order, before reading the seats again', async () => {
+    it('locks every committee involved — prepared, or added since — in ONE sorted statement, before reading the seats to end', async () => {
       const { prisma, service } = build();
       const order: string[] = [];
+      prisma.committeeMember.findMany
+        .mockImplementationOnce(async () => (order.push('current'), [{ committeeId: 'c-new' }, { committeeId: 'c-b' }]))
+        .mockImplementationOnce(async () => (order.push('under the lock'), []));
       prisma.$queryRaw.mockImplementation(async () => (order.push('lock'), []));
-      prisma.committeeMember.findMany.mockImplementation(async () => (order.push('re-read'), [{ id: 'm2' }]));
-      await service.endSeatsInTx(prisma as never, prepared([seat('m2', 'c-b'), seat('m1', 'c-a'), seat('m3', 'c-b')]));
-      expect(order.slice(0, 2)).toEqual(['lock', 're-read']);
+      await service.endSeatsInTx(prisma as never, prepared([seat('m2', 'c-b'), seat('m1', 'c-a')]));
+      expect(order).toEqual(['current', 'lock']);
       const lock = statement(prisma.$queryRaw.mock.calls[0]!);
       expect(lock.sql).toContain('FOR UPDATE');
-      expect(lock.values).toEqual(['c-a', 'c-b', ORG]);
+      expect(lock.values).toEqual(['c-a', 'c-b', 'c-new', ORG]);
     });
 
-    it('ends only the seats still active, with one LEFT event each, cause DEACTIVATION', async () => {
+    it('never locks or ends a kept (Dissolved) roster, even for a seat added since prepare()', async () => {
       const { prisma, service } = build();
-      // m1 was removed by hand between prepare() and the lock.
-      prisma.committeeMember.findMany.mockResolvedValue([{ id: 'm2' }]);
-      const p = prepared([seat('m1', 'c1'), seat('m2', 'c2')]);
+      prisma.committeeMember.findMany.mockResolvedValueOnce([{ committeeId: 'c-dissolved' }]);
+      await service.endSeatsInTx(prisma as never, prepared([], ['c-dissolved']));
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.committeeMember.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('skips a committee that is inactive under the lock', async () => {
+      const { prisma, service } = build();
+      prisma.committeeMember.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([row('m2', 'c-live')]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'c-closed', isActive: false },
+        { id: 'c-live', isActive: true },
+      ]);
+      await service.endSeatsInTx(prisma as never, prepared([seat('m1', 'c-closed'), seat('m2', 'c-live')]));
+      expect(prisma.committeeMember.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ where: { organizationId: ORG, userId: 'leaver', isActive: true, committeeId: { in: ['c-live'] } } }),
+      );
+    });
+
+    it('ends the seats read under the locks: one LEFT event and one audit row each, batched', async () => {
+      const { prisma, service } = build();
+      prisma.committeeMember.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([row('m2', 'c2')]);
+      prisma.$queryRaw.mockResolvedValue([{ id: 'c2', isActive: true }]);
+      const p = prepared([seat('m2', 'c2')]);
       await service.endSeatsInTx(prisma as never, p);
 
-      expect(prisma.committeeMember.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: { in: ['m1', 'm2'] }, organizationId: ORG, userId: 'leaver', isActive: true } }),
-      );
       const [update] = prisma.committeeMember.updateMany.mock.calls[0] as [{ where: unknown; data: { leftAt: Date; isActive: boolean } }];
       expect(update.where).toEqual({ id: { in: ['m2'] }, organizationId: ORG, isActive: true });
       expect(update.data.isActive).toBe(false);
@@ -149,39 +183,52 @@ describe('CommitteeSeatDepartureService (ACC-306)', () => {
           effectiveDate: update.data.leftAt,
         }),
       ]);
-      expect(p.applied.map((s) => s.memberId)).toEqual(['m2']);
+      const [audits] = prisma.auditLog.createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
+      expect(audits.data).toEqual([
+        {
+          organizationId: ORG,
+          actorId: 'admin',
+          action: 'UPDATE',
+          objectType: 'CommitteeMember',
+          objectId: 'm2',
+          before: { isActive: true, leftAt: null },
+          after: { isActive: false, leftAt: update.data.leftAt.toISOString() },
+          metadata: { cause: 'DEACTIVATION', userId: 'leaver', committeeId: 'c2' },
+        },
+      ]);
+      expect(p.applied.map((s) => [s.memberId, s.committee.nameEn, s.orgUnitId])).toEqual([['m2', 'Committee c2', 'unit-1']]);
     });
 
     it('writes nothing when every seat was removed meanwhile', async () => {
       const { prisma, service } = build();
-      prisma.committeeMember.findMany.mockResolvedValue([]);
+      prisma.$queryRaw.mockResolvedValue([{ id: 'c1', isActive: true }]);
       await service.endSeatsInTx(prisma as never, prepared([seat('m1', 'c1')]));
       expect(prisma.committeeMember.updateMany).not.toHaveBeenCalled();
       expect(prisma.committeeMembershipEvent.createMany).not.toHaveBeenCalled();
+      expect(prisma.auditLog.createMany).not.toHaveBeenCalled();
+    });
+
+    it('does nothing at all when the policy does not end seats', async () => {
+      const { prisma, service } = build();
+      service.policy = { ...SEAT_DEPARTURE_POLICY, endSeats: false };
+      await service.endSeatsInTx(prisma as never, prepared([seat('m1', 'c1')]));
+      expect(prisma.committeeMember.findMany).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
   });
 
   describe('finish()', () => {
     const applied = (): PreparedSeatDeparture => ({ ...prepared([seat('m1', 'c1')]), applied: [{ ...seat('m1', 'c1'), leftAt: new Date() }] });
 
-    it('writes an audit row per ended seat', async () => {
-      const { audit, service } = build();
-      service.policy = { ...SEAT_DEPARTURE_POLICY, tellOfficers: false };
+    it('writes no audit row: those are written inside the transaction', async () => {
+      const { prisma, service } = build();
       await service.finish(applied());
-      expect(audit.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: ORG,
-          actorId: 'admin',
-          objectType: 'CommitteeMember',
-          objectId: 'm1',
-          metadata: { cause: 'DEACTIVATION', userId: 'leaver', committeeId: 'c1' },
-        }),
-      );
+      expect(prisma.auditLog.createMany).not.toHaveBeenCalled();
     });
 
     it('never throws, and logs the failure by kind with ids only', async () => {
-      const { audit, service } = build();
-      audit.log.mockRejectedValue(new Error('secret detail from the database'));
+      const { lookups, service } = build();
+      lookups.getValues.mockRejectedValue(new Error('secret detail from the database'));
       const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       await expect(service.finish(applied())).resolves.toBeUndefined();
       const logged = String(error.mock.calls[0]?.[0]);

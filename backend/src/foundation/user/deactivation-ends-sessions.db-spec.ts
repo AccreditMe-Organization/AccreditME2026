@@ -88,7 +88,7 @@ describe('Deactivation ends every sign-in, against a real database (ACC-216, CC-
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
     new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
     // ACC-306 — the real seat ending (no seat here unless a test gives one).
-    new CommitteeSeatDepartureService(prisma, audit, new LookupService(prisma, audit), notifications),
+    new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
   );
 
   interface Org {

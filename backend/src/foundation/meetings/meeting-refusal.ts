@@ -39,7 +39,26 @@ export type MeetingRefusalCode =
   | 'MEETING_CLASH_OWNER_REQUIRED'
   | 'MEETING_CLASH_TOO_MANY_TIMES'
   | 'MEETING_AGENDA_TITLE_REQUIRED'
-  | 'MEETING_CLASH_PERSON_NOT_INVITEE';
+  | 'MEETING_CLASH_PERSON_NOT_INVITEE'
+  // ACC-316 PR 4 — attendance, minutes and review.
+  | 'MEETING_NOT_RECORDER'
+  | 'MEETING_NOT_STARTED'
+  | 'MEETING_VOTES_PARTIAL'
+  | 'MEETING_VOTES_EXCEED_PRESENT'
+  | 'MEETING_DECISION_NOT_FOUND'
+  | 'MEETING_DECISION_TEXT_REQUIRED'
+  | 'MEETING_ACTION_NOT_FOUND'
+  | 'MEETING_ACTION_TITLE_REQUIRED'
+  | 'MEETING_ACTION_DUE_IN_PAST'
+  | 'MEETING_OPEN_ACTION_NOT_FOUND'
+  | 'MEETING_ATTENDANCE_INCOMPLETE'
+  | 'MEETING_REVIEW_DATE_INVALID'
+  | 'MEETING_NOT_REVIEWER'
+  | 'MEETING_REVIEW_SUGGESTED'
+  | 'MEETING_SUGGESTION_NOT_FOUND'
+  | 'MEETING_SUGGESTION_DECIDED'
+  | 'MEETING_SUGGESTION_TEXT_REQUIRED'
+  | 'MEETING_MINUTES_NOT_OPEN';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -67,6 +86,24 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_CLASH_TOO_MANY_TIMES: HttpStatus.BAD_REQUEST,
   MEETING_AGENDA_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
   MEETING_CLASH_PERSON_NOT_INVITEE: HttpStatus.BAD_REQUEST,
+  MEETING_NOT_RECORDER: HttpStatus.FORBIDDEN,
+  MEETING_NOT_STARTED: HttpStatus.CONFLICT,
+  MEETING_VOTES_PARTIAL: HttpStatus.BAD_REQUEST,
+  MEETING_VOTES_EXCEED_PRESENT: HttpStatus.BAD_REQUEST,
+  MEETING_DECISION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_DECISION_TEXT_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_ACTION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_ACTION_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_ACTION_DUE_IN_PAST: HttpStatus.BAD_REQUEST,
+  MEETING_OPEN_ACTION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_ATTENDANCE_INCOMPLETE: HttpStatus.CONFLICT,
+  MEETING_REVIEW_DATE_INVALID: HttpStatus.BAD_REQUEST,
+  MEETING_NOT_REVIEWER: HttpStatus.FORBIDDEN,
+  MEETING_REVIEW_SUGGESTED: HttpStatus.CONFLICT,
+  MEETING_SUGGESTION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEETING_SUGGESTION_DECIDED: HttpStatus.CONFLICT,
+  MEETING_SUGGESTION_TEXT_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_MINUTES_NOT_OPEN: HttpStatus.FORBIDDEN,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -95,6 +132,24 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 52 times at once.',
   MEETING_AGENDA_TITLE_REQUIRED: 'Give the agenda item a title.',
   MEETING_CLASH_PERSON_NOT_INVITEE: "Check only the meeting's invitees, or the committee's or unit's members.",
+  MEETING_NOT_RECORDER: "You don't record this meeting's minutes.",
+  MEETING_NOT_STARTED: "Attendance is recorded from the meeting's start time.",
+  MEETING_VOTES_PARTIAL: 'Give all three vote counts, or none.',
+  MEETING_VOTES_EXCEED_PRESENT: 'The votes add up to more than the members present.',
+  MEETING_DECISION_NOT_FOUND: 'Decision not found.',
+  MEETING_DECISION_TEXT_REQUIRED: 'Write the decision.',
+  MEETING_ACTION_NOT_FOUND: 'Action item not found.',
+  MEETING_ACTION_TITLE_REQUIRED: 'Say what the action is.',
+  MEETING_ACTION_DUE_IN_PAST: 'An action item is due in the future.',
+  MEETING_OPEN_ACTION_NOT_FOUND: "This isn't an open action from the last meeting.",
+  MEETING_ATTENDANCE_INCOMPLETE: 'Record attendance for every member and organisation guest first.',
+  MEETING_REVIEW_DATE_INVALID: 'Choose a review date after today.',
+  MEETING_NOT_REVIEWER: 'Only members recorded present review the minutes.',
+  MEETING_REVIEW_SUGGESTED: 'You suggested a correction in this review.',
+  MEETING_SUGGESTION_NOT_FOUND: 'Suggestion not found.',
+  MEETING_SUGGESTION_DECIDED: 'This suggestion was already applied or declined.',
+  MEETING_SUGGESTION_TEXT_REQUIRED: 'Write the correction.',
+  MEETING_MINUTES_NOT_OPEN: "This meeting's minutes aren't open to you yet.",
 };
 
 export class MeetingRefusal extends HttpException {

@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '../../../../generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { AuditLogService } from '../../../common/services/audit-log.service';
 import { STAGE_FLAG } from '../../workflow/record-registry';
 import { LookupService } from '../../lookup/lookup.service';
 import { NotificationService } from '../../notification/notification.service';
@@ -49,27 +48,38 @@ export interface PreparedSeatDeparture {
   organizationId: string;
   leaverId: string;
   actorId: string;
+  /** The seats prepare() found to end. */
   seats: SeatToEnd[];
-  /** What endSeatsInTx() actually ended: a seat removed meanwhile is not here. */
+  /**
+   * The committees prepare() keeps the roster of (Dissolved, plan Q1). Never
+   * ended, even for a seat added after prepare().
+   */
+  keptCommitteeIds: string[];
+  /** What endSeatsInTx() actually ended. */
   applied: EndedSeat[];
 }
 
-type SeatTx = Pick<PrismaService, '$queryRaw' | 'committeeMember' | 'committeeMembershipEvent'>;
+type SeatTx = Pick<PrismaService, '$queryRaw' | 'committeeMember' | 'committeeMembershipEvent' | 'auditLog'>;
+
+type PreparedRow = SeatToEnd & { dissolved: boolean };
 
 /**
  * ACC-306 — when a person is deactivated, every committee seat they hold ends
  * INSIDE the deactivation's transaction (the ACC-283 PR 2b shape, a second time):
  *
  *   prepare()       before the transaction, while the person is still ACTIVE: ONE
- *                   indexed query (CommitteeMember by userId), scoped by organisation;
- *                   nothing else when they hold no seat.
- *   endSeatsInTx()  inside it, LAST: the committees' rows FOR UPDATE in one
- *                   statement, in id order; then the memberships still active,
- *                   ended (leftAt, isActive false), and one LEFT event each with
- *                   cause DEACTIVATION, approved by the person deactivating.
- *   finish()        after commit: an audit row per ended seat, and the officers'
- *                   notices. Never throws: a deactivation that committed never
- *                   answers with an error.
+ *                   indexed query (CommitteeMember by userId), scoped by
+ *                   organisation. It also decides which rosters are kept (Dissolved).
+ *   endSeatsInTx()  inside it, LAST. It re-reads the person's active seats on active
+ *                   committees (a seat added since prepare() is ended too), locks
+ *                   EVERY committee involved FOR UPDATE in one sorted statement,
+ *                   skips one that is now inactive, then reads the seats again under
+ *                   the locks and ends them (leftAt, isActive false): one LEFT event
+ *                   each, cause DEACTIVATION, approved by the person deactivating,
+ *                   and one audit row each, all batched, all rolled back with the
+ *                   deactivation.
+ *   finish()        after commit: the officers' notices only. Never throws: a
+ *                   deactivation that committed never answers with an error.
  *
  * NEVER BLOCKED (plan Q5): no stage rule, no required-seat rule (ACC-286 rule 3),
  * no quorum check. A departure may empty a committee's last Chairman; Setup
@@ -90,21 +100,18 @@ export class CommitteeSeatDepartureService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLog: AuditLogService,
     private readonly lookups: LookupService,
     private readonly notifications: NotificationService,
   ) {}
 
-  /** Before the deactivation's transaction: the seats it will end. */
+  /** Before the deactivation's transaction: the seats it will end, and the rosters it keeps. */
   async prepare(organizationId: string, leaverId: string, actorId: string): Promise<PreparedSeatDeparture> {
-    const prepared: PreparedSeatDeparture = { organizationId, leaverId, actorId, seats: [], applied: [] };
+    const prepared: PreparedSeatDeparture = { organizationId, leaverId, actorId, seats: [], keptCommitteeIds: [], applied: [] };
     if (!this.policy.endSeats) return prepared;
-    const keepDissolved = this.policy.keepDissolvedRosters
-      ? Prisma.sql`AND NOT (COALESCE(st."isFinal", false) AND ${STAGE_FLAG.DISSOLVING} = ANY(COALESCE(st.flags, ARRAY[]::text[])))`
-      : Prisma.empty;
-    prepared.seats = await this.prisma.$queryRaw<SeatToEnd[]>`
+    const rows = await this.prisma.$queryRaw<PreparedRow[]>`
       SELECT cm.id AS "memberId", cm."committeeId", cm."roleValueId", c."orgUnitId",
-             json_build_object('nameEn', c."nameEn", 'nameAr', c."nameAr") AS committee
+             json_build_object('nameEn', c."nameEn", 'nameAr', c."nameAr") AS committee,
+             (COALESCE(st."isFinal", false) AND ${STAGE_FLAG.DISSOLVING} = ANY(COALESCE(st.flags, ARRAY[]::text[]))) AS dissolved
         FROM "CommitteeMember" cm
         JOIN "Committee" c ON c.id = cm."committeeId" AND c."organizationId" = ${organizationId} AND c."isActive"
         LEFT JOIN LATERAL (
@@ -115,44 +122,66 @@ export class CommitteeSeatDepartureService {
            ORDER BY wi."createdAt" DESC
            LIMIT 1) st ON true
        WHERE cm."organizationId" = ${organizationId} AND cm."userId" = ${leaverId} AND cm."isActive"
-         ${keepDissolved}
        ORDER BY cm."committeeId", cm.id`;
+    const kept = (r: PreparedRow) => this.policy.keepDissolvedRosters && r.dissolved;
+    prepared.seats = rows.filter((r) => !kept(r)).map(({ dissolved: _dissolved, ...seat }) => seat);
+    prepared.keptCommitteeIds = [...new Set(rows.filter(kept).map((r) => r.committeeId))];
     return prepared;
   }
 
   /** Inside the caller's transaction, LAST. Records what it ended on `prepared`. */
   async endSeatsInTx(tx: SeatTx, prepared: PreparedSeatDeparture): Promise<void> {
-    if (prepared.seats.length === 0) return;
+    if (!this.policy.endSeats) return;
     const { organizationId, leaverId, actorId } = prepared;
-    const committeeIds = [...new Set(prepared.seats.map((s) => s.committeeId))].sort();
-    // The committees' rows, in id order, in one statement (rows are locked as
-    // the sorted scan returns them). Serialises with every member write and a
-    // going-live transition on these committees (ACC-286).
-    await tx.$queryRaw`
-      SELECT id FROM "Committee"
+    const kept = new Set(prepared.keptCommitteeIds);
+
+    // 1. Which committees the person sits on NOW: the prepared ones, plus any
+    //    seat added between prepare() and this transaction (lane A's note, P167).
+    const current = await tx.committeeMember.findMany({
+      where: { organizationId, userId: leaverId, isActive: true, committee: { organizationId, isActive: true } },
+      select: { committeeId: true },
+    });
+    const committeeIds = [...new Set([...prepared.seats.map((s) => s.committeeId), ...current.map((m) => m.committeeId)])]
+      .filter((id) => !kept.has(id))
+      .sort();
+    if (committeeIds.length === 0) return;
+
+    // 2. Every committee involved, FOR UPDATE, in ONE statement, in id order (rows
+    //    are locked as the sorted scan returns them). Serialises with every member
+    //    write, a committee's deactivation and a going-live transition (ACC-286).
+    //    A committee deactivated before the lock is skipped. The Dissolved check
+    //    stays prepare()'s: a committee that reached Dissolved inside this window
+    //    has its seats ended, because re-reading its stage here would take its
+    //    workflow instance after the committee row, an edge no other path has.
+    const locked = await tx.$queryRaw<{ id: string; isActive: boolean }[]>`
+      SELECT id, "isActive" FROM "Committee"
        WHERE id IN (${Prisma.join(committeeIds)}) AND "organizationId" = ${organizationId}
        ORDER BY id
        FOR UPDATE`;
-    // Re-read under the locks: a seat removed by hand meanwhile is skipped.
-    const still = await tx.committeeMember.findMany({
-      where: { id: { in: prepared.seats.map((s) => s.memberId) }, organizationId, userId: leaverId, isActive: true },
-      select: { id: true },
+    const liveIds = locked.filter((c) => c.isActive).map((c) => c.id);
+    if (liveIds.length === 0) return;
+
+    // 3. The seats to end, read again under the locks: one removed by hand
+    //    meanwhile is not here, one added meanwhile is.
+    const ending = await tx.committeeMember.findMany({
+      where: { organizationId, userId: leaverId, isActive: true, committeeId: { in: liveIds } },
+      select: { id: true, committeeId: true, roleValueId: true, committee: { select: { nameEn: true, nameAr: true, orgUnitId: true } } },
+      orderBy: [{ committeeId: 'asc' }, { id: 'asc' }],
     });
-    if (still.length === 0) return;
-    const stillIds = new Set(still.map((m) => m.id));
+    if (ending.length === 0) return;
+
     const leftAt = new Date();
-    const ending = prepared.seats.filter((s) => stillIds.has(s.memberId));
     // isActive derived STRICTLY from leftAt (ACC-22), as removeMember() writes it.
     await tx.committeeMember.updateMany({
-      where: { id: { in: ending.map((s) => s.memberId) }, organizationId, isActive: true },
+      where: { id: { in: ending.map((m) => m.id) }, organizationId, isActive: true },
       data: { leftAt, isActive: false },
     });
     await tx.committeeMembershipEvent.createMany({
-      data: ending.map((s) => ({
+      data: ending.map((m) => ({
         organizationId,
-        committeeId: s.committeeId,
+        committeeId: m.committeeId,
         userId: leaverId,
-        roleValueId: s.roleValueId,
+        roleValueId: m.roleValueId,
         action: 'LEFT' as const,
         effectiveDate: leftAt,
         reason: null,
@@ -160,26 +189,35 @@ export class CommitteeSeatDepartureService {
         approvedBy: actorId,
       })),
     });
-    prepared.applied = ending.map((s) => ({ ...s, leftAt }));
+    // One audit row per seat, batched, in the same transaction: a deactivation
+    // that rolls back leaves no audit row for a seat it did not end.
+    await tx.auditLog.createMany({
+      data: ending.map((m) => ({
+        organizationId,
+        actorId,
+        action: 'UPDATE' as const,
+        objectType: 'CommitteeMember',
+        objectId: m.id,
+        before: { isActive: true, leftAt: null },
+        after: { isActive: false, leftAt: leftAt.toISOString() },
+        metadata: { cause: 'DEACTIVATION', userId: leaverId, committeeId: m.committeeId },
+      })),
+    });
+    prepared.applied = ending.map((m) => ({
+      memberId: m.id,
+      committeeId: m.committeeId,
+      roleValueId: m.roleValueId,
+      committee: { nameEn: m.committee.nameEn, nameAr: m.committee.nameAr },
+      orgUnitId: m.committee.orgUnitId,
+      leftAt,
+    }));
   }
 
-  /** After commit. Never throws. */
+  /** After commit: the officers' notices. Never throws. */
   async finish(prepared: PreparedSeatDeparture): Promise<void> {
-    if (prepared.applied.length === 0) return;
+    if (prepared.applied.length === 0 || !this.policy.tellOfficers) return;
     try {
-      for (const seat of prepared.applied) {
-        await this.auditLog.log({
-          tenantId: prepared.organizationId,
-          actorId: prepared.actorId,
-          action: 'UPDATE',
-          objectType: 'CommitteeMember',
-          objectId: seat.memberId,
-          before: { isActive: true, leftAt: null },
-          after: { isActive: false, leftAt: seat.leftAt },
-          metadata: { cause: 'DEACTIVATION', userId: prepared.leaverId, committeeId: seat.committeeId },
-        });
-      }
-      if (this.policy.tellOfficers) await this.tellOfficers(prepared);
+      await this.tellOfficers(prepared);
     } catch (err) {
       this.logger.error(
         `Committee seat departure follow-up failed (${errorKind(err)}): organisation ${prepared.organizationId}, user ${prepared.leaverId}.`,

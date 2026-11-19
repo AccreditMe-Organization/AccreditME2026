@@ -98,7 +98,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     // ACC-283 PR 2b — the real departure withdrawal: nobody here has a change request.
     new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
     // ACC-306 — the real seat ending (no seat here unless a test gives one).
-    new CommitteeSeatDepartureService(prisma, audit, new LookupService(prisma, audit), notifications),
+    new CommitteeSeatDepartureService(prisma, new LookupService(prisma, audit), notifications),
   );
 
   interface Org {

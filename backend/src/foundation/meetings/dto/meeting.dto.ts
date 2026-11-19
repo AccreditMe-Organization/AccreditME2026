@@ -351,3 +351,149 @@ export class CheckMeetingClashesDto {
   @Type(() => ClashTimeDto)
   times!: ClashTimeDto[];
 }
+
+// ── ACC-316 PR 4 — attendance, minutes and review ────────────────────────────
+
+export const MEETING_ATTENDANCE = ['PRESENT', 'APOLOGIES', 'ABSENT'] as const;
+
+export class AttendanceRowDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  attendeeId!: string;
+
+  /** Null clears it. */
+  @IsOptional()
+  @IsIn(MEETING_ATTENDANCE)
+  attendance!: (typeof MEETING_ATTENDANCE)[number] | null;
+}
+
+/** One row (saved on tap) or several at once. */
+export class RecordAttendanceDto {
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => AttendanceRowDto)
+  rows!: AttendanceRowDto[];
+}
+
+/** An agenda item's discussion, replaced whole (an AI draft's Accept is one such write, ACC-322). Empty clears it. */
+export class ItemMinutesDto {
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(20000)
+  discussion!: string | null;
+}
+
+export class DecisionDto {
+  // Refused by code when empty (meeting-refusal.ts), never a bare 400.
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  text!: string | null;
+
+  /** All three, or none. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  votesFor?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  votesAgainst?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  votesAbstain?: number | null;
+}
+
+export class CreateActionItemDto {
+  // Refused by code when empty (meeting-refusal.ts), never a bare 400.
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(300)
+  title!: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  ownerUserId!: string;
+
+  @IsISO8601({ strict: true })
+  dueAt!: string;
+}
+
+/** In Minutes Draft any field; in Minutes Review only the due date. */
+export class UpdateActionItemDto {
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(300)
+  title?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  ownerUserId?: string;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  dueAt?: string;
+}
+
+/** A note on an open action from the last meeting. Empty removes it. */
+export class OpenActionNoteDto {
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(2000)
+  note!: string | null;
+}
+
+export class DistributeMinutesDto {
+  /** yyyy-MM-dd, after today; 5 working days ahead when absent. */
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @MaxLength(10)
+  reviewBy?: string;
+}
+
+export class ReturnMinutesDto {
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(2000)
+  reason?: string | null;
+}
+
+export class SuggestCorrectionDto {
+  /** Null for the minutes as a whole. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  agendaItemId?: string | null;
+
+  // Refused by code when empty (meeting-refusal.ts), never a bare 400.
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  text!: string | null;
+}
+
+export class DecideSuggestionDto {
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(2000)
+  reply?: string | null;
+}
