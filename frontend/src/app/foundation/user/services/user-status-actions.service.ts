@@ -94,8 +94,10 @@ export class UserStatusActionsService {
       // the next request), and task.service.ts reassignAllForUser() sends each
       // task back to its pool, to the acting user, or to UNASSIGNED.
       // ACC-306 — and committee-seat-departure.service.ts ends every seat they
-      // hold (never refused for a seat). The seats sentence goes INTO the one
-      // key, as the reactivate roles line does: placement is the translation's.
+      // hold except on a Dissolved committee, whose roster is kept
+      // (SEAT_DEPARTURE_POLICY.keepDissolvedRosters; never refused for a seat).
+      // The seats sentence goes INTO the one key, as the reactivate roles line
+      // does: placement is the translation's.
       message: this.translate.instant('user.deactivateConfirm', {
         seats: this.translate.instant('user.deactivateSeatsNote'),
       }),
