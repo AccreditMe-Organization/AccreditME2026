@@ -6,6 +6,7 @@ import { UserService } from '../user.service';
 import {
   AccessHistoryField,
   AccessHistoryKind,
+  AccessHistorySessionsScope,
   IAccessHistoryActor,
   IAccessHistoryName,
   IAccessHistoryRow,
@@ -100,7 +101,19 @@ const EVENT_KINDS: Readonly<Record<string, AccessHistoryKind>> = {
   mfa_reset: 'TWO_STEP_RESET',
   password_reset_requested: 'PASSWORD_RESET_REQUESTED',
   password_reset: 'PASSWORD_RESET',
+  sessions_ended: 'SESSIONS_ENDED',
 };
+
+const SESSIONS_SCOPES: ReadonlySet<string> = new Set<AccessHistorySessionsScope>(['one', 'others', 'all']);
+
+/** An ending's scope and count, both or neither: a value of another shape is left out, never passed on. */
+function sessionsEnded(metadata: Copy | null): ClassifiedAccessRow {
+  const scope = metadata?.['scope'];
+  const count = metadata?.['count'];
+  if (typeof scope !== 'string' || !SESSIONS_SCOPES.has(scope)) return { kind: 'SESSIONS_ENDED' };
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) return { kind: 'SESSIONS_ENDED' };
+  return { kind: 'SESSIONS_ENDED', sessionsScope: scope as AccessHistorySessionsScope, sessionsCount: count };
+}
 
 export interface AccessRowInput {
   action: string;
@@ -122,6 +135,9 @@ export interface ClassifiedAccessRow {
    * row. Matched to a UserTransferEvent by the service; unmatched, it stays an edit.
    */
   transferCandidate?: { fromUnitId: string | null; toUnitId: string | null };
+  /** SESSIONS_ENDED only, both or neither. */
+  sessionsScope?: AccessHistorySessionsScope;
+  sessionsCount?: number;
 }
 
 /**
@@ -137,6 +153,8 @@ export interface ClassifiedAccessRow {
  *   User UPDATE, event mfa_reset                TWO_STEP_RESET (UserMfaResetService, ACC-164)
  *   User UPDATE, event password_reset_requested PASSWORD_RESET_REQUESTED (ACC-188)
  *   User UPDATE, event password_reset           PASSWORD_RESET (ACC-188)
+ *   User UPDATE, event sessions_ended           SESSIONS_ENDED (UserSessionsService, ACC-216), with its
+ *                                               scope and count when both are of their shapes
  *   User UPDATE, transferPromotionFailed        HEAD_APPOINTMENT_FAILED (transferUser; reason never returned)
  *   User UPDATE, before + after                 PROFILE_EDITED (updateProfile), OUT_OF_OFFICE_CHANGED
  *                                               (updateOutOfOffice: only out-of-office fields), or
@@ -174,6 +192,7 @@ export function classifyAccessRow(row: AccessRowInput): ClassifiedAccessRow {
       return { kind: 'CHANGED' };
   }
 
+  if (event === 'sessions_ended') return sessionsEnded(metadata);
   if (event !== null) return { kind: EVENT_KINDS[event] ?? 'CHANGED' };
   if (metadata?.['transferPromotionFailed'] === true) return { kind: 'HEAD_APPOINTMENT_FAILED' };
 
@@ -393,6 +412,10 @@ export class UserAccessHistoryService {
       if (c.kind === 'ROLE_GRANTED' || c.kind === 'ROLE_REMOVED') {
         row.role = c.roleId ? (roleById.get(c.roleId) ?? null) : null;
         row.viaHeadship = c.viaHeadship ?? false;
+      }
+      if (c.kind === 'SESSIONS_ENDED' && c.sessionsScope !== undefined && c.sessionsCount !== undefined) {
+        row.sessionsScope = c.sessionsScope;
+        row.sessionsCount = c.sessionsCount;
       }
       return row;
     });

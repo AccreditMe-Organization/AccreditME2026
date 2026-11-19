@@ -1100,6 +1100,13 @@
       "editNamed": "Edit {{title}}",
       "deleteNamed": "Delete {{title}}",
       "moved": "“{{title}}” moved to position {{position}} of {{of}}",
+      "reorderNamed": "Reorder task {{position}}: {{title}}",
+      "handleHint": "Space picks it up, the arrow keys move it, Space drops it, Escape cancels.",
+      "pickedUp": "“{{title}}” picked up, position {{position}} of {{of}}",
+      "movingTo": "“{{title}}”, position {{position}} of {{of}}",
+      "droppedUnchanged": "“{{title}}” stays at position {{position}} of {{of}}",
+      "dropCancelled": "Reorder cancelled. “{{title}}” is back at position {{position}} of {{of}}",
+      "orderNotSaved": "The new order couldn’t be saved. The tasks are back in their previous order.",
       "orderChanged": "Someone else changed this list, so it has been reloaded.",
       "delete": {
         "title": "Delete this task?",
@@ -1383,11 +1390,13 @@
     "addMember": "Add Member",
     "approvedBy": "by {{name}}",
     "leftDeactivated": "Left — account deactivated",
+    "historyReason": "Reason:",
+    "historyReasonWithheld": "Reason not shown",
     "changeRoleFor": "Change role for {{name}}",
     "confirmRemoveMember": "Remove {{name}} from this committee?",
     "confirmRemoveMemberMessage": "Their membership ends today and stays in the committee's history.",
     "removeMemberReason": "Reason for removing",
-    "removeMemberReasonHint": "Kept in the committee's membership history.",
+    "removeMemberReasonHint": "Only people who oversee committees, and this committee's Chairman and Secretary, will see this reason.",
     "removeMemberReasonRequired": "Give a reason for removing.",
     "currentStage": "Current Stage",
     "documents": "Documents",
@@ -3162,6 +3171,16 @@
       }
     },
     "user": {
+      "accessHistory": {
+        "sessionsEndedOthers": {
+          "one": "Signed out of other devices: {{count}} device",
+          "other": "Signed out of other devices: {{count}} devices"
+        },
+        "sessionsEndedAll": {
+          "one": "Signed out everywhere: {{count}} device",
+          "other": "Signed out everywhere: {{count}} devices"
+        }
+      },
       "tasksReassigned": {
         "one": "{{count}} task reassigned",
         "other": "{{count}} tasks reassigned"
@@ -4038,6 +4057,8 @@
         "passwordResetRequested": "Password reset link sent",
         "passwordReset": "Password reset",
         "signedInAs": "AccreditMe support signed in as this person",
+        "sessionsEndedOne": "Signed out of one device",
+        "sessionsEnded": "Signed out of devices",
         "changed": "Changed"
       }
     },

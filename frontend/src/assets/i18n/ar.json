@@ -1100,6 +1100,13 @@
       "editNamed": "تعديل «{{title}}»",
       "deleteNamed": "حذف «{{title}}»",
       "moved": "نُقلت «{{title}}» إلى الموضع {{position}} من {{of}}",
+      "reorderNamed": "إعادة ترتيب المهمة {{position}}: {{title}}",
+      "handleHint": "المسافة لالتقاطها، ومفتاحا الأسهم لتحريكها، والمسافة لإفلاتها، وEscape للإلغاء.",
+      "pickedUp": "التُقطت «{{title}}»، الموضع {{position}} من {{of}}",
+      "movingTo": "«{{title}}»، الموضع {{position}} من {{of}}",
+      "droppedUnchanged": "بقيت «{{title}}» في الموضع {{position}} من {{of}}",
+      "dropCancelled": "أُلغيت إعادة الترتيب. عادت «{{title}}» إلى الموضع {{position}} من {{of}}",
+      "orderNotSaved": "تعذّر حفظ الترتيب الجديد. عادت المهام إلى ترتيبها السابق.",
       "orderChanged": "غيّر شخص آخر هذه القائمة، فأُعيد تحميلها.",
       "delete": {
         "title": "حذف هذه المهمة؟",
@@ -1383,11 +1390,13 @@
     "addMember": "إضافة عضو",
     "approvedBy": "بواسطة {{name}}",
     "leftDeactivated": "مغادرة — إلغاء تفعيل الحساب",
+    "historyReason": "السبب:",
+    "historyReasonWithheld": "السبب غير معروض",
     "changeRoleFor": "تغيير دور {{name}}",
     "confirmRemoveMember": "إزالة {{name}} من هذه اللجنة؟",
     "confirmRemoveMemberMessage": "تنتهي العضوية اليوم وتبقى في سجل اللجنة.",
     "removeMemberReason": "سبب الإزالة",
-    "removeMemberReasonHint": "يُحفظ السبب في سجل عضوية اللجنة.",
+    "removeMemberReasonHint": "لن يرى هذا السبب إلا من يشرف على اللجان، ورئيس هذه اللجنة وأمينها.",
     "removeMemberReasonRequired": "سبب الإزالة مطلوب.",
     "currentStage": "المرحلة الحالية",
     "documents": "المستندات",
@@ -3374,6 +3383,24 @@
       }
     },
     "user": {
+      "accessHistory": {
+        "sessionsEndedOthers": {
+          "zero": "تسجيل الخروج من الأجهزة الأخرى: لا أجهزة",
+          "one": "تسجيل الخروج من الأجهزة الأخرى: جهاز واحد",
+          "two": "تسجيل الخروج من الأجهزة الأخرى: جهازان",
+          "few": "تسجيل الخروج من الأجهزة الأخرى: {{count}} أجهزة",
+          "many": "تسجيل الخروج من الأجهزة الأخرى: {{count}} جهازًا",
+          "other": "تسجيل الخروج من الأجهزة الأخرى: {{count}} جهاز"
+        },
+        "sessionsEndedAll": {
+          "zero": "تسجيل الخروج من كل الأجهزة: لا أجهزة",
+          "one": "تسجيل الخروج من كل الأجهزة: جهاز واحد",
+          "two": "تسجيل الخروج من كل الأجهزة: جهازان",
+          "few": "تسجيل الخروج من كل الأجهزة: {{count}} أجهزة",
+          "many": "تسجيل الخروج من كل الأجهزة: {{count}} جهازًا",
+          "other": "تسجيل الخروج من كل الأجهزة: {{count}} جهاز"
+        }
+      },
       "tasksReassigned": {
         "zero": "لم تتم إعادة تعيين أي مهمة",
         "one": "تمت إعادة تعيين مهمة واحدة",
@@ -4694,6 +4721,8 @@
         "passwordResetRequested": "إرسال رابط إعادة تعيين كلمة المرور",
         "passwordReset": "إعادة تعيين كلمة المرور",
         "signedInAs": "دخول دعم AccreditMe بحساب هذا الشخص",
+        "sessionsEndedOne": "تسجيل الخروج من جهاز واحد",
+        "sessionsEnded": "تسجيل الخروج من الأجهزة",
         "changed": "تغيير"
       }
     },

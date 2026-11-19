@@ -3082,6 +3082,46 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
     re-reads the template, which is ACC-55's trap.
   - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
     focus moves to the row's other arrow.
+  - **ACC-212 — and a drag handle on each row** (the drawing's ⣿, a 22 × 26
+    button named "Reorder task n: title"), through Angular CDK drag-drop:
+    - **Pointer:** drag the row by its handle. The preview stays inside the
+      list (`cdkDragPreviewContainer="parent"`), so it inherits the page's
+      direction in Arabic.
+    - **Keyboard, on the same handle:** Space lifts the row, ↑ / ↓ move it
+      (shown, not saved), Space or Enter drops it, and Escape (or focus
+      leaving the handle) puts it back. While a row is lifted, the arrows,
+      Edit and Delete wait.
+    - **Announced** in the arrows' live line: picked up (the position only),
+      each position, the drop, a cancel. The keys are described by a hint
+      (`aria-describedby`) only while nothing is lifted, so they are never read
+      twice. Focus stays on the row's handle.
+    - **A lifted row is put back** when the stage or `canManage` changes.
+    - **Saving:** both paths use the same order endpoint as the arrows, and
+      the new order shows at once.
+      - A failed save puts the rows back and says so ("The new order
+        couldn't be saved…").
+      - A refusal says what the arrows say for every code
+        (`plainWorkflowRefusalKey`).
+      - `STAGE_TASK_ORDER_MISMATCH` re-reads the list, as the arrows do.
+        Focus waits for the re-read, then goes to the moved row's handle, or
+        the list, or the section; never the page body.
+    - **The ↑ / ↓ buttons stay.**
+    - **`am-drag-handle`** (`shared/components/drag-handle/`) is the handle,
+      with the dragged row's states (`am-drag-row`, `am-drag-row--lifted`, the
+      CDK preview and placeholder). It is unencapsulated, like `am-capped-panel`,
+      because it styles the caller's row; the next sortable list reuses it.
+      Keyboard pick-up stays with the list, which knows the order.
+      - **No literal sizes.** The handle box is `--am-drag-handle-inline` /
+        `-block` (22 × 26, from the Stage Tasks drawing).
+      - **Disabled** is the disabled-control border, not a fade.
+      - **The placeholder** is a dashed slot.
+      - **No slide animation** (no drawing gives a duration).
+      - **The preview's class is doubled.** The caller's row rule ties with it
+        on specificity, and whichever stylesheet loads last would win the
+        bottom border.
+    - **Specs:** `stage-task-list.drag.spec.ts` and
+      `stage-task-list.layout.spec.ts` (the panel at 962, 1122, 793 and 332
+      px, both languages). Mutation-checked.
 - **`StageTaskDefinitionFormComponent`** is the two-step dialog.
   - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
   - The other routes are one or two selects.
@@ -7745,6 +7785,64 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
 - **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
+- **The reason in Membership history (ACC-301):**
+  - The committee page's Membership history panel shows the reason on a LEFT
+    row with no `cause` (a person's removal). See all shows it too.
+  - It is read from the history response (`reason`); there is no second read.
+  - **Who reads it (Ahmad, 19 Nov):** overseers and the committee's officers
+    only, decided on the server in ONE place, `mayReadMembershipReasons()`
+    (`committees/membership-reason-readers.ts`):
+    - a `committees:view` holder (no query);
+    - this committee's ACTIVE Chairman or Secretary (their seats found by the
+      lookup KEYS, `OFFICER_SEAT_KEYS`, never a label), one indexed query;
+    - a head or acting cover in force whose oversight covers the committee (the
+      existing `overseesCommittee()` clause), asked only when the first two said
+      no.
+    - **Anyone else who may read the history** (its other members) gets each row
+      with `reason: null` and `reasonWithheld: true`, and the screen says
+      "Reason not shown" / «السبب غير معروض». The screen only renders what it
+      gets.
+    - Decided once per read, never per row.
+    - `CommitteesService.listMembershipEvents()` is deleted: no route called it,
+      and it returned every reason unfiltered.
+    - The Remove dialog says who will read it: "Only people who oversee
+      committees, and this committee's Chairman and Secretary, will see this
+      reason."
+    - Spec: `membership-reason-readers.db-spec.ts` (real Postgres):
+      - a member gets null;
+      - the Chairman, the Secretary, a `committees:view` holder and the unit
+        head with oversight read it;
+      - an inactive Chairman does not;
+      - an acting cover in force reads it; an ended cover and an INACTIVE head
+        (both plain members) do not;
+      - oversight from a parent unit reads a sub-unit committee's reason;
+      - a Chairman seat renamed through an override still counts (key, not
+        label);
+      - another organisation's reason reaches nobody.
+      Mutation-checked.
+  - **Where it goes:**
+    - **Panel:** on line 2, after the change and a separator, labelled
+      "Reason:" / «السبب:». The change keeps up to 55% of the line and the
+      reason takes the rest; each is cut with an ellipsis and keeps its whole
+      text in a tooltip.
+    - **Why not a third line:** the panel's rows are a fixed two lines
+      (`am-capped-panel`), and a third line would push the fifth row out of the
+      body.
+    - **See all:** under the change, in the same cell, and it WRAPS (never cut),
+      so keyboard and touch readers get all of it.
+    - **Direction:** the reason is in a `bdi dir="auto"`, so an Arabic reason in
+      English (or the reverse, or mixed) keeps its own direction.
+  - **When nothing extra shows:**
+    - a removal from before ACC-298 (no reason): no separator, no "—";
+    - a seat the app ended (any `cause`, ACC-306): said from its cause, never
+      from a stored reason;
+    - a JOINED row.
+  - **Search:** See all's search matches the reason.
+  - **Measured** at 1280 (the page's 988px content column, one of three panel
+    columns, 321px wide) in both languages, with a long reason beside a long
+    seat: body 294 / 328, rows 52 / 58, and the reason on one cut line 122px
+    wide (`committee-membership-history-panel.layout.spec.ts`).
+  - Mutation-checked.
 
 ### 3.21.3 Telling a committee after a member is transferred (ACC-297)
 
@@ -14523,9 +14621,9 @@ under the `users` prefix): what was changed about a person, and by whom, newest 
 - **The gate**, checked before any read, with no query (§1.9 clause a): yourself, or `users:view` (`GET /users/:id`'s rule). The refusal is a 403 "Required permission: users:view", the same for a real colleague and an invented id. Another organisation's person is the identical 404 ("User not found"). No `@Permissions()` on the route. `take` is 1–50 (default 5), `skip` ≥ 0; anything else is a 400.
 - **The rows are stored AuditLog rows, one paged source** (`accessHistoryWhere()`), scoped by organisation: objectType `User` with objectId = the person (the `[objectType, objectId]` index), and objectType `UserRole` whose `metadata.userId` is the person. **Role grants and removals are written against the ROLE** (`objectId` = roleId, `role.service.ts`), so `objectType User` alone would never show them. LOGIN and LOGOUT are left out (not changes; the Sessions panel will hold sign-ins), from the rows and the count. So `total` is exact and Load more never repeats or skips.
 - **A transfer appears once.** `transferUser()` writes an audit row AND a `UserTransferEvent`. The audit row is the one listed; an edit that moved the unit or position is matched to its event (same actor, same source and destination unit, within 10 minutes, nearest; `matchTransfers()`) and read as TRANSFERRED with the units, the position taken and the head appointment (NONE, DONE, FAILED). Unmatched, it stays a profile edit (an invited person's first placement). The failed head appointment's own audit row is listed as HEAD_APPOINTMENT_FAILED; its error text is never returned.
-- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
+- **Every action, mapped** (`classifyAccessRow()`): User CREATE → INVITED; DELETE with `invitation_revoked` → INVITATION_REVOKED; UPDATE with `metadata.event` `invitation_accepted`, `deactivated`, `reactivated`, `mfa_enabled`, `mfa_disabled`, `mfa_reset`, `password_reset_requested`, `password_reset` → their kinds; `sessions_ended` → SESSIONS_ENDED, with its `scope` and `count` when both are of their shapes; UPDATE with before and after → PROFILE_EDITED (or OUT_OF_OFFICE_CHANGED when only out-of-office fields differ, or TRANSFERRED); IMPERSONATE_START → SIGNED_IN_AS; UserRole CREATE / DELETE → ROLE_GRANTED / ROLE_REMOVED (`viaHeadship` for a head-position grant). **Anything else is CHANGED, never dropped.**
 - **Never returned: `before`, `after`, `metadata`.** They hold a whole User row (its invitation token included), a revoked invitation's email and an error message. The server reads them for the kind and, for an edit, which of nine fields differ (`name`, `language`, `calendar`, `position`, `unit`, `manager`, `actingUnit`, `outOfOffice`, `cover`), compared only where both copies hold the key. Never their values.
-- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, or `transfer` (`from`, `to`, `position`, `headAppointment`).
+- **Each row returns:** `id` (`audit:<id>`), `at`, `kind`, `actor`, and by kind `fields`, `role` + `viaHeadship`, `transfer` (`from`, `to`, `position`, `headAppointment`), or `sessionsScope` + `sessionsCount` (SESSIONS_ENDED: `one`, `others` or `all`, and a whole number of zero or more; both or neither, neither when either stored value is not of its shape, and the screen then says it without them).
 - **The actor** is `{ id, name }` while a person of this organisation, deactivated included (they did it). It is null with no actorId (the system), or when the id is not a person here: a platform administrator signing in as the person (IMPERSONATE_START names them), or a deleted account. An impersonated write is stored under the impersonated person with no marker (Open / Deferred, ACC-99), so it cannot be told apart.
 - **A role is named only with `roles:view`** (`GET /users/:userId/roles`'s gate); without it the row says a role was granted, and no role is read.
 - **Cost:** at most 8 queries per page (the person; the page and its count; actors, roles and transfer events, each only when needed; units and positions only for a transfer), every one scoped by organisation. Nothing on the per-request path.
@@ -14563,8 +14661,10 @@ Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is "Signed-in de
   `sessions_ended` security email (a failed email never fails the sign-out).
 - **Audit** (every ending): `UPDATE` / `User` / the person, `metadata: { event:
   'sessions_ended', scope: 'one' | 'others' | 'all', count }`. No address, device or
-  token. Part 2's access history (#323) reads it as "Changed" until a SESSIONS_ENDED
-  kind is added there.
+  token. Part 2's access history reads it as SESSIONS_ENDED: "Signed out of one
+  device", "Signed out of other devices: {count} devices" or "Signed out
+  everywhere: {count} devices" (counted, every Arabic category), and "Signed out of
+  devices" when the scope or count could not be read.
 - **`users:manage_sessions`**: grantable, seeded to Organization Administrator only,
   in Users' "Account access" group. Existing organisations get it from
   `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`

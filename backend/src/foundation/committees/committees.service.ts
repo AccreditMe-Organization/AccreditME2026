@@ -29,7 +29,6 @@ import {
   ICommitteeDetail,
   ICommitteeListItem,
   ICommitteeMember,
-  ICommitteeMembershipEvent,
   ICommitteeSeatActions,
   ICommitteeStageRules,
 } from './interfaces/committee.interface';
@@ -478,20 +477,6 @@ export class CommitteesService {
     return this.prisma.committeeMember.findMany({
       where: { committeeId, organizationId, isActive: true },
       orderBy: { joinedAt: 'asc' },
-    });
-  }
-
-  async listMembershipEvents(
-    committeeId: string,
-    organizationId: string,
-    viewer: CommitteeViewer,
-  ): Promise<ICommitteeMembershipEvent[]> {
-    // ACC-281 — a member sees all of their committee's details, history included (Ahmad, 7 Nov).
-    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
-    await this.getCommitteeById(committeeId, organizationId);
-    return this.prisma.committeeMembershipEvent.findMany({
-      where: { committeeId, organizationId },
-      orderBy: { effectiveDate: 'desc' },
     });
   }
 

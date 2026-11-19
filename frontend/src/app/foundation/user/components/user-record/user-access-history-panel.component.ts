@@ -156,6 +156,7 @@ export class UserAccessHistoryPanelComponent implements OnInit, OnDestroy {
       t: (key, params) => this.translate.instant(key, params),
       bilingual: (en, ar) => this.language.bilingual(en, ar),
       dateTime: (value) => this.format.dateTime(value),
+      count: (key, n) => this.format.count(key, n),
       viewerId: this.auth.currentUser()?.id ?? null,
     };
   });
