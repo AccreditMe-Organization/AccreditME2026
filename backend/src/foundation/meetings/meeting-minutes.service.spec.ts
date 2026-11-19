@@ -36,6 +36,7 @@ describe('MeetingMinutesService and MeetingReviewService — tenant scoping (ACC
       meetingReviewAnswer: { findMany: jest.fn(async () => []) },
       meetingSuggestion: { findMany: jest.fn(async () => []) },
       $transaction: jest.fn(),
+      $queryRaw: jest.fn(async () => []),
     } as unknown as PrismaService;
     const stageRules = { stageRulesFor: jest.fn(async () => new Map()) } as unknown as StageRulesService;
     const minutes = new MeetingMinutesService(prisma, visibility, stageRules, {} as WorkflowService, {} as WorkingCalendarService);
@@ -66,12 +67,15 @@ describe('MeetingMinutesService and MeetingReviewService — tenant scoping (ACC
   });
 
   itEnforcesTenantIsolation("Home's meeting rows are read in the caller's organisation only", async () => {
-    const { review, attendees } = build();
+    const { review, prisma } = build();
     await review.awaitingMe(ORG_A, 'user-a');
-    for (const [args] of attendees.findMany.mock.calls as unknown as [{ where: { organizationId: string; meeting: { organizationId: string } } }][]) {
-      expect(args.where.organizationId).toBe(ORG_A);
-      expect(args.where.meeting.organizationId).toBe(ORG_A);
+    const calls = (prisma.$queryRaw as unknown as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      // Every bound value of both reads: the caller's organisation, never another.
+      const bound = JSON.stringify(call.slice(1));
+      expect(bound).toContain(ORG_A);
+      expect(bound).not.toContain(ORG_B);
     }
-    expect(attendees.findMany).toHaveBeenCalledTimes(2);
   });
 });

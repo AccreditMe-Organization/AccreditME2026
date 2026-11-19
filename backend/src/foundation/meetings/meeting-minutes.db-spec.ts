@@ -54,6 +54,10 @@ import { MeetingMinutesService } from './meeting-minutes.service';
 import { MeetingReviewService } from './meeting-review.service';
 import { MeetingReviewReminderService } from './meeting-review-reminder.service';
 import type { MeetingViewer } from './meeting-access';
+import { draftActionItems, reviewers, unrecordedAttendance } from './meeting-minutes-rules';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { STAGE_FLAG } from '../workflow/record-registry';
+import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffects } from '../workflow/transition-effects';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -465,9 +469,16 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
   });
 
   describe('the reminder and Home', () => {
-    it('reminds the members who have not answered once per round, on the working day before the date', async () => {
+    it('never reminds on the day the minutes went out; then once per round, on the working day before the date', async () => {
       const m = await inReview(a);
       await review.noCorrections(m.id, a.orgId, as(a, 'chair'));
+      const tzToday = new Intl.DateTimeFormat('en-CA', { timeZone: await calendar.getEffectiveTimeZone(a.orgId) }).format(new Date());
+      await prisma.meeting.update({ where: { id: m.id }, data: { reviewBy: new Date(`${await calendar.addWorkingDays(tzToday, 1, a.orgId)}T00:00:00.000Z`) } });
+      // Distributed today: the Distribute notice has just told them.
+      await reminders.sweep();
+      expect(notices.filter((n) => n.titleEn === 'The minutes review closes soon')).toEqual([]);
+      // As if distributed two days ago.
+      await prisma.workflowInstanceStage.updateMany({ where: { workflowInstanceId: m.instanceId, exitedAt: null }, data: { enteredAt: new Date(Date.now() - 2 * DAY) } });
       const tz = await calendar.getEffectiveTimeZone(a.orgId);
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
       // The review date: the next working day, so today is the day before it.
@@ -497,6 +508,187 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       expect((await review.awaitingMe(a.orgId, a.people['member']!)).review.map((r) => r.meetingId)).not.toContain(m.id);
       // Another organisation's rows never appear.
       expect((await review.awaitingMe(b.orgId, a.people['member']!)).review).toEqual([]);
+    });
+  });
+
+  describe('review findings (Prompt 165)', () => {
+    /** A meeting in review, everyone answered, with one draft action due inside its SLA limit. */
+    const readyToApprove = async (w: World) => {
+      const m = await inReview(w);
+      for (const name of ['chair', 'secretary', 'member']) await review.noCorrections(m.id, w.orgId, as(w, name));
+      const limit = await tasks.slaLimitFrom(new Date(), 'MEDIUM', w.orgId);
+      const draft = await prisma.meetingActionItem.create({
+        data: { organizationId: w.orgId, meetingId: m.id, agendaItemId: m.itemId, title: 'Re-audit 4B', ownerUserId: w.people['member']!, dueAt: new Date(limit.getTime() - 3_600_000) },
+      });
+      return { ...m, draftId: draft.id };
+    };
+    const tasksOf = (meetingId: string) => prisma.task.count({ where: { sourceType: 'MEETING', sourceId: meetingId } });
+    const effectCtx = (w: World, meetingId: string) => ({
+      objectType: 'MEETING' as const,
+      objectId: meetingId,
+      organizationId: w.orgId,
+      actorId: w.people['chair']!,
+      kind: 'ADVANCE' as const,
+      fromStageFlags: [],
+      toStageFlags: [STAGE_FLAG.MINUTES_FINAL],
+      comment: null,
+    });
+    const deps = { prisma, notifications, calendar, tasks };
+
+    it("every minutes and review write refuses another organisation's meeting, and writes nothing", async () => {
+      const m = await meetingAt(a, 'minutes_draft');
+      const before = await prisma.auditLog.count({ where: { objectId: m.id } });
+      const other = as(b, 'secretary', [MEETINGS_PERMISSIONS.VIEW]);
+      const soon = new Date(Date.now() + DAY).toISOString();
+      const row = await prisma.meetingAttendee.findFirstOrThrow({ where: { meetingId: m.id } });
+      for (const call of [
+        () => minutes.recordAttendance(m.id, { rows: [{ attendeeId: row.id, attendance: 'PRESENT' }] }, b.orgId, other),
+        () => minutes.setItemMinutes(m.id, m.itemId, { discussion: 'x' }, b.orgId, other),
+        () => minutes.addDecision(m.id, m.itemId, { text: 'x' }, b.orgId, other),
+        () => minutes.addActionItem(m.id, m.itemId, { title: 'x', ownerUserId: b.people['member']!, dueAt: soon }, b.orgId, other),
+        () => minutes.setOpenActionNote(m.id, 'task', { note: 'x' }, b.orgId, other),
+        () => review.distribute(m.id, {}, b.orgId, other),
+        () => review.returnForCorrection(m.id, {}, b.orgId, other),
+        () => review.noCorrections(m.id, b.orgId, other),
+        () => review.suggest(m.id, { text: 'x' }, b.orgId, other),
+        () => review.decideSuggestion(m.id, 'suggestion', 'DECLINED', {}, b.orgId, other),
+      ]) {
+        expect(await code(call())).toBe(404);
+      }
+      expect(await prisma.auditLog.count({ where: { objectId: m.id } })).toBe(before);
+      expect(await stageKey(m.id)).toBe('minutes_draft');
+    });
+
+    itEnforcesTenantIsolation('the raw-SQL minutes reads return nothing for another organisation', async () => {
+      const m = await readyToApprove(a);
+      await prisma.meetingAttendee.updateMany({ where: { meetingId: m.id, kind: 'ORG_GUEST' }, data: { attendance: null } });
+      // Each has rows in its own organisation (non-vacuity) and none in another.
+      expect(await draftActionItems(prisma, m.id, a.orgId)).toHaveLength(1);
+      expect(await unrecordedAttendance(prisma, m.id, a.orgId)).toHaveLength(1);
+      expect(await reviewers(prisma, m.id, a.orgId, 1)).toHaveLength(3);
+      expect(await draftActionItems(prisma, m.id, b.orgId)).toEqual([]);
+      expect(await unrecordedAttendance(prisma, m.id, b.orgId)).toEqual([]);
+      expect(await reviewers(prisma, m.id, b.orgId, 1)).toEqual([]);
+    });
+
+    it('a task insert that fails rolls the whole approval back: the stage stays, no task, no taskId', async () => {
+      const m = await readyToApprove(a);
+      const failing = Object.create(tasks) as TaskService;
+      failing.insertPrepared = async () => {
+        throw new Error('insert failed');
+      };
+      const failingWorkflow = new WorkflowService(
+        prisma,
+        audit,
+        labels,
+        visibility,
+        calendar,
+        notifications,
+        failing,
+        { add: async () => undefined } as never,
+        new StageTaskDefinitionService(prisma, audit, tasks),
+        new StagePoolService(prisma),
+      );
+      await expect(failingWorkflow.triggerTransition(m.instanceId, { transitionId: (await approveMove(m.instanceId)).id }, a.orgId, a.people['chair']!, [])).rejects.toThrow(
+        'insert failed',
+      );
+      expect(await stageKey(m.id)).toBe('minutes_review');
+      expect(await tasksOf(m.id)).toBe(0);
+      expect((await prisma.meetingActionItem.findFirstOrThrow({ where: { id: m.draftId } })).taskId).toBeNull();
+      expect((await prisma.meeting.findFirstOrThrow({ where: { id: m.id } })).minutesApprovedAt).toBeNull();
+    });
+
+    it('a draft changed, or its owner deactivated, between prepare and apply is MEETING_CHANGED, and nothing is written', async () => {
+      const m = await readyToApprove(a);
+      const run = async () => {
+        const prepared = await prepareTransitionEffects(deps, effectCtx(a, m.id));
+        return { prepared };
+      };
+      const apply = (prepared: Awaited<ReturnType<typeof prepareTransitionEffects>>) =>
+        prisma.$transaction(async (tx) => {
+          await applyTransitionEffects(tx as never, prepared);
+        });
+
+      const changed = await run();
+      await prisma.meetingActionItem.update({ where: { id: m.draftId }, data: { title: 'Re-audit 6A' } });
+      expect(await code(apply(changed.prepared))).toBe('MEETING_CHANGED');
+
+      const deactivated = await run();
+      await prisma.user.update({ where: { id: a.people['member']! }, data: { status: 'INACTIVE' } });
+      try {
+        expect(await code(apply(deactivated.prepared))).toBe('MEETING_CHANGED');
+      } finally {
+        await prisma.user.update({ where: { id: a.people['member']! }, data: { status: 'ACTIVE' } });
+      }
+      expect(await tasksOf(m.id)).toBe(0);
+      expect((await prisma.meeting.findFirstOrThrow({ where: { id: m.id } })).minutesApprovedAt).toBeNull();
+    });
+
+    it('creates no second task: a second press is refused, and running the effect again finds no draft', async () => {
+      const m = await readyToApprove(a);
+      const moveId = (await approveMove(m.instanceId)).id;
+      await workflow.triggerTransition(m.instanceId, { transitionId: moveId }, a.orgId, a.people['chair']!, []);
+      expect(await tasksOf(m.id)).toBe(1);
+      expect(await code(workflow.triggerTransition(m.instanceId, { transitionId: moveId }, a.orgId, a.people['chair']!, []))).not.toBe('OK');
+      // A retry of the effect itself: the draft is linked, so there is nothing to make.
+      const again = await prepareTransitionEffects(deps, effectCtx(a, m.id));
+      await prisma.$transaction((tx) => applyTransitionEffects(tx as never, again));
+      expect(await tasksOf(m.id)).toBe(1);
+    });
+
+    it("the approval's audit row commits with it, and one failed task notice doesn't stop the others", async () => {
+      const m = await readyToApprove(a);
+      await prisma.meetingActionItem.create({
+        data: { organizationId: a.orgId, meetingId: m.id, agendaItemId: m.itemId, title: 'Second', ownerUserId: a.people['secretary']!, dueAt: (await prisma.meetingActionItem.findFirstOrThrow({ where: { id: m.draftId } })).dueAt },
+      });
+      const announced: string[] = [];
+      let calls = 0;
+      const flaky = Object.create(tasks) as TaskService;
+      flaky.announceCreated = async (task) => {
+        calls += 1;
+        if (calls === 1) throw new Error('notice failed');
+        announced.push(task.id);
+      };
+      const prepared = await prepareTransitionEffects({ ...deps, tasks: flaky }, effectCtx(a, m.id));
+      await prisma.$transaction((tx) => applyTransitionEffects(tx as never, prepared));
+      await finishTransitionEffects(prepared);
+      expect(calls).toBe(2);
+      expect(announced).toHaveLength(1);
+      const row = await prisma.auditLog.findFirstOrThrow({ where: { objectId: m.id, objectType: 'Meeting', after: { path: ['minutesApproved'], equals: true } } });
+      expect((row.after as { tasksCreated: string[] }).tasksCreated).toHaveLength(2);
+    });
+
+    it("the moves list's \"Why?\" takes no lock on the meeting row", async () => {
+      const m = await inReview(a);
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const locker = prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${m.id} FOR UPDATE`;
+        await held;
+      }, { timeout: 20_000 });
+      try {
+        await new Promise((r) => setTimeout(r, 200));
+        const answered = await Promise.race([
+          workflow.getMovesForViewer(m.instanceId, a.orgId, [], a.people['chair']!).then(() => 'answered'),
+          new Promise((r) => setTimeout(() => r('blocked'), 5_000)),
+        ]);
+        expect(answered).toBe('answered');
+      } finally {
+        release();
+        await locker;
+      }
+    });
+
+    it("Home lists only reviews in a stage that takes them: approved minutes don't appear", async () => {
+      const m = await readyToApprove(a);
+      await prisma.meetingReviewAnswer.deleteMany({ where: { meetingId: m.id, userId: a.people['member']! } });
+      expect((await review.awaitingMe(a.orgId, a.people['member']!)).review.map((r) => r.meetingId)).toContain(m.id);
+      await workflow.triggerTransition(m.instanceId, { transitionId: (await approveMove(m.instanceId)).id }, a.orgId, a.people['chair']!, []).catch(() => undefined);
+      await prisma.meetingReviewAnswer.deleteMany({ where: { meetingId: m.id } });
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: a.orgId, objectType: 'MEETING', isDefault: true } });
+      const approved = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'minutes_approved' } });
+      await prisma.workflowInstance.update({ where: { id: m.instanceId }, data: { currentStageId: approved.id } });
+      expect((await review.awaitingMe(a.orgId, a.people['member']!)).review.map((r) => r.meetingId)).not.toContain(m.id);
     });
   });
 
