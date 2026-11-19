@@ -1,6 +1,6 @@
 # ACC-245 — Added review stages in committee change requests (plan)
 
-Status: **DECIDED (19 Nov), PR 1 BUILT** — see §10 for the decisions and §11 for what PR 1 built.
+Status: **DECIDED (19 Nov), PR 1 BUILT**. §10 says who decided what; §11 says what PR 1 built.
 
 Plan written on `feature/acc-245-plan` (dev `a398ea5`, PR #370, closed unmerged); it merges with PR 1 (`feature/acc-245-review-stages`).
 
@@ -324,17 +324,17 @@ PR 1 deploys before PR 2 reads its shape. The engine change is behaviour-neutral
 **Q7. The order itself: option B in §3.1 (reviews before the chain's decision), or the ticket's literal A (after it)**
 - **Recommend B:** only the chain applies a change.
 
-## 10. Decided (Ahmad, 19 Nov)
+## 10. Decided (19 Nov)
 
-**The order is option B:** Draft → [added stages, each decided by its own pool, never the requester] → Under review (the chain decides and applies) → Approved. The chain decides LAST and is the only thing that applies a change. (An earlier note placed added stages "between Under review and Approved"; that was a slip, corrected here.)
+**Ahmad decided:** organisations may add review stages, and the order is **option B (Q7)**: Draft → [added stages, each decided by its own pool, never the requester] → Under review (the chain decides and applies) → Approved. The chain decides LAST and is the only thing that applies a change. (An earlier note placed added stages "between Under review and Approved"; that was a slip, corrected here.)
 
-- **Q1 (a):** Approve now skips added stages and applies at once.
-- **Q2 (a):** a stage nobody is on waits; the requester can withdraw, and an admin can fix the pool.
-- **Q3 (a):** committee members may be reviewers; only the requester is excluded.
-- **Q4 (a):** a pool may name the request's committee's seats and its owning unit's head.
-- **Q5 (a):** Submit again after a Return goes to the first review stage.
-- **Q6 (a):** no reordering; remove and add again, while unused.
-- **Q7:** option B.
+**Taken as recommended by lane B, not Ahmad's decisions; he can change any of them:**
+- **Q1 (a) (lane B, as recommended):** Approve now skips added stages and applies at once.
+- **Q2 (a) (lane B, as recommended):** a stage nobody can decide waits; the requester can withdraw, and an admin can fix the pool.
+- **Q3 (a) (lane B, as recommended):** committee members may be reviewers; only the requester is excluded.
+- **Q4 (a) (lane B, as recommended):** a pool may name the request's committee's seats and its owning unit's head.
+- **Q5 (a) (lane B, as recommended):** Submit again after a Return goes to the first review stage.
+- **Q6 (a) (lane B, as recommended):** no reordering; remove and add again, while unused.
 
 ## 11. As built (PR 1)
 
@@ -343,7 +343,11 @@ PR 1 holds the engine (§4) and the service rules its real-database specs needed
 - **The API.** `POST /workflow-templates/:id/stages` on the protected template takes names, description, SLA, escalation, `who`, and `reviewAfterStageId` (Draft's id or a review stage's; omitted: after the last). Anything else a stage carries is `ADD_STAGE`. At most 9 review stages (`REVIEW_STAGE_LIMIT`); a position that is not Draft or a review stage of this template is `REVIEW_STAGE_POSITION`. One place: `foundation/workflow/review-stages.ts`.
 - **"Any one of them" only, in this version** (`REVIEW_STAGE_ANY_ONE`, on add and on a `who` edit). ALL and COMMITTEE_VOTE stay for a later PR: the request's Approve is a single app move, not a vote.
 - **The template read** marks each added stage `reviewStage: true`, with `editableFields` (the protected set plus `who`).
-- **The record comes first (ACC-282).** A pool member who cannot open the committee (`committees:view` or membership) gets the 404 a missing request gets, before anything moves.
+- **The record comes first (ACC-282).** A pool member who cannot open the committee (`committees:view`, an active seat, or oversight as a head or cover in force: the committee read rule) gets the 404 a missing request gets, before anything moves. **So such a member cannot decide:** a stage whose pool has nobody who can open the committee waits, exactly like Q2's empty pool, and the requester can withdraw.
+- **Notices name the committee only to readers.** The "to review" notice goes only to the pool members who may open the committee (`committeeReadersAmong()`, one batch: the role query, the seat query, then the owning unit's chain of heads and covers).
+- **A decision is made in the stage it was admitted for.** Approve, Return and Reject re-read the request's current stage under the instance lock and refuse with `CHANGE_REQUEST_CHANGED` if it moved since the decider was admitted. Without it, a second member of R1's pool could move the request out of R2.
+- **The CREATOR kind is refused on an added stage** (`REVIEW_STAGE_NO_CREATOR`): the requester is taken out of every pool, so it would name nobody.
+- **Lock order.** Add: the template, then the open records standing in the re-pointed stages, then the moves. Remove: the template, then those records, then the stage row, then `STAGE_IN_USE` again (a request that was entering the stage is counted, never met by the RESTRICT key). Locking the stage row before the records deadlocks with a request entering it, which holds its instance lock and key-share-locks the stage row; a spec proved it. The engine takes the instance lock and never the template's, so neither path holds something the engine needs while waiting on something the engine holds.
 - **`applyMove` re-reads the move's target under the instance lock**, so a move prepared before a re-point is refused (`TRANSITION_NOT_AVAILABLE`).
 - **The record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee and that committee's owning unit (Q4).
-- **Left for PR 2:** the awaiting-decision lists (`mayDecideAnyChangeRequest` and the SQL key filter) still read Under review only, and `awaitingDecisionBy` is null in an added stage. **PR 3:** the screens, and the app-move texts for re-pointed moves.
+- **KNOWN GAP until PR 2:** the awaiting-decision lists (`mayDecideAnyChangeRequest` and the SQL key filter) still read Under review only, so a request in an added stage is missing from its reviewers' lists, and `awaitingDecisionBy` is null there. Accepted because no screen can add a stage before PR 3. **PR 3:** the screens, and the app-move texts for re-pointed moves.

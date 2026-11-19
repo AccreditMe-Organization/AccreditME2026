@@ -6941,10 +6941,13 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
 - **Adding one** (`POST /workflow-templates/:id/stages`, `reviewAfterStageId`)
   creates the stage and its moves and re-points the forward move into its place
   (both Submit moves when it follows Draft). **Removing an unused one**
-  re-points past it and deletes its moves and people; a used one is
-  `STAGE_IN_USE`, a keyed one `REMOVE_STAGE`. One transaction: the template
-  lock, then the open records in the re-pointed stages, then the moves.
-  `review-stages.ts` is the one place.
+  re-points past it and deletes its moves and people. One that any request has
+  entered is `STAGE_IN_USE` and can only be renamed; a keyed one is
+  `REMOVE_STAGE`. Locks: the template, then the open records in the re-pointed
+  stages, then the moves (add) or the stage row and a second in-use count
+  (remove). Never the stage row before the records: a request entering it holds
+  its instance lock and key-share-locks the stage row. `review-stages.ts` is the
+  one place.
 - **Limits in this version:** at most 9 (`REVIEW_STAGE_LIMIT`); "any one of
   them" only (`REVIEW_STAGE_ANY_ONE`); only names, description, deadline,
   escalation and `who` may be set or changed (the template read's
@@ -6953,8 +6956,14 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   current stage's single APP ADVANCE. Submit and an added stage's Approve use
   it. `applyMove` re-reads a move's target under the instance lock, so a move
   prepared before a re-point is `TRANSITION_NOT_AVAILABLE`.
-- **Deciding in an added stage:** the record first (ACC-282: `committees:view`
-  or membership, else the 404), then the pool; the requester gets
+- **Deciding in an added stage:** the record first (ACC-282: the committee
+  read rule, else the 404), then the pool. **A pool member who cannot open the
+  committee cannot decide**, so a stage with nobody who can waits, like an
+  empty pool. The decision re-reads the request's stage under the instance
+  lock: moved since the decider was admitted is `CHANGE_REQUEST_CHANGED`. The
+  "to review" notice goes only to pool members who may open the committee
+  (`committeeReadersAmong()`, batched). The CREATOR kind is refused on an added
+  stage (`REVIEW_STAGE_NO_CREATOR`). The requester gets
   `CHANGE_REQUEST_OWN_DECISION`, a reader outside the pool (the chain
   included) `CHANGE_REQUEST_NOT_DECIDER`. The pool is read in one batch per
   page (`reviewDecisions`). Return and Reject work as in Under review; Submit
@@ -6963,13 +6972,18 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   applies.
 - **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
   and its owning unit.
-- **Not yet:** the awaiting-decision lists read Under review only, and
-  `awaitingDecisionBy` is null in an added stage (PR 2); the screens (PR 3).
+- **Known gap until PR 2:** the awaiting-decision lists read Under review
+  only, and `awaitingDecisionBy` is null in an added stage. The screens are
+  PR 3.
 - **Real-database spec:** the "added review stages (ACC-245)" block of
-  `committee-change-request.db-spec.ts`, 10 tests. Mutation-checked: dropping
-  the target re-read, the record-first check, the requester's exclusion, the
-  Returned re-point, the re-point on remove, Approve now's skip or the
-  any-one rule, or applying on an added stage's Approve, each turns it red.
+  `committee-change-request.db-spec.ts`, 16 tests, two of them concurrent (an
+  add while a Submit moves, a remove while a request enters the stage).
+  Mutation-checked, 16 mutations, each red: the target re-read, the
+  record-first check, the requester's exclusion, the Returned re-point, the
+  re-point on remove, Approve now's skip, the any-one rule, applying on an
+  added stage's Approve, the stage re-check on Approve, Return and Reject, the
+  notice filter, the CREATOR refusal, the second in-use count, the remove lock
+  order, and the add's record locks.
 - **No migration.**
 
 ### 3.19 Who sees a task — one rule, keys per record type (ACC-244)

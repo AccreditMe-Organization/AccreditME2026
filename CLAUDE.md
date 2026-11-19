@@ -5280,9 +5280,16 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   (`triggerSystemAdvance()`), and `applyMove` re-reads its target under the
   instance lock.
 - **THE RECORD COMES FIRST** (ACC-282): a pool member who cannot open the
-  committee gets the 404 before anything moves.
-- **Approve now skips added stages; a stage nobody is on waits; Submit after a
-  Return starts at the first added stage; committee members may review.**
+  committee gets the 404 before anything moves, and is not sent the notice. A
+  decision re-reads the request's stage under the instance lock
+  (`CHANGE_REQUEST_CHANGED` if it moved).
+- **Lock order: the template, the records, then the moves or the stage row.**
+  Never the stage row before the records: it deadlocks with a request entering
+  the stage.
+- **Ahmad decided option B, and that organisations may add stages.** Taken as
+  recommended by lane B, open to change: Approve now skips added stages; a
+  stage nobody can decide waits; Submit after a Return starts at the first
+  added stage; committee members may review; no reordering.
 - **No migration.** The awaiting-decision lists are PR 2; the screens PR 3.
 
 ## Open / Deferred Items
