@@ -2548,6 +2548,39 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect((await read()).canAdd).toBe(true);
     });
 
+    it('3a P209: a review stage inserted in the middle with an explicit afterStageId: the stages and `after` follow that order', async () => {
+      const w = await world();
+      const reviewer = await person(w, 'Reviewer');
+      const first = await addReview(w, 'First', [reviewer]);
+      const second = await addReview(w, 'Second', [reviewer]);
+      const middle = await addReview(w, 'Middle', [reviewer], first.id);
+      const s = await shape(w);
+      expect(s.review.map((r) => r.nameEn)).toEqual(['First', 'Middle', 'Second']);
+      const orders = [s.byKey('draft').order, ...s.review.map((r) => r.order), s.byKey('under_review').order];
+      expect(orders).toEqual([...orders].sort((x, y) => x - y)); // strictly in order
+      expect(new Set(orders).size).toBe(orders.length);
+      const rs = (await templates.getTemplateById(s.tpl.id, w.org)).reviewStages!;
+      expect(rs.after.map((x) => x.id)).toEqual([s.byKey('draft').id, first.id, middle.id, second.id]);
+      // The forward moves follow too.
+      expect(s.advanceFrom(first.id)).toEqual([middle.id]);
+      expect(s.advanceFrom(middle.id)).toEqual([second.id]);
+    });
+
+    it('3a P209: the read and the save agree when a seeded stage is missing — canAdd false, and the add refused ADD_STAGE', async () => {
+      const w = await world();
+      const reviewer = await person(w, 'Reviewer');
+      const s = await shape(w);
+      expect((await templates.getTemplateById(s.tpl.id, w.org)).reviewStages!.canAdd).toBe(true); // non-vacuity
+      // Returned no longer carries its seeded key (only a direct write can do this).
+      await prisma.workflowStage.update({ where: { id: s.byKey('returned').id }, data: { key: 'returned-moved' } });
+      expect((await templates.getTemplateById(s.tpl.id, w.org)).reviewStages!.canAdd).toBe(false);
+      const refused = await addReview(w, 'Legal review', [reviewer]).then(
+        () => null,
+        (e: { getResponse?: () => Record<string, unknown> }) => e.getResponse?.() ?? null,
+      );
+      expect(refused).toMatchObject({ code: 'WORKFLOW_TEMPLATE_PROTECTED', edit: 'ADD_STAGE' });
+    });
+
     it('3a G1: reviewStages is absent on every other template', async () => {
       const w = await world();
       const committeeTemplate = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE' } });
