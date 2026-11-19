@@ -1624,6 +1624,21 @@ them together with their resolver.
        - **Add a guest has no "Presents item" field.** A presenter is set from
          the agenda item's own Presenter field, which also adds a person found
          by name as a guest; the agenda row names who presents.
+     - **After lane B's review (P198) and the design thread's (P199):**
+       - **No silent lost update:** an edit sends only the fields changed; a
+         reorder sends the order seen (`expectedItemIds`) and is refused
+         `MEETING_AGENDA_CHANGED` (409) when the agenda moved meanwhile. Two
+         people changing the same field is ACC-323.
+       - **Reload, never Retry,** for the three "agenda is stale" refusals, in
+         the panel and the item dialog; a failed re-read says so, with Retry.
+       - **Keyboard reorder keeps focus** (`aria-disabled` while saving).
+       - **The presenter search** needs `may.manageGuests`.
+       - **`instantAt()`** tries the offsets a day either side, so a repeated
+         time east of UTC is its first occurrence (Berlin's spec found it).
+       - **Invitee rows say a status** («حضور», «اعتذار»), and P199's Arabic
+         wording.
+       - **No seeded meeting type adds a standing item**; standing items come
+         only from a series' own standing agenda.
 7. **PR 7: screens, part 2.**
    - Attendance (tablet), minutes, votes, action item drafts, open actions, the
      review banner and suggestions, the Review card, Approve and Return, Home's

@@ -17409,6 +17409,10 @@ answer reads its deadline's clock after the locks.
   - `MEETING_AGENDA_TITLE_REQUIRED` 400;
   - `MEETING_AGENDA_ITEM_NOT_FOUND` 404;
   - `MEETING_AGENDA_ORDER_MISMATCH` 400;
+  - `MEETING_AGENDA_CHANGED` 409 (PR 7, P198): the order sent with
+    `expectedItemIds`, the order the person reordered FROM, is not the agenda's
+    order now (another reorder, an item added or removed meanwhile). Compared
+    under the agenda's locks; nothing moves. A db-spec races two reorders.
   - `MEETING_PRESENTER_NOT_FOUND` 404.
 - **"Open actions from the last meeting"** reads the previous meeting's action
   items. That arrives with the minutes (PR 4).
@@ -17787,8 +17791,19 @@ routes of §18.10.
 - **Each row:** its place, title, "Presenter · seat · n min", its papers
   (`am-meeting-file-list`) and, for a scheduler, Edit.
 - **Reorder:** drag by the handle, or the handle's ArrowUp / ArrowDown. Either
-  sends the whole order (`PUT …/agenda/order`); the new place is said aloud
-  (`aria-live`), and a refusal is said from its code.
+  sends the whole order with the order seen (`PUT …/agenda/order`,
+  `expectedItemIds`); the new place is said aloud (`aria-live`), and a refusal
+  is said from its code. While a move saves, the handle is `aria-disabled`,
+  never disabled, so it keeps focus and its keys are ignored; after the move,
+  focus is put back on the moved item's handle.
+- **Reload, never Retry:** `MEETING_AGENDA_ITEM_NOT_FOUND`,
+  `MEETING_AGENDA_ORDER_MISMATCH` and `MEETING_AGENDA_CHANGED`
+  (`meetingNeedsReload()`) show "Reload the meeting", in the panel's line and in
+  the item dialog in Save's place; it closes the dialog and runs the page's
+  `load()`.
+- **A re-read that fails** after a write (the invitees after an agenda change,
+  the files after a paper or attachment) is said in the panel's line, with
+  Retry for that read.
 - **`canManage`** is the read's `may.manageAgenda`. Without it the panel is
   read-only: no Add item, no Edit, no handle, no paper buttons. Absent, never
   disabled.
@@ -17798,7 +17813,11 @@ routes of §18.10.
 
 - **Presenter** lists the invitees (sent as `attendeeId`), or a person found by
   name through the guest candidates (sent as `userId`, so the server adds them
-  as a guest, §18.10); a line under the field says so.
+  as a guest, §18.10); a line under the field says so. The search is offered
+  only with `may.manageGuests`, since it adds a guest.
+- **An edit sends only the fields the person changed** (P198), so it never
+  writes back someone else's newer value for a field left alone. Save with
+  nothing changed sends nothing. Two people changing the SAME field is ACC-323.
 - **Duration** is 5 to 120 minutes, or Not set.
 - **Remove item** (editing only) asks first, and says the item's papers go to
   the recycle bin.
@@ -17819,7 +17838,9 @@ may manage the agenda or attachments exist.
 - **The answer** is three buttons with `aria-pressed`; the plain answer line
   shows only once answering has closed. The note box is filled from
   `myAnswer.note` when the page loads.
-- **The invitees' summary** reads "Members: …". Each row ends with its answer,
+- **The invitees' summary** reads "Members: …". Each row ends with its answer
+  as a status (`meeting.invitees.attending` / `cantAttend`: «حضور», «اعتذار»;
+  the answer buttons keep «سأحضر» and «لا يمكنني الحضور»),
   the note under it, and a scheduler's remove is a muted icon named "Remove
   {{name}}".
 - **The panel's See all** opens `/meetings?committeeId=` or `?orgUnitId=`, the
@@ -17829,7 +17850,10 @@ may manage the agenda or attachments exist.
 
 **The tenant's wall clock, a skipped hour:** `FormatService.instantAt()` reads
 a time a clock change repeats as its first occurrence, and a time it skips as
-the same moment one hour later (02:30 on 8 Mar 2026 in New York is 03:30). The
+the same moment one hour later (02:30 on 8 Mar 2026 in New York, or on 29 Mar
+2026 in Berlin, is 03:30). Its two candidates take the zone's offset a day
+before and a day after, so both sides of a change are tried east and west of
+UTC (P198: east of UTC, a repeated time had read as its second occurrence). The
 earliest day Schedule and Reschedule offer is read again each time they open.
 
 **The dialog**, measured under the 420px cap at 1280 and 390, in both
