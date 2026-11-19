@@ -4686,7 +4686,9 @@ decisions (10 Nov): `backend/Plans/step-284-vote-on-advance.md`. Briefly:
   - ACC-294 PR A took it out of the client, the API (a sent value is the
     whitelist's 400), the read, the audit, the seed and the screens, and kept
     the column (`@ignore`);
-  - ACC-294 PR B drops the column. Never roll Railway back past PR A;
+  - ACC-294 PR B drops the column (migration
+    `20261119094215_acc294_drop_is_approval_path`). Never roll Railway back
+    past PR A;
   - do not read it again.
 - **No backfill.** The migration runs in the pre-deploy step, never before.
 

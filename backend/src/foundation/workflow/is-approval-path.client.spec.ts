@@ -11,8 +11,10 @@ import * as Prisma from '../../../generated/prisma/internal/prismaNamespaceBrows
  * PR A takes it out of the generated client (@ignore, no migration). That is what
  * makes PR B's drop safe while PR A's container serves: a client that knows a
  * column names it in every findMany, findFirst and returning write, and fails with
- * P2022 once it is gone (ACC-278's two-deploy shape). The column stays in the
- * database until PR B, so the code before PR A keeps working against it.
+ * P2022 once it is gone (ACC-278's two-deploy shape).
+ *
+ * PR B (migration 20261119094215_acc294_drop_is_approval_path) drops it from the
+ * schema and the database. Declaring it again turns these tests red.
  */
 
 const schema = readFileSync(join(__dirname, '..', '..', '..', 'prisma', 'schema.prisma'), 'utf8');
@@ -33,7 +35,9 @@ describe('ACC-294 — isApprovalPath', () => {
     expect(Object.keys(Prisma.WorkflowTransitionScalarFieldEnum)).not.toContain('isApprovalPath');
   });
 
-  it('is still in the schema, @ignore, so the database keeps it until PR B (PR A: no migration)', () => {
-    expect(modelBody('WorkflowTransition')).toMatch(/^\s+isApprovalPath\s+Boolean\s+@default\(false\)\s+@ignore\s*$/m);
+  it('is gone from the schema (PR B)', () => {
+    // Non-vacuity: the same check finds a field that stays.
+    expect(modelBody('WorkflowTransition')).toMatch(/^\s+kind\s+\S+/m);
+    expect(modelBody('WorkflowTransition')).not.toMatch(/^\s+isApprovalPath\s+\S+/m);
   });
 });
