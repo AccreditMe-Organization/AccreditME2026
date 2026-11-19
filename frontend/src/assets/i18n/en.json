@@ -4847,9 +4847,9 @@
     },
     "cancel": {
       "title": "Cancel this meeting?",
-      "lead": "It stays in the committee's list as Cancelled, with your reason. Everyone invited is told.",
+      "lead": "It stays in the list as Cancelled, with your reason. Everyone invited is told.",
       "hint": "Sent to invitees with the cancellation",
-      "confirm": "Cancel meeting",
+      "confirm": "Cancel Meeting",
       "keep": "Keep meeting"
     },
     "issue": {
@@ -4884,7 +4884,9 @@
       "placeHint": "At least one of the two.",
       "submit": "Schedule",
       "error": "The meeting couldn't be scheduled.",
-      "quorumNumber": "Give a whole number from 1, or leave it empty."
+      "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
+      "typesError": "The meeting types couldn't be loaded.",
+      "maybeScheduled": "Check the list before trying again, it may have been scheduled."
     },
     "when": {
       "back": "← Back to details",
@@ -4926,8 +4928,7 @@
       "emailNow": "AccreditMe emails the invitation to this address as soon as you add the guest.",
       "add": "Add guest",
       "addAndSend": "Add and send invitation",
-      "error": "The guest couldn't be added.",
-      "emailInvalid": "Give an email address, such as name@example.org."
+      "error": "The guest couldn't be added."
     },
     "panel": {
       "title": "Meetings",
