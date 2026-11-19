@@ -356,7 +356,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   private async recomputeOrgUnitVacancies(organizationId: string): Promise<void> {
     const units = await this.prisma.orgUnit.findMany({
       where: { organizationId, isActive: true },
-      select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true, actingHeadUserId: true },
+      select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true },
     });
     if (units.length === 0) return;
 

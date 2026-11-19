@@ -114,6 +114,7 @@ export class OrganizationService {
       if (!unit) return [];
       // ACC-324 — the cover in force whose person is ACTIVE, from the period
       // table (unit-headship.ts), never the `actingHeadUserId` cache.
+      // One cover read per level walked (a walk is a few levels, on the escalation path only).
       const cover = (await findActiveCoversForUnits(this.prisma, organizationId, [current], new Date())).get(current);
       if (cover) return [cover];
 
