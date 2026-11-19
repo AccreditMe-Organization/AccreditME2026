@@ -1487,13 +1487,11 @@ them together with their resolver.
          - preconditions take `PreconditionServices`;
          - the moves list's `blockedBy`;
          - `WorkflowService.currentStagePool()`.
-     - **Open for lane B:**
-       - **6.6 vs §4.1:** the AI design draws the Chair reading the Minutes
-         Draft's accepted text. §4.1, which PR 4 builds, opens Minutes Draft to
-         whoever records only (§6a).
-       - **An action-item draft with an empty owner or due date** needs an
-         expand migration (both are NOT NULL since PR 1), if ACC-322 wants one
-         (§6a).
+     - **Answered by lane B (Prompt 164), §6a:**
+       - **Minutes Draft stays readable by whoever records only.** 6.6's Chair
+         view is read as Minutes Review.
+       - **An AI action-item draft with an empty owner or due date** stays in
+         ACC-322's own row. Both columns stay NOT NULL.
 5. **PR 5: series, backend.**
    - Changes:
      - patterns, holiday moves, titles;
@@ -1611,10 +1609,14 @@ None of the AI is built there:
   strings are corrected in build note 1. The credits refusal says «لمنشأتك»,
   never «لمؤسستك», on every AI surface (build note 3).
 
-**One difference to settle before PR 7.** 6.6 draws the Chair reading the
-Minutes Draft's accepted text, read only. §4.1 opens the minutes to whoever
-records them in Minutes Draft and to the members from Minutes Review. PR 4
-builds §4.1.
+- **The Chair doesn't read Minutes Draft** (lane B, Prompt 164). Minutes Draft
+  is readable by whoever records the minutes only (§4.1). 6.6's "Minutes Draft ·
+  seen by the Chair" is read as Minutes Review, where the Chair first reads the
+  text, so PR 7's screens never draw the Chair in Draft.
+- **An AI action-item draft with an empty owner or due date** stays in
+  ACC-322's own suggestion row (lane B, Prompt 164). `ownerUserId` and `dueAt`
+  stay NOT NULL, with no expand migration. Accept comes only after Edit fills
+  both.
 
 ---
 
