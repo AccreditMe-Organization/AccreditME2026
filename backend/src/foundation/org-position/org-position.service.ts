@@ -8,6 +8,7 @@ import { IOrgPosition } from './interfaces/org-position.interface';
 import { DEFAULT_POSITIONS } from './org-position.seed';
 import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
 import { lockActiveRole } from '../roles/role-active';
+import { findActiveCoversForUnits } from '../organization/unit-headship';
 
 @Injectable()
 export class OrgPositionService {
@@ -368,11 +369,12 @@ export class OrgPositionService {
   }
 
   // PD#9, decided: the Head tier DOES count Acting Head coverage, not only a
-  // direct Head-conferring-position holder — falls back to
-  // OrgUnit.actingHeadUserId when no direct holder exists, mirroring
-  // assignHead()'s own holders[0]?.id ?? actingHeadUserId pattern (2.6.d). A
-  // vacancy genuinely covered by an Acting Head should still receive
-  // escalation, not be silently skipped.
+  // direct Head-conferring-position holder — falls back to the unit's acting
+  // Head when no direct holder exists. A vacancy genuinely covered by an Acting
+  // Head should still receive escalation, not be silently skipped.
+  // ACC-324 — the acting Head is the cover in force whose person is ACTIVE
+  // (findActiveCoversForUnits(), one read for every uncovered unit), never the
+  // `actingHeadUserId` cache.
   async resolveHeadEscalationTargets(
     assigneeIds: string[],
     organizationId: string,
@@ -385,6 +387,7 @@ export class OrgPositionService {
     ];
 
     const targets = new Set<string>();
+    const withoutHolder: string[] = [];
     for (const orgUnitId of orgUnitIds) {
       const directHolder = await this.prisma.user.findFirst({
         where: {
@@ -394,12 +397,13 @@ export class OrgPositionService {
           position: { isUnitHeadPosition: true },
         },
       });
-      if (directHolder) {
-        targets.add(directHolder.id);
-        continue;
-      }
-      const orgUnit = await this.prisma.orgUnit.findFirst({ where: { id: orgUnitId, organizationId } });
-      if (orgUnit?.actingHeadUserId) targets.add(orgUnit.actingHeadUserId);
+      if (directHolder) targets.add(directHolder.id);
+      else withoutHolder.push(orgUnitId);
+    }
+    const covers = await findActiveCoversForUnits(this.prisma, organizationId, withoutHolder, new Date());
+    for (const orgUnitId of withoutHolder) {
+      const cover = covers.get(orgUnitId);
+      if (cover) targets.add(cover);
     }
     return [...targets]; // one distinct unit could still resolve to the same person as another via Acting Head coverage — Set already dedups that too
   }
