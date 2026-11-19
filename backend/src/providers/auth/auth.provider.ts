@@ -20,7 +20,6 @@ export interface AuthenticatedUser {
 
 export interface AuthProvider {
   validateToken(token: string): Promise<AuthenticatedUser | null>;
-  invalidateUserSessions(userId: string): Promise<void>;
 }
 
 export const AUTH_PROVIDER = Symbol('AUTH_PROVIDER');

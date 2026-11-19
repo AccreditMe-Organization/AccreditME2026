@@ -1504,7 +1504,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         { getUserPermissions: async () => [] } as unknown as RoleService,
         tasks,
         { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService,
-        { invalidateUserSessions: async () => undefined } as unknown as AuthProvider,
+        {} as unknown as AuthProvider,
         {} as OrgUnitHeadService,
         {} as OrgPositionService,
         new StagePoolService(prisma),

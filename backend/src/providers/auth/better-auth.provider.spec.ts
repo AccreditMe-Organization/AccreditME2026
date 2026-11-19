@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { createHmac } from 'crypto';
 import { BetterAuthProvider } from './better-auth.provider';
-import { PrismaService } from '../../prisma/prisma.service';
 
 function signJwt(payload: Record<string, unknown>, secret: string): string {
   const base64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -15,18 +14,13 @@ function signJwt(payload: Record<string, unknown>, secret: string): string {
 
 describe('BetterAuthProvider', () => {
   let provider: BetterAuthProvider;
-  let mockPrisma: { user: { update: jest.Mock } };
   const JWT_SECRET = 'test-secret-value';
 
   beforeEach(async () => {
     process.env['JWT_SECRET'] = JWT_SECRET;
-    mockPrisma = { user: { update: jest.fn().mockResolvedValue({}) } };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BetterAuthProvider,
-        { provide: PrismaService, useValue: mockPrisma },
-      ],
+      providers: [BetterAuthProvider],
     }).compile();
 
     provider = module.get<BetterAuthProvider>(BetterAuthProvider);
@@ -76,17 +70,6 @@ describe('BetterAuthProvider', () => {
       );
 
       expect(await provider.validateToken(token)).toBeNull();
-    });
-  });
-
-  describe('invalidateUserSessions', () => {
-    it('increments the user tokenVersion', async () => {
-      await provider.invalidateUserSessions('user-1');
-
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'user-1' },
-        data: { tokenVersion: { increment: 1 } },
-      });
     });
   });
 });

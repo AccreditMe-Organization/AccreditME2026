@@ -93,7 +93,7 @@ describe('A deactivated person’s committee seats end with the deactivation, on
     { getUserPermissions: async () => [] } as unknown as RoleService,
     tasks,
     { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService,
-    { invalidateUserSessions: async () => undefined } as unknown as AuthProvider,
+    {} as unknown as AuthProvider,
     {} as OrgUnitHeadService,
     { validatePositionAssignment: async () => undefined } as unknown as OrgPositionService,
     pools,
