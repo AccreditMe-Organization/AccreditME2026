@@ -7020,15 +7020,24 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
 - **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
   and its owning unit.
 - **The awaiting list (PR 2).** `GET /committee-change-requests/awaiting-decision`
-  takes, in ONE capped SQL query, requests Under review (for a possible chain
-  decider) and requests in an added review stage (for anyone); a review row is
-  kept only where the viewer is in its pool (one batched read) and may open the
-  committee (one `readableCommitteeIds()` read). The gate is still one query,
-  `awaitingDecisionGate()`: the chain's three arms plus "any request in an added
-  stage here". Home's counts read the same API; `awaiting-me` never lists a
-  review stage (app moves only), so nothing counts twice. `awaitingDecisionBy`
-  gains `REVIEW_STAGE` (the stage's names), in the list, a read and the
-  NOT_DECIDER refusal. The screens are PR 3.
+  reads each arm with its own capped query (`awaiting-decision-candidates.ts`)
+  and merges them, so one arm's rows never use the other's cap. The chain arm:
+  requests Under review, then one chain resolution. The review arm first works
+  out where the viewer can be in a pool without reading a request (the added
+  stages and entries; each pool resolved without a record; for the record-routed
+  entries, the committees the viewer and whoever they cover sit on and the units
+  they lead, `findUnitsLedBy()`), then reads only the requests standing there,
+  filtered IN SQL, 200 a page (at most 5), each checked exactly: the pool and
+  `readableCommitteeIds()`. The gate is still one query,
+  `awaitingDecisionGate()`: the chain's three arms plus "a submitted request's
+  newest instance in an added stage here". Pinned query counts: 1 with nothing
+  in an added stage; 4 for a non-reviewer while something is (no request read);
+  16 for a reviewer with one request; 14 for a chain decider. Every
+  organisation predicate in both queries is held load-bearing by gate-named
+  specs on corrupt cross-organisation rows. Home's counts read the same API;
+  `awaiting-me` never lists a review stage (app moves only), so nothing counts
+  twice. `awaitingDecisionBy` gains `REVIEW_STAGE` (the stage's names), in the
+  list, a read and the NOT_DECIDER refusal. The screens are PR 3.
 - **A cover gives reach only while its person is ACTIVE** (PR 2):
   `findUnitsCoveredBy()`, `findUnitLeadersAmong()` and the gate's cover arm;
   `findRunningActingCoversForUnits()` (what a unit's cover IS) is unchanged.
