@@ -1,13 +1,14 @@
 import { recordPageLink } from '../../shared/utils/record-link.util';
 import type { WorkflowAwaitingRowDto } from '../workflow/services/workflow.service';
 import type { ChangeRequestDto } from '../committees/change-requests/change-request.service';
+import type { MeetingAwaitingMeDto } from '../meetings/services/meeting.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** One thing waiting on the person: a record at their stage, or a change request to decide. */
 export interface AwaitingRow {
   id: string;
-  kind: 'stage' | 'change';
+  kind: 'stage' | 'change' | 'review';
   /** When it began waiting: entering the stage, or a change request's Submit. */
   since: string;
   title: string;
@@ -25,6 +26,8 @@ export interface AwaitingWords {
   number(n: number): string;
   duration(ms: number): string;
   relative(since: string, now: Date): string;
+  /** A day (yyyy-MM-dd, the organisation's) as the formatting layer says it. */
+  day(iso: string): string;
 }
 
 /**
@@ -60,6 +63,22 @@ export function changeRow(r: ChangeRequestDto, w: AwaitingWords, now: Date): Awa
     meta: w.t('home.awaitingChangeMeta', { name: r.requestedBy.name }),
     waiting: waitingText(since, w, now),
     link: ['/committees', r.committeeId, 'change-requests', r.id],
+  };
+}
+
+/**
+ * ACC-316 PR 7c-2 — minutes to review: the meeting, "Minutes to review · by
+ * {date}", waiting since the meeting entered review.
+ */
+export function reviewRow(r: MeetingAwaitingMeDto['review'][number], w: AwaitingWords, now: Date): AwaitingRow {
+  return {
+    id: r.meetingId,
+    kind: 'review',
+    since: r.since,
+    title: r.title,
+    meta: r.reviewBy ? w.t('home.awaitingReviewMeta', { day: w.day(r.reviewBy) }) : w.t('home.awaitingReviewMetaNoDate'),
+    waiting: waitingText(r.since, w, now),
+    link: ['/meetings', r.meetingId],
   };
 }
 
