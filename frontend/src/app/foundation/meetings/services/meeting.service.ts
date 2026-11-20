@@ -169,11 +169,45 @@ export interface ScheduleMeetingRequest {
   unitQuorum?: number | null;
 }
 
+/** PR 8c — a series meeting's write: this one only (the server's default), or this one and every later one. */
+export type MeetingEditScope = 'THIS_ONLY' | 'THIS_AND_LATER';
+
 export interface RescheduleMeetingRequest {
   scheduledAt: string;
   reason: string;
   expectedUpdatedAt?: string;
+  scope?: MeetingEditScope;
 }
+
+/** PR 8c (Q3) — Edit details: the fields Schedule's step 1 has, without Starts. Only what changed is sent. */
+export interface UpdateMeetingRequest {
+  typeValueId?: string;
+  durationMinutes?: number;
+  location?: string | null;
+  meetingUrl?: string | null;
+  unitQuorum?: number | null;
+  expectedUpdatedAt?: string;
+  scope?: MeetingEditScope;
+}
+
+/** The field names a series meeting keeps as its own (`kept[].fields`), as the server names them. */
+export type MeetingSeriesField = 'scheduledAt' | 'typeValueId' | 'durationMinutes' | 'location' | 'meetingUrl' | 'unitQuorum';
+
+/**
+ * PR 8c — what "this and all later" WOULD do (POST /meetings/:id/scope-preview,
+ * PR 8-be): the meetings it reaches at their times as they'd be (in time
+ * order); those that keep a field as their own; the clashes at the new times
+ * (only times with one, matched to a meeting by `startsAt`).
+ */
+export interface MeetingScopePreviewDto {
+  meetings: { id: string; title: string; startsAt: string; durationMinutes: number }[];
+  kept: { meetingId: string; title: string; fields: MeetingSeriesField[]; startsAt: string }[];
+  clashes: MeetingClashDto[];
+}
+
+export type MeetingScopePreviewRequest =
+  | ({ change: 'RESCHEDULE'; scheduledAt: string } & Omit<UpdateMeetingRequest, 'expectedUpdatedAt' | 'scope'>)
+  | ({ change: 'EDIT' } & Omit<UpdateMeetingRequest, 'expectedUpdatedAt' | 'scope'>);
 
 export type AddGuestRequest =
   | { userId: string }
@@ -426,6 +460,16 @@ export class MeetingService {
     return this.http.post<MeetingDto>(`${this.base}/${id}/reschedule`, body);
   }
 
+  /** PR 8c — Edit details (PATCH /meetings/:id). */
+  update(id: string, body: UpdateMeetingRequest): Observable<MeetingDto> {
+    return this.http.patch<MeetingDto>(`${this.base}/${id}`, body);
+  }
+
+  /** PR 8c — the scope confirm's read: what "this and all later" would do. Writes nothing. */
+  scopePreview(id: string, body: MeetingScopePreviewRequest): Observable<MeetingScopePreviewDto> {
+    return this.http.post<MeetingScopePreviewDto>(`${this.base}/${id}/scope-preview`, body);
+  }
+
   attendees(id: string): Observable<MeetingAttendeeDto[]> {
     return this.http.get<MeetingAttendeeDto[]>(`${this.base}/${id}/attendees`);
   }
@@ -490,7 +534,7 @@ export class MeetingService {
     return this.http.get<IFileDownload>(`${this.base}/${id}/files/${fileId}/download`);
   }
 
-  clashes(body: { meetingId?: string; committeeId?: string; orgUnitId?: string; times: { startsAt: string; durationMinutes: number }[] }): Observable<MeetingClashDto[]> {
+  clashes(body: { meetingId?: string; committeeId?: string; orgUnitId?: string; userIds?: string[]; times: { startsAt: string; durationMinutes: number }[] }): Observable<MeetingClashDto[]> {
     return this.http.post<MeetingClashDto[]>(`${this.base}/clashes`, body);
   }
 
