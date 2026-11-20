@@ -17869,7 +17869,12 @@ with `schedule()`).
   their stages and who may open them, each in one batch, and the nearest on each
   side picked in memory: **a fixed number of queries whatever the series' size**
   (P237; a db-spec counts a series of 3 and of 30), and only for a series
-  meeting.
+  meeting. From the same rows, with no further query (PR 8b, P239):
+  `previousAt` / `nextAt`, when those two start (the header names the links by
+  their dates), and `endedAfter`: for an ended series, the place of its last
+  meeting not cancelled (0 if every one was), null while it runs. That is a
+  fact about the series, like its total, so it counts meetings this viewer
+  can't open, and names none.
 - **Who may open many meetings, in one query (P237):**
   `MeetingAccess.openable(ids)` is `canSee()`'s rule batched, built from
   `meeting-membership.ts`'s `meetingOpener()` (the viewer's side, read once: no
@@ -18370,3 +18375,41 @@ they follow the space the page has, and a 390px layout spec can measure them
   `meeting-page.phone.layout.spec.ts`, `meeting-list.phone.layout.spec.ts`
   and `meetings-panel.phone.layout.spec.ts` (the shared capped frame Home's
   rows use).
+
+### 18.22 The screens, part 3a: the series on the meeting page (PR 8b)
+
+Plan PR 8 slice 8b (P235, P239), Meeting Screens' header and A9.
+
+- **One place words a series: `meeting-series-text.ts`.** The pattern
+  mapping (every value of `every`, `on.kind` and `ordinal` the server stores,
+  and the weekdays 1 Monday … 7 Sunday, as Luxon numbers them) with the key
+  each reads by, `seriesPattern()` ("Every month, the 4th Thursday"),
+  `seriesLine()` (the header's "… · 4 of 12") and `seriesSummary()` (the
+  series view's line). Schedule's step 2 (Repeat, PR 8a) reads the same
+  lists and functions, never a second copy. Numbers through the format layer.
+- **After End series** both lines read "Every month · ended after 4 of 12"
+  (Q11, the recommendation), from one key pair, `meeting.series.ended`, and
+  the read's `endedAfter` (§18.14).
+- **The meeting page's Series cell**, in the facts grid beside the
+  committee, the place and the organiser (under them on a phone): the line,
+  then previous and next as links named by their dates ("‹ 25 Feb 2027",
+  each with an accessible name saying which way), shown ONLY where the read
+  names them, and "Whole series". The screen never works out a neighbour.
+  Arrows are translations, so they point the reading way in Arabic; dates
+  are isolated (`bdi`).
+- **`/meetings/:id` is `MeetingPageHostComponent`**, which builds the page
+  inside a block keyed by the id: a series link opens the same route with
+  another id, which Angular would otherwise reuse with the first meeting's
+  state. The page itself is unchanged.
+- **The whole series: `/meetings?seriesId=`**, the list in the owner
+  filter's shape: the series' Upcoming and Past from the server (`GET
+  /meetings?view=…&seriesId=`, under the visibility rule), headed "Whole
+  series · {owner}" and the series' line. The header comes from the link's
+  navigation state (the series and its owner, only when its id is this
+  series'), else the owner from the first row and the line from that
+  meeting's read, once. A cancelled meeting reads Cancelled, struck through
+  (A9).
+- **Measured** at 1280 and 390 in both languages
+  (`meeting-page.series.layout.spec.ts`): in the facts row at 1280 and one
+  column on the phone, the line drawn whole, the links previous → whole →
+  next in the reading direction, and nothing wider than the page.
