@@ -506,6 +506,33 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       expect(s.firstDate).toBe(nextWeekday(w, 2));
     });
 
+    it("names the neighbours' dates, and endedAfter is null while the series runs (P239)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third] = r.meetingIds;
+      const at = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!;
+      expect([s.previousAt?.toISOString(), s.nextAt?.toISOString(), s.endedAfter]).toEqual([at[first!], at[third!], null]);
+      // The first meeting has no previous one: no date either.
+      const f = (await meetings.getForViewer(first!, w.orgId, as(w, 'chair'))).series!;
+      expect([f.previousId, f.previousAt]).toEqual([null, null]);
+    });
+
+    it('an ended series says where it stopped: the place of its last meeting not cancelled (P239)', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third, fourth] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // Ended between the second and the third meeting: the third and fourth are cancelled.
+      const ended = await series.end(r.seriesId, { reason: 'Merged into the weekly round' }, w.orgId, as(w, 'chair'), new Date(rows[1]!.scheduledAt.getTime() + 3_600_000));
+      expect([...ended.cancelled].sort()).toEqual([third, fourth].sort());
+      for (const id of [first, second, third]) {
+        const s = (await meetings.getForViewer(id!, w.orgId, as(w, 'chair'))).series!;
+        expect([id, s.ended, s.endedAfter, s.total]).toEqual([id, true, 2, 4]);
+      }
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!.nextId).toBeNull();
+    });
+
     it('previous and next skip a cancelled meeting', async () => {
       const w = await world();
       const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
