@@ -17758,6 +17758,17 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   else the owner's members.
 - **Only the owner's members and this meeting's invitees** may be checked; a
   sent `userIds` naming anyone else is 400 `MEETING_CLASH_PERSON_NOT_INVITEE`.
+  **One widening (PR 8c, R5-5), for Add a guest's own question and nothing
+  more:** with a `meetingId`, a person Add a guest may choose (ACTIVE in this
+  organisation) may also be named, ONLY when every time sent is the meeting's
+  own stored start and duration. Any other time with such a person is that
+  same 400 (P254): it would read their busy times across the calendar. The
+  asker has already passed `writing()`, the same gate as Add a guest and its
+  search, which lists those very people. Someone inactive, another
+  organisation's person or an invented id is still that 400, and a new meeting
+  (no `meetingId`) still checks the owner's members only. The meeting's time
+  and the person count are read in one query, only when a name isn't a member
+  or invitee.
 - **What counts:** for each time and person, the other meetings they are an
   invitee of, not cancelled (by the `MEETING_CANCELLED` flag), whose time
   STRICTLY overlaps. Back-to-back is not a clash, and the same series counts.
@@ -18676,3 +18687,73 @@ Plan PR 8 slice 8a (P235, P245), Meeting Screens round 5 (artboards 3 and
   between rows, Repeats' label beside its control, the count's error in its
   row's line, and shorter Arabic labels (Weekday «اليوم», as drawn; the count
   «العدد»).
+
+### 18.24 The screens, part 3c: which meetings change (PR 8c)
+
+Plan PR 8 slice 8c (P235, P245, P253), Meeting Screens round 5 (artboards
+10–11 and 16), Ahmad's answers of 20 Nov (Q3, Q8, Q9, Q10).
+
+- **"Which meetings change?"** (`app-meeting-scope-dialog`, a 420 confirm),
+  asked after Reschedule's or Edit details' Next for a series meeting:
+  - it says first that past meetings never change, then two choices, "This
+    meeting only" (chosen when it opens) and "This and all later meetings";
+  - **this meeting only:** "22 Oct 2026 moves to 10:30" (a reschedule; the
+    date too when the day changes), or "22 Oct 2026 only" (an edit), and
+    Reschedule's per-person clash line for that one meeting (R5-4, Q8),
+    asked of `POST /meetings/clashes` only when the change moves time (a new
+    start or a new duration);
+  - **this and all later:** the range the SERVER works out, "8 meetings,
+    22 Oct 2026 → 27 May 2027" (`POST /meetings/:id/scope-preview`, PR 8-be),
+    never worked out on the screen, since times move off non-working days and
+    the owner's own meetings. While it is asked the line says so; pressing
+    Apply then waits for it and applies when it arrives, so "this and later"
+    is never applied blind. A lost preview offers Retry (and Apply asks again,
+    then applies); a refused one is said from its code, with no Retry, and
+    Apply does nothing for "this and all later" while it stands (P254). "This
+    meeting only" still applies;
+  - **kept:** "Kept its own edit: 26 Nov 2026 (its own time, 10:00)", the
+    fields in words ("its own place, its own link"); one line, then "and n
+    more kept their own edits" (`plural.meeting.keptMore`);
+  - **its clash line:** "2 of the 8 meetings have a clash · Show which"
+    (`plural.meeting.meetingsClash`), each row the date, then who and their
+    other meeting, and its time. A warning: Apply stays enabled;
+  - it writes nothing. Apply hands the scope to the dialog that opened it,
+    which sends the write with `scope` and closes both; a refusal of that
+    write is said in the confirm, from its code.
+- **Reschedule** gains the clash line in place under the new time, asked again
+  as the day or time changes (the latest answer wins, the meeting's own
+  duration), with "Show who" / "Hide" showing the rows in place (artboards
+  10–11). In a series its button reads Next, and nothing is written before
+  Apply.
+- **Edit details** (`app-meeting-edit-dialog`, Q3), on the page header beside
+  Reschedule, offered on the server's `may.edit`: Schedule's step 1 fields
+  without Starts (type, duration, place, link, and a unit meeting's quorum),
+  filled from the meeting, its types loaded when it opens (the meeting's own
+  type stays a choice if it was deactivated). Only the fields that changed are
+  sent (`PATCH /meetings/:id`), so a later meeting's own edit of another field
+  is never overwritten; nothing changed closes it with no write. The subject
+  isn't offered: a series titles its own meetings, and "this and all later"
+  never carries a title (§18.14). In a series its button reads Next.
+- **Add a guest** (R5-5, Q9): once a person is chosen, "Dr. Huda Zahrani has
+  another meeting then · Show which", their meetings as rows (the clash check
+  naming that person at the meeting's own time, §18.11's widening). The latest choice wins; an outside
+  guest is never checked. A warning: Add stays enabled.
+- **Nowhere else in v1** (Q10): not on the meeting page and not in notices.
+- **`am-meeting-clash`** gained three opt-in forms: `person` (one person, the
+  line names them, each row one of their meetings), `perMeeting` with
+  `meetingTotal` (one row per clash, its date first), and `capped` (rows shown
+  in place scroll inside two and a half rows, `max-block-size: 8rem`, a
+  focusable region named "Other meetings at that time").
+- **Measured** at 1280 and 390 in both languages, each body 20px under the cap:
+  - Reschedule: opened 218 / 234, the clash line 240 / 258, two rows in place
+    337 / 363, six people (the list scrolls) 372 / 390. That last one is the
+    tightest of the PR, 390 of 420 in Arabic; at three rows' height (9.5rem)
+    it was 414, which is why the list holds two and a half;
+  - the scope confirm: "This meeting only" with a kept line 213 / 208, its
+    rows 263 / 262; "This and all later" 213 / 208, two rows 310 / 313; three
+    kept and six rows 375 / 372 (with two kept lines shown it was 429 / 432,
+    which is why one shows); a refused preview 180 / 172;
+  - Edit details: 177 / 183, committee or unit, with no place, long values or
+    refused (the refusal sits in the footer);
+  - Add a guest: a person with a clash 171 / 183 (209 at 390 in English), six
+    meetings shown 303 / 315 (341 at 390 in English).

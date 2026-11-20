@@ -30,6 +30,7 @@ import { seriesLine } from '../../meeting-series-text';
 import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
 import { refusalCode } from '../../../../core/http/refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
+import { MeetingEditDialogComponent } from '../meeting-edit-dialog/meeting-edit-dialog.component';
 import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meeting-add-guest-dialog.component';
 import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
@@ -66,6 +67,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
     WorkflowTransitionActionsComponent,
     WorkflowStageIndicatorComponent,
     MeetingRescheduleDialogComponent,
+    MeetingEditDialogComponent,
     MeetingAddGuestDialogComponent,
     MeetingAgendaPanelComponent,
     MeetingFileListComponent,
@@ -112,6 +114,10 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             }
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <!-- PR 8c (Q3) — Edit details, on the server's may.edit (the stage allows edit_details). -->
+            @if (m.may.edit) {
+              <p-button size="small" severity="secondary" [label]="'meeting.edit.open' | translate" data-testid="meeting-edit" (onClick)="editOpen.set(true)" />
+            }
             @if (m.may.reschedule) {
               <p-button size="small" severity="secondary" [label]="'meeting.reschedule.open' | translate" data-testid="meeting-reschedule" (onClick)="rescheduleOpen.set(true)" />
             }
@@ -364,6 +370,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
       </div>
 
       <app-meeting-reschedule-dialog [visible]="rescheduleOpen()" (visibleChange)="rescheduleOpen.set($event)" [meeting]="m" (rescheduled)="load()" />
+      <app-meeting-edit-dialog [visible]="editOpen()" (visibleChange)="editOpen.set($event)" [meeting]="m" (saved)="load()" />
       <app-meeting-add-guest-dialog [visible]="guestOpen()" (visibleChange)="guestOpen.set($event)" [meeting]="m" (added)="load()" />
       <app-meeting-action-dialog
         [visible]="actionItem() !== null"
@@ -514,6 +521,7 @@ export class MeetingPageComponent {
   ];
   readonly instance = signal<WorkflowInstanceDto | null>(null);
   readonly rescheduleOpen = signal(false);
+  readonly editOpen = signal(false);
   /** PR 7b — the minutes, where this person may read them (null otherwise, and before the meeting is held). */
   readonly minutes = signal<MeetingMinutesDto | null>(null);
   /** PR 7b — "Open actions from the last meeting", for whoever may read that meeting's minutes. */

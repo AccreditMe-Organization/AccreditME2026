@@ -1763,6 +1763,17 @@ them together with their resolver.
          scope preview (Q2).
        - **Measures:** Reschedule with its rows; the scope confirm collapsed and
          expanded; Edit details.
+       - **As built (P253, 20 Nov):** SYSTEM-REFERENCE §18.24. The clash check
+         gained one widening for Add a guest (§18.11): with a `meetingId`, a
+         person Add a guest may choose may be named, at the meeting's own
+         stored time only (P254). A refused scope preview never applies "this
+         and all later" (P254). Subject stays out of Edit details (P254: Q3's
+         list stands). Edit details sends only
+         the fields that changed and doesn't offer the subject. The scope
+         confirm shows one kept line then "and n more", and clash rows shown in
+         place scroll inside two and a half rows: both measured, to keep 20px
+         under the cap. The tightest is Reschedule with six people in Arabic,
+         390 of 420.
      - **8d: End series, and cancelling one meeting of a series.**
        - **Screens:** "End the monthly series?" (Last meeting, Cancelled n,
          Keep series / End series; 94 / 104), and Cancel Meeting's context

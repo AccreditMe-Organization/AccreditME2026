@@ -6,7 +6,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 import { CAP, DialogLayout, ROOM, WIDTHS } from '../../meeting-dialog-layout.testing';
 import { aMeeting, anAttendee } from '../../meeting-fixtures.testing';
-import type { MeetingAttendeeDto, MeetingDto } from '../../services/meeting.service';
+import type { MeetingAttendeeDto, MeetingClashDto, MeetingDto } from '../../services/meeting.service';
 import { MeetingAddGuestDialogComponent } from './meeting-add-guest-dialog.component';
 
 // ACC-316 PR 6 — Add a guest against the 420px body cap (ACC-111), MEASURED in
@@ -17,6 +17,23 @@ import { MeetingAddGuestDialogComponent } from './meeting-add-guest-dialog.compo
 // once the agenda is issued, the outside guest's "emailed now" line. Each body
 // keeps 20px under the cap and scrolls nowhere, and nothing runs sideways.
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass.
+
+/** PR 8c — the chosen person is busy six times over: more rows than the capped list shows, so it scrolls inside itself. */
+const BUSY = {
+  en: ['Antimicrobial Stewardship Committee · March 2027', 'Infection Prevention and Control Committee · March 2027', null, 'Pharmacy and Therapeutics Committee · March 2027', 'Medication Safety Committee · March 2027', null],
+  ar: ['لجنة ترشيد المضادات الحيوية · مارس 2027', 'لجنة الوقاية من العدوى ومكافحتها · مارس 2027', null, 'لجنة الصيدلة والعلاجات · مارس 2027', 'لجنة سلامة الأدوية · مارس 2027', null],
+};
+const personBusy = (language: 'en' | 'ar'): MeetingClashDto => ({
+  startsAt: aMeeting().scheduledAt,
+  invitees: 1,
+  people: [
+    {
+      userId: 'u-9',
+      name: language === 'en' ? 'Dr. Mohammed bin Abdullah Al-Shehri' : 'د. محمد بن عبدالله الشهري',
+      meetings: BUSY[language].map((title, i) => ({ id: title ? `o-${i}` : null, title, startsAt: aMeeting().scheduledAt, durationMinutes: 60 })),
+    },
+  ],
+});
 
 const OUTSIDE = {
   en: { name: 'Dr. Abdulrahman bin Saleh Al-Qahtani', email: 'abdulrahman.alqahtani@moh-regional.example.gov.sa', organisation: 'Ministry of Health, Riyadh First Health Cluster', role: 'Regional accreditation surveyor' },
@@ -47,7 +64,7 @@ describe('Add a guest dialog — layout, measured (ACC-316 PR 6)', () => {
     for (const width of WIDTHS) {
       it(`[${language}, ${width}]: a person, then an outside guest, empty, with errors, filled, refused`, async () => {
         respond = () => of(anAttendee({ kind: 'ORG_GUEST' }));
-        const services = { addGuest: () => respond(), guestCandidates: () => of({ items: [], total: 0, matching: 0 }) };
+        const services = { addGuest: () => respond(), guestCandidates: () => of({ items: [], total: 0, matching: 0 }), clashes: () => of([personBusy(language)]) };
         await layout.open(Host, language, width, services);
         // Non-vacuity: the meeting is named, and the kind choice is there.
         expect(document.querySelector('.am-dialog__context')?.textContent).toContain(aMeeting().title);
@@ -58,9 +75,17 @@ describe('Add a guest dialog — layout, measured (ACC-316 PR 6)', () => {
         expect(document.querySelector('.am-field__message--error')).withContext('the person error').not.toBeNull();
         layout.check('person, with its error', language, width, 560);
 
-        dialog().onPicked({ id: 'u-9', name: 'Dr. Mohammed bin Abdullah Al-Shehri', unit: null, position: null });
+        dialog().onPicked({ id: 'u-9', name: personBusy(language).people[0]!.name, unit: null, position: null });
         await layout.settle();
-        layout.check('person, picked', language, width, 560);
+        // PR 8c — picked, and busy then: the line names them (R5-5).
+        expect(document.querySelector('[data-testid="meeting-clash-line"]')).withContext('the clash line').not.toBeNull();
+        layout.check('person, picked, with a clash', language, width, 560);
+        await layout.click('[data-testid="meeting-clash-toggle"]');
+        const rows = document.querySelector<HTMLElement>('[data-testid="meeting-clash-rows"]')!;
+        expect(rows.querySelectorAll('li').length).withContext('every meeting of theirs').toBe(6);
+        expect(rows.scrollHeight).withContext('six rows overflow the capped list').toBeGreaterThan(rows.clientHeight);
+        layout.check('person, their meetings shown (the list scrolls)', language, width, 560, [rows]);
+        await layout.click('[data-testid="meeting-clash-toggle"]');
 
         await layout.click('[data-testid="guest-kind-outside"]');
         expect(document.querySelector('[data-testid="guest-name"]')).withContext('the outside fields').not.toBeNull();

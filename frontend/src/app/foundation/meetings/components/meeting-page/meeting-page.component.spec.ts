@@ -65,6 +65,8 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
             answer,
             removeGuest,
             applySuggestion: (...args: unknown[]) => applySuggestion(...args),
+            // PR 8c — Edit details loads its types when it opens.
+            formChoices: () => of({ types: [] }),
           },
         },
         { provide: WorkflowService, useValue: { getInstancesByObject: () => of([]) } },
@@ -115,6 +117,21 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     it('absent when it does not', () => {
       meeting = () => of(aMeeting({ may: { ...aMeeting().may, reschedule: false } }));
       expect(q(create().el, 'meeting-reschedule')).toBeNull();
+    });
+  });
+
+  describe('Edit details follows may.edit (PR 8c, Q3)', () => {
+    it('shown when the server allows it, and opens the dialog', () => {
+      const { el, fixture } = create();
+      const button = q(el, 'meeting-edit');
+      expect(button?.textContent?.trim()).toBe('Edit details…');
+      expect(fixture.componentInstance.editOpen()).toBeFalse();
+      button!.querySelector('button')!.click();
+      expect(fixture.componentInstance.editOpen()).toBeTrue();
+    });
+    it('absent when it does not', () => {
+      meeting = () => of(aMeeting({ may: { ...aMeeting().may, edit: false } }));
+      expect(q(create().el, 'meeting-edit')).toBeNull();
     });
   });
 
