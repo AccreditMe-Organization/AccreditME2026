@@ -176,6 +176,8 @@ export interface IMeetingAgendaItem {
 export interface IMeetingClash {
   /** The time checked, as sent. */
   startsAt: string;
+  /** PR 8a — how many people were checked (the "11" in "2 of 11 invitees"), the same at every time. */
+  invitees: number;
   people: {
     userId: string;
     name: string;
