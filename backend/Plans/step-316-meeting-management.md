@@ -1678,6 +1678,14 @@ them together with their resolver.
        only before any answer; Return's refusal in the footer; Decline keeps its
        quote while closing; Suggest has no `about` input (no per-item Suggest
        is drawn).
+   - **PR 7c-2 as built (P226, 20 Nov):** SYSTEM-REFERENCE §18.19. Approve
+     Minutes held by its `blockedBy`, disabled with "Why?", opening "Can't move
+     to Minutes Approved yet" (one blocker, said from its code; six lines then
+     "and n more"); the Approve confirm; minutes to review counted on Home, the
+     rail and `/awaiting` from one helper (`awaitingTotal()`), each row with
+     `since` (the stage entry, a correlated subquery: the read stays 2 queries);
+     the review writes and Distribute tell `MyWorkEvents`. Nothing on the
+     per-request path.
    - **PR 7c, review and approval:** the review banner (No corrections /
      Suggest a correction), suggestions applied or declined, the Review card,
      Return for Correction, Approve Minutes with "Can't move to Minutes

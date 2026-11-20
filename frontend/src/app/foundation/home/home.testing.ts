@@ -10,6 +10,7 @@ import { ChangeRequestDto, ChangeRequestService } from '../committees/change-req
 import { CommitteeService, MyCommitteeRowDto, MyCommitteesDto } from '../committees/services/committee.service';
 import { ITaskListItemDto, ITaskRecordListDto, ITaskRecordRowDto, TaskRecordListQuery, TaskService } from '../tasks/services/task.service';
 import { WorkflowAwaitingMeDto, WorkflowAwaitingRowDto, WorkflowService } from '../workflow/services/workflow.service';
+import { MeetingAwaitingMeDto, MeetingService } from '../meetings/services/meeting.service';
 import { AiBriefingService } from './ai-briefing.service';
 import { HomeAdminSummaryDto, HomeSummaryService } from './home-summary.service';
 
@@ -68,6 +69,8 @@ export interface HomeSpecOptions {
   awaiting?: Answer<WorkflowAwaitingMeDto>;
   changes?: Answer<ChangeRequestDto[]>;
   committees?: Answer<MyCommitteesDto>;
+  /** ACC-316 PR 7c-2 — GET /meetings/awaiting-me's review rows (minutes to review). */
+  reviews?: Answer<MeetingAwaitingMeDto['review']>;
   summary?: Answer<HomeAdminSummaryDto>;
   available?: Answer<ITaskListItemDto[]>;
   /** ACC-280 — GET /tasks/views' create.types: New task's record types. */
@@ -83,6 +86,8 @@ export interface HomeSpecCalls {
   awaitingMe: number;
   changes: number;
   committees: number;
+  /** ACC-316 PR 7c-2 — GET /meetings/awaiting-me, while the meetings module is open. */
+  reviews: number;
   summary: number;
   myTasksLegacy: number;
   /** ACC-280 — GET /tasks/views, read once on entry for New task. */
@@ -90,7 +95,7 @@ export interface HomeSpecCalls {
 }
 
 export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provider | EnvironmentProviders)[]; calls: HomeSpecCalls } {
-  const calls: HomeSpecCalls = { recordList: [], awaitingMe: 0, changes: 0, committees: 0, summary: 0, myTasksLegacy: 0, views: 0 };
+  const calls: HomeSpecCalls = { recordList: [], awaitingMe: 0, changes: 0, committees: 0, reviews: 0, summary: 0, myTasksLegacy: 0, views: 0 };
   const held = new Set(opts.permissions ?? []);
   const providers: (Provider | EnvironmentProviders)[] = [
     provideRouter([]),
@@ -151,6 +156,16 @@ export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provide
         getMine: () => {
           calls.committees++;
           return answer(opts.committees ?? { total: 0, rows: [], mayBrowseCommittees: false });
+        },
+      },
+    },
+    {
+      provide: MeetingService,
+      useValue: {
+        awaitingMe: () => {
+          calls.reviews++;
+          const reviews = opts.reviews ?? [];
+          return reviews === 'fail' ? answer<MeetingAwaitingMeDto>('fail') : of({ review: reviews, answer: [] });
         },
       },
     },

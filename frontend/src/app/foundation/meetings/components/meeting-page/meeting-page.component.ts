@@ -11,7 +11,7 @@ import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { WorkflowService, type WorkflowInstanceDto, type WorkflowMoveDto } from '../../../workflow/services/workflow.service';
-import { WorkflowTransitionActionsComponent, type MoveConfirmCopy } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
+import { WorkflowTransitionActionsComponent, type MoveBlock, type MoveConfirmCopy } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   MEETING_STAGE_FLAG,
@@ -42,6 +42,7 @@ import { MeetingReviewCardComponent } from '../meeting-review-card/meeting-revie
 import { MeetingSuggestDialogComponent } from '../meeting-suggest-dialog/meeting-suggest-dialog.component';
 import { MeetingDeclineDialogComponent } from '../meeting-decline-dialog/meeting-decline-dialog.component';
 import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-return-dialog.component';
+import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../meeting-cant-approve-dialog/meeting-cant-approve-dialog.component';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -76,6 +77,7 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
     MeetingSuggestDialogComponent,
     MeetingDeclineDialogComponent,
     MeetingReturnDialogComponent,
+    MeetingCantApproveDialogComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -124,6 +126,8 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
                 [recordLabel]="m.title"
                 [stageLabel]="stage()"
                 [confirmFor]="confirmFor"
+                [explains]="approvalBlocks"
+                (why)="cantApprove.set($event)"
                 (transitioned)="onMoved($event)"
               />
             }
@@ -343,6 +347,12 @@ import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-r
         (declined)="afterReview()"
         (reload)="load()"
       />
+      <app-meeting-cant-approve-dialog
+        [visible]="cantApprove() !== null"
+        (visibleChange)="$event ? null : cantApprove.set(null)"
+        [refusal]="cantApprove()"
+        [context]="m.title + ' · ' + stage()"
+      />
       <app-meeting-return-dialog
         [visible]="returnOpen()"
         (visibleChange)="returnOpen.set($event)"
@@ -423,6 +433,10 @@ export class MeetingPageComponent {
   readonly suggestOpen = signal(false);
   readonly declining = signal<MeetingSuggestionDto | null>(null);
   readonly returnOpen = signal(false);
+  // PR 7c-2 — Approve Minutes held by what its precondition names.
+  readonly approvalBlocks = MEETING_APPROVAL_BLOCKS;
+  /** "Why?" on Approve Minutes, or a press refused for one of those codes. */
+  readonly cantApprove = signal<{ move: WorkflowMoveDto; blockedBy: MoveBlock } | null>(null);
   /** The whole-minutes suggestion being marked applied, while the request is in flight. */
   readonly wholeApplying = signal<string | null>(null);
   /** How the last whole-minutes Mark applied failed, with the suggestion to retry. */
@@ -645,6 +659,10 @@ export class MeetingPageComponent {
         keepKey: 'meeting.cancel.keep',
         danger: true,
       };
+    }
+    // PR 7c-2 — Approve Minutes: the minutes become final and the action items tasks.
+    if ((move.toStageFlags ?? []).includes(MEETING_STAGE_FLAG.MINUTES_FINAL)) {
+      return { titleKey: 'meeting.approve.title', leadKey: 'meeting.approve.lead', confirmKey: 'meeting.approve.confirm', keepKey: 'meeting.approve.keep', danger: false };
     }
     if ((move.toStageFlags ?? []).includes(MEETING_STAGE_FLAG.AGENDA_ISSUED)) {
       return { titleKey: 'meeting.issue.title', leadKey: 'meeting.issue.lead', confirmKey: 'meeting.issue.confirm', keepKey: 'meeting.issue.keep', danger: false };

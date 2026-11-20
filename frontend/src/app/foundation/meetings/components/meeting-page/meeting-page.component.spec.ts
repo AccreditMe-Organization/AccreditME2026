@@ -250,6 +250,33 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     it('any other move is pressed at once', () => {
       expect(create().c.confirmFor(move({ needsReason: false, toStageFlags: [] }))).toBeNull();
     });
+    // ACC-316 PR 7c-2 — Approve Minutes asks first: the minutes become final.
+    it('a move into a stage flagged MINUTES_FINAL asks the Approve Minutes confirm', () => {
+      const copy = create().c.confirmFor(move({ needsReason: false, toStageFlags: ['MINUTES_FINAL'] }));
+      expect(copy).toEqual({ titleKey: 'meeting.approve.title', leadKey: 'meeting.approve.lead', confirmKey: 'meeting.approve.confirm', keepKey: 'meeting.approve.keep', danger: false });
+    });
+  });
+
+  // ACC-316 PR 7c-2 — Approve Minutes held: the page explains its four codes,
+  // and "Why?" (or a refused press) opens "Can't move to Minutes Approved yet".
+  describe('Approve Minutes held (PR 7c-2)', () => {
+    const APPROVE: WorkflowMoveDto = { id: 't-approve', labelEn: 'Approve Minutes', labelAr: null, kind: 'ADVANCE', toStageId: 's', toStageNameEn: 'Minutes Approved', toStageNameAr: null, toStageFlags: ['MINUTES_FINAL'] };
+
+    it('passes the approval codes to the move buttons to explain', () => {
+      expect([...create().c.approvalBlocks].sort()).toEqual(['MEETING_ACTION_PAST_DUE', 'MEETING_ACTION_PAST_SLA_LIMIT', 'MEETING_REVIEW_OPEN', 'MEETING_SUGGESTION_OPEN']);
+    });
+
+    it('a why opens the dialog naming the stage and the one thing that holds it; Close closes it', async () => {
+      const { c, fixture } = create();
+      c.cantApprove.set({ move: APPROVE, blockedBy: { code: 'MEETING_SUGGESTION_OPEN', open: 1 } });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(document.querySelector('[data-testid="cant-approve-lead"]')?.textContent?.trim()).toBe('1 suggestion is still open. Apply or decline it first.');
+      expect(document.querySelector('.p-dialog')?.textContent).toContain("Can't move to Minutes Approved yet");
+      document.querySelector<HTMLElement>('[data-testid="cant-approve-close"] button')!.click();
+      fixture.detectChanges();
+      expect(c.cantApprove()).toBeNull();
+    });
   });
 
   describe('after an agenda write (P198)', () => {

@@ -15,6 +15,10 @@ import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.co
 import { MoveConfirmDialogComponent, type MoveConfirmCopy } from '../move-confirm-dialog/move-confirm-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { refusalBody } from '../../../../core/http/refusal';
+
+/** A move held by its record's precondition, as the server named it (`blockedBy`). */
+export type MoveBlock = { code: string } & Record<string, unknown>;
 
 export type { MoveConfirmCopy } from '../move-confirm-dialog/move-confirm-dialog.component';
 
@@ -64,13 +68,29 @@ const GENERIC_REASON_COPY: MoveConfirmCopy = {
     @if (availableTransitions().length > 0) {
       <div class="flex flex-wrap gap-2">
         @for (transition of availableTransitions(); track transition.id) {
-          <p-button
-            [label]="transitionLabel(transition)"
-            size="small"
-            [loading]="triggeringId() === transition.id"
-            [disabled]="triggeringId() !== null"
-            (onClick)="onPress(transition)"
-          />
+          @if (held(transition); as block) {
+            <!-- ACC-316 PR 7c-2 — held by its record's precondition, which the
+                 page can say: disabled, with Why? beside it. -->
+            <span class="inline-flex items-center gap-1" [attr.data-move-held]="transition.id">
+              <p-button [label]="transitionLabel(transition)" size="small" [disabled]="true" />
+              <p-button
+                size="small"
+                [text]="true"
+                [label]="'workflow.why' | translate"
+                [ariaLabel]="'workflow.whyNamed' | translate: { move: transitionLabel(transition) }"
+                [attr.data-move-why]="transition.id"
+                (onClick)="why.emit({ move: transition, blockedBy: block })"
+              />
+            </span>
+          } @else {
+            <p-button
+              [label]="transitionLabel(transition)"
+              size="small"
+              [loading]="triggeringId() === transition.id"
+              [disabled]="triggeringId() !== null"
+              (onClick)="onPress(transition)"
+            />
+          }
         }
       </div>
     }
@@ -117,6 +137,15 @@ export class WorkflowTransitionActionsComponent {
    * confirm (with the generic words if the record gives none).
    */
   readonly confirmFor = input<((move: WorkflowMoveDto) => MoveConfirmCopy | null) | null>(null);
+  /**
+   * ACC-316 PR 7c-2 — the precondition codes the record's page can say. A move
+   * whose `blockedBy` carries one is drawn disabled with "Why?", and a press the
+   * server refuses with one (it changed since the read) opens the same reason.
+   * Empty by default: other records keep today's behaviour.
+   */
+  readonly explains = input<ReadonlySet<string>>(new Set<string>());
+  /** "Why?", or a press refused for a code the page can say: the page explains it. */
+  readonly why = output<{ move: WorkflowMoveDto; blockedBy: MoveBlock }>();
   /** The move waiting on its confirm, and the words it shows. */
   readonly pending = signal<{ move: WorkflowMoveDto; copy: MoveConfirmCopy } | null>(null);
 
@@ -143,6 +172,12 @@ export class WorkflowTransitionActionsComponent {
     effect(() => {
       this.loadTransitions(this.instance());
     });
+  }
+
+  /** The move's block, when the page can say it; else null (the move is pressed as usual). */
+  held(move: WorkflowMoveDto): MoveBlock | null {
+    const block = move.blockedBy;
+    return block && this.explains().has(block.code) ? block : null;
   }
 
   /** Tenant data, chosen by language (ACC-160). */
@@ -181,6 +216,14 @@ export class WorkflowTransitionActionsComponent {
       error: (err: unknown) => {
         this.triggeringId.set(null);
         this.pending.set(null);
+        const body = refusalBody(err);
+        if (body && typeof body['code'] === 'string' && this.explains().has(body['code'])) {
+          // Held since the moves were read: say why, and read them again so
+          // the button shows held.
+          this.why.emit({ move: transition, blockedBy: body as MoveBlock });
+          this.loadTransitions(this.instance());
+          return;
+        }
         const tasks = openStageTasks(err);
         if (tasks) {
           this.cantMove.set({

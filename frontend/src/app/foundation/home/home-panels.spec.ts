@@ -203,5 +203,23 @@ describe('Home panels (ACC-279)', () => {
       (one('home-awaiting-error')!.querySelector('button') as HTMLButtonElement).click();
       expect(calls.awaitingMe).toBe(before + 1);
     });
+
+    // ACC-316 PR 7c-2 — minutes to review sit with the records, oldest first,
+    // and link to the meeting.
+    it('minutes to review: the meeting, its review date, how long it has waited, linked to the meeting', () => {
+      build({
+        awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })]),
+        reviews: [{ meetingId: 'm-7', title: 'Infection Control · March', reviewBy: '2026-11-10', since: '2026-11-04T06:00:00.000Z' }],
+      });
+      const rows = Array.from(el().querySelectorAll('app-home-awaiting .am-cp-row'));
+      const text = rows.map((r) => r.textContent!.replace(/\s+/g, ' ').trim());
+      expect(text[0]).toContain('Medication Safety');
+      expect(text[1]).toContain('Infection Control · March');
+      expect(text[1]).toContain('Minutes to review · by 10 Nov 2026');
+      expect(text[1]).toContain('2 days waiting');
+      expect(rows[1]!.getAttribute('data-awaiting-kind')).toBe('review');
+      expect(rows[1]!.querySelector('a')!.getAttribute('href')).toBe('/meetings/m-7');
+      expect(one('home-awaiting-count')!.textContent!.trim()).toBe('2');
+    });
   });
 });

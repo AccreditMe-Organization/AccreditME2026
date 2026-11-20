@@ -5,6 +5,7 @@ import { isNavModuleOpen } from '../../core/navigation/nav-items';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
 import { CommitteeService, MyCommitteesDto } from '../committees/services/committee.service';
+import { MeetingService, type MeetingAwaitingMeDto } from '../meetings/services/meeting.service';
 import { ITaskRecordListDto, TaskRecordListQuery, TaskService } from '../tasks/services/task.service';
 import { WorkflowAwaitingMeDto, WorkflowService } from '../workflow/services/workflow.service';
 
@@ -23,6 +24,17 @@ export interface AwaitingAnswer {
    * module is open, because the server decides who may decide (ACC-283 PR 2).
    */
   changes: ChangeRequestDto[];
+  /**
+   * ACC-316 PR 7c-2 — minutes this person was present for and hasn't answered
+   * this round (GET /meetings/awaiting-me, its review arm only), asked while the
+   * meetings module is open. Self-scoped: the server decides.
+   */
+  reviews: MeetingAwaitingMeDto['review'];
+}
+
+/** Everything waiting on the person: the stage total, the change requests and the minutes to review. One count for Home, the rail and the Awaiting page. */
+export function awaitingTotal(answer: AwaitingAnswer): number {
+  return answer.stages.total + answer.changes.length + answer.reviews.length;
 }
 
 /** The person's open tasks, as My tasks on /tasks counts them (an active assignee row). */
@@ -49,6 +61,8 @@ const COALESCE_MS = 2000;
  *                 is open, GET /committee-change-requests/awaiting-decision,
  *                 asked of everyone: the server decides who may decide
  *                 (ACC-283 PR 2)
+ *                 and, while the Meetings module is open, GET /meetings/awaiting-me's
+ *                 review rows (ACC-316 PR 7c-2)
  *   myCommittees  GET /committees/mine, while the Committees module is open
  *
  * It loads ONCE after sign-in (the shell calls init() when access has loaded),
@@ -65,6 +79,7 @@ export class MyWorkCountsService {
   private readonly workflows = inject(WorkflowService);
   private readonly changeRequests = inject(ChangeRequestService);
   private readonly committees = inject(CommitteeService);
+  private readonly meetings = inject(MeetingService);
   private readonly access = inject(NavigationAccessService);
 
   readonly myTasks = signal<Loadable<ITaskRecordListDto>>({ state: 'loading' });
@@ -141,9 +156,19 @@ export class MyWorkCountsService {
     this.run('myOverdue', this.myOverdue, this.tasks.getRecordList(MY_OVERDUE_TASKS).pipe(map((list) => list.matching)));
   }
 
+  /** Whether the meetings module applies to this organisation: the rail's own module rule. */
+  meetingsOpen(): boolean {
+    return isNavModuleOpen('meetings', this.access);
+  }
+
+  /** The minutes to review, while the meetings module is open; nothing is asked otherwise. */
+  meetingReviews(): Observable<MeetingAwaitingMeDto['review']> {
+    return this.meetingsOpen() ? this.meetings.awaitingMe().pipe(map((a) => a.review)) : of([]);
+  }
+
   loadAwaiting(): void {
     const changes$: Observable<ChangeRequestDto[]> = this.committeesOpen() ? this.changeRequests.awaitingDecision() : of([]);
-    this.run('awaiting', this.awaiting, forkJoin({ stages: this.workflows.getAwaitingMe(), changes: changes$ }));
+    this.run('awaiting', this.awaiting, forkJoin({ stages: this.workflows.getAwaitingMe(), changes: changes$, reviews: this.meetingReviews() }));
   }
 
   loadMyCommittees(): void {

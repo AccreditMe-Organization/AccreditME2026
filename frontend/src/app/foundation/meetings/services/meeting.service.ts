@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
+import { MyWorkEvents } from '../../../core/my-work/my-work-events';
 import { environment } from '../../../../environments/environment';
 import type { IFileDownload } from '../../../shared/files/files.service';
 
@@ -178,7 +179,8 @@ export interface MeetingGuestCandidatesDto {
 }
 
 export interface MeetingAwaitingMeDto {
-  review: { meetingId: string; title: string; reviewBy: string | null }[];
+  /** `since`: when the meeting entered its current stage, Home's order (PR 7c-2). */
+  review: { meetingId: string; title: string; reviewBy: string | null; since: string }[];
   answer: { meetingId: string; title: string; scheduledAt: string }[];
 }
 
@@ -317,6 +319,8 @@ export interface MeetingActionRequest {
 @Injectable({ providedIn: 'root' })
 export class MeetingService {
   private readonly http = inject(HttpClient);
+  /** PR 7c-2 — a write that changes what waits on someone tells Home and the rail (ACC-279). */
+  private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/meetings`;
 
   list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
@@ -473,11 +477,11 @@ export class MeetingService {
   // ── Review (PR 7c-1): these writes answer with nothing; the page reads the minutes again ──
 
   noCorrections(id: string): Observable<void> {
-    return this.http.put<void>(`${this.base}/${id}/review/no-corrections`, {});
+    return this.http.put<void>(`${this.base}/${id}/review/no-corrections`, {}).pipe(tap(() => this.myWork.changed()));
   }
 
   suggest(id: string, body: { agendaItemId: string | null; text: string }): Observable<{ id: string }> {
-    return this.http.post<{ id: string }>(`${this.base}/${id}/review/suggestions`, body);
+    return this.http.post<{ id: string }>(`${this.base}/${id}/review/suggestions`, body).pipe(tap(() => this.myWork.changed()));
   }
 
   applySuggestion(id: string, suggestionId: string): Observable<void> {
@@ -490,11 +494,11 @@ export class MeetingService {
 
   /** Return for Correction: back to Minutes Draft, with an optional reason the present members read. */
   returnMinutes(id: string, reason: string | null): Observable<void> {
-    return this.http.post<void>(`${this.base}/${id}/return`, { reason });
+    return this.http.post<void>(`${this.base}/${id}/return`, { reason }).pipe(tap(() => this.myWork.changed()));
   }
 
   /** The app's move into Minutes Review; `reviewBy` (yyyy-MM-dd) only when the person changed the default. */
   distribute(id: string, reviewBy?: string): Observable<void> {
-    return this.http.post<void>(`${this.base}/${id}/distribute`, reviewBy ? { reviewBy } : {});
+    return this.http.post<void>(`${this.base}/${id}/distribute`, reviewBy ? { reviewBy } : {}).pipe(tap(() => this.myWork.changed()));
   }
 }

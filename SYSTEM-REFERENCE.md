@@ -17763,7 +17763,11 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
   - reviews to answer;
   - invitations not answered before the start;
   - each part is one SQL read, every filter (the stage's action, the round
-    unanswered, the start) before its cap of 200.
+    unanswered, the start) before its cap of 200;
+  - a review row carries `since`, when the meeting entered its current stage
+    (its newest instance's open entry, scoped by organisation through the
+    instance, else `updatedAt`), a correlated subquery inside the same read, so
+    the call is still 2 queries in one `Promise.all` (PR 7c-2).
 
 **The engine, for every record type:**
 
@@ -18194,3 +18198,52 @@ Every dialog says a refusal in its footer.
 
 Measured under the 420px cap at 1280 and 390, in both languages, each keeping
 20px (`meeting-review-dialogs.layout.spec.ts`).
+
+### 18.19 The screens, part 2d: approval and Home (PR 7c-2)
+
+Plan §6.8. What holds Approve Minutes, its confirm, and the minutes to review on
+Home, the rail and the Awaiting page.
+
+**Approve Minutes held.** The moves read (`GET /workflows/instances/:id/moves`)
+already says, for each ADVANCE move, what its record's precondition would refuse
+now (`blockedBy`, PR 4): for a meeting, `minutesApprovalBlocks()`, one blocker at
+a time (seeing all of them is ACC-326).
+
+- **The move buttons** (`app-workflow-transition-actions`) take `explains`, the
+  codes the record's page can say; empty by default, so other records are
+  unchanged. A move whose `blockedBy` carries one is drawn disabled with "Why?"
+  beside it; a press the server refuses with one (held since the read) says the
+  same and reads the moves again. Either emits `why` with the move and its block.
+- **The meeting page** explains `MEETING_APPROVAL_BLOCKS`
+  (`MEETING_REVIEW_OPEN`, `MEETING_SUGGESTION_OPEN`, `MEETING_ACTION_PAST_DUE`,
+  `MEETING_ACTION_PAST_SLA_LIMIT`), and opens **Can't move to Minutes Approved
+  yet** (`app-meeting-cant-approve-dialog`, a 420 confirm with Close only). The
+  lead is said from the code (who has yet to answer and until when; the open
+  suggestions counted; the action items past due, or past the latest a task may
+  be due, with that date); it never claims the blocker is the last. At most six
+  names or items are listed, then "and n more"; an item is one line, due date
+  first, cut with an ellipsis and whole in its tooltip. The dialog keeps its
+  refusal while it closes. Measured under the cap with ten people and ten long
+  items, in both languages, at 1280 and 390
+  (`meeting-cant-approve-dialog.layout.spec.ts`).
+- **Approve Minutes asks first**: a move entering a stage flagged
+  `MINUTES_FINAL` opens the confirm "Approve the minutes?" (final, and each
+  action item becomes a task whose owner is told).
+
+**Minutes to review, counted everywhere from one helper.**
+`MyWorkCountsService.awaiting` gained a third half, `reviews`: the review arm of
+`GET /meetings/awaiting-me`, asked only while the Meetings module is open (the
+rail's own rule, `meetingsOpen()`). The invitation arm is not read. Either half
+failing fails the read whole. `awaitingTotal()` is the one count, read by Home's
+tile and panel, the rail's Awaiting badge and the `/awaiting` page, which reads
+the same half (`meetingReviews()`). A row (`reviewRow()` in `awaiting-rows.ts`,
+which Home now uses for every kind) names the meeting, "Minutes to review · by
+{date}", how long it has waited since `since`, and links to the meeting.
+
+**Telling Home and the rail.** No corrections, a suggestion, Return for
+Correction and Distribute Minutes tell `MyWorkEvents` after they succeed (never
+when they fail), as the workflow moves already do; Approve is a workflow move.
+
+**Cost:** Home's awaiting read is one more request while the Meetings module is
+open: `GET /meetings/awaiting-me`, 2 queries. Nothing is added to the
+per-request path (no guard, interceptor or middleware), and nothing polls.
