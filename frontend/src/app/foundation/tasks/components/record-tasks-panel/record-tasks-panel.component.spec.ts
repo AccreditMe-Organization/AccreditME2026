@@ -149,7 +149,9 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
     flush({ total: 2, scope: 'all', rows: [recordRow('t1'), recordRow('t2')] });
     expect(q('record-tasks-error')).toBeNull();
     expect(rowEls().length).toBe(2);
-    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent).toContain('This task has moved on.');
+    // CC-331 — said from the refusal's kind, never the server's sentence.
+    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent!.trim()).toBe('This task has changed.');
+    expect(rowEls()[0]!.textContent).not.toContain('This task has moved on.');
     expect(rowEls()[1]!.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -165,7 +167,8 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
     flush({ total: 2, scope: 'all', rows: [recordRow('t1', { status: 'IN_PROGRESS' }), recordRow('t2')] });
     expect(q('record-tasks-error')).toBeNull();
     expect(rowEls().length).toBe(2);
-    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent).toContain('Add evidence first.');
+    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent!.trim()).toBe('This task has changed.');
+    expect(rowEls()[0]!.textContent).not.toContain('Add evidence first.');
   });
 
   it('a successful action reads the panel again without a skeleton', () => {

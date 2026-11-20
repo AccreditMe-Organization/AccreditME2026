@@ -25,7 +25,12 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SortHeaderComponent, SortState, nextSort } from '../../../../shared/components/sort-header/sort-header.component';
 import { TaskLinkComponent } from '../task-link/task-link.component';
-import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
+import {
+  TASK_ACTION_FAILURE_KEYS,
+  TaskActionFailure,
+  TaskActionFailureKind,
+  TaskActionHostComponent,
+} from '../task-action-host/task-action-host.component';
 import {
   ITaskRecordListDto,
   ITaskRecordRowDto,
@@ -55,6 +60,14 @@ const SEARCH_DELAY_MS = 250;
  */
 const MINE_ROOT =
   'border border-[var(--am-border)] rounded-[var(--am-radius-card)] bg-[var(--am-surface-raised)] [--am-tl-cols:minmax(180px,3fr)_96px_minmax(130px,1.3fr)_minmax(110px,1fr)_150px] [--am-tl-min:720px]';
+
+/**
+ * ACC-216 (CC-329) — a PERSON's list has no assignee column (every row is the
+ * person's own task, and the dialog's title names them): its own six tracks, set
+ * through the same two variables, so the header and the rows still read ONE track
+ * list, every track fixed or fr (ACC-234). The Task column takes the freed width.
+ */
+const PERSON_COLS = '[--am-tl-cols:minmax(200px,2.8fr)_96px_minmax(150px,1.2fr)_minmax(90px,1fr)_92px_150px] [--am-tl-min:820px]';
 
 const STATUSES: TaskRecordListStatus[] = ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'];
 /**
@@ -106,6 +119,21 @@ interface ViewRow {
   fact: string | null;
   /** Under the title: the record, then the fact, as one line (whole in its tooltip when cut). */
   subLine: string | null;
+  /**
+   * A phone card's parts after the due label (CC-338): My tasks' priority, else the
+   * assignee (never on a person's list), then line 2's status word (none for a
+   * held task: its due label already says so).
+   */
+  cardTail: string[];
+  /**
+   * CC-339 — a phone card's due line, part by part: the due label's parts, then
+   * cardTail's. The line wraps BETWEEN parts, so a long due label ("⏸ On hold to …
+   * · due …") beside a next-step button no longer squeezes the assignee out of
+   * sight; each "·" is the Due cell's clipped padding, so none starts a line.
+   */
+  cardParts: { text: string; due: boolean }[];
+  /** CC-341 — a phone card's record line, part by part: the type word, then the name. */
+  recordParts: string[];
   tagKey: string | null;
   recordLine: string | null;
   /** ACC-120 slice 3 — the own views: the record's name (or its type word), and where it opens. */
@@ -150,7 +178,7 @@ interface ViewRow {
               [value]="qInput()"
               (input)="onSearch(search.value)"
               [attr.aria-label]="'taskList.searchLabel' | translate"
-              [placeholder]="'taskList.searchPlaceholder' | translate"
+              [placeholder]="(isPerson() ? 'taskList.searchPlaceholderTask' : 'taskList.searchPlaceholder') | translate"
               data-testid="task-list-search"
             />
           </span>
@@ -187,7 +215,8 @@ interface ViewRow {
           <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
             {{ 'taskList.filter.overdueOnly' | translate }}
           </button>
-          @if (!isMine()) {
+          <!-- No assignee filter on My tasks, or on a person's list (CC-329): every row is theirs. -->
+          @if (!isMine() && !isPerson()) {
           <app-overlay-select
             class="am-tl__filter am-tl__filter--wide"
             [options]="whoOptions()"
@@ -248,7 +277,8 @@ interface ViewRow {
               data-testid="filter-unit"
             />
           }
-          @if (!isMine()) {
+          <!-- "Assigned to me" is the VIEWER's: never on someone else's list (CC-329). -->
+          @if (!isMine() && !isPerson()) {
             <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
               {{ 'taskList.filter.mine' | translate }}
             </button>
@@ -295,6 +325,16 @@ interface ViewRow {
             <span role="columnheader" class="am-tl__tail" data-testid="task-list-col-priority">{{ 'task.priority.title' | translate }}</span>
             <am-sort-header key="due" [label]="'taskList.col.due' | translate" [current]="sort()" (sort)="sortBy($event)" />
             <am-sort-header key="status" [label]="'taskList.col.status' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader"><span class="sr-only">{{ 'taskList.col.actions' | translate }}</span></span>
+          </div>
+        } @else if (!phone() && phase() !== 'denied' && isPerson()) {
+          <!-- CC-329 — a person's list: the same columns without Assignee (PERSON_COLS). -->
+          <div class="am-tl__row am-tl__head" role="row" data-testid="task-list-head">
+            <am-sort-header key="title" [label]="'taskList.col.task' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <am-sort-header key="status" [label]="'taskList.col.status' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <am-sort-header key="due" [label]="'taskList.col.due' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader" class="am-tl__tail">{{ 'taskList.col.createdBy' | translate }}</span>
+            <am-sort-header key="updated" [label]="'taskList.col.updated' | translate" [current]="sort()" (sort)="sortBy($event)" />
             <span role="columnheader"><span class="sr-only">{{ 'taskList.col.actions' | translate }}</span></span>
           </div>
         } @else if (!phone() && phase() !== 'denied') {
@@ -370,15 +410,39 @@ interface ViewRow {
                           @if (r.recordHref) {<a class="text-[var(--am-primary-700)] no-underline hover:underline focus-visible:outline-[length:var(--am-focus-ring-width)] focus-visible:outline-[var(--am-focus-ring)]" [routerLink]="r.recordHref" data-testid="task-list-record">{{ r.recordName }}</a>} @else {<span data-testid="task-list-record">{{ r.recordName }}</span>}
                         </span>
                       } @else if (r.recordLine) {
-                        <span class="am-tl__sub am-tl__tail">{{ r.recordLine }}</span>
+                        <!-- CC-341 — the record line wraps by part like the due line below:
+                             a name too wide beside the next step takes its own row, and a
+                             part too long for a row ends in "…", never a hard clip. -->
+                        <span class="am-tl__sub overflow-hidden" [attr.title]="r.recordLine" data-testid="task-list-card-record-line">
+                          <span class="flex flex-auto flex-wrap min-w-0 -ms-[1em]">
+                            @for (part of r.recordParts; track $index) {
+                              <span
+                                class="am-tl__part relative min-w-0 max-w-full ps-[1em] overflow-hidden text-ellipsis whitespace-nowrap before:absolute before:start-0 before:w-[1em] before:text-center before:content-['·']"
+                                data-testid="task-list-card-record"
+                                >{{ part }}</span
+                              >
+                            }
+                          </span>
+                        </span>
                       }
-                      <span class="am-tl__sub">
-                        <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
-                        @if (isMine()) {
-                          <span class="am-tl__tail"> · {{ r.priority.label }} · {{ r.statusKey | translate }}</span>
-                        } @else {
-                          <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
-                        }
+                      <!-- CC-339 — the due label's parts, then the card tail's (cardParts),
+                           the record line's rule above (the same part classes),
+                           wrapping between parts. Each part's "·" sits in its 1em start
+                           padding and the line clips the first 1em, as in the Due cell, so a
+                           part that starts a line shows no "·"; a part too long for a line
+                           is cut with an ellipsis, whole in the card's text. -->
+                      <span class="am-tl__sub overflow-hidden" data-testid="task-list-card-line">
+                        <span class="flex flex-auto flex-wrap min-w-0 -ms-[1em]">
+                          @for (part of r.cardParts; track $index) {
+                            <span
+                              class="am-tl__part relative min-w-0 max-w-full ps-[1em] overflow-hidden text-ellipsis whitespace-nowrap before:absolute before:start-0 before:w-[1em] before:text-center before:content-['·']"
+                              [class.am-tl__due]="part.due"
+                              [attr.data-tone]="part.due ? r.due.tone : null"
+                              [attr.data-testid]="part.due ? 'task-list-card-due' : 'task-list-card-tail'"
+                              >{{ part.text }}</span
+                            >
+                          }
+                        </span>
                         @if (r.overdue) {
                           <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)] ms-1" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
                         }
@@ -416,12 +480,14 @@ interface ViewRow {
                         <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)]" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
                       }
                     </span>
-                    <span class="am-tl__task">
-                      <span class="am-tl__tail" [attr.title]="r.who">{{ r.who }}</span>
-                      @if (r.position) {
-                        <span class="am-tl__sub am-tl__tail" [attr.title]="r.position">{{ r.position }}</span>
-                      }
-                    </span>
+                    @if (!isPerson()) {
+                      <span class="am-tl__task">
+                        <span class="am-tl__tail" [attr.title]="r.who">{{ r.who }}</span>
+                        @if (r.position) {
+                          <span class="am-tl__sub am-tl__tail" [attr.title]="r.position">{{ r.position }}</span>
+                        }
+                      </span>
+                    }
                     <!-- ACC-234 — the relative half, then the date; the date
                          takes line 2 when one line does not fit, and the "·"
                          between them is only drawn when they share a line. -->
@@ -451,10 +517,12 @@ interface ViewRow {
                     }
                     <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
                   </span>
-                  @if (rowErrors()[r.row.id]; as message) {
+                  @if (rowErrors()[r.row.id]; as kind) {
                     <span class="basis-full [grid-column:1/-1] text-xs text-[var(--am-danger-ink)]" role="alert">
-                      {{ message }}
-                      <button type="button" class="[font:inherit] border-0 bg-transparent p-0 underline cursor-pointer text-[var(--am-primary-700)]" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+                      {{ failureKeys[kind] | translate }}
+                      @if (kind === 'failed') {
+                        <button type="button" class="[font:inherit] border-0 bg-transparent p-0 underline cursor-pointer text-[var(--am-primary-700)]" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+                      }
                     </span>
                   }
                 </li>
@@ -549,6 +617,11 @@ export class TaskListViewComponent {
   /** A record's tasks; both absent means the organisation's (View all tasks, ACC-244). */
   readonly sourceType = input<string | null>(null);
   readonly sourceId = input<string | null>(null);
+  /**
+   * ACC-216 — a PERSON's tasks (the person's record page): the tasks they are on
+   * that the viewer may see. Like a record, never sent with a view.
+   */
+  readonly person = input<string | null>(null);
   /** A task to open at (a deep link): the list loads to it and highlights it. */
   readonly around = input<string | null>(null);
   readonly variant = input<'popup' | 'page'>('popup');
@@ -602,7 +675,9 @@ export class TaskListViewComponent {
   readonly highlightId = signal<string | null>(null);
   readonly linkTitle = signal<string | null>(null);
   readonly busyId = signal<string | null>(null);
-  readonly rowErrors = signal<Record<string, string>>({});
+  /** CC-331 — a row's failure, by kind; said in the reader's language (TASK_ACTION_FAILURE_KEYS). */
+  readonly rowErrors = signal<Record<string, TaskActionFailureKind>>({});
+  protected readonly failureKeys = TASK_ACTION_FAILURE_KEYS;
   readonly phone = signal(false);
   protected readonly skeleton = Array.from({ length: 10 }, (_, i) => i);
 
@@ -618,6 +693,7 @@ export class TaskListViewComponent {
     return {
       sourceType: this.sourceType() ?? undefined,
       sourceId: this.sourceId() ?? undefined,
+      person: this.person() ?? undefined,
       q: this.q() || undefined,
       status: this.statusesSent(),
       overdue: this.overdue() || undefined,
@@ -626,8 +702,8 @@ export class TaskListViewComponent {
       required: this.required() ?? undefined,
       due: this.due() ?? undefined,
       mine: this.mine() || undefined,
-      // Only organisation-wide: the server refuses a view sent with a record.
-      view: this.sourceType() ? undefined : (this.view() ?? undefined),
+      // Only organisation-wide: the server refuses a view sent with a record or a person.
+      view: this.scoped() ? undefined : (this.view() ?? undefined),
       recordType: this.recordTypeSel() ?? undefined,
       unit: this.unitSel() ?? undefined,
       sort,
@@ -635,16 +711,25 @@ export class TaskListViewComponent {
     };
   });
 
+  /** A record's or a person's tasks: not an organisation-wide view, so no view is sent or read. */
+  private readonly scoped = computed(() => !!this.sourceType() || !!this.person());
+
   /** ACC-120 slice 3 — the viewer's own views: My tasks and Created by me (never a record). */
   readonly ownView = computed<OwnView | null>(() => {
-    const view = this.sourceType() ? null : this.view();
+    const view = this.scoped() ? null : this.view();
     return view === 'mine' || view === 'created' ? view : null;
   });
 
   /** ACC-120 slice 3 — My tasks: its own columns, no assignee filters, and it flows with the page. */
   readonly isMine = computed(() => this.ownView() === 'mine');
   /** The frame: My tasks', or the fixed-height page frame, or none (the popup). */
-  readonly rootClass = computed(() => (this.isMine() ? MINE_ROOT : this.variant() === 'page' ? 'am-tl--page' : ''));
+  /** ACC-216 — a person's tasks (CC-329): no assignee column, filter or "Assigned to me". */
+  readonly isPerson = computed(() => !!this.person());
+  readonly rootClass = computed(() => {
+    if (this.isMine()) return MINE_ROOT;
+    const frame = this.variant() === 'page' ? 'am-tl--page' : '';
+    return this.isPerson() ? `${frame} ${PERSON_COLS}`.trim() : frame;
+  });
 
   /** The statuses the query sends: the pressed chip's on an own view, else the select's. */
   private statusesSent(): TaskRecordListStatus[] | undefined {
@@ -697,11 +782,15 @@ export class TaskListViewComponent {
       const fact = this.text.fact(row);
       const recordLine = row.record ? this.recordLine(row.record) : null;
       const own = !!this.ownView();
+      const dueParts = cut < 0 ? [due.text] : [due.text.slice(0, cut), due.text.slice(cut + 3)];
+      const cardTail = [this.isMine() ? this.priorityText(row.priority).label : this.isPerson() ? null : this.text.who(row), this.text.lineStatus(row)].filter(
+        (p): p is string => !!p,
+      );
       return {
         row,
         title: this.text.title(row),
         due,
-        dueParts: cut < 0 ? [due.text] : [due.text.slice(0, cut), due.text.slice(cut + 3)],
+        dueParts,
         who: this.text.who(row),
         position: this.text.position(row),
         statusKey: this.text.statusKey(row),
@@ -709,6 +798,9 @@ export class TaskListViewComponent {
         tagKey: this.text.requirementKey(row),
         recordLine,
         subLine: [recordLine, fact].filter(Boolean).join(' · ') || null,
+        cardTail,
+        cardParts: [...dueParts.map((text) => ({ text, due: true })), ...cardTail.map((text) => ({ text, due: false }))],
+        recordParts: row.record ? this.recordParts(row.record) : [],
         recordName: own && row.record ? this.recordName(row.record) : null,
         recordHref: own && row.record ? this.recordHref(row.record) : null,
         overdue: own && isTaskOverdue(row, now),
@@ -748,9 +840,9 @@ export class TaskListViewComponent {
     ];
   });
   /** Record type: on the organisation-wide views that span types (All, Unit). */
-  readonly showRecordTypeFilter = computed(() => !this.sourceType() && (this.view() === 'all' || this.view() === 'unit'));
+  readonly showRecordTypeFilter = computed(() => !this.scoped() && (this.view() === 'all' || this.view() === 'unit'));
   /** Unit: the unit view, for a viewer whose scope holds more than one top-level unit (plan §6). */
-  readonly showUnitFilter = computed(() => !this.sourceType() && this.view() === 'unit' && this.unitFilter());
+  readonly showUnitFilter = computed(() => !this.scoped() && this.view() === 'unit' && this.unitFilter());
   readonly recordTypeOptions = computed(() => {
     this.translate.currentLang();
     return (this.facets()?.recordTypes ?? []).map((t) => ({ value: t, label: this.recordTypeName(t) }));
@@ -761,7 +853,7 @@ export class TaskListViewComponent {
   });
   /** Why a view has no rows when nothing filters it: the view's own sentence. */
   readonly emptyKeys = computed<{ title: string; body: string } | null>(() => {
-    const view = this.sourceType() ? null : this.view();
+    const view = this.scoped() ? null : this.view();
     return view ? { title: `taskList.emptyView.${view}.title`, body: `taskList.emptyView.${view}.body` } : null;
   });
 
@@ -997,7 +1089,7 @@ export class TaskListViewComponent {
   }
 
   onFailed(failure: TaskActionFailure): void {
-    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.message }));
+    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.kind }));
     this.refreshRow(failure.taskId);
   }
 
@@ -1122,7 +1214,12 @@ export class TaskListViewComponent {
   }
 
   private recordLine(record: NonNullable<ITaskRecordRowDto['record']>): string {
+    return this.recordParts(record).join(' · ');
+  }
+
+  /** The record line's parts: the type word, then the name when the server sent one. */
+  private recordParts(record: NonNullable<ITaskRecordRowDto['record']>): string[] {
     const type = this.recordTypeWord(record.type);
-    return record.nameEn ? `${type} · ${this.language.bilingual(record.nameEn, record.nameAr)}` : type;
+    return record.nameEn ? [type, this.language.bilingual(record.nameEn, record.nameAr)] : [type];
   }
 }

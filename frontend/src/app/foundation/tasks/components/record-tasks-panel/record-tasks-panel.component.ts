@@ -1,4 +1,5 @@
 import { Component, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../../../core/formatting';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
@@ -8,7 +9,12 @@ import { ITaskRecordRowDto, TaskService } from '../../services/task.service';
 import { TaskRowActionId, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { TaskLinkComponent } from '../task-link/task-link.component';
-import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
+import {
+  TASK_ACTION_FAILURE_KEYS,
+  TaskActionFailure,
+  TaskActionFailureKind,
+  TaskActionHostComponent,
+} from '../task-action-host/task-action-host.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 
 type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
@@ -37,10 +43,17 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
  * Its own frame rather than RecordPanelComponent's: that panel's body has a
  * floor, not a fixed height, and its header is a different height from the
  * drawing's.
+ *
+ * ACC-216 — OR A PERSON's tasks (`person`, the user record page; plan step-216
+ * §5): GET /tasks/record-panel?person= and, in See all, the same list in the
+ * person scope. The same frame, rows and actions; the title is "Tasks", there
+ * is no New task (a person is not a record), and a 403 (the viewer may not read
+ * this person's tasks) hides the panel rather than saying it failed.
  */
 @Component({
   selector: 'app-record-tasks-panel',
   standalone: true,
+  host: { '[style.display]': 'denied() ? "none" : null' },
   imports: [TranslatePipe, CappedPanelComponent, ListDialogComponent, RowMenuComponent, TaskLinkComponent, TaskActionHostComponent, TaskListViewComponent],
   template: `
     <am-capped-panel
@@ -49,13 +62,13 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
       [total]="total()"
       [shown]="rows().length"
       [loadingText]="'recordTasks.loading' | translate"
-      [errorText]="'recordTasks.error' | translate: { record: recordName() }"
-      [emptyText]="(scope() === 'own' ? 'recordTasks.ownEmpty' : 'recordTasks.empty') | translate"
+      [errorText]="errorText()"
+      [emptyText]="emptyText()"
       testIdPrefix="record-tasks"
       (retry)="load()"
       (seeAll)="openPopup(null)"
     >
-      @if (canCreate()) {
+      @if (offersCreate()) {
         <button amPanelActions type="button" class="am-rtp__new" (click)="createRequested.emit()" data-testid="record-tasks-new">
           <i class="pi pi-plus" aria-hidden="true"></i>{{ 'task.newTask' | translate }}
         </button>
@@ -89,12 +102,16 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
             <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
           </span>
           <span class="am-cp-l2">
-            @if (rowErrors()[r.row.id]; as message) {
-              <span class="am-cp-cut am-rtp__err" role="alert" [attr.title]="message">{{ message }}</span>
-              <button type="button" class="am-rtp__retry" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+            @if (rowErrors()[r.row.id]; as kind) {
+              <span class="am-cp-cut am-rtp__err" role="alert" [attr.title]="failureKeys[kind] | translate">{{ failureKeys[kind] | translate }}</span>
+              @if (kind === 'failed') {
+                <button type="button" class="am-rtp__retry" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+              }
             } @else {
               <span class="am-rtp__due" [attr.data-tone]="r.due.tone" [attr.title]="r.due.text">{{ r.due.text }}</span>
-              <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
+              @if (r.tail) {
+                <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
+              }
             }
           </span>
         </li>
@@ -107,12 +124,13 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
       <app-task-list-view
         [sourceType]="sourceType()"
         [sourceId]="sourceId()"
+        [person]="person()"
         [around]="popupAround()"
         (changed)="popupChanged = true"
       />
     </ng-template>
     <ng-template #popupNew>
-      @if (canCreate()) {
+      @if (offersCreate()) {
         <button type="button" class="am-rtp__new" (click)="createRequested.emit()">
           <i class="pi pi-plus" aria-hidden="true"></i>{{ 'task.newTask' | translate }}
         </button>
@@ -149,9 +167,12 @@ export class RecordTasksPanelComponent {
   protected readonly format = inject(FormatService);
   private readonly injector = inject(Injector);
 
-  readonly sourceType = input.required<string>();
-  readonly sourceId = input.required<string>();
-  /** The record's name, for the popup's title and the error line. */
+  /** The record (both), or ACC-216's `person`: exactly one of the two. */
+  readonly sourceType = input<string | null>(null);
+  readonly sourceId = input<string | null>(null);
+  /** ACC-216 — a person's tasks, on their record page (a user id). */
+  readonly person = input<string | null>(null);
+  /** The record's name, or the person's, for the popup's title and the error line. */
   readonly recordName = input.required<string>();
   /** Create tasks on the record's type (ACC-244) — New task in the header and in the popup. */
   readonly canCreate = input(false);
@@ -164,11 +185,17 @@ export class RecordTasksPanelComponent {
 
 
   readonly state = signal<PanelState>({ kind: 'loading' });
+  /** ACC-216 — the person read was refused (403): the panel is absent, never an error or a 0. */
+  readonly denied = signal(false);
+  /** New task is a record's: never on a person's panel. */
+  readonly offersCreate = computed(() => !this.person() && this.canCreate());
   readonly items = signal<ITaskRecordRowDto[]>([]);
   readonly total = signal(0);
   readonly scope = signal<'all' | 'own'>('all');
   readonly busyId = signal<string | null>(null);
-  readonly rowErrors = signal<Record<string, string>>({});
+  /** CC-331 — a row's failure, by kind; said in the reader's language (TASK_ACTION_FAILURE_KEYS). */
+  readonly rowErrors = signal<Record<string, TaskActionFailureKind>>({});
+  protected readonly failureKeys = TASK_ACTION_FAILURE_KEYS;
   readonly highlightId = signal<string | null>(null);
 
   readonly popupOpen = signal(false);
@@ -191,7 +218,7 @@ export class RecordTasksPanelComponent {
         title: this.text.title(row),
         tagKey: this.text.requirementKey(row),
         due: this.text.due(row, now),
-        tail: this.text.tail(row),
+        tail: this.person() ? this.text.personTail(row) : this.text.tail(row),
         primary: model.primary,
         menu: model.menu.map((group) =>
           group.map((a) => ({
@@ -208,10 +235,21 @@ export class RecordTasksPanelComponent {
 
   readonly panelTitle = computed(() => {
     this.translate.currentLang();
+    if (this.person()) return this.translate.instant('personTasks.title');
     return this.translate.instant(this.scope() === 'own' ? 'recordTasks.ownTitle' : 'recordTasks.title');
+  });
+  readonly errorText = computed(() => {
+    this.translate.currentLang();
+    return this.person() ? this.translate.instant('personTasks.error') : this.translate.instant('recordTasks.error', { record: this.recordName() });
+  });
+  readonly emptyText = computed(() => {
+    this.translate.currentLang();
+    if (this.person()) return this.translate.instant('personTasks.empty');
+    return this.translate.instant(this.scope() === 'own' ? 'recordTasks.ownEmpty' : 'recordTasks.empty');
   });
   readonly popupTitle = computed(() => {
     this.translate.currentLang();
+    if (this.person()) return this.translate.instant('personTasks.popupTitle', { name: this.recordName() });
     return this.scope() === 'own'
       ? this.translate.instant('recordTasks.ownTitle')
       : this.translate.instant('recordTasks.popupTitle', { record: this.recordName() });
@@ -221,6 +259,7 @@ export class RecordTasksPanelComponent {
     effect(() => {
       this.sourceType();
       this.sourceId();
+      this.person();
       untracked(() => this.load());
     });
     effect(() => {
@@ -236,7 +275,11 @@ export class RecordTasksPanelComponent {
   /** Reads the five again. `skeleton` false keeps the rows while it does (after an action). */
   load(skeleton = true): void {
     if (skeleton) this.state.set({ kind: 'loading' });
-    this.tasks.getRecordPanel(this.sourceType(), this.sourceId()).subscribe({
+    const person = this.person();
+    const read = person
+      ? this.tasks.getPersonPanel(person)
+      : this.tasks.getRecordPanel(this.sourceType() ?? '', this.sourceId() ?? '');
+    read.subscribe({
       next: (panel) => {
         this.items.set(panel.rows);
         this.total.set(panel.total);
@@ -244,7 +287,12 @@ export class RecordTasksPanelComponent {
         this.state.set({ kind: 'ready' });
         this.showSought();
       },
-      error: () => {
+      error: (err: unknown) => {
+        // ACC-216 — a person the viewer may not read: no panel at all.
+        if (person && err instanceof HttpErrorResponse && err.status === 403) {
+          this.denied.set(true);
+          return;
+        }
         // An action's failure never lands here; only the panel's own read does.
         if (skeleton || this.state().kind !== 'ready') this.state.set({ kind: 'error' });
       },
@@ -272,7 +320,7 @@ export class RecordTasksPanelComponent {
   }
 
   onFailed(failure: TaskActionFailure): void {
-    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.message }));
+    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.kind }));
     this.load(false);
   }
 
