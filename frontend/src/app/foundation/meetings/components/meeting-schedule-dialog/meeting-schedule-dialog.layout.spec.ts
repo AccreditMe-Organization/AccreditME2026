@@ -61,7 +61,7 @@ describe('Schedule meeting dialog — layout, measured (ACC-316 PR 6)', () => {
 
   async function open(kind: 'COMMITTEE' | 'UNIT', language: 'en' | 'ar', width: Width): Promise<MeetingScheduleDialogComponent> {
     respond = () => of({ id: 'm-1' } as MeetingDto);
-    await layout.open(Host, language, width, { formChoices: () => of({ types: TYPES }), schedule: () => respond() }, (h) => h.owner.set(OWNERS[kind][language]));
+    await layout.open(Host, language, width, { formChoices: () => of({ types: TYPES }), schedule: () => respond(), clashes: () => of([{ startsAt: '', invitees: 8, people: [] }]) }, (h) => h.owner.set(OWNERS[kind][language]));
     return layout.fixture.debugElement.query(By.directive(MeetingScheduleDialogComponent)).componentInstance;
   }
 
