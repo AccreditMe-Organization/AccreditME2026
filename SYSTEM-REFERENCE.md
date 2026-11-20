@@ -18819,8 +18819,12 @@ Cancel Meeting, Ahmad's answer of 20 Nov (Q4).
   optional `context`, already in the reader's words; other records give none.
 - **Measured** at 1280 and 390 in both languages, each body 20px under the cap:
   - End series: empty, with its error, a realistic reason and the 500-character
-    limit (only the field scrolls) 251 / 251; a refused plan 299 / 283 (the
-    tightest, 299 of 420 in English). At two rows the field scrolled with an
-    ordinary English reason, which is why it has three;
+    limit (only the field scrolls) 293 / 299 (319 at 390 in Arabic); a refused
+    plan 341 / 331 (the tightest, 341 of 420 in English). **The reason field
+    has five rows** (P256): at three, CI's Linux fonts wrapped the realistic
+    English reason to four lines at 390 and the field scrolled (content 100,
+    box 79), though it fit on Windows. The layout spec now asserts that reason
+    leaves at least one line to spare in both languages and both widths, so a
+    smaller field fails locally too, not only on CI's fonts;
   - Cancel Meeting in a series, with its context line: 157 / 171 (178 at 390
     in English); the context line never runs sideways.

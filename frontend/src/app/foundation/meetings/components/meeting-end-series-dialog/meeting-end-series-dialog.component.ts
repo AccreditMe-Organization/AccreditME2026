@@ -31,7 +31,10 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
  *                 preview (the write's own plan, read-only), never worked out
  *                 here: which meetings are still open is their stages' rule
  *   Reason        required: the built endpoint sends it with each cancellation
- *                 (the drawing has no reason field; End needs one)
+ *                 (the drawing has no reason field; End needs one). Five rows:
+ *                 a realistic reason with a line to spare in both languages,
+ *                 on any font (at three, CI's Linux fonts wrapped English to
+ *                 four lines and the field scrolled, P256)
  *
  * End is never pressed blind, as the scope confirm (P254): pressed while the
  * preview loads it waits; a lost preview is asked again and then ends; a
@@ -69,7 +72,7 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
           [forceShowErrors]="showErrors()"
           [errorMessages]="{ required: 'meeting.endSeries.reasonRequired' }"
         >
-          <textarea #reasonInput pTextarea id="endSeriesReason" formControlName="reason" rows="3" [attr.maxlength]="reasonMax" data-testid="end-series-reason"></textarea>
+          <textarea #reasonInput pTextarea id="endSeriesReason" formControlName="reason" rows="5" [attr.maxlength]="reasonMax" data-testid="end-series-reason"></textarea>
         </am-field>
       </form>
     </ng-template>

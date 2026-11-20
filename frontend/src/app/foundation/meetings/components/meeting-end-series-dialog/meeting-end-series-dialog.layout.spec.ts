@@ -12,9 +12,11 @@ import { END_SERIES_REASON_MAX, MeetingEndSeriesDialogComponent } from './meetin
 // (ACC-111), MEASURED in both languages, in the real theme and font, at 1280
 // (420 wide, a confirm) and on a 390 phone. The design draws 94 / 104 with the
 // sentence and two pairs; the built dialog adds the reason End needs. Measured
-// here: empty; with the reason's error; a realistic reason; the 500-character
-// limit (only the field scrolls); a refused plan. Each body keeps 20px under
-// the cap and scrolls nowhere else.
+// here: empty; with the reason's error; a realistic reason, which keeps at
+// least one line to spare in its field (P256: at three rows CI's Linux fonts
+// wrapped the English one to four lines and the field scrolled); the
+// 500-character limit (only the field scrolls); a refused plan. Each body
+// keeps 20px under the cap and scrolls nowhere else.
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass.
 
 const at = (iso: string) => `${iso}T10:30:00.000Z`;
@@ -69,6 +71,14 @@ describe('End series dialog — layout, measured (ACC-316 PR 8d)', () => {
         layout.check('with its error', language, width, 420);
 
         await type(REASON[language]);
+        // A line to spare: what the reason needs (the box shrunk to nothing), plus one line, fits the box.
+        const box = textarea().clientHeight;
+        const line = parseFloat(getComputedStyle(textarea()).lineHeight);
+        textarea().style.height = '0px';
+        const needs = textarea().scrollHeight;
+        textarea().style.height = '';
+        expect(needs).withContext('non-vacuity: the reason takes more than one line').toBeGreaterThan(2 * line);
+        expect(needs + line).withContext(`a realistic reason [${language}, ${width}] needs ${needs}px of a ${box}px box, ${line}px a line`).toBeLessThanOrEqual(box + 1);
         const filled = layout.check('a realistic reason', language, width, 420);
 
         await type('x '.repeat(END_SERIES_REASON_MAX / 2).trim());
