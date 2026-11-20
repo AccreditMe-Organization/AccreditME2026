@@ -233,6 +233,7 @@ function headStatus(action: 'endCover' | 'vacate' | 'startNewHeadToday'): IOrgUn
     lastVacancy: null,
     pendingHeadAccessSince: null,
     cover: null,
+    activeCover: null,
     scheduledCover: null,
     recentlyEndedCovers: [],
   };

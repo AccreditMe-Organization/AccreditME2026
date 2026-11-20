@@ -63,6 +63,7 @@ const STATUS: IOrgUnitHeadStatus = {
   lastVacancy: null,
   pendingHeadAccessSince: null,
   cover: null,
+  activeCover: null,
   scheduledCover: null,
   recentlyEndedCovers: [],
 };

@@ -38,6 +38,7 @@ function status(over: Partial<IOrgUnitHeadStatus> = {}): IOrgUnitHeadStatus {
     lastVacancy: null,
     pendingHeadAccessSince: null,
     cover: null,
+    activeCover: null,
     scheduledCover: null,
     recentlyEndedCovers: [],
     ...over,
