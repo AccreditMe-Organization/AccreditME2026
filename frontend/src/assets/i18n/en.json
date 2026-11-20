@@ -3729,6 +3729,12 @@
           "one": "and {{count}} more",
           "other": "and {{count}} more"
         }
+      },
+      "print": {
+        "approvedBy": {
+          "one": "Approved by {{who}} on {{date}}, after review by the {{count}} present member.",
+          "other": "Approved by {{who}} on {{date}}, after review by the {{count}} present members."
+        }
       }
     }
   },
@@ -5327,6 +5333,31 @@
       "itemLine": "Item {{n}} · due {{at}} · {{title}}",
       "itemLineNoOrder": "Due {{at}} · {{title}}",
       "other": "Something holds this move. Reload the meeting and try again."
+    },
+    "print": {
+      "open": "Print minutes",
+      "loading": "Loading the minutes…",
+      "notApproved": "These minutes aren't approved yet, so they can't be printed.",
+      "back": "Back to the meeting",
+      "toolbar": "Print",
+      "print": "Print",
+      "minutes": "Minutes",
+      "attendance": "Attendance",
+      "present": "Present",
+      "apologies": "Apologies",
+      "absent": "Absent",
+      "guests": "Guests",
+      "outsideGuests": "Outside guests",
+      "nameSeat": "{{name}} ({{seat}})",
+      "guestsNoQuorum": "Guests don't count toward quorum.",
+      "quorumNotMet": "✕ Quorum not met · {{present}} of {{members}} present, quorum {{quorum}}",
+      "items": "Items",
+      "itemTitle": "{{n}} · {{title}}",
+      "discussion": "Discussion: {{text}}",
+      "decision": "Decision: {{text}}",
+      "vote": "Vote: {{for}} for · {{against}} against · {{abstain}} abstain",
+      "actionItems": "Action items",
+      "actionLine": "{{title}} · {{owner}} · due {{date}}"
     }
   }
 }
