@@ -204,7 +204,54 @@ export type AgendaItemUpdate = Partial<AgendaItemRequest> & { expected?: AgendaI
 
 export interface MeetingClashDto {
   startsAt: string;
+  /** PR 8a — how many people were checked: the "11" in "2 of 11 invitees". */
+  invitees: number;
   people: { userId: string; name: string; meetings: { id: string | null; title: string | null; startsAt: string; durationMinutes: number }[] }[];
+}
+
+/**
+ * PR 8a — a series as Schedule's step 2 sends it (POST /meetings/series/preview
+ * and POST /meetings/series): the subject, the time and the pattern; exactly
+ * one of `endsOn` and `count`; at most ten standing items (Q5).
+ */
+export interface MeetingSeriesRequest {
+  committeeId?: string;
+  orgUnitId?: string;
+  subject: string;
+  typeValueId: string;
+  /** HH:mm in the organisation's zone. */
+  startTime: string;
+  durationMinutes: number;
+  location?: string | null;
+  meetingUrl?: string | null;
+  unitQuorum?: number | null;
+  every: MeetingSeriesEvery;
+  onKind: MeetingSeriesOnKind;
+  weekday?: number | null;
+  dayOfMonth?: number | null;
+  ordinal?: MeetingSeriesOrdinal | null;
+  /** yyyy-MM-dd. */
+  firstDate: string;
+  endsOn?: string | null;
+  count?: number | null;
+  standingAgenda?: { title: string; presenterUserId?: string | null; durationMinutes?: number | null }[];
+}
+
+/** One date of the series as it would be placed, with the title its meeting will get. */
+export interface MeetingSeriesDateDto {
+  index: number;
+  /** yyyy-MM-dd: the pattern's day, and the day it is held (moved off a day that isn't free). */
+  patternDay: string;
+  day: string;
+  startsAt: string;
+  title: string;
+  moved: 'NOT_WORKING_DAY' | 'OWNER_MEETS' | null;
+}
+
+export interface MeetingSeriesPreviewDto {
+  dates: MeetingSeriesDateDto[];
+  /** One per date, in the same order. */
+  clashes: MeetingClashDto[];
 }
 
 /** Add a guest's person search: never an email. */
@@ -458,6 +505,22 @@ export class MeetingService {
     if (owner.committeeId) params = params.set('committeeId', owner.committeeId);
     if (owner.orgUnitId) params = params.set('orgUnitId', owner.orgUnitId);
     return this.http.get<{ may: boolean }>(`${this.base}/may-schedule`, { params });
+  }
+
+  /** PR 8a — what a series would make: its dates, moves and clashes, writing nothing. */
+  seriesPreview(body: MeetingSeriesRequest): Observable<MeetingSeriesPreviewDto> {
+    return this.http.post<MeetingSeriesPreviewDto>(`${this.base}/series/preview`, body);
+  }
+
+  createSeries(body: MeetingSeriesRequest): Observable<{ seriesId: string; meetingIds: string[] }> {
+    return this.http.post<{ seriesId: string; meetingIds: string[] }>(`${this.base}/series`, body);
+  }
+
+  /** PR 8a (Q5) — a standing item's presenter, for a series not yet made: anyone active, by name. */
+  presenterCandidates(owner: { committeeId?: string; orgUnitId?: string }, query: { q?: string; skip?: number; take?: number }): Observable<MeetingGuestCandidatesDto> {
+    let params = new HttpParams();
+    for (const [k, v] of Object.entries({ ...owner, ...query })) if (v !== undefined && v !== null && v !== '') params = params.set(k, String(v));
+    return this.http.get<MeetingGuestCandidatesDto>(`${this.base}/presenter-candidates`, { params });
   }
 
   guestCandidates(id: string, query: { q?: string; skip?: number; take?: number }): Observable<MeetingGuestCandidatesDto> {
