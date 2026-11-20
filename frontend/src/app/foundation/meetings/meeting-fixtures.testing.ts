@@ -82,6 +82,7 @@ export function aMinutes(overrides: Partial<MeetingMinutesDto> = {}): MeetingMin
     review: { round: 0, reviewBy: null, datePassed: false, closed: false, reviewers: [], suggestions: [], changes: [], mine: null },
     distribute: { ready: false, blockedBy: { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: [{ attendeeId: 'a-1', name: 'Dr. Nora Al-Otaibi' }] }, defaultReviewBy: '2027-03-25' },
     approvedAt: null,
+    approvedBy: null,
     may: { recordAttendance: true, recordMinutes: true, distribute: true, returnForCorrection: false, review: false, applySuggestions: false, changeActionDates: false },
     ...overrides,
   };

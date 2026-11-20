@@ -257,6 +257,23 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     });
   });
 
+  // ACC-316 PR 7d-1 — Print minutes, in the header, for approved minutes only (P229).
+  describe('Print minutes (PR 7d-1)', () => {
+    it('is offered once the minutes are approved, linked to the print page', () => {
+      minutesRead = () => of(aMinutes({ phase: 'approved', distribute: null, approvedAt: '2027-04-06T09:00:00.000Z' }));
+      const { el } = create();
+      expect(q(el, 'meeting-print-minutes')?.getAttribute('href')).toBe('/meetings/m-1/print');
+    });
+
+    it('is absent before approval: a draft is never printable as the minutes', () => {
+      for (const phase of ['draft', 'review'] as const) {
+        TestBed.resetTestingModule();
+        minutesRead = () => of(aMinutes({ phase }));
+        expect(q(create().el, 'meeting-print-minutes')).withContext(phase).toBeNull();
+      }
+    });
+  });
+
   // ACC-316 PR 7c-2 — Approve Minutes held: the page explains its four codes,
   // and "Why?" (or a refused press) opens "Can't move to Minutes Approved yet".
   describe('Approve Minutes held (PR 7c-2)', () => {
