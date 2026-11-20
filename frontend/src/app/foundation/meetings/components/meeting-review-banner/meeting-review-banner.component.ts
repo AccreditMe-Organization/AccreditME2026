@@ -43,17 +43,34 @@ import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.s
             </p>
           }
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <p-button size="small" severity="secondary" [label]="'meeting.review.suggest' | translate" data-testid="meeting-review-suggest" (onClick)="suggest.emit()" />
+        <!-- The primary answer first, in the DOM as on screen: on a phone the two
+             are full-width, primary on top (artboard 14), in tab order. -->
+        <div class="am-rb__answers flex flex-wrap items-center gap-2" data-testid="meeting-review-answers">
           @if (minutes().review.mine === null) {
             <p-button size="small" [label]="'meeting.review.noCorrections' | translate" [loading]="busy()" data-testid="meeting-review-no-corrections" (onClick)="noCorrections()" />
           }
+          <p-button size="small" severity="secondary" [label]="'meeting.review.suggest' | translate" data-testid="meeting-review-suggest" (onClick)="suggest.emit()" />
         </div>
       </section>
     }
   `,
   styles: [
     `
+      /* PR 7d-2 — on a phone (the meeting page's container), the answers are full-width buttons. */
+      @container meeting-page (max-width: 611.98px) {
+        .am-rb__answers {
+          flex: 1 1 100%;
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .am-rb__answers > p-button {
+          display: block;
+        }
+        .am-rb__answers ::ng-deep .p-button {
+          inline-size: 100%;
+          justify-content: center;
+        }
+      }
       .am-rb {
         padding: var(--am-space-12);
         border: 1px solid var(--am-warning-border);

@@ -93,7 +93,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
         <p-button size="small" severity="secondary" [label]="'common.retry' | translate" (onClick)="load()" />
       </section>
     } @else if (meeting(); as m) {
-      <div class="flex flex-col gap-4" data-testid="meeting-page">
+      <div class="am-mp flex flex-col gap-4" data-testid="meeting-page">
         <!-- Header -->
         <section class="flex flex-wrap items-start justify-between gap-3">
           <div class="flex min-w-0 flex-col gap-1">
@@ -210,7 +210,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
           <am-meeting-review-banner [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (suggest)="suggestOpen.set(true)" (answered)="afterReview()" (reload)="load()" />
         }
 
-        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
+        <div class="am-mp__grid grid gap-3" data-testid="meeting-grid">
           <div class="flex min-w-0 flex-col gap-3">
             <!-- The agenda, its editor and its papers (PR 7). -->
             <am-meeting-agenda-panel
@@ -253,7 +253,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
 
           @if (minutes(); as mm) {
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
-            <div class="flex min-w-0 flex-col gap-3">
+            <div class="am-mp__side flex min-w-0 flex-col gap-3" data-testid="meeting-side">
               <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
               <am-meeting-review-card
                 [minutes]="mm"
@@ -267,7 +267,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             </div>
           } @else {
           <!-- Invitees -->
-          <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
+          <section class="am-mp__side flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
             <h2 class="m-0 flex items-center justify-between gap-2 text-[15px] font-semibold">
               <span>{{ 'meeting.invitees.title' | translate }}</span>
               @if (canManageGuests()) {
@@ -374,6 +374,34 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
   `,
   styles: [
     `
+      /*
+       * PR 7d-2 — the phone (artboard 14), as a CONTAINER query on the page's own
+       * column, so the rule follows the space the page has (and a 390px layout
+       * spec can measure it). Below two 300px cards side by side, the page is
+       * one column: the side column's cards (attendance, the review card, the
+       * invitees) come above the agenda, and every button is at least 44px tall
+       * (44 x 44 for an icon-only one), in this page and the panels inside it.
+       */
+      .am-mp {
+        container: meeting-page / inline-size;
+      }
+      .am-mp__grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      @container meeting-page (max-width: 611.98px) {
+        .am-mp__grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .am-mp__side {
+          order: -1;
+        }
+        .am-mp ::ng-deep .p-button {
+          min-block-size: 44px;
+        }
+        .am-mp ::ng-deep .p-button.p-button-icon-only {
+          min-inline-size: 44px;
+        }
+      }
       .am-segmented {
         display: inline-flex;
         align-self: flex-start;
