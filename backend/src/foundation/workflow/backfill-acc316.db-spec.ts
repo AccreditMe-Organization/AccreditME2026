@@ -289,19 +289,19 @@ describe('ACC-316 backfills against a real database', () => {
       ).toBe(1);
       expect(await audits(o.id, 'backfill-acc316-meeting-workflow')).toBe(1);
 
-      // Postgres returns rows in the order they sit on disk, not by `order`: on CI
+      // Postgres returns rows in no guaranteed order without ORDER BY: on CI
       // (18 Nov) Minutes Review's two entries came back second-first, and the next
-      // dry run called them configured. Force that here: the same rows, ids
-      // included, re-inserted in one statement in reverse, so they sit reversed.
+      // dry run called them configured. Re-insert the same rows, ids included, in
+      // reverse, so a disk-order read is likely to see them reversed. Whether it
+      // does is heap luck, so nothing here asserts it: the order-independence is
+      // proved deterministically on the pure check (whoIsAlreadyTheSeeds, in
+      // backfill-acc316-meeting-workflow.spec.ts), and this proves the dry run.
       for (const key of ['agenda_ready', 'minutes_review']) {
         const where = { stage: { workflowTemplateId: w.t.id, key } };
         const rows = await prisma.workflowStageAssignee.findMany({ where, orderBy: { order: 'asc' } });
         expect(rows).toHaveLength(2);
         await prisma.workflowStageAssignee.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
         await prisma.workflowStageAssignee.createMany({ data: [...rows].reverse() });
-        // Non-vacuity: read with no order, as the backfill once did, they come back reversed.
-        const unordered = await prisma.workflowStageAssignee.findMany({ where, select: { kind: true } });
-        expect(unordered.map((r) => r.kind)).toEqual([...rows].reverse().map((r) => r.kind));
       }
 
       const again = await runWorkflow(prisma, { execute: false, organizationIds: [o.id], isFixture });

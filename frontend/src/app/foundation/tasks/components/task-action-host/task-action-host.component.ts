@@ -3,7 +3,6 @@ import { Router } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
 import { Observable } from 'rxjs';
 import { LanguageService } from '../../../../core/services/language.service';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { ITaskPageViewDto, ITaskRecordRowDto, TaskRequestForDecisionDto, TaskRequestType, TaskService } from '../../services/task.service';
 import { TaskRowActionId } from '../../task-row-actions';
 import { taskRecordTypeKey } from '../../task-row-display';
@@ -21,9 +20,31 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
 
 type DialogId = 'addEvidence' | 'evidence' | 'reject' | 'release' | 'request' | 'decision' | 'reassign' | 'edit' | 'cancel' | 'reopen';
 
+/**
+ * CC-331 — WHY A ROW'S ACTION FAILED, as the screen knows it; never the server's
+ * sentence, which is English whatever the reader's language:
+ *   - `changed`: refused because the task changed (a 409, or a 404 — it moved on or
+ *     went away). The row is read again, so it shows its new state; pressing the
+ *     same action would fail again, so no "Try again".
+ *   - `failed`: anything else (no connection, a 5xx, a timeout): "Try again" repeats it.
+ */
+export type TaskActionFailureKind = 'changed' | 'failed';
+
+/** One translated sentence per kind, so each language places its own full stop. */
+export const TASK_ACTION_FAILURE_KEYS: Readonly<Record<TaskActionFailureKind, string>> = {
+  changed: 'taskActions.failure.changed',
+  failed: 'taskActions.failure.failed',
+};
+
+export function taskActionFailureKind(err: unknown): TaskActionFailureKind {
+  const status = (err as { status?: unknown } | null)?.status;
+  return status === 409 || status === 404 ? 'changed' : 'failed';
+}
+
 export interface TaskActionFailure {
   taskId: string;
-  /** Already translated. */
+  kind: TaskActionFailureKind;
+  /** The kind's sentence, already translated (for a caller that shows one line). */
   message: string;
 }
 
@@ -250,7 +271,8 @@ export class TaskActionHostComponent {
   }
 
   private fail(taskId: string, err: unknown): void {
-    this.failed.emit({ taskId, message: this.translate.instant(extractErrorMessage(err, 'task.errorAction')) });
+    const kind = taskActionFailureKind(err);
+    this.failed.emit({ taskId, kind, message: this.translate.instant(TASK_ACTION_FAILURE_KEYS[kind]) });
   }
 
   private titleOf(row: ITaskRecordRowDto): string {

@@ -340,6 +340,8 @@ export type TaskRecordListStatus = 'UNASSIGNED' | 'PENDING' | 'IN_PROGRESS' | 'O
 export interface TaskRecordListQuery {
   sourceType?: string;
   sourceId?: string;
+  /** ACC-216 — a person's tasks (never with a record or a view). */
+  person?: string;
   q?: string;
   status?: TaskRecordListStatus[];
   overdue?: boolean;
@@ -779,6 +781,13 @@ export class TaskService {
   // ACC-229 — a record's Tasks panel: the first five, and the total.
   getRecordPanel(sourceType: string, sourceId: string): Observable<ITaskRecordPanelDto> {
     const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
+    return this.http.get<ITaskRecordPanelDto>(`${this.base}/record-panel`, { params });
+  }
+
+  // ACC-216 — a person's Tasks panel: the first five tasks they are on that the
+  // viewer may see, and the total. Yourself, or users:view (403 otherwise).
+  getPersonPanel(userId: string): Observable<ITaskRecordPanelDto> {
+    const params = new HttpParams().set('person', userId);
     return this.http.get<ITaskRecordPanelDto>(`${this.base}/record-panel`, { params });
   }
 

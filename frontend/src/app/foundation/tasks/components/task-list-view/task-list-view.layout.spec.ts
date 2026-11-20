@@ -71,6 +71,18 @@ class ListHost {
   readonly variant = input<'page' | 'popup'>('popup');
 }
 
+/** ACC-216 (CC-329) — a person's See all, in the popup: no assignee column (PERSON_COLS). */
+@Component({
+  standalone: true,
+  imports: [TaskListViewComponent],
+  template: `<div class="flex flex-col" [style.width.px]="1040" [style.height.px]="height()">
+    <app-task-list-view person="u-huda" variant="popup" />
+  </div>`,
+})
+class PersonHost {
+  readonly height = input(696);
+}
+
 /** ACC-120 slice 3 — the Created by me view, organisation-wide, as /tasks draws it. */
 @Component({
   standalone: true,
@@ -256,6 +268,78 @@ describe('All tasks list — columns, measured (ACC-234)', () => {
   }
 });
 
+
+// ACC-216 (CC-329) — a PERSON's See all, MEASURED like the record list above, in the
+// popup at 1040 × 760, both languages: six columns (no Assignee), the header and every
+// row on ONE track list (each header label over its cells within 1px, the action
+// column one width), nothing painting outside its track, no toolbar label cut.
+// The record list's and /tasks/all's cases above are unchanged.
+describe("A person's See all — columns, measured (ACC-216, CC-329)", () => {
+  useLayoutFonts({ rtl: true });
+  preserveDocumentLanguage();
+  const report: string[] = [];
+  let http: HttpTestingController;
+
+  afterAll(() => console.log(`ACC-216 person list measurements:\n  ${report.join('\n  ')}`));
+
+  for (const language of ['en', 'ar'] as const) {
+    it(`${language} · See all at 1040 × 760: six columns, headers over their cells, nothing overflows`, async () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [PersonHost],
+        providers: [
+          provideRouter([]),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideNoopAnimations(),
+          provideTranslateService({ lang: 'en' }),
+          provideFormatTesting(),
+          ConfirmationService,
+          { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+          providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
+        ],
+      });
+      loadTranslationsForTest({ en, ar });
+      TestBed.inject(TranslateService).use(language);
+      document.documentElement.dir = TestBed.inject(LanguageService).isRtl() ? 'rtl' : 'ltr';
+      http = TestBed.inject(HttpTestingController);
+      const fixture = TestBed.createComponent(PersonHost);
+      fixture.componentRef.setInput('height', 760 - POPUP_HEAD[language]);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.autoDetectChanges(true);
+      const view = fixture.debugElement.query((d) => d.componentInstance instanceof TaskListViewComponent)!.componentInstance as TaskListViewComponent;
+      view.phone.set(false);
+      http.expectOne((r) => r.url === API && r.params.get('person') === 'u-huda').flush(listPage(variedRows(language), { total: 120, matching: 120 }));
+      await fixture.whenStable();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+      const root = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="task-list-view"]')!;
+      const head = root.querySelector<HTMLElement>('[data-testid="task-list-head"]')!;
+      const rowEls = Array.from(root.querySelectorAll<HTMLElement>('[data-task-row]'));
+      // Non-vacuity: laid out, with every kind of row, and six columns in the header and in a row.
+      expect(rowEls.length).withContext('rows rendered').toBe(30);
+      expect(head.getBoundingClientRect().width).withContext('the list is not laid out').toBeGreaterThan(900);
+      expect(head.children.length).withContext('header columns (no Assignee)').toBe(6);
+      expect(rowEls.every((r) => r.children.length === 6)).withContext('six cells in every row').toBeTrue();
+      expect(rowEls.filter((r) => r.querySelector('[data-action]')).length).withContext('rows with a next step').toBeGreaterThan(5);
+      expect(rowEls.filter((r) => !r.querySelector('[data-action]')).length).withContext('rows without one').toBeGreaterThan(5);
+
+      const m = measure(root);
+      const taskWidth = Math.round((head.children[0] as HTMLElement).getBoundingClientRect().width);
+      report.push(
+        `${language} person See all: header drift max ${Math.max(...m.drift).toFixed(2)}px [${m.drift.map((d) => d.toFixed(1)).join(' ')}], ` +
+          `Task column ${taskWidth}px, action ${[...new Set(m.actionWidths)].join('/')}px, overflow ${m.overflow.length}, cut toolbar labels ${m.cut.length}`,
+      );
+      m.drift.forEach((d, i) => expect(d).withContext(`column ${i}: its header label and its cells start ${d.toFixed(2)}px apart`).toBeLessThanOrEqual(1));
+      expect(new Set(m.actionWidths).size).withContext(`the action column is not one width: ${m.actionWidths.join(',')}`).toBe(1);
+      expect(m.overflow).withContext('text painting outside its track').toEqual([]);
+      expect(m.untitledCuts).withContext('a cut name with no tooltip').toEqual([]);
+      expect(m.cut).withContext('a cut toolbar label').toEqual([]);
+      for (const d of m.dueTwoParts) expect(d.sameLine || d.dateBelow).withContext('the date is on line 2 when it does not fit').toBe(true);
+      fixture.nativeElement.remove();
+    });
+  }
+});
 
 // ACC-120 slice 3 — the own views' status chips and overdue pill, MEASURED in
 // the real theme and font: the chip row fits on one line at /tasks' 1440
