@@ -27,7 +27,7 @@ const PAGE = 25;
   standalone: true,
   imports: [TranslatePipe, RouterLink, DataListComponent, ListRowDirective, PageHeaderComponent],
   template: `
-    <div class="flex flex-col gap-3 h-full min-h-0">
+    <div class="am-ml flex flex-col gap-3 h-full min-h-0" data-testid="meeting-list-page">
       <app-page-header [title]="'meeting.title' | translate" />
       <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="meeting-list-order">{{ 'meeting.list.order' | translate }}</p>
       <!-- ACC-316 PR 7 — opened from a committee's or unit's Meetings panel (See all). -->
@@ -60,7 +60,7 @@ const PAGE = 25;
           <ng-template #listHeader let-h>
             @for (column of columns(); track column.key) {
               @if (h.visible(column.key)) {
-                <span role="columnheader">{{ column.label }}</span>
+                <span class="am-ml__head" role="columnheader">{{ column.label }}</span>
               }
             }
             <span></span>
@@ -73,8 +73,7 @@ const PAGE = 25;
               [amListRowIndex]="i"
               (rowOpen)="open(m)"
               (click)="open(m)"
-              class="grid items-center gap-3 px-3 py-2 cursor-pointer"
-              style="grid-template-columns: var(--am-list-cols)"
+              class="am-ml__row grid items-center gap-3 px-3 py-2 cursor-pointer"
               [attr.data-meeting-row]="m.id"
             >
               @if (v('meeting')) {
@@ -87,12 +86,15 @@ const PAGE = 25;
                 </span>
               }
               @if (v('when')) {
-                <span class="flex min-w-0 flex-col">
+                <span class="flex min-w-0 flex-col" data-meeting-when>
+                  <!-- P233 — each cell names its column, so a phone card (no headers) still reads "When …". -->
+                  <span class="sr-only">{{ columnLabel('when') }}</span>
                   <span class="text-[13px]">{{ format.dateTime(m.scheduledAt) }}</span>
                   <span class="text-meta text-[var(--am-ink-500)] truncate">{{ format.hijri(m.scheduledAt) }} · {{ format.weekday(m.scheduledAt, 'short') }}</span>
                 </span>
               }
               @if (v('stage')) {
+                <span class="sr-only" data-meeting-stage-name>{{ columnLabel('stage') }}</span>
                 <span
                   class="justify-self-start text-[11.5px] font-medium px-2 py-px rounded-full border"
                   [class.text-[var(--am-ink-500)]]="closed(m)"
@@ -101,7 +103,7 @@ const PAGE = 25;
                   >{{ stage(m) }}</span
                 >
               }
-              <span></span>
+              <span class="am-ml__trail"></span>
             </div>
           </ng-template>
         </app-data-list>
@@ -109,6 +111,37 @@ const PAGE = 25;
       }
     </div>
   `,
+  styles: [
+    `
+      /*
+       * PR 7d-2 — on a phone (artboard 14) each row is a card: the title and
+       * owner, when with Hijri, then the stage chip, one under another. A
+       * CONTAINER query on the page's own width, so a 390px layout spec can
+       * measure it. The column headers name columns a card no longer has, so
+       * the whole header row is hidden there (its padding and border with it,
+       * P233), and each cell names its column for a screen reader instead.
+       */
+      .am-ml {
+        container: meeting-list / inline-size;
+      }
+      .am-ml__row {
+        grid-template-columns: var(--am-list-cols);
+      }
+      @container meeting-list (max-width: 559.98px) {
+        .am-ml__row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: var(--am-space-4);
+        }
+        .am-ml__head,
+        .am-ml ::ng-deep .am-dl__head {
+          display: none;
+        }
+        .am-ml__trail {
+          display: none;
+        }
+      }
+    `,
+  ],
 })
 export class MeetingListComponent {
   private readonly meetings = inject(MeetingService);
@@ -150,6 +183,11 @@ export class MeetingListComponent {
       { key: 'stage', label: this.translate.instant('meeting.list.col.stage'), width: '1fr' },
     ];
   });
+
+  /** A column's name, for the screen-reader text each cell carries (P233). */
+  columnLabel(key: string): string {
+    return this.columns().find((c) => c.key === key)?.label ?? '';
+  }
 
   // An ARROW PROPERTY (data-list reads it as an input). The page and its size become skip and take.
   readonly source: DataListSource<MeetingListItemDto> = (query) => {

@@ -1,4 +1,4 @@
-import { Component, ViewEncapsulation, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -8,6 +8,10 @@ import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
+import { IdleService } from '../../../../core/services/idle.service';
+import { SessionLimitService } from '../../../../core/services/session-limit.service';
+import { IdleWarningComponent } from '../../../../core/components/idle-warning/idle-warning.component';
+import { SessionLimitWarningComponent } from '../../../../core/components/session-limit-warning/session-limit-warning.component';
 import { ownerName } from '../../meeting-display';
 import { refusalCode } from '../../../../core/http/refusal';
 import {
@@ -42,13 +46,23 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
  *   translated.
  * - **Dates** go through the formatting layer, so Hijri follows the reader's
  *   preference, as the screen does (P229, ACC-94 D4).
+ * - **The session clocks** (idle sign-out, the 12-hour limit) are started here,
+ *   as the shell starts them, with their warnings (P232).
  */
 @Component({
   selector: 'app-meeting-print',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, RouterLink],
+  imports: [TranslatePipe, ButtonModule, RouterLink, IdleWarningComponent, SessionLimitWarningComponent],
   encapsulation: ViewEncapsulation.None,
   template: `
+    <!-- P232 — outside the shell, so this page runs the shell's two session
+         clocks itself, and draws their warnings the same way (deferred). -->
+    @defer (on idle; when idle.warningVisible()) {
+      <app-idle-warning />
+    }
+    @defer (on idle; when sessionLimit.warningVisible()) {
+      <app-session-limit-warning />
+    }
     @switch (state()) {
       @case ('loading') {
         <p class="am-print-msg" role="status">{{ 'meeting.print.loading' | translate }}</p>
@@ -312,6 +326,8 @@ export class MeetingPrintComponent {
   private readonly language = inject(LanguageService);
   private readonly access = inject(NavigationAccessService);
   readonly format = inject(FormatService);
+  protected readonly idle = inject(IdleService);
+  protected readonly sessionLimit = inject(SessionLimitService);
 
   readonly id = inject(ActivatedRoute).snapshot.paramMap.get('id') ?? '';
   readonly state = signal<PrintState>('loading');
@@ -321,6 +337,13 @@ export class MeetingPrintComponent {
 
   constructor() {
     registerPageName(() => this.meeting()?.title ?? null);
+    // P232 — the shell starts these for every signed-in page (ACC-122, ACC-126);
+    // this page is outside the shell, so it starts them exactly as the shell
+    // does: the idle clock (idempotent, and it stops itself on destroy) and the
+    // 12-hour limit's clock, stopped when the page goes.
+    this.idle.start();
+    this.sessionLimit.start();
+    inject(DestroyRef).onDestroy(() => this.sessionLimit.stop());
     this.load();
   }
 

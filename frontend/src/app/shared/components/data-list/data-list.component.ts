@@ -326,7 +326,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
            outside. -->
       @if (isPage() && headerTemplate() && rows().length > 0) {
         <div
-          class="sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-ink-500)]"
+          class="am-dl__head sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-ink-500)]"
           style="grid-template-columns: var(--am-list-cols)"
           role="row"
         >
