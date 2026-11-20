@@ -14,8 +14,12 @@ import {
   Max,
   MaxLength,
   Min,
+  Validate,
   ValidateIf,
   ValidateNested,
+  ValidatorConstraint,
+  type ValidationArguments,
+  type ValidatorConstraintInterface,
 } from 'class-validator';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
@@ -199,6 +203,19 @@ export class MeetingScopePreviewDto {
   unitQuorum?: number | null;
 }
 
+/** `view=series` names its series: a non-empty seriesId. Any other view asks nothing of it. */
+@ValidatorConstraint({ name: 'seriesIdForSeriesView' })
+class SeriesIdForSeriesView implements ValidatorConstraintInterface {
+  validate(value: unknown, args: ValidationArguments): boolean {
+    if ((args.object as ListMeetingsDto).view !== 'series') return true;
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  defaultMessage(): string {
+    return 'seriesId is required with view=series';
+  }
+}
+
 /**
  * The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov).
  * PR 8b (P240): `series`, one series' meetings (seriesId required), the whole
@@ -212,10 +229,14 @@ export class ListMeetingsDto {
   @IsIn(MEETING_LIST_VIEWS)
   view?: MeetingListView;
 
-  /** ACC-316 PR 5 — one series' meetings (the series view); required by `view=series` (PR 8b). */
+  /**
+   * ACC-316 PR 5 — one series' meetings. Required, and not empty, with
+   * `view=series` (PR 8b); with any other view it is optional, and an empty one
+   * is ignored as it always was (P243).
+   */
   @ValidateIf((o: ListMeetingsDto) => o.view === 'series' || o.seriesId !== undefined)
   @IsString()
-  @IsNotEmpty()
+  @Validate(SeriesIdForSeriesView)
   seriesId?: string;
 
   /** ACC-316 PR 6 — the list's search: the title contains it (case-insensitive). */

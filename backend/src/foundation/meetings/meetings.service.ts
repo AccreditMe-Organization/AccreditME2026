@@ -201,7 +201,8 @@ export class MeetingsService {
         committee: { select: { id: true, nameEn: true, nameAr: true, orgUnitId: true, quorumCount: true } },
         orgUnit: { select: { id: true, nameEn: true, nameAr: true } },
         organizer: { select: { id: true, name: true } },
-        reschedules: { orderBy: { createdAt: 'desc' }, take: 1, select: { fromAt: true, reason: true, createdAt: true } },
+        // The latest reschedule; a createdAt tie broken by id, as the series view reads it (P243).
+        reschedules: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, select: { fromAt: true, reason: true, createdAt: true } },
         seriesIndex: true,
         series: {
           select: {
@@ -429,7 +430,9 @@ export class MeetingsService {
       this.prisma.$queryRaw<{ total: bigint }[]>`SELECT count(*)::bigint AS total FROM "Meeting" m WHERE ${base}`,
     ]);
     const ids = rows.map((r) => r.id);
-    return { items: await this.listItems(ids, organizationId, series_), total: Number(counts[0]?.total ?? 0), canSeeAll: seesAll };
+    // The series view is one capped answer: its total is what it lists (P243), never the uncapped count.
+    const total = series_ ? ids.length : Number(counts[0]?.total ?? 0);
+    return { items: await this.listItems(ids, organizationId, series_), total, canSeeAll: seesAll };
   }
 
   /**
