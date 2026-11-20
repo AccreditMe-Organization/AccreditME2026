@@ -18253,7 +18253,8 @@ per-request path (no guard, interceptor or middleware), and nothing polls.
 Plan §3.11, design artboard 13. The answers to the 7d slice plan (P229):
 
 - **`/meetings/:id/print`**, a route OUTSIDE the app shell (`app.routes.ts`,
-  first, behind `authGuard` and `permissionGuard`'s meetings module rule), so
+  first, behind sign-in; `permissionGuard` checks no module there, as on
+  `/meetings/:id`), so
   neither the screen nor the paper carries the rail or top bar. On screen it has
   a small bar (Back to the meeting, Print), hidden when printing. A browser
   print page: there is no PDF.
@@ -18276,9 +18277,13 @@ Plan §3.11, design artboard 13. The answers to the 7d slice plan (P229):
   name, even after they leave the committee or are deactivated, and the seat
   they held at approval, from the membership ledger (the newest event recorded
   at or before `minutesApprovedAt`; a LEFT event means no seat), falling back to
-  their current seat where the ledger has nothing that early, and no seat for a
-  unit meeting. Read with the minutes, under the minutes read's access check,
-  organisation-scoped; at most three indexed reads, only for approved minutes.
+  their current seat where the ledger has nothing that early (which can name a
+  seat they have since left), and no seat for a unit meeting. The ledger is read
+  by `createdAt` (when the change was recorded), not `effectiveDate`, which can
+  be back- or forward-dated; ties are broken by id. Read with the minutes, under
+  the minutes read's access check, organisation-scoped; at most three indexed
+  reads, and only while the minutes are approved (a tenant could add a move out
+  of Minutes Approved, so the stamp alone isn't trusted).
 - **The print stylesheet:** `@page { size: A4 portrait; margin: 18mm }`, black
   on white, marks as outlined text, items kept whole across pages, and the page
   number in a margin box as "1 / 3" (`counter(pages)`, Chrome/Edge 131+; no

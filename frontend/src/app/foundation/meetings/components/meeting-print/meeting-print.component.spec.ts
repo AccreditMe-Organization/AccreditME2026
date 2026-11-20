@@ -159,6 +159,13 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
     expect(q(create().el, 'meeting-print-not-found')).not.toBeNull();
   });
 
+  it('any other refusal to read the minutes (a 403 without that code) is the not-found state', () => {
+    minutesRead = () => throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'MEETING_NOT_ALLOWED' } }));
+    const { el } = create();
+    expect(q(el, 'meeting-print-not-found')).not.toBeNull();
+    expect(q(el, 'meeting-print-not-approved')).toBeNull();
+  });
+
   it("Print opens the browser's print", () => {
     const { el } = create();
     const print = spyOn(window, 'print');
@@ -169,7 +176,8 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
   it('in Arabic: the groups and lines in Arabic', () => {
     const { el } = create('ar');
     expect(text(el.querySelector('[data-group="present"] dt'))).toBe('حاضرون');
-    expect(text(q(el, 'meeting-print-approval'))).toContain('اعتمده Dr. Nora Al-Otaibi (رئيس اللجنة)');
+    // A noun phrase, no gendered verb about the approver (Arabic copy rule, ACC-279).
+    expect(text(q(el, 'meeting-print-approval'))).toMatch(/^اعتماد: Dr\. Nora Al-Otaibi \(رئيس اللجنة\) في .+، بعد مراجعة الأعضاء الحاضرين: 2\.$/);
   });
 
   it('the print stylesheet: A4 portrait, 18mm margins, page numbers, and the on-screen bar hidden', () => {
@@ -181,11 +189,11 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
     expect(styles).toMatch(/@media print \{[^@]*\.am-print-bar \{ display: none !important; \}/);
   });
 
-  it('its route is outside the app shell (no chrome), behind sign-in and the meetings module, and comes first', () => {
+  it('its route is outside the app shell (no chrome), behind sign-in, and comes first', () => {
     const print = routes.findIndex((r) => r.path === 'meetings/:id/print');
     const shell = routes.findIndex((r) => r.path === '' && !!r.component);
     expect(print).toBeGreaterThanOrEqual(0);
     expect(print).toBeLessThan(shell);
-    expect(routes[print]!.canActivate?.length).toBe(2);
+    expect(routes[print]!.canActivate?.length).withContext('authGuard and permissionGuard, as /meetings/:id has').toBe(2);
   });
 });

@@ -154,6 +154,13 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
   `,
   styles: [
     `
+      /*
+       * Every colour, radius, space and type size is a design token. Only the
+       * rule widths (1px, 2px) and the screen column (760px) are literal:
+       * there is no token for either. Print stays on the tokens too: the card
+       * (white) and ink-900, which prints as near-black, so the paper reads
+       * as the screen does.
+       */
       app-meeting-print {
         display: block;
         background: var(--am-card);
@@ -161,7 +168,7 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
         min-block-size: 100vh;
       }
       .am-print-msg {
-        max-inline-size: 640px;
+        max-inline-size: 760px;
         margin: var(--am-space-24) auto;
         padding-inline: var(--am-space-16);
       }
@@ -181,8 +188,8 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
         max-inline-size: 760px;
         margin: 0 auto;
         padding: var(--am-space-16);
-        font-size: 11pt;
-        line-height: 1.45;
+        font-size: var(--am-type-value-size);
+        line-height: var(--am-type-value-line);
       }
       .am-print p {
         margin: 0;
@@ -202,7 +209,8 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
       }
       .am-print__title {
         margin: var(--am-space-12) 0 var(--am-space-4);
-        font-size: 17pt;
+        font-size: var(--am-type-title-size);
+        line-height: var(--am-type-title-line);
         font-weight: 700;
       }
       .am-print__approval {
@@ -213,7 +221,7 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
         margin: var(--am-space-16) 0 var(--am-space-4);
         padding-block: var(--am-space-4);
         border-block-end: 1px solid currentColor;
-        font-size: 10pt;
+        font-size: var(--am-type-meta-size);
         font-weight: 700;
       }
       .am-print__groups {
@@ -223,7 +231,7 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
         display: grid;
         grid-template-columns: 8.5em 1fr;
         gap: var(--am-space-8);
-        padding-block: 2px;
+        padding-block: var(--am-space-2);
       }
       .am-print__group dt {
         font-weight: 600;
@@ -241,7 +249,8 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
       }
       .am-print__item h3 {
         margin: 0;
-        font-size: 11.5pt;
+        font-size: var(--am-type-body-size);
+        line-height: var(--am-type-body-line);
         font-weight: 700;
       }
       .am-print__text {
@@ -253,16 +262,16 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
       /* A mark is outlined text: no colour carries meaning on paper. */
       .am-print__mark {
         display: inline-block;
-        margin-inline-start: 4px;
-        padding: 0 6px;
+        margin-inline-start: var(--am-space-4);
+        padding: 0 var(--am-space-6);
         border: 1px solid currentColor;
-        border-radius: 999px;
-        font-size: 9pt;
+        border-radius: var(--am-radius-pill);
+        font-size: var(--am-type-meta-size);
         font-weight: 600;
       }
       .am-print__actions {
         margin: 0;
-        padding-inline-start: 1.2em;
+        padding-inline-start: var(--am-space-20);
       }
       .am-print__end {
         margin-block-start: var(--am-space-16);
@@ -271,21 +280,19 @@ type PrintState = 'loading' | 'ready' | 'notApproved' | 'notFound' | 'error';
       }
       .am-print__foot {
         margin-block-start: var(--am-space-4) !important;
-        font-size: 9pt;
+        font-size: var(--am-type-meta-size);
       }
       @page {
         size: A4 portrait;
         margin: 18mm;
         @bottom-right {
           content: counter(page) ' / ' counter(pages);
-          font-size: 9pt;
+          font-size: var(--am-type-meta-size);
         }
       }
       @media print {
         app-meeting-print {
           min-block-size: 0;
-          background: #fff;
-          color: #000;
         }
         .am-print-bar {
           display: none !important;
