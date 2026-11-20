@@ -14266,6 +14266,26 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   (`/users/:id/roles` reads better than a separate `/roles` sub-resource
   controller) — code comment states this migration happened in Step 9,
   same behavior, same underlying `RoleService` ownership.
+- **Resend, two days, and who holds a seat (ACC-159).**
+  - **An invitation lasts two days** (`INVITATION_TTL_MS`), every invitation,
+    the owner's from `createTenant()` included.
+  - **`POST /users/:id/resend-invitation`** (`users:invite`) writes a new
+    `invitationToken`, so the old link stops working, and a new
+    `invitationExpiresAt`, under the person's row lock. The invitation email
+    and one audit row (`invitation_resent`, no token) follow the commit.
+    Anyone not INVITED is 409 `INVITATION_NOT_PENDING`; another
+    organisation's person is the identical 404.
+  - **An expired invitation holds no seat and no position**:
+    `holdsSeatWhere()` (`common/services/seat-holders.ts`) is the one rule
+    (ACTIVE, or INVITED with `invitationExpiresAt >= now`). It is used by
+    `assertSeatAvailable()`, Home's seats line, `validateSingleAssigneeCap()`,
+    and `OrgPositionService.hasAnyHeadConferringHolder()` /
+    `listAvailablePositionsForUser()`. The seat frees itself by not being
+    counted, with no sweep. So resending an EXPIRED invitation takes a seat
+    and the position again, through the same checks `invite()` runs.
+  - **`GET /users/seats`** (`users:invite`) answers `{ occupied, maxUsers }`
+    for the invite form, by the same count. `GET /users/:id` carries
+    `invitationExpiresAt` for an INVITED person only, never the token.
 
 ### 12.4 Invitation Acceptance — `AuthService.acceptInvitation()`
 
