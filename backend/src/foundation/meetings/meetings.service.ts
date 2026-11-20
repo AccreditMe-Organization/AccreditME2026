@@ -277,10 +277,11 @@ export class MeetingsService {
   /**
    * PR 8-be (P236, Q1) — the series' previous and next meetings for the
    * header's links: the nearest ones not cancelled, and only ones this viewer
-   * may open (the parent rule, `MeetingAccess.canSee()`, never a second copy),
-   * else null. One indexed read of the series' meetings in order, their stages
-   * in one batch, then the rule for each candidate outward until one is open,
-   * so bounded by the series' size (53).
+   * may open, else null. One indexed read of the series' meetings in order,
+   * then their stages and who may open them, each in one batch
+   * (`MeetingAccess.openable()`, canSee()'s rule batched, never a second copy),
+   * and the nearest on each side picked in memory: a fixed number of queries
+   * whatever the series' size (P237).
    */
   private async seriesNeighbours(
     seriesId: string,
@@ -296,17 +297,14 @@ export class MeetingsService {
     });
     const at = rows.findIndex((r) => r.id === id);
     if (at < 0) return { previousId: null, nextId: null };
-    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.filter((r) => r.id !== id).map((r) => r.id));
-    const live = (r: { id: string }) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED);
-    const firstOpen = async (candidates: { id: string }[]): Promise<string | null> => {
-      for (const c of candidates) {
-        if (!live(c)) continue;
-        if (await this.access.canSee(c.id, organizationId, viewer, now)) return c.id;
-      }
-      return null;
-    };
-    const [previousId, nextId] = await Promise.all([firstOpen(rows.slice(0, at).reverse()), firstOpen(rows.slice(at + 1))]);
-    return { previousId, nextId };
+    const others = rows.filter((r) => r.id !== id).map((r) => r.id);
+    const [rules, open] = await Promise.all([
+      this.stageRules.stageRulesFor(organizationId, 'MEETING', others),
+      this.access.openable(others, organizationId, viewer, now),
+    ]);
+    const nearest = (candidates: { id: string }[]): string | null =>
+      candidates.find((c) => !rules.get(c.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED) && open.has(c.id))?.id ?? null;
+    return { previousId: nearest(rows.slice(0, at).reverse()), nextId: nearest(rows.slice(at + 1)) };
   }
 
   private ownerOf(m: {

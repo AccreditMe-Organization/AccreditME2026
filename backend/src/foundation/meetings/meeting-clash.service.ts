@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
-import { meetingMemberSql, meetingOversightUnitIds, meetingOverseenSql } from '../../common/services/meeting-membership';
+import { meetingMayOpenSql, meetingOpener } from '../../common/services/meeting-membership';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import type { MeetingOwner } from '../workflow/meeting-authority';
 import { expectedMembers } from './invitees/meeting-invitee-sync.service';
@@ -67,9 +66,7 @@ export class MeetingClashService {
     // index narrows the meetings before any overlap is computed.
     const windowFrom = new Date(Math.min(...starts.map((s) => Date.parse(s))) - MAX_MINUTES * 60_000).toISOString();
     const windowTo = new Date(Math.max(...ends.map((e) => Date.parse(e)))).toISOString();
-    const seesAll = viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW);
-    const oversight = seesAll ? [] : [...(await meetingOversightUnitIds(this.prisma, organizationId, viewer.id, now))];
-    const mayOpen = seesAll ? Prisma.sql`TRUE` : Prisma.sql`(${meetingMemberSql('m', viewer.id)} OR ${meetingOverseenSql('m', oversight)})`;
+    const mayOpen = meetingMayOpenSql('m', await meetingOpener(this.prisma, organizationId, viewer, now));
 
     // The stored instants are UTC in timestamp columns: the ISO strings cast to timestamp read as UTC.
     const [rows, users] = await Promise.all([
