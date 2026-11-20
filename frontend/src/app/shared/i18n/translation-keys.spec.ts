@@ -224,6 +224,8 @@ describe('translation keys (ACC-78)', () => {
       // ACC-316 PR 8b — a meeting's place in its series, and where an ended series stopped.
       'meeting.series.line': '"Every month, the 4th Thursday · 4 of 12" — a position, no noun after the total',
       'meeting.series.ended': '"Every month · ended after 4 of 12" — a position, no noun after the total',
+      // ACC-316 PR 8c — the scope confirm's context: the meeting's place in its series.
+      'meeting.scope.position': '"IPC · October 2026 · 4 of 12" — a position, no noun after the total',
     };
 
     // Time quantities never become plural objects: they go through the layer's

@@ -3775,6 +3775,18 @@
       "seriesDates": {
         "one": "{{count}} date",
         "other": "{{count}} dates"
+      },
+      "meetingsClash": {
+        "one": "{{count}} of the {{total}} meetings has a clash",
+        "other": "{{count}} of the {{total}} meetings have a clash"
+      },
+      "scopeMeetings": {
+        "one": "{{count}} meeting, {{range}}",
+        "other": "{{count}} meetings, {{range}}"
+      },
+      "keptMore": {
+        "one": "and {{count}} more kept its own edit",
+        "other": "and {{count}} more kept their own edits"
       }
     }
   },
@@ -5212,7 +5224,8 @@
       "reasonHint": "Sent to invitees with the new date",
       "reasonRequired": "Give a reason: the invitees read it.",
       "submit": "Reschedule",
-      "error": "The meeting couldn't be rescheduled."
+      "error": "The meeting couldn't be rescheduled.",
+      "next": "Next"
     },
     "schedule": {
       "title": "Schedule meeting",
@@ -5334,7 +5347,8 @@
       "seriesEndRequired": "Give an end date or a number of meetings.",
       "seriesTooLong": "A series ends at most 12 months ahead.",
       "seriesEmpty": "The repeat makes no meeting before its end.",
-      "seriesTimeInvalid": "Give the time as hours and minutes."
+      "seriesTimeInvalid": "Give the time as hours and minutes.",
+      "notInSeries": "This meeting isn't part of a series any more."
     },
     "agendaItem": {
       "addTitle": "Add agenda item",
@@ -5462,7 +5476,10 @@
       "showWho": "Show who",
       "hide": "Hide",
       "backToDetails": "← Back to details",
-      "rechecks": "Change either and the list rechecks at once"
+      "rechecks": "Change either and the list rechecks at once",
+      "showWhich": "Show which",
+      "personHas": "{{name}} has another meeting then",
+      "rowsLabel": "Other meetings at that time"
     },
     "repeat": {
       "repeats": "Repeats",
@@ -5512,6 +5529,38 @@
       "clash": "Clash",
       "clashOn": "Clash on {{date}}: show who",
       "firstMeeting": "first meeting {{when}}"
+    },
+    "edit": {
+      "open": "Edit details…",
+      "title": "Edit details",
+      "save": "Save",
+      "next": "Next",
+      "error": "The meeting couldn't be saved."
+    },
+    "scope": {
+      "title": "Which meetings change?",
+      "lead": "Past meetings never change. Choose what this change applies to.",
+      "thisOnly": "This meeting only",
+      "thisAndLater": "This and all later meetings",
+      "thisOnlyMoves": "{{date}} moves to {{to}}",
+      "thisOnlyEdit": "{{date}} only",
+      "working": "Working out which meetings…",
+      "laterUnknown": "Couldn't work out which meetings",
+      "laterNone": "No later meeting changes",
+      "previewError": "Couldn't work out which meetings change.",
+      "position": "{{index}} of {{total}}",
+      "newTime": "new time {{when}}",
+      "kept": "Kept its own edit: {{date}} ({{what}})",
+      "keptJoin": ", ",
+      "keptField": {
+        "scheduledAt": "its own time, {{time}}",
+        "typeValueId": "its own type",
+        "durationMinutes": "its own duration",
+        "location": "its own place",
+        "meetingUrl": "its own link",
+        "unitQuorum": "its own quorum"
+      },
+      "apply": "Apply"
     }
   }
 }
