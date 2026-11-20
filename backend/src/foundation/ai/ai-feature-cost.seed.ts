@@ -37,6 +37,13 @@ export const AI_FEATURE_COST_SEED: readonly AiFeatureCostSeed[] = [
     creditCost: 1,
     description: 'AI suggests someone with capacity when a task\'s chosen person is overloaded on its record, on a press (ACC-199).',
   },
+  {
+    // ACC-322 (Ahmad, 20 Nov) — 8 credits, action items included; open to
+    // every organisation with AI, like drafting.
+    featureKey: 'minutes_drafting',
+    creditCost: 8,
+    description: 'AI drafts a meeting\'s minutes and action items from the rough notes of whoever records them, per press (ACC-322).',
+  },
 ];
 
 export type AiFeatureCostSeedAction =

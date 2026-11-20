@@ -30,6 +30,8 @@ describe('ai.config (ACC-194)', () => {
       expect(AI_FEATURES[key].maxTokens).toBeGreaterThan(0);
     }
     expect(AI_FEATURES.document_summary.inputTokenCap).toBe(30_000);
+    // ACC-322 — plan step-322 §1.2.
+    expect(AI_FEATURES.minutes_drafting).toEqual({ tier: 'STANDARD', effort: 'medium', maxTokens: 16_000, inputTokenCap: 20_000 });
   });
 
   it('knows its feature keys and nothing else', () => {

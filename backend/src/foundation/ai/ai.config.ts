@@ -27,7 +27,7 @@ export type { AiEffort };
 export type AiTier = 'STANDARD' | 'PREMIUM';
 
 /** Every feature that may call the model. A cost row alone is not enough. */
-export const AI_FEATURE_KEYS = ['task_description_drafting', 'document_summary', 'morning_briefing', 'workload_balancing'] as const;
+export const AI_FEATURE_KEYS = ['task_description_drafting', 'document_summary', 'morning_briefing', 'workload_balancing', 'minutes_drafting'] as const;
 export type AiFeatureKey = (typeof AI_FEATURE_KEYS)[number];
 
 export interface AiFeatureCallConfig {
@@ -53,6 +53,12 @@ export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = 
   // limit, and a truncated JSON answer is unusable. Only a ceiling: the credit
   // price is flat.
   morning_briefing: { tier: 'STANDARD', effort: 'low', maxTokens: 4000 },
+  // ACC-322 — Draft minutes, with the action items, at most 6 agenda items a
+  // call. Output: the worst case is about 11,400 tokens of JSON in Arabic
+  // (minutes-draft-answer.spec.ts), leaving about 4,600 for thinking at medium
+  // effort. Input: 18,000 characters of notes in Arabic plus 6 items, under
+  // 20,000 by the same spec. Plan step-322 §1.2.
+  minutes_drafting: { tier: 'STANDARD', effort: 'medium', maxTokens: 16_000, inputTokenCap: 20_000 },
 };
 
 export const DEFAULT_ANTHROPIC_MODELS: Readonly<Record<AiTier, string>> = {
