@@ -168,6 +168,16 @@ describe('Move confirm dialog — layout, measured (ACC-316 PR 6)', () => {
           expect(empty).toBeGreaterThan(FLOOR);
         }, 30_000);
 
+        // ACC-316 PR 8d — a series meeting's Cancel names it and says "Only this meeting" in its context line.
+        it('Cancel Meeting in a series: its context line', async () => {
+          const context = language === 'en' ? 'Infection Prevention and Control Committee · 22 Oct 2026, 10:00 · Only this meeting' : 'لجنة الوقاية من العدوى ومكافحتها · 22 Oct 2026, 10:00 · هذا الاجتماع فقط';
+          await open(language, width, { ...CANCEL, context }, true);
+          expect(document.querySelector('.am-dialog__context')?.textContent?.trim()).toBe(context);
+          check('cancel in a series, with its context', language, width);
+          const header = document.querySelector<HTMLElement>('.am-dialog__context')!;
+          expect(header.scrollWidth).withContext('the context line never runs sideways').toBeLessThanOrEqual(header.clientWidth + 1);
+        }, 30_000);
+
         it('Issue Agenda: a confirm, with no field', async () => {
           await open(language, width, ISSUE, false);
           expect(document.querySelector('[data-testid="move-confirm-lead"]')?.textContent?.trim()).toBe(

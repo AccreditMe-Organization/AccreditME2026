@@ -27,6 +27,8 @@ export interface MoveConfirmCopy {
   confirmKey: string;
   keepKey: string;
   danger: boolean;
+  /** ACC-316 PR 8d — the dialog's context line, already in the reader's words (a meeting's "IPC · 22 Oct 2026, 10:00 · Only this meeting"). */
+  context?: string;
 }
 
 /**
@@ -78,6 +80,7 @@ export interface MoveConfirmCopy {
       [visible]="visible()"
       (visibleChange)="visibleChange.emit($event)"
       [header]="(copy()?.titleKey ?? '') | translate"
+      [context]="copy()?.context ?? ''"
       [content]="bodyTpl"
       [footer]="footerTpl"
       [dirty]="form.dirty"
