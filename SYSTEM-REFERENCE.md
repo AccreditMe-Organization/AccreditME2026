@@ -18411,19 +18411,24 @@ Plan PR 8 slice 8b (P235, P239, P240), Meeting Screens' header and A9.
 - **The whole series: `/meetings?seriesId=`**, ONE list by date, as drawn
   (P240): `GET /meetings?view=series&seriesId=` answers every meeting of the
   series the viewer may open (`meetingMayOpenSql()`, the parent rule's one SQL
-  form, which every list view now reads), past and future, cancelled ones
-  included, scoped by organisation, by date, in one answer capped at
-  `SERIES_LIST_CAP` (53, a series' most), never paged. `seriesId` is
-  required with it. No views to switch between; the order line reads "Sorted
-  by date, earliest first." It is headed "Whole series · {owner}" and the
+  form, which the visible views now read: mine, upcoming, past and series;
+  minutes, all and subunits have rules of their own), past and future,
+  cancelled ones included, scoped by organisation, by date, in one answer
+  capped at `SERIES_LIST_CAP` (53, a series' most), with the rule in the WHERE
+  before the LIMIT, never paged; its `total` is what it lists. `seriesId` is
+  required, and not empty, with it; with any other view an empty one is
+  ignored, as it always was. No views to switch between, no pager, and the
+  server's order is drawn as it is; the order line reads "Sorted by date,
+  earliest first." It is headed "Whole series · {owner}" and the
   series' line: from the link's navigation state (the series and its owner,
   only when its id is this series'), else the owner from the first row and the
   line from that meeting's read, once. A cancelled meeting reads Cancelled,
   struck through (A9).
 - **The rows' notes, only from stored data.** "Rescheduled from 20 May 2027"
   is the meeting's latest `MeetingReschedule` row (`movedFrom`, one batched
-  read, on this view only): the reschedule the meeting page's own
-  "Rescheduled from" reads. **Not built:** the drawing's "Its own time, 10:00"
+  read, on this view only; latest by `createdAt`, a tie broken by id): the
+  reschedule the meeting page's own "Rescheduled from" reads, by the same
+  order. **Not built:** the drawing's "Its own time, 10:00"
   (that a later "this and all later" reschedule skipped this meeting is not
   stored as such) and the cancelled meeting's reason (it is the Cancel move's
   comment, not on the meeting or series rows). Neither is rebuilt from the
