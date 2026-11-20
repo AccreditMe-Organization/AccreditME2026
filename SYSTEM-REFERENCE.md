@@ -17865,10 +17865,21 @@ with `schedule()`).
   `series` also gives the pattern's day (`on`: kind, weekday, day of the month,
   ordinal), `firstDate`, `endsOn` or `count`, and `previousId` / `nextId`: the
   nearest meetings either side that aren't cancelled and that this viewer may
-  open (`MeetingAccess.canSee()`, the parent rule; never a second copy), else
-  null. One indexed read of the series' meeting ids in order, their stages in
-  one batch, then the rule for each candidate outward until one is open:
-  bounded by the series' size, and only for a series meeting.
+  open, else null. One indexed read of the series' meeting ids in order, then
+  their stages and who may open them, each in one batch, and the nearest on each
+  side picked in memory: **a fixed number of queries whatever the series' size**
+  (P237; a db-spec counts a series of 3 and of 30), and only for a series
+  meeting.
+- **Who may open many meetings, in one query (P237):**
+  `MeetingAccess.openable(ids)` is `canSee()`'s rule batched, built from
+  `meeting-membership.ts`'s `meetingOpener()` (the viewer's side, read once: no
+  query for a `meetings:view` holder, the oversight set otherwise) and
+  `meetingMayOpenSql()` (`meetings:view`, else the MEMBER and SCHEDULER clauses
+  or the OVERSEER clause). The clash check reads the same pair, so the rule has
+  one copy. A db-spec holds `openable()` equal to `canSee()` for every candidate
+  (this series, another organisation's, an invented id) and every viewer kind
+  (member, overseer, invited to one, `meetings:view`, `committees:view` only,
+  outsider).
 - **What "this and all later" would do (PR 8-be, Q2):** `POST
   /meetings/:id/scope-preview` (`{ change: EDIT | RESCHEDULE, … }`, the edit's
   or the reschedule's fields without a reason) answers `{ meetings: [{ id,
@@ -17885,9 +17896,15 @@ with `schedule()`).
     the same time);
   - clashes are asked of the anchor's invitees at each meeting's new time (one
     batched check, cap 53); a "clash" with a meeting that is itself moving is
-    left out;
+    left out. **An edit that moves no time (no new duration) asks nothing and
+    answers `clashes: []`**, so the confirm never presents a clash already there
+    as the edit's; a new duration is still checked (P237);
+  - the stage rules are read once: `laterMeetings()` returns each meeting's, and
+    the anchor's refusal is built from them by `StageRulesService
+    .assertRulesAllow()` (`assertStageAllows()`'s refusal, one copy);
   - a db-spec proves no row changes (and no lock is taken: it answers while
-    another transaction holds a meeting FOR UPDATE), and that the previewed
+    another transaction holds a meeting and its workflow instance FOR UPDATE),
+    and that the previewed
     times are exactly what the write then stores, including a meeting moved off
     a day the owner already meets.
 ### 18.15 The screens, part 1 (PR 6)
