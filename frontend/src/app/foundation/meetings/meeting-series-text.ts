@@ -19,6 +19,7 @@ import type { MeetingSeriesDto, MeetingSeriesEvery, MeetingSeriesOnKind, Meeting
  * Words are translations and numbers go through the format layer (Latin
  * digits, ACC-94); nothing here computes a date or a neighbour.
  */
+// Each Every's number is fixed by this list ("Every 2 weeks", "Every 3 months"), so its words are fixed strings, never counted ones.
 export const SERIES_EVERY: readonly MeetingSeriesEvery[] = ['WEEK_1', 'WEEK_2', 'MONTH_1', 'MONTH_3', 'MONTH_6', 'MONTH_12'];
 export const SERIES_ON_KINDS: readonly MeetingSeriesOnKind[] = ['WEEKDAY', 'DAY_OF_MONTH', 'ORDINAL_WEEKDAY'];
 export const SERIES_ORDINALS: readonly MeetingSeriesOrdinal[] = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'LAST'];

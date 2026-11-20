@@ -175,7 +175,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
           @if (m.series; as s) {
             <div class="flex min-w-0 flex-col" data-testid="meeting-series">
               <span class="text-meta text-[var(--am-ink-500)]">{{ 'meeting.page.series' | translate }}</span>
-              <span class="am-mp__series-line" data-testid="meeting-series-line">{{ seriesText() }}</span>
+              <bdi data-testid="meeting-series-line">{{ seriesText() }}</bdi>
               <span class="flex flex-wrap items-baseline gap-x-3 text-meta">
                 @if (s.previousId && s.previousAt) {
                   <a
