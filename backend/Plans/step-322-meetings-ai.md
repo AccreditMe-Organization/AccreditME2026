@@ -14,6 +14,8 @@ absent members.
   to 7b (#343 to #376). PRs 7c, 7d, 8 and 9 are not merged yet.
 - **Revised after lane B's review of #383 (P225).** Section 9 lists what
   changed.
+- **Ahmad answered §6's five questions on 20 Nov, all as recommended.** The
+  answers are carried through the plan.
 
 The four features in the ticket become **three AI calls**:
 - Action items are drafted in the same call as the minutes (design 6.2/6.3), so
@@ -64,6 +66,9 @@ The four features in the ticket become **three AI calls**:
 ## 1. The three features
 
 ### 1.0 Rules common to all three
+
+**Open to every organisation with AI** (Ahmad, 20 Nov, §6 answer 2), like task
+drafting: each cost row is unrestricted.
 
 **One gateway.** Every call goes through `AiService.run()` (ACC-194):
 - credits are reserved first, then the call is made;
@@ -126,7 +131,8 @@ and writes the names back into the suggestion text. So:
 
 **What it cannot catch:** a name the matching doesn't recognise, such as a
 misspelling, or someone who is neither an invitee nor a user, is sent as
-written (Question 5).
+written. So the notes line says the notes go to the AI provider (Ahmad, 20 Nov,
+§6 answer 5).
 
 **Who and when are read live on every press, and again inside the save
 transaction** (§4).
@@ -240,7 +246,8 @@ thirds of a token.
 tasks and the panel says "Approvals couldn't be checked." (design outMeet).
 
 **Key, credits and effort:**
-- `meeting_agenda_generation`: 3 credits (CLAUDE.md's price list).
+- `meeting_agenda_generation`: 3 credits (CLAUDE.md's price list; Ahmad, 20
+  Nov).
 - STANDARD tier, effort `low`, `maxTokens` 2,000, `inputTokenCap` 6,000.
 - **Worst case:** 30 Arabic titles at 120 characters, plus 20 agenda titles,
   is about 3,300 tokens.
@@ -273,6 +280,9 @@ tasks and the panel says "Approvals couldn't be checked." (design outMeet).
 
 **Where and who:**
 - A Rough notes box with "Draft minutes" at the top of Agenda & minutes.
+- **Its line adds a sentence** (Ahmad, 20 Nov, §6 answer 5): "Draft minutes
+  sends these notes to AccreditMe's AI provider." / «ترسل «صياغة المحضر» هذه
+  الملاحظات إلى مزوّد الذكاء الاصطناعي لدى AccreditMe.»
 - For whoever records the minutes (`minutes.may.recordMinutes`), while:
   - the minutes are in their `draft` phase;
   - the stage allows `record_minutes` (seeded on Minutes Draft);
@@ -358,7 +368,11 @@ Caps:
     note 1's reason: «لا يُقترح ضيف من الخارج مسؤولًا (د. لينا منصور). اختر
     شخصًا في المنشأة.» (M7).
   - **A user who is not ACTIVE, an unknown label, or no owner** gives an empty
-    owner with a reason (Question 4).
+    owner with Ahmad's reason (20 Nov, §6 answer 4): "No one in the
+    organisation matches “Omar”. Choose a person." /
+    «لا يطابق أحدٌ في المنشأة «عمر». اختر شخصًا.»
+    With no name in the notes at all, the owner is simply empty, with no
+    reason line.
   - **An organisation guest** who is staff may own an action, as drawn.
 - **Due dates (P225):**
   - The model's day, and its time when the notes state one, become an instant
@@ -378,7 +392,8 @@ Caps:
   `DRAFT_NOTHING_TO_SUGGEST`'s shape, and the design's Empty outcome.
 
 **Key, credits and effort:**
-- `minutes_drafting`: 8 credits (CLAUDE.md's price list).
+- `minutes_drafting`: 8 credits, action items included (CLAUDE.md's price
+  list; Ahmad, 20 Nov).
 - **The action items are part of this call and cost nothing extra.**
 - STANDARD tier, effort `medium`, `maxTokens` 16,000, `inputTokenCap` 20,000.
 - **Worst-case input:** 18,000 Arabic characters of notes (about 12,000
@@ -475,7 +490,7 @@ back to names by our code.
 - the Send confirm.
 
 **Key, credits and effort:**
-- New key `absent_member_summary`, at the credits in Question 1.
+- New key `absent_member_summary`: 5 credits (Ahmad, 20 Nov).
 - STANDARD tier, effort `low`, `maxTokens` 3,000, `inputTokenCap` 15,000.
 
 **Refunded (not charged):**
@@ -499,8 +514,12 @@ back to names by our code.
 - **Recorded on the meeting:**
   - `absentSummarySentAt` and `absentSummarySentById`;
   - one audit row naming the recipients' ids and `aiDraft`.
-- **After it is sent,** the trigger is replaced by "Summary sent 25 Sep to 3
-  members" (Question 3).
+- **It is sent once** (Ahmad, 20 Nov, §6 answer 3). After it is sent, the
+  trigger is replaced by "Summary sent 25 Sep to 3 members", and there is no
+  Send again. A draft or send after it is refused with 409
+  `MEETING_AI_SUMMARY_SENT`, checked before any credit is reserved and again
+  under the meeting's row lock (`absentSummarySentAt` already set). It is in
+  `RELOAD_CODES`.
 - **Discard** removes the suggestion.
 - **Draft again** replaces it.
 
@@ -699,6 +718,8 @@ meeting row FOR UPDATE, then the agenda item.
   - `MEETING_AI_TOO_LONG`
   - `MEETING_AI_SUGGESTION_GONE`: a suggestion already decided by someone
     else, or replaced by Draft again. It is in `RELOAD_CODES`.
+  - `MEETING_AI_SUMMARY_SENT`: the absent-member summary was already sent
+    (§6 answer 3). It is in `RELOAD_CODES`.
 - **`MEETING_CHANGED`'s Reload comes from #380** (§3).
 - **Each is said from its code, in both languages:**
   - through `meeting-refusal.ts` on the meetings screens;
@@ -773,43 +794,29 @@ agrees:
 
 **Each PR deploys before the next. Every migration is expand only.** Each AI
 key's cost row is seeded after its PR deploys (`npm run
-seed:ai-feature-costs`), never before. Each live proof follows its seed.
+seed:ai-feature-costs`), never before, unrestricted (§6 answer 2). Each live
+proof follows its seed.
 
 ---
 
-## 6. Questions for Ahmad
+## 6. Answered by Ahmad, 20 Nov
 
-1. **Credits per feature.**
-   - **Suggest agenda items:** 3 credits, per CLAUDE.md's price list.
-   - **Draft minutes:** 8 credits, per CLAUDE.md's price list, with the action
-     items included at no extra cost.
-   - **The summary for absent members has no price yet.** I suggest 5 credits,
-     the same as a briefing run.
+All five as recommended.
 
-   Are 3, 8 and 5 right?
-2. **Which organisations is it open to?**
-   - Open to every organisation with AI, like task drafting.
-   - Or restricted to al-nakheel for demos first, like the briefing.
-3. **Can the absent-member summary be sent more than once?** The plan sends it
-   once, and then shows "Summary sent 25 Sep to 3 members" in place of the
-   trigger. The alternative is to allow sending again, which notifies the same
-   members a second time.
-4. **What should an action read when its owner in the notes matches nobody?**
-   This covers someone not in the organisation, or no longer active. The
-   design gives reasons only for an outside guest and for a past date. I
-   suggest: "No one in the organisation matches “Omar”. Choose a person." /
+1. **Credits.**
+   - Suggest agenda items (`meeting_agenda_generation`): **3**.
+   - Draft minutes (`minutes_drafting`), action items included: **8**.
+   - The summary for absent members, new key `absent_member_summary`: **5**.
+2. **Open to every organisation with AI**, like task drafting. Not restricted:
+   each cost row has `restricted: false`.
+3. **The absent-member summary is sent once,** then "Summary sent {date} to {n}
+   members" replaces the trigger. There is no Send again.
+4. **An owner nobody matches** (not in the organisation, or no longer active):
+   "No one in the organisation matches “Omar”. Choose a person." /
    «لا يطابق أحدٌ في المنشأة «عمر». اختر شخصًا.»
-5. **Should the notes line say the notes are sent to the AI provider?**
-   - **The drawn line is:** "Seen only by whoever writes the minutes. Paste or
-     type; nothing here is in the minutes until you accept it."
-   - **What our code does before sending:** it replaces every name it knows
-     (the meeting's invitees, outside guests included, and the organisation's
-     active people) and every email address.
-   - **What it cannot catch:** a name it doesn't recognise, such as a
-     misspelling, is sent as typed.
-   - **I suggest adding:** "Draft minutes sends these notes to AccreditMe's AI
-     provider." / «ترسل «صياغة المحضر» هذه الملاحظات إلى مزوّد الذكاء
-     الاصطناعي لدى AccreditMe.»
+5. **The notes line adds:** "Draft minutes sends these notes to AccreditMe's AI
+   provider." / «ترسل «صياغة المحضر» هذه الملاحظات إلى مزوّد
+   الذكاء الاصطناعي لدى AccreditMe.»
 
 ---
 
@@ -870,7 +877,12 @@ The Arabic is neutral about a person, and uses «المنشأة».
   {date}, from {name}" / «ملخص {meeting}، {date}، من {name}».
 - The refusal sentences for the new codes in §4, written with the PR that
   adds each. `MEETING_AI_TOO_LONG` has one sentence per feature.
-- Question 4's line and Question 5's line, if Ahmad agrees.
+- The owner nobody matches (§6 answer 4): "No one in the organisation
+  matches “Omar”. Choose a person." /
+  «لا يطابق أحدٌ في المنشأة «عمر». اختر شخصًا.»
+- The notes line's added sentence (§6 answer 5): "Draft minutes sends these
+  notes to AccreditMe's AI provider." / «ترسل «صياغة المحضر» هذه الملاحظات
+  إلى مزوّد الذكاء الاصطناعي لدى AccreditMe.»
 
 ---
 
@@ -898,8 +910,8 @@ The Arabic is neutral about a person, and uses «المنشأة».
 - **Draft again per part:** accepted minutes with undecided actions get only
   actions back.
 - **Names:** replaced in every customer text of all three calls; an outside
-  guest's words are always replaced; "as recorded"; Question 5 agrees with
-  §1.0.
+  guest's words are always replaced; "as recorded"; the notes question (§6,
+  answer 5) agrees with §1.0.
 - **The change request:** gated on the presser's own read of the committee,
   and sent as "Change request {n}" with its field names.
 - **`GET /ai`:** batched availability; the number of queries is fixed.
