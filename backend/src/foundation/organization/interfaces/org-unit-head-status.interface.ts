@@ -74,6 +74,14 @@ export interface IOrgUnitHeadStatus {
   cover: IOrgUnitHeadCover | null;
 
   /**
+   * ACC-328 — the cover the server uses as acting head (ACTIVE person, in
+   * force): findActiveCoversForUnits(). Null when none is; the name is null
+   * without users:view. The Transfer wizard previews a promotion's manager
+   * from this, never from `actingHeadUserId`.
+   */
+  activeCover: IOrgUnitHeadPersonRef | null;
+
+  /**
    * A cover arranged to START later, not yet in force. Not one of the panel's
    * states, but the endpoints treat it as a cover: Arrange cover refuses while
    * it exists, and End cover accepts. Null when there is none.

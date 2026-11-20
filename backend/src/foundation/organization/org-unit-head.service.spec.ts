@@ -243,7 +243,7 @@ describe('OrgUnitHeadService', () => {
       validFrom: Date;
       validTo: Date | null;
       endedAt: Date | null;
-      user: { name: string };
+      user: { name: string; status?: 'ACTIVE' | 'INACTIVE' };
       id: string;
     }
 
@@ -291,6 +291,8 @@ describe('OrgUnitHeadService', () => {
         Object.entries(w).every(([k, v]) => {
           if (k === 'organizationId' || k === 'orgUnitId' || k === 'kind') return true;
           if (k === 'OR') return (v as Record<string, unknown>[]).some(clause);
+          // ACC-328 — ACTIVE_COVER_PERSON, findActiveCoversForUnits()'s person rule.
+          if (k === 'user') return (c.user.status ?? 'ACTIVE') === (v as { status: string }).status;
           const field = time((c as unknown as Record<string, Date | null>)[k] ?? null);
           if (v === null) return field === null;
           const op = v as { gt?: Date; lte?: Date };
@@ -435,6 +437,74 @@ describe('OrgUnitHeadService', () => {
       const result = await service.getHeadStatus(UNIT_1, ORG_A);
       expect(result.recentlyEndedCovers.map((c) => c.userId)).toEqual(['b', 'a']);
       expect(result.recentlyEndedCovers[0]!.endedAt).toEqual(day('2026-10-18'));
+    });
+
+    // ── the cover the server uses (ACC-328) ──
+    describe('activeCover — the cover the server uses as acting head (ACC-328)', () => {
+      it('a cover in force whose person is ACTIVE is the active cover, named', async () => {
+        covers.push(cv({ validFrom: day('2026-10-01') }));
+        const result = await service.getHeadStatus(UNIT_1, ORG_A);
+        expect(result.activeCover).toEqual({ userId: ACTING_USER.id, name: 'Dr. Tariq Suleiman' });
+        // The name came from the cover-in-force read: no extra lookup.
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('a cover in force whose person is DEACTIVATED is no active cover, though it stays the cover on record', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+        covers.push(cv({ validFrom: day('2026-10-01'), user: { name: 'Dr. Tariq Suleiman', status: 'INACTIVE' } }));
+        const result = await service.getHeadStatus(UNIT_1, ORG_A);
+        expect(result.activeCover).toBeNull();
+        expect(result.cover).toEqual(expect.objectContaining({ userId: ACTING_USER.id })); // non-vacuous: the row is read
+        expect(result.actingHeadUserId).toBe(ACTING_USER.id);
+      });
+
+      it('a cover that has not started is no active cover', async () => {
+        covers.push(cv({ validFrom: day('2026-11-01'), validTo: day('2026-12-01') }));
+        const result = await service.getHeadStatus(UNIT_1, ORG_A);
+        expect(result.activeCover).toBeNull();
+        expect(result.scheduledCover).toEqual(expect.objectContaining({ userId: ACTING_USER.id })); // non-vacuous
+      });
+
+      it('the name is null without users:view, and the id is still given', async () => {
+        covers.push(cv({ validFrom: day('2026-10-01') }));
+        const result = await service.getHeadStatus(UNIT_1, ORG_A, { includeNames: false });
+        expect(result.activeCover).toEqual({ userId: ACTING_USER.id, name: null });
+      });
+
+      it('an older overlapping cover whose person is ACTIVE wins over a newer deactivated one, named by one lookup in the organisation', async () => {
+        people['older-cover'] = { name: 'Dr. Mona Al-Saud', organizationId: ORG_A };
+        covers.push(
+          cv({ userId: 'newer-gone', validFrom: day('2026-10-10'), user: { name: 'Gone', status: 'INACTIVE' } }),
+          cv({ userId: 'older-cover', validFrom: day('2026-10-01'), user: { name: 'Dr. Mona Al-Saud' } }),
+        );
+        mockPrisma.orgUnitHeadAssignment.findMany.mockImplementation(({ where }: { where: Where }) =>
+          Promise.resolve(
+            covers.filter((c) => matchesCover(c, where)).sort((a, b) => b.validFrom.getTime() - a.validFrom.getTime()),
+          ),
+        );
+        const result = await service.getHeadStatus(UNIT_1, ORG_A);
+        expect(result.cover!.userId).toBe('newer-gone');
+        expect(result.activeCover).toEqual({ userId: 'older-cover', name: 'Dr. Mona Al-Saud' });
+        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+          where: { id: 'older-cover', organizationId: ORG_A },
+          select: { name: true },
+        });
+        delete people['older-cover'];
+      });
+
+      itEnforcesTenantIsolation('getHeadStatus: the active cover (findActiveCoversForUnits)', async () => {
+        covers.push(cv({ organizationId: ORG_B, validFrom: day('2026-10-01') }));
+        expect((await service.getHeadStatus(UNIT_1, ORG_A)).activeCover).toBeNull();
+        const activeCalls = mockPrisma.orgUnitHeadAssignment.findMany.mock.calls.filter(
+          ([args]) => (args as { where: { user?: unknown } }).where.user !== undefined,
+        );
+        expect(activeCalls.length).toBe(1); // non-vacuous, and exactly one read
+        for (const [args] of activeCalls) {
+          expect((args as { where: Where }).where).toEqual(
+            expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1, user: { status: 'ACTIVE' } }),
+          );
+        }
+      });
     });
 
     // ── names (D7) ──
