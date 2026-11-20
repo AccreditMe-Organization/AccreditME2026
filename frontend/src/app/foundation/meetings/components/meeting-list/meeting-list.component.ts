@@ -9,8 +9,9 @@ import { DataListSource } from '../../../../shared/components/data-list/data-lis
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { FormatService } from '../../../../core/formatting';
-import { MeetingService, type MeetingListItemDto, type MeetingListView } from '../../services/meeting.service';
+import { MeetingService, type MeetingListItemDto, type MeetingListView, type MeetingSeriesDto } from '../../services/meeting.service';
 import { isCancelled, isClosed, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
+import { seriesSummary } from '../../meeting-series-text';
 
 const PAGE = 25;
 
@@ -30,6 +31,20 @@ const PAGE = 25;
     <div class="am-ml flex flex-col gap-3 h-full min-h-0" data-testid="meeting-list-page">
       <app-page-header [title]="'meeting.title' | translate" />
       <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="meeting-list-order">{{ 'meeting.list.order' | translate }}</p>
+      <!--
+        PR 8b — the whole series (?seriesId=, the meeting header's "Whole
+        series"): its owner and its pattern, then its meetings by the same views
+        an owner's list has. A cancelled one reads Cancelled (A9).
+      -->
+      @if (seriesFilter()) {
+        <section class="flex flex-col gap-1" data-testid="meeting-list-series">
+          <h2 class="m-0 text-[15px] font-semibold" data-testid="meeting-list-series-title">{{ 'meeting.list.seriesTitle' | translate: { owner: seriesOwnerLabel() } }}</h2>
+          @if (seriesText()) {
+            <p class="m-0 text-[13px]" data-testid="meeting-list-series-line">{{ seriesText() }}</p>
+          }
+          <a routerLink="/meetings" class="text-[13px] text-[var(--am-blue-primary)] self-start" data-testid="meeting-list-series-clear">{{ 'meeting.list.clearOwner' | translate }}</a>
+        </section>
+      }
       <!-- ACC-316 PR 7 — opened from a committee's or unit's Meetings panel (See all). -->
       @if (ownerFilter()) {
         <p class="m-0 flex flex-wrap items-center gap-2 text-[13px]" data-testid="meeting-list-owner">
@@ -54,7 +69,7 @@ const PAGE = 25;
           [noResultsMessage]="'meeting.list.noMatchBody' | translate"
           [hasDestination]="true"
           gridSuffix="0px"
-          [persistKey]="ownerFilter() ? 'meetings-owner' : 'meetings'"
+          [persistKey]="seriesFilter() ? 'meetings-series' : ownerFilter() ? 'meetings-owner' : 'meetings'"
           [urlSync]="true"
         >
           <ng-template #listHeader let-h>
@@ -163,13 +178,28 @@ export class MeetingListComponent {
   readonly ownerFilter = signal<{ committeeId?: string; orgUnitId?: string } | null>(null);
   readonly ownerName = signal<string | null>(null);
   readonly ownerLabel = computed(() => this.ownerName() ?? this.translate.instant('meeting.list.oneOwner'));
-  /** A new list for each owner, so its views, paging and search start again. */
-  readonly listKey = computed(() => JSON.stringify(this.ownerFilter()));
+  /**
+   * PR 8b — one series' meetings (?seriesId=, from a meeting's "Whole series"):
+   * its Upcoming and Past, under the plain visibility rule. Its owner and
+   * pattern come from the link's navigation state, else from the first row's
+   * meeting (one read, only then).
+   */
+  readonly seriesFilter = signal<string | null>(null);
+  readonly series = signal<MeetingSeriesDto | null>(null);
+  readonly seriesOwner = signal<string | null>(null);
+  readonly seriesOwnerLabel = computed(() => this.seriesOwner() ?? this.translate.instant('meeting.list.oneSeries'));
+  readonly seriesText = computed(() => {
+    const s = this.series();
+    return s ? seriesSummary(s, this.translate, this.format) : '';
+  });
+
+  /** A new list for each owner or series, so its views, paging and search start again. */
+  readonly listKey = computed(() => JSON.stringify([this.ownerFilter(), this.seriesFilter()]));
 
   /** The views; "All meetings" only where the server says so, with no client copy of the rule. */
   readonly scopes = computed<DataListScope[]>(() => {
     this.translate.currentLang();
-    const views: MeetingListView[] = this.ownerFilter()
+    const views: MeetingListView[] = this.ownerFilter() || this.seriesFilter()
       ? ['upcoming', 'past']
       : ['mine', 'past', 'minutes', ...(this.canSeeAll() ? (['all'] as const) : []), 'subunits'];
     return views.map((key) => ({ key, label: this.translate.instant(`meeting.list.view.${key}`) }));
@@ -194,11 +224,13 @@ export class MeetingListComponent {
     const pageSize = query.pageSize ?? PAGE;
     const page = query.page ?? 1;
     const owner = this.ownerFilter();
+    const seriesId = this.seriesFilter();
     return this.meetings
       .list({
-        view: (query.scope as MeetingListView | undefined) ?? (owner ? 'upcoming' : 'mine'),
+        view: (query.scope as MeetingListView | undefined) ?? (owner || seriesId ? 'upcoming' : 'mine'),
         q: query.search || undefined,
         ...(owner ?? {}),
+        ...(seriesId ? { seriesId } : {}),
         skip: (page - 1) * pageSize,
         take: Math.min(pageSize, 50),
       })
@@ -206,6 +238,7 @@ export class MeetingListComponent {
         tap((r) => {
           this.canSeeAll.set(r.canSeeAll);
           if (owner && !this.ownerName() && r.items[0]) this.ownerName.set(ownerName(r.items[0].owner, this.language));
+          if (seriesId && r.items[0]) this.nameSeries(seriesId, r.items[0]);
         }),
         map((r) => ({ data: r.items, total: r.total, page, pageSize })),
       );
@@ -216,6 +249,15 @@ export class MeetingListComponent {
   constructor() {
     const route = inject(ActivatedRoute);
     route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const seriesId = params.get('seriesId');
+      if (seriesId !== this.seriesFilter()) {
+        this.seriesFilter.set(seriesId);
+        this.seriesRead = false;
+        const state = (this.router.getCurrentNavigation()?.extras.state ?? history.state) as { series?: MeetingSeriesDto; ownerName?: unknown } | null;
+        const named = seriesId && state?.series?.id === seriesId;
+        this.series.set(named ? state!.series! : null);
+        this.seriesOwner.set(named && typeof state?.ownerName === 'string' ? state.ownerName : null);
+      }
       const committeeId = params.get('committeeId');
       const orgUnitId = params.get('orgUnitId');
       const next = committeeId ? { committeeId } : orgUnitId ? { orgUnitId } : null;
@@ -225,6 +267,21 @@ export class MeetingListComponent {
       this.ownerName.set(next && typeof state?.ownerName === 'string' ? state.ownerName : null);
     });
   }
+
+  /** The series' owner from a row, and its pattern from that row's meeting when the link carried none. */
+  private nameSeries(seriesId: string, first: MeetingListItemDto): void {
+    if (!this.seriesOwner()) this.seriesOwner.set(ownerName(first.owner, this.language));
+    if (this.series() || this.seriesRead) return;
+    this.seriesRead = true;
+    this.meetings.get(first.id).subscribe({
+      next: (m) => {
+        if (m.series?.id === seriesId && this.seriesFilter() === seriesId) this.series.set(m.series);
+      },
+      // The line is the header's extra: without it the title still names the series' owner.
+      error: () => undefined,
+    });
+  }
+  private seriesRead = false;
 
   open(m: MeetingListItemDto): void {
     void this.router.navigate(['/meetings', m.id]);
