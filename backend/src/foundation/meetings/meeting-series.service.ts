@@ -5,7 +5,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
-import { StageRulesService } from '../workflow/stage-rules.service';
+import { StageRulesService, type StageRules } from '../workflow/stage-rules.service';
 import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
 import { COMMITTEE_ACTIONS, MEETING_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
@@ -517,10 +517,11 @@ export class MeetingSeriesService {
     } else {
       await this.assertEditable(dto, owner, organizationId);
     }
+    // The stage rules laterMeetings() read, once (P237): the anchor's refusal is built from them.
     const targets = await this.laterMeetings(id, organizationId, now, action);
-    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', targets.map((t) => t.id));
-    if (rules.get(id)?.actions[action] !== true) await this.stageRules.assertStageAllows('MEETING', id, action, organizationId);
-    const allowed = targets.filter((t) => rules.get(t.id)?.actions[action] === true);
+    const anchor = targets.find((t) => t.id === id);
+    if (anchor) this.stageRules.assertRulesAllow('MEETING', id, action, organizationId, anchor.rules);
+    const allowed = targets.filter((t) => t.rules.actions[action] === true);
     const rows = await this.prisma.meeting.findMany({
       where: { organizationId, id: { in: allowed.map((t) => t.id) } },
       select: { ...EDIT_ROW, ...MOVE_ROW },
@@ -553,10 +554,14 @@ export class MeetingSeriesService {
     }
     meetings.sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime());
 
-    // The clashes at the times as they'd be; never with a meeting that is itself moving.
+    // The clashes at the times as they'd be; never with a meeting that is itself
+    // moving. An edit that moves no time (no new duration) causes none, so it asks
+    // nothing: the confirm must not present a clash that is already there as the
+    // edit's (P237).
     const movingIds = new Set(meetings.map((m) => m.id));
+    const movesTime = dto.change === 'RESCHEDULE' || dto.durationMinutes !== undefined;
     const clashes =
-      meetings.length === 0
+      meetings.length === 0 || !movesTime
         ? []
         : (
             await this.clashes.check(
@@ -676,7 +681,7 @@ export class MeetingSeriesService {
     organizationId: string,
     now: Date,
     action: string,
-  ): Promise<{ id: string; seriesId: string; scheduledAt: Date; ownEdits: string[]; owner: { committeeId: string | null; orgUnitId: string | null } }[]> {
+  ): Promise<{ id: string; seriesId: string; scheduledAt: Date; ownEdits: string[]; owner: { committeeId: string | null; orgUnitId: string | null }; rules: StageRules }[]> {
     const anchor = await this.prisma.meeting.findFirst({ where: { id, organizationId }, select: { seriesId: true, seriesIndex: true } });
     if (!anchor?.seriesId || anchor.seriesIndex === null) throw new MeetingRefusal('MEETING_NOT_IN_SERIES');
     const rows = await this.prisma.meeting.findMany({
@@ -687,7 +692,15 @@ export class MeetingSeriesService {
     const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id));
     return rows
       .filter((r) => r.id === id || rules.get(r.id)?.actions[action] === true)
-      .map((r) => ({ id: r.id, seriesId: r.seriesId!, scheduledAt: r.scheduledAt, ownEdits: r.ownEdits, owner: { committeeId: r.committeeId, orgUnitId: r.orgUnitId } }));
+      .map((r) => ({
+        id: r.id,
+        seriesId: r.seriesId!,
+        scheduledAt: r.scheduledAt,
+        ownEdits: r.ownEdits,
+        owner: { committeeId: r.committeeId, orgUnitId: r.orgUnitId },
+        // stageRulesFor() answers every id asked: a record with no stage gets empty rules.
+        rules: rules.get(r.id)!,
+      }));
   }
 }
 
