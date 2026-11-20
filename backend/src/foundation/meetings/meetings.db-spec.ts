@@ -1302,7 +1302,21 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['wardPerson']!] } as never, w.orgId, as(w, 'chair'), now))).toBe('OK');
-      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+      // PR 8c (R5-5) — Add a guest: with a meetingId, a person Add a guest may choose (ACTIVE here) may be named.
+      const outsiderBusy = await clashes.check({ meetingId: busy.id, times: [times[0]!], userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now);
+      expect(outsiderBusy[0]!.invitees).toBe(1);
+      // ...but only by whoever may write the meeting (a member asks nothing),
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      // (a new meeting still checks the owner's members only: above),
+      // never someone inactive,
+      const gone = (await prisma.user.create({ data: { organizationId: w.orgId, email: `gone-${randomUUID()}@example.test`, name: 'Gone', status: 'INACTIVE' } })).id;
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [gone] } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      // and never another organisation's person, even beside one who may be named: indistinguishable from an invented id.
+      const theirs = (await world()).people['outsider']!;
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['outsider']!, theirs] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+        'MEETING_CLASH_PERSON_NOT_INVITEE',
+      );
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [randomUUID()] } as never, w.orgId, as(w, 'chair'), now))).toBe(
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');

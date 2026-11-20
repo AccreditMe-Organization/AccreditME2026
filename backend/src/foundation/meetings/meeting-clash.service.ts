@@ -134,6 +134,13 @@ export class MeetingClashService {
    * with a user may be checked (lane B's review): the answer says who is busy
    * when, so a sent `userIds` is refused for anyone else
    * (MEETING_CLASH_PERSON_NOT_INVITEE). With none sent, all of them.
+   *
+   * PR 8c (R5-5) — one widening, for Add a guest: with a `meetingId`, a person
+   * Add a guest may choose (ACTIVE in this organisation) may also be named. The
+   * asker has already passed `writing()`, the same gate as Add a guest and its
+   * search (`guestCandidates()`), which lists those very people. Anyone else,
+   * inactive or another organisation's, is still refused. A new meeting (no
+   * `meetingId`) checks the owner's members only.
    */
   private async people(dto: CheckMeetingClashesDto, owner: MeetingOwner, excludedId: string | null, organizationId: string): Promise<string[]> {
     const [expected, invitees] = await Promise.all([
@@ -144,7 +151,11 @@ export class MeetingClashService {
     ]);
     const allowed = new Set([...expected.get('owner')!.keys(), ...invitees.map((r) => r.userId!)]);
     if (!dto.userIds) return [...allowed];
-    if (dto.userIds.some((id) => !allowed.has(id))) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
+    const others = [...new Set(dto.userIds.filter((id) => !allowed.has(id)))];
+    if (others.length > 0) {
+      const guests = excludedId ? await this.prisma.user.count({ where: { organizationId, status: 'ACTIVE', id: { in: others } } }) : 0;
+      if (guests !== others.length) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
+    }
     return [...new Set(dto.userIds)];
   }
 }
