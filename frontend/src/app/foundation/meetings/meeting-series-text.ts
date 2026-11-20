@@ -1,5 +1,6 @@
 import type { TranslateService } from '@ngx-translate/core';
 import type { FormatService } from '../../core/formatting';
+import type { CommitteeMeetingFrequency } from '../committees/services/committee.service';
 import type { MeetingSeriesDto, MeetingSeriesEvery, MeetingSeriesOnKind, MeetingSeriesOrdinal, MeetingSeriesPattern } from './services/meeting.service';
 
 /**
@@ -27,6 +28,34 @@ export const SERIES_WEEKDAYS: readonly number[] = [1, 2, 3, 4, 5, 6, 7];
 
 type Words = Pick<TranslateService, 'instant'>;
 type Numbers = Pick<FormatService, 'number'>;
+
+/** PR 8a — whether a pattern counts weeks (On is a weekday) rather than months (On is a day or "the nth weekday"). */
+export function seriesInWeeks(every: MeetingSeriesEvery): boolean {
+  return every === 'WEEK_1' || every === 'WEEK_2';
+}
+
+/** PR 8a — Every's own choice in Repeat: "3 months", "1 week". */
+export function seriesEveryChoice(every: MeetingSeriesEvery, t: Words): string {
+  return t.instant(`meeting.series.everyChoice.${every}`) as string;
+}
+
+/**
+ * PR 8a (P236, Q6) — where Every starts, from the committee's meeting
+ * frequency: the ONE mapping. As needed, and a unit (which has no frequency),
+ * start on "Doesn't repeat" (null).
+ */
+export const SERIES_EVERY_FROM_FREQUENCY: Readonly<Record<CommitteeMeetingFrequency, MeetingSeriesEvery | null>> = {
+  WEEKLY: 'WEEK_1',
+  MONTHLY: 'MONTH_1',
+  QUARTERLY: 'MONTH_3',
+  BIANNUAL: 'MONTH_6',
+  ANNUAL: 'MONTH_12',
+  AS_NEEDED: null,
+};
+
+export function seriesEveryFromFrequency(frequency: CommitteeMeetingFrequency | null | undefined): MeetingSeriesEvery | null {
+  return frequency ? SERIES_EVERY_FROM_FREQUENCY[frequency] : null;
+}
 
 /** "Every month" (Every's own label in Repeat, and the first half of every pattern). */
 export function seriesEvery(every: MeetingSeriesEvery, t: Words): string {

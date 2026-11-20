@@ -3746,6 +3746,34 @@
           "one": "Approved by {{who}} on {{date}}, after review by the {{count}} present member.",
           "other": "Approved by {{who}} on {{date}}, after review by the {{count}} present members."
         }
+      },
+      "clashPeople": {
+        "one": "{{count}} of {{total}} invitees has another meeting then",
+        "other": "{{count}} of {{total}} invitees have another meeting then"
+      },
+      "standingItems": {
+        "one": "{{count}} item",
+        "other": "{{count}} items"
+      },
+      "laterDates": {
+        "one": "{{count}} later date",
+        "other": "{{count}} later dates"
+      },
+      "datesMoved": {
+        "one": "{{count}} moved",
+        "other": "{{count}} moved"
+      },
+      "datesClash": {
+        "one": "{{count}} has a clash",
+        "other": "{{count}} have a clash"
+      },
+      "scheduleMeetings": {
+        "one": "Schedule {{count}} meeting",
+        "other": "Schedule {{count}} meetings"
+      },
+      "seriesDates": {
+        "one": "{{count}} date",
+        "other": "{{count}} dates"
       }
     }
   },
@@ -5203,7 +5231,9 @@
       "error": "The meeting couldn't be scheduled.",
       "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
       "typesError": "The meeting types couldn't be loaded.",
-      "maybeScheduled": "It may have been scheduled. Check the list before trying again."
+      "maybeScheduled": "It may have been scheduled. Check the list before trying again.",
+      "next": "Next: repeats",
+      "maybeScheduledSeries": "We couldn't tell whether the series was scheduled. Close, and check the committee's meetings before trying again."
     },
     "when": {
       "back": "← Back to details",
@@ -5298,7 +5328,12 @@
       "openActionNotFound": "That action is no longer open from the last meeting.",
       "attendanceIncomplete": "Record attendance for everyone first.",
       "reviewDateInvalid": "Choose a review date after today.",
-      "presenterNotFound": "That person is no longer available to present."
+      "presenterNotFound": "That person is no longer available to present.",
+      "seriesPatternInvalid": "Choose a day the repeat can use: a weekday for weekly, or a day or a weekday of the month for monthly.",
+      "seriesEndRequired": "Give an end date or a number of meetings.",
+      "seriesTooLong": "A series ends at most 12 months ahead.",
+      "seriesEmpty": "The repeat makes no meeting before its end.",
+      "seriesTimeInvalid": "Give the time as hours and minutes."
     },
     "agendaItem": {
       "addTitle": "Add agenda item",
@@ -5411,7 +5446,71 @@
       "previousGlyph": "‹",
       "nextGlyph": "›",
       "previous": "Previous meeting, {{date}}",
-      "next": "Next meeting, {{date}}"
+      "next": "Next meeting, {{date}}",
+      "everyChoice": {
+        "WEEK_1": "1 week",
+        "WEEK_2": "2 weeks",
+        "MONTH_1": "1 month",
+        "MONTH_3": "3 months",
+        "MONTH_6": "6 months",
+        "MONTH_12": "12 months"
+      }
+    },
+    "clash": {
+      "another": "another meeting",
+      "showWho": "Show who",
+      "hide": "Hide",
+      "backToDetails": "← Back to details",
+      "rechecks": "Change either and the list rechecks at once"
+    },
+    "repeat": {
+      "repeats": "Repeats",
+      "once": "Doesn't repeat",
+      "repeatsOn": "Repeats",
+      "every": "Every",
+      "on": "On",
+      "onDay": "Day",
+      "onThe": "The",
+      "day": "Day",
+      "which": "Which",
+      "weekday": "Weekday",
+      "ends": "Ends",
+      "endsOn": "On a date",
+      "endsAfter": "After",
+      "count": "Number of meetings",
+      "countRequired": "Give the number of meetings.",
+      "countRange": "Between 1 and 53 meetings.",
+      "endDate": "Last date",
+      "pickDate": "Choose a date",
+      "standing": "Standing agenda",
+      "standingAdd": "None · Add…",
+      "standingEdit": "{{items}} · Edit…",
+      "standingHelp": "Items on every meeting of the series. A presenter who isn't invited is added as a guest.",
+      "standingNone": "No standing items yet.",
+      "standingFull": "At most {{n}} standing items.",
+      "itemTitle": "Item {{n}} title",
+      "itemTitlePlaceholder": "Title",
+      "itemDuration": "Item {{n}} duration",
+      "noDuration": "No set time",
+      "noPresenter": "Presenter…",
+      "removeItem": "Remove item {{n}}",
+      "addItem": "Add item",
+      "presenterTitle": "Choose a presenter",
+      "backToRepeat": "← Back to repeat",
+      "ahead": "Up to 12 months ahead",
+      "fromFrequency": "From the committee's frequency, {{frequency}} → every {{every}} · up to 12 months ahead",
+      "lastDayInShort": "the last day in shorter months",
+      "listJoin": ", ",
+      "nextDates": "Next dates and their titles",
+      "datesLoading": "Working out the dates…",
+      "datesError": "Couldn't work out the dates.",
+      "showAll": "Show all",
+      "allDates": "← All dates",
+      "moved": "Moved",
+      "noDay": "No day {{day}} · last day",
+      "clash": "Clash",
+      "clashOn": "Clash on {{date}}: show who",
+      "firstMeeting": "first meeting {{when}}"
     }
   }
 }
