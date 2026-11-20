@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MyWorkEvents } from '../../core/my-work/my-work-events';
 import { REQUEST } from '../committees/change-requests/change-request.testing';
-import { MyWorkCountsService } from './my-work-counts.service';
+import { MyWorkCountsService, awaitingTotal } from './my-work-counts.service';
 import { HomeSpecCalls, HomeSpecOptions, homeProviders, recordList } from './home.testing';
 
 // ACC-279 — the person's work counts: loaded once after sign-in, again on Home's
@@ -102,18 +102,46 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(calls.committees).toBe(0);
     expect(calls.changes).toBe(0);
     expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [], mayBrowseCommittees: false } });
-    expect(service.awaiting()).toEqual({ state: 'ready', value: { stages: jasmine.anything() as never, changes: [] } });
+    expect(service.awaiting()).toEqual({ state: 'ready', value: { stages: jasmine.anything() as never, changes: [], reviews: [] } });
     // ACC-283 — and so a closed module gives the rail and the guard a known "no".
     expect(service.mayBrowseCommittees()).toBeFalse();
   });
 
   // ACC-281 — the fix Ahmad asked for: a platform admin has no tenant work.
+  // ACC-316 PR 7c-2 — minutes to review are a third half of awaiting.
+  const REVIEW = { meetingId: 'm-1', title: 'Infection Control · March', reviewBy: '2027-03-25', since: '2026-11-06T09:00:00.000Z' };
+
+  it('minutes to review are asked while the Meetings module is open, and count in awaiting', () => {
+    build({ reviews: [REVIEW], changes: [REQUEST()] });
+    service.init();
+    expect(calls.reviews).toBe(1);
+    const awaiting = service.awaiting();
+    expect(awaiting.state === 'ready' ? awaiting.value.reviews : null).toEqual([REVIEW]);
+    expect(awaiting.state === 'ready' ? awaitingTotal(awaiting.value) : null).toBe(0 + 1 + 1);
+  });
+
+  it('nothing is asked about minutes while the Meetings module is closed', () => {
+    build({ reviews: [REVIEW] });
+    spyOn(service, 'meetingsOpen').and.returnValue(false);
+    service.init();
+    expect(calls.reviews).toBe(0);
+    const awaiting = service.awaiting();
+    expect(awaiting.state === 'ready' ? awaiting.value.reviews : null).toEqual([]);
+  });
+
+  it('the minutes read failing fails awaiting whole: a partial count is a wrong one', () => {
+    build({ reviews: 'fail' });
+    service.init();
+    expect(service.awaiting()).toEqual({ state: 'failed' });
+  });
+
   it('init() asks nothing for a platform admin', () => {
     build({ platformAdmin: true });
     service.init();
     expect(mineReads()).toBe(0);
     expect(calls.awaitingMe).toBe(0);
     expect(calls.committees).toBe(0);
+    expect(calls.reviews).toBe(0);
     expect(service.myTasks()).toEqual({ state: 'loading' });
   });
 
