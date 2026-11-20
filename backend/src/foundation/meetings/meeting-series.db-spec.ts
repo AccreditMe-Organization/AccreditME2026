@@ -22,11 +22,14 @@
  */
 import { randomUUID } from 'crypto';
 import { DateTime } from 'luxon';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
@@ -48,7 +51,7 @@ import { copyDefaultSeatActions } from '../committees/seat-actions';
 import { MeetingsService } from './meetings.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingSeriesService } from './meeting-series.service';
-import type { MeetingViewer } from './meeting-access';
+import { MeetingAccess, type MeetingViewer } from './meeting-access';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -523,6 +526,78 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'outsider'))).series!;
       expect([s.previousId, s.nextId]).toEqual([null, null]);
     });
+
+    it("who may open the neighbours is canSee()'s answer, batched: equal for every candidate and every kind of viewer (P237)", async () => {
+      const w = await world();
+      const other = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const theirs = await series.create(weekly(other, { count: 2, weekday: 2, firstDate: nextWeekday(other, 2) }), other.orgId, as(other, 'chair'));
+      const [, second] = r.meetingIds;
+      // The overseer: the head of the unit that owns the committee.
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId!;
+      const headPosition = await prisma.orgPosition.create({ data: { organizationId: w.orgId, nameEn: `Head ${randomUUID().slice(0, 6)}`, grade: 1, isUnitHeadPosition: true } });
+      const head = await prisma.user.create({
+        data: { organizationId: w.orgId, email: `head-${randomUUID().slice(0, 8)}@example.test`, name: 'head', status: 'ACTIVE', primaryOrgUnitId: unit, positionId: headPosition.id },
+      });
+      // Invited to the second meeting only.
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: second!, kind: 'ORG_GUEST', userId: w.people['presenter']!, invitedAt: new Date() } });
+      const viewers: [string, MeetingViewer][] = [
+        ['member', as(w, 'member')],
+        ['overseer', { id: head.id, permissions: [] }],
+        ['invited to one', as(w, 'presenter')],
+        ['meetings:view', as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW])],
+        ['committees:view', as(w, 'outsider', [COMMITTEES_PERMISSIONS.VIEW])],
+        ['outsider', as(w, 'outsider')],
+      ];
+      // Every candidate kind: this series, another organisation's meetings, an invented id.
+      const ids = [...r.meetingIds, ...theirs.meetingIds, 'no-such-meeting'];
+      const access = new MeetingAccess(prisma, visibility);
+      const now = new Date();
+      const grid: Record<string, Record<string, boolean>> = {};
+      for (const [kind, viewer] of viewers) {
+        const batched = await access.openable(ids, w.orgId, viewer, now);
+        const single: Record<string, boolean> = {};
+        for (const id of ids) single[id] = (await access.canSee(id, w.orgId, viewer, now)) !== null;
+        expect([kind, Object.fromEntries(ids.map((id) => [id, batched.has(id)]))]).toEqual([kind, single]);
+        grid[kind] = single;
+      }
+      // Non-vacuity: the rule says yes and no, and each viewer kind is the kind it is meant to be.
+      const seen = (kind: string) => r.meetingIds.filter((id) => grid[kind]![id]).length;
+      expect([seen('member'), seen('overseer'), seen('invited to one'), seen('meetings:view'), seen('committees:view'), seen('outsider')]).toEqual([4, 4, 1, 4, 0, 0]);
+      for (const kind of Object.keys(grid)) for (const id of [...theirs.meetingIds, 'no-such-meeting']) expect([kind, id, grid[kind]![id]]).toEqual([kind, id, false]);
+    });
+
+    it('costs the same number of queries for a series of 3 and a series of 30 (P237)', async () => {
+      // A client that reports every statement, running the same services.
+      const pool = new Pool({ connectionString: url, max: 4 });
+      const client = new PrismaClient({ adapter: new PrismaPg(pool), log: [{ emit: 'event', level: 'query' }] });
+      let statements = 0;
+      client.$on('query', () => {
+        statements++;
+      });
+      try {
+        const db = client as unknown as PrismaService;
+        const counted = new MeetingsService(db, new ObjectVisibilityService(db), workflow, new StageRulesService(db), notifications, calendar);
+        const count = async (n: number) => {
+          const w = await world();
+          const r = await series.create(weekly(w, { count: n, weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+          // Invited to the middle meeting only: every other candidate is one they can't open, the worst case.
+          const middle = r.meetingIds[Math.floor(n / 2)]!;
+          await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: middle, kind: 'ORG_GUEST', userId: w.people['outsider']!, invitedAt: new Date() } });
+          statements = 0;
+          const read = await counted.getForViewer(middle, w.orgId, as(w, 'outsider'));
+          expect([read.series!.total, read.series!.previousId, read.series!.nextId]).toEqual([n, null, null]);
+          return statements;
+        };
+        const three = await count(3);
+        const thirty = await count(30);
+        // Non-vacuity: the read was counted at all.
+        expect(three).toBeGreaterThan(0);
+        expect(thirty).toBe(three);
+      } finally {
+        await client.$disconnect();
+      }
+    });
   });
 
   describe('what "this and all later" would do (Q2, the scope preview)', () => {
@@ -589,7 +664,7 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       expect(res.scope.kept.map((k) => [k.meetingId, k.fields])).toEqual(preview.kept.map((k) => [k.meetingId, k.fields]));
     });
 
-    it('takes no row lock: it answers while another transaction holds a meeting FOR UPDATE', async () => {
+    it('takes no row lock: it answers while another transaction holds a meeting and its instance FOR UPDATE', async () => {
       const w = await world();
       const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
       const [, second] = r.meetingIds;
@@ -597,6 +672,8 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       const answered = await prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${second!} FOR UPDATE`;
+          // And its workflow instance: a FOR SHARE on it in the preview would wait here too.
+          await tx.$queryRaw`SELECT id FROM "WorkflowInstance" WHERE "objectType" = 'MEETING' AND "objectId" = ${second!} FOR UPDATE`;
           const p = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: new Date(at.getTime() + 3_600_000).toISOString() }, w.orgId, as(w, 'chair'));
           return p.meetings.length;
         },
@@ -623,6 +700,25 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       const hour = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to.toISOString() }, w.orgId, as(w, 'chair'));
       const atSecond = hour.clashes.find((c) => c.startsAt === to.toISOString())!;
       expect(atSecond.people.map((p) => p.userId)).toEqual([w.people['member']]);
+    });
+
+    it('an edit that moves no time names no clash, even where one is already there; a longer meeting is still checked (P237)', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: second! } })).scheduledAt;
+      // The member already has another meeting at the second meeting's time: an existing clash.
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId;
+      const other = await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Other', typeValueId: meetingType, scheduledAt: at, durationMinutes: 60, location: 'Room 1', orgUnitId: unit },
+      });
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: other.id, kind: 'ORG_GUEST', userId: w.people['member']!, invitedAt: new Date() } });
+      const moved = await series.scopePreview(second!, { change: 'EDIT', location: 'Hall B' }, w.orgId, as(w, 'chair'));
+      expect(moved.meetings.length).toBeGreaterThan(0);
+      expect(moved.clashes).toEqual([]);
+      // Non-vacuity: the same clash is named once the edit changes the duration.
+      const longer = await series.scopePreview(second!, { change: 'EDIT', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect(longer.clashes.flatMap((c) => c.people.map((p) => p.userId))).toContain(w.people['member']);
     });
 
     it('the same "who may ask" as the write: someone who may not edit is refused, and so is a meeting outside a series', async () => {
