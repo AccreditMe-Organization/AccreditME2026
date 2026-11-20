@@ -273,6 +273,8 @@ export class MeetingsService {
             firstDate: meeting.series.firstDate.toISOString().slice(0, 10),
             endsOn: meeting.series.endsOn?.toISOString().slice(0, 10) ?? null,
             count: meeting.series.count,
+            // PR 8d — End series' own gate is the scheduler's (seriesForEnd); a running series only.
+            mayEnd: scheduler && meeting.series.endedAt === null,
             previousId: neighbours.previousId,
             nextId: neighbours.nextId,
             // PR 8b (P239) — the links' dates, and where an ended series stopped.
