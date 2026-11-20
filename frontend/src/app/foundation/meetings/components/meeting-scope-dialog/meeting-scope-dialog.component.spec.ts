@@ -192,6 +192,33 @@ describe('MeetingScopeDialogComponent (ACC-316 PR 8c)', () => {
     expect(lost.text('scope-THIS_AND_LATER-line')).toBe('8 meetings, 18 Mar 2027 → 28 Oct 2027');
   });
 
+  it('a refused preview never applies "this and all later": Apply does nothing for it, and the refusal stays (P254)', () => {
+    const { fixture, c, applied, text } = create(
+      { change: 'RESCHEDULE', scheduledAt: '2027-03-18T14:00:00.000Z' },
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'STAGE_ACTION_NOT_ALLOWED' } })),
+    );
+    c.choose('THIS_AND_LATER');
+    c.apply();
+    fixture.detectChanges();
+    expect(applied).withContext('never applied unseen').toEqual([]);
+    expect(c.waiting()).withContext('nothing waits on a refusal').toBeFalse();
+    expect(scopePreview).withContext('a refusal is not asked again').toHaveBeenCalledTimes(1);
+    expect(text('scope-preview-error')).not.toBeNull();
+    // "This meeting only" still applies.
+    c.choose('THIS_ONLY');
+    c.apply();
+    expect(applied).toEqual(['THIS_ONLY']);
+  });
+
+  it('a lost preview, with "this and all later" pressed, is asked again and applies when it arrives', () => {
+    const { c, applied } = create({ change: 'EDIT', location: 'Room 4' }, throwError(() => new HttpErrorResponse({ status: 0 })));
+    c.choose('THIS_AND_LATER');
+    scopePreview.and.returnValue(of(aPreview()));
+    c.apply();
+    expect(scopePreview).toHaveBeenCalledTimes(2);
+    expect(applied).toEqual(['THIS_AND_LATER']);
+  });
+
   it('every opening starts again from "This meeting only", and asks again', () => {
     const { fixture, c } = create({ change: 'EDIT', location: 'Room 4' });
     c.choose('THIS_AND_LATER');

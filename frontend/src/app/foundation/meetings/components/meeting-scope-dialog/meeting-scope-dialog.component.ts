@@ -294,7 +294,10 @@ export class MeetingScopeDialogComponent {
         this.waiting.set(true);
         return;
       }
-      if (this.previewState() === 'error' && !this.previewRefused()) {
+      if (this.previewState() === 'error') {
+        // A refused preview (P254): nothing for this scope, the refusal stays shown.
+        // A lost one is asked again, and applies when it arrives.
+        if (this.previewRefused()) return;
         this.waiting.set(true);
         this.loadPreview();
         return;
