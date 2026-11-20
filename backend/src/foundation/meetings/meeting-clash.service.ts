@@ -58,7 +58,7 @@ export class MeetingClashService {
     if (dto.times.length > CLASH_TIMES_CAP) throw new MeetingRefusal('MEETING_CLASH_TOO_MANY_TIMES');
     const { owner, excludedId } = await this.askerMay(dto, organizationId, viewer, now);
     const userIds = await this.people(dto, owner, excludedId, organizationId);
-    if (dto.times.length === 0 || userIds.length === 0) return dto.times.map((t) => ({ startsAt: t.startsAt, people: [] }));
+    if (dto.times.length === 0 || userIds.length === 0) return dto.times.map((t) => ({ startsAt: t.startsAt, invitees: userIds.length, people: [] }));
 
     const starts = dto.times.map((t) => new Date(t.startsAt).toISOString());
     const ends = dto.times.map((t) => new Date(new Date(t.startsAt).getTime() + t.durationMinutes * 60_000).toISOString());
@@ -102,7 +102,7 @@ export class MeetingClashService {
         });
         byUser.set(r.userId, person);
       }
-      return { startsAt: t.startsAt, people: [...byUser.values()] };
+      return { startsAt: t.startsAt, invitees: userIds.length, people: [...byUser.values()] };
     });
   }
 

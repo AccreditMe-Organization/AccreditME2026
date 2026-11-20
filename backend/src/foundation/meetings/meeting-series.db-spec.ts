@@ -627,6 +627,33 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
     });
   });
 
+  describe("a standing item's presenter search (PR 8a, Q5)", () => {
+    it('whoever may schedule for the owner finds anyone active in the organisation, by name, never their email', async () => {
+      const w = await world();
+      const all = await series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'chair'));
+      const names = all.items.map((p) => p.name);
+      // Members and the rest of the organisation alike: one not yet invited becomes a guest.
+      for (const name of ['chair', 'member', 'outsider', 'presenter']) expect(names).toContain(name);
+      expect(all.total).toBe(Object.keys(w.people).length);
+      expect(Object.keys(all.items[0]!).sort()).toEqual(['id', 'name', 'position', 'unit']);
+      const found = await series.presenterCandidates({ committeeId: w.committeeId, q: 'outs' }, w.orgId, as(w, 'chair'));
+      expect([found.items.map((p) => p.name), found.matching]).toEqual([['outsider'], 1]);
+      // An inactive person is never offered.
+      await prisma.user.update({ where: { id: w.people['presenter']! }, data: { status: 'INACTIVE' } });
+      expect((await series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'chair'))).items.map((p) => p.name)).not.toContain('presenter');
+    });
+
+    it("someone who may not schedule for the owner is refused, as Schedule refuses them", async () => {
+      const w = await world();
+      expect(await code(series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(series.presenterCandidates({}, w.orgId, as(w, 'chair')))).toBe('MEETING_OWNER_REQUIRED');
+    });
+
+    itEnforcesTenantIsolation("another organisation's committee is an owner that isn't there", async () => {
+      expect(await code(series.presenterCandidates({ committeeId: a.committeeId }, b.orgId, as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW])))).toBe('MEETING_OWNER_NOT_FOUND');
+    });
+  });
+
   describe('the whole series view (view=series, P240)', () => {
     const cancel = async (w: World, meetingId: string) => {
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });

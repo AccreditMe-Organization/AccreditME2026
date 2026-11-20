@@ -37,6 +37,7 @@ import {
   EndMeetingSeriesDto,
   GuestCandidatesQueryDto,
   MayScheduleQueryDto,
+  PresenterCandidatesQueryDto,
   CreateAgendaItemDto,
   ListMeetingsDto,
   MeetingScopePreviewDto,
@@ -152,6 +153,17 @@ export class MeetingsController {
   @Get('awaiting-me')
   awaitingMe(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMeetingAwaitingMe> {
     return this.review.awaitingMe(tenantId, userId);
+  }
+
+  /** PR 8a (Q5) — a standing agenda item's presenter search, for a series not yet made. Before ':id'. */
+  @Get('presenter-candidates')
+  presenterCandidates(
+    @Query() query: PresenterCandidatesQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingGuestCandidates> {
+    return this.series.presenterCandidates(query, tenantId, { id: userId, permissions });
   }
 
   /** ACC-316 PR 6 — whether Schedule meeting is offered for this owner. Before ':id'. */

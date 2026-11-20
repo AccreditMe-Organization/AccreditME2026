@@ -328,6 +328,19 @@ export class GuestCandidatesQueryDto {
   take?: number;
 }
 
+/** PR 8a (Q5) — a standing item's presenter search, for a series not yet made: its owner, then a name. */
+export class PresenterCandidatesQueryDto extends GuestCandidatesQueryDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  committeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  orgUnitId?: string;
+}
+
 /** ACC-316 PR 6 — may this person schedule for this committee or unit. */
 export class MayScheduleQueryDto {
   @IsOptional()
@@ -687,6 +700,8 @@ export class DecideSuggestionDto {
 export const SERIES_EVERY = ['WEEK_1', 'WEEK_2', 'MONTH_1', 'MONTH_3', 'MONTH_6', 'MONTH_12'] as const;
 export const SERIES_ON = ['WEEKDAY', 'DAY_OF_MONTH', 'ORDINAL_WEEKDAY'] as const;
 export const SERIES_ORDINAL = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'LAST'] as const;
+/** PR 8a (Q5) — a series' most standing agenda items. */
+export const MEETING_STANDING_AGENDA_MAX = 10;
 
 export class StandingAgendaItemDto {
   @IsString()
@@ -801,9 +816,10 @@ export class CreateMeetingSeriesDto {
   @Max(53)
   count?: number | null;
 
+  /** At most ten items (Ahmad, 20 Nov, PR 8 Q5): what step 2's editor offers. */
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(MEETING_STANDING_AGENDA_MAX)
   @ValidateNested({ each: true })
   @Type(() => StandingAgendaItemDto)
   standingAgenda?: StandingAgendaItemDto[];

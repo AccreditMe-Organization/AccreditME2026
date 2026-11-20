@@ -17769,6 +17769,9 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   anyone else gets that endpoint's refusal. The other meeting's id and title are
   given only if the asker may open it (both null: "another meeting").
 - **One query** for every time and person.
+- **How many were checked (PR 8a):** each answer carries `invitees`, the number
+  of people checked, the same at every time: the "11" in Schedule's "2 of 11
+  invitees have another meeting then".
 - **Refusals:** `MEETING_CLASH_OWNER_REQUIRED` 400, `MEETING_CLASH_TOO_MANY_TIMES`
   400, `MEETING_OWNER_NOT_FOUND` 404.
 
@@ -17976,6 +17979,17 @@ with `schedule()`).
   weekly, from the day held. Each is the meeting's own.
 - **`POST /meetings/series/preview`** gives the dates and their clashes, in one
   batched query (`MeetingClashService`, cap 53), and writes nothing.
+- **A standing agenda holds at most ten items** (`MEETING_STANDING_AGENDA_MAX`,
+  Ahmad, 20 Nov, PR 8 Q5): what step 2's editor offers.
+- **A standing item's presenter search (PR 8a, Q5):** `GET
+  /meetings/presenter-candidates?committeeId|orgUnitId&q&skip&take` finds anyone
+  ACTIVE in the organisation (one not invited becomes a guest of each meeting,
+  as built): name, unit and position, never an email, paged at most 50. It is
+  asked only by whoever may schedule for that owner, by the schedule's own
+  answer (`maySchedule()`); anyone else is `MEETING_NOT_ALLOWED`, another
+  organisation's owner `MEETING_OWNER_NOT_FOUND`. It and Add a guest's search
+  are ONE function, `searchOrgPeople()` (meeting-people.service.ts); Add a
+  guest's leaves out people already invited.
 - **The start is the wall-clock time in the organisation's zone** on each day
   (`set({ hour, minute })`), so a clock change never moves a meeting by an hour.
 - **`POST /meetings/series`:**
@@ -18600,3 +18614,65 @@ Plan PR 8 slice 8b (P235, P239, P240), Meeting Screens' header and A9.
   (`meeting-page.series.layout.spec.ts`): in the facts row at 1280 and one
   column on the phone, the line drawn whole, the links previous → whole →
   next in the reading direction, and nothing wider than the page.
+
+### 18.23 The screens, part 3b: Schedule step 2, Repeat (PR 8a)
+
+Plan PR 8 slice 8a (P235, P245), Meeting Screens round 5 (artboards 3 and
+16), Ahmad's answers of 20 Nov (Q5, Q7, Q8–Q10) and lane B's (Q6).
+
+- **Step 1** keeps Schedule (one meeting) and gains "Next: repeats"; the
+  footer says "Step 1 of 2" (`common.stepOf`). Once Starts and Duration are
+  set, the **clash line** sits in the Starts block, 2px under it: "2 of 11
+  invitees have another meeting then · Show who" (`POST /meetings/clashes`,
+  asked again as either changes, the latest answer wins). A warning, never a
+  gate: Schedule and Next stay offered; no clash, no line. **Show who** swaps
+  the rows in for the body (each person, then each other meeting's title, or
+  "another meeting" when the asker may not open it, and its time), with Starts
+  and Duration kept so a change rechecks at once.
+- **`am-meeting-clash`** (`components/meeting-clash/`) draws the line and the
+  rows; 8c's Reschedule and Add a guest reuse it. Counted with
+  `plural.meeting.clashPeople` (English agrees with the clashing count;
+  Arabic says «من المدعوين», which needs no agreement with either).
+- **Step 2, Repeat** (`am-meeting-repeat-step`, kept alive across Back and
+  Next, so its choices stay):
+  - Repeats (Doesn't repeat / Repeats, `am-meeting-segmented`, a radio group
+    whose arrows move and choose in the reading direction);
+  - Every starts from the committee's frequency (Q6, `meeting-series-text.ts`'s
+    `SERIES_EVERY_FROM_FREQUENCY`, the ONE mapping); As needed and a unit start
+    on Doesn't repeat. The committee page passes its `meetingFrequency` to the
+    Meetings panel;
+  - On: a weekday for weeks; for months Day or The [1st–4th, last] [weekday],
+    seeded from the first meeting's day each time step 2 opens (the dialog
+    counts each Next; no timer). The readback is `seriesPattern()`, plus "the
+    last day in shorter months" past day 28 and, every 3 or 6 months, the
+    pattern's months from the preview (`FormatService.month()`, new);
+  - Ends: On a date (a calendar that swaps in) or After n (1–53, starting at
+    about a year for the Every chosen); its error is said in the row's line;
+  - the standing agenda: "n items · Edit…" / "None · Add…", its editor
+    swapping in (Q5): title, presenter, duration, at most ten (the eleventh is
+    refused, and the limit is said). A presenter is picked from
+    `presenter-candidates` in `am-list-dialog`, its own layer above the
+    dialog. An item with no title is dropped on the way back;
+  - Next dates: the server's preview (`POST /meetings/series/preview`, asked
+    again as the choices settle), never worked out here: one line per date
+    (the date, its title cut with the whole in a tooltip, then Moved, "No day
+    31 · last day" and Clash). After five, "n later dates · m moved · k have a
+    clash · Show all" (Q7), which swaps in the whole list (it scrolls inside
+    itself). A Clash chip swaps in that date's people ("← All dates").
+- **The buttons:** Back, and "Schedule n meetings" from the preview's own
+  count (`plural.meeting.scheduleMeetings`), or Schedule when it doesn't
+  repeat. A series opens its first meeting. A press whose outcome is unknown
+  never offers a plain retry (step 1's rule).
+- **The series refusals** (`MEETING_SERIES_PATTERN_INVALID`,
+  `_END_REQUIRED`, `_TOO_LONG`, `_EMPTY`, `_TIME_INVALID`) are said from their
+  codes, with Retry, where the dates would be.
+- **Measured** at 1280 and 390 in both languages
+  (`meeting-schedule-repeat.layout.spec.ts`), each body 20px under the cap:
+  step 1 with the clash line (383 / 395) and Show who (261 / 278); step 2,
+  every 3 months on the last Thursday (356 / 376), every month on day 31 with
+  twelve dates (378 / 400), the Clash chip (144–177), Show all (335 / 340),
+  ten standing items (378–396) and the end date (271 / 275). The tightest is
+  Example 2 in Arabic, 400 of 420. Fitting it took: one line per date, 8px
+  between rows, Repeats' label beside its control, the count's error in its
+  row's line, and shorter Arabic labels (Weekday «اليوم», as drawn; the count
+  «العدد»).

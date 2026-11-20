@@ -5,7 +5,8 @@ import ar from '../../../assets/i18n/ar.json';
 import { FormatService } from '../../core/formatting';
 import { loadTranslationsForTest, provideFormatTesting } from '../../core/formatting/testing';
 import { aSeries } from './meeting-fixtures.testing';
-import { SERIES_EVERY, SERIES_ORDINALS, SERIES_WEEKDAYS, seriesLine, seriesPattern, seriesSummary } from './meeting-series-text';
+import { COMMITTEE_MEETING_FREQUENCIES } from '../committees/services/committee.service';
+import { SERIES_EVERY, SERIES_EVERY_FROM_FREQUENCY, SERIES_ORDINALS, SERIES_WEEKDAYS, seriesEveryChoice, seriesEveryFromFrequency, seriesLine, seriesPattern, seriesSummary } from './meeting-series-text';
 
 // ACC-316 PR 8b — a series' readback, worded in ONE place: every value the
 // server stores reads in both languages, the header's line says where the
@@ -70,6 +71,31 @@ describe('meeting-series-text (ACC-316 PR 8b)', () => {
     expect(seriesSummary(ended, t, format)).toBe('Every month · ended after 4 of 12');
     use('ar');
     expect(seriesLine(ended, t, format)).toBe('كل شهر · انتهت بعد 4 من 12');
+  });
+
+  // PR 8a (P236, Q6) — where Every starts: the ONE mapping from a committee's frequency.
+  it("Every starts from the committee's frequency; As needed, and a unit, start on Doesn't repeat", () => {
+    expect(Object.keys(SERIES_EVERY_FROM_FREQUENCY).sort()).withContext('every frequency is mapped').toEqual([...COMMITTEE_MEETING_FREQUENCIES].sort());
+    expect(COMMITTEE_MEETING_FREQUENCIES.map((f) => [f, seriesEveryFromFrequency(f)])).toEqual([
+      ['WEEKLY', 'WEEK_1'],
+      ['MONTHLY', 'MONTH_1'],
+      ['QUARTERLY', 'MONTH_3'],
+      ['BIANNUAL', 'MONTH_6'],
+      ['ANNUAL', 'MONTH_12'],
+      ['AS_NEEDED', null],
+    ]);
+    expect(seriesEveryFromFrequency(null)).toBeNull();
+  });
+
+  it("Every's choices read in both languages, each one differently", () => {
+    for (const language of ['en', 'ar'] as const) {
+      use(language);
+      const said = SERIES_EVERY.map((e) => seriesEveryChoice(e, t));
+      expect(said.every((w) => !w.startsWith('meeting.'))).withContext(language).toBeTrue();
+      expect(new Set(said).size).toBe(SERIES_EVERY.length);
+    }
+    use('en');
+    expect(seriesEveryChoice('MONTH_3', t)).toBe('3 months');
   });
 
   it('the series view, while the series runs: its pattern alone', () => {
