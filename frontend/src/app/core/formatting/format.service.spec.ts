@@ -99,6 +99,21 @@ describe('FormatService (ACC-94)', () => {
   });
 
   // ACC-316 PR 6 — a typed start on the tenant's wall clock, and back.
+  // ACC-316 PR 8a — a month's name for a series' readback, in the tenant zone and the UI language.
+  describe('month — the tenant zone, the UI language', () => {
+    it('names the month the instant falls in, in the tenant zone', () => {
+      // 31 Oct 22:00 UTC is already 1 November in Riyadh.
+      const edge = '2026-10-31T22:00:00Z';
+      context.zone.set('Asia/Riyadh');
+      expect([format.month(edge), format.month(edge, 'short')]).toEqual(['November', 'Nov']);
+      context.zone.set('UTC');
+      expect(format.month(edge, 'short')).toBe('Oct');
+      inArabic();
+      expect(format.month(edge)).toBe('أكتوبر');
+      expect(format.month(null)).toBe('—');
+    });
+  });
+
   describe("wallClock and instantAt — a start typed on the tenant's wall clock", () => {
     const at = (year: number, month: number, day: number, hour: number, minute: number) => format.instantAt({ year, month, day, hour, minute }).toISOString();
 
