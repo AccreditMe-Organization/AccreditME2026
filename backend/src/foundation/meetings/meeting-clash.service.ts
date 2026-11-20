@@ -135,12 +135,17 @@ export class MeetingClashService {
    * when, so a sent `userIds` is refused for anyone else
    * (MEETING_CLASH_PERSON_NOT_INVITEE). With none sent, all of them.
    *
-   * PR 8c (R5-5) — one widening, for Add a guest: with a `meetingId`, a person
-   * Add a guest may choose (ACTIVE in this organisation) may also be named. The
-   * asker has already passed `writing()`, the same gate as Add a guest and its
-   * search (`guestCandidates()`), which lists those very people. Anyone else,
-   * inactive or another organisation's, is still refused. A new meeting (no
-   * `meetingId`) checks the owner's members only.
+   * PR 8c (R5-5) — one widening, for Add a guest's own question and nothing
+   * more: with a `meetingId`, a person Add a guest may choose (ACTIVE in this
+   * organisation) may also be named, but ONLY when every time sent is the
+   * meeting's own stored start and duration. The asker has already passed
+   * `writing()`, the same gate as Add a guest and its search
+   * (`guestCandidates()`), which lists those very people. Any other time with
+   * such a person is refused (P254): it would read their busy times across the
+   * calendar. Anyone inactive, or another organisation's, is still refused; a
+   * new meeting (no `meetingId`) checks the owner's members only. The meeting's
+   * time and the person count are read in ONE query, and only when such a
+   * person is named.
    */
   private async people(dto: CheckMeetingClashesDto, owner: MeetingOwner, excludedId: string | null, organizationId: string): Promise<string[]> {
     const [expected, invitees] = await Promise.all([
@@ -153,8 +158,16 @@ export class MeetingClashService {
     if (!dto.userIds) return [...allowed];
     const others = [...new Set(dto.userIds.filter((id) => !allowed.has(id)))];
     if (others.length > 0) {
-      const guests = excludedId ? await this.prisma.user.count({ where: { organizationId, status: 'ACTIVE', id: { in: others } } }) : 0;
-      if (guests !== others.length) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
+      if (!excludedId) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
+      const [meeting] = await this.prisma.$queryRaw<{ scheduledAt: Date; durationMinutes: number | null; guests: number }[]>`
+        SELECT m."scheduledAt", m."durationMinutes",
+          (SELECT COUNT(*)::int FROM "User" u
+            WHERE u."organizationId" = ${organizationId} AND u.status::text = 'ACTIVE' AND u.id = ANY(${others}::text[])) AS guests
+        FROM "Meeting" m
+        WHERE m.id = ${excludedId} AND m."organizationId" = ${organizationId}`;
+      const ownTime = (t: { startsAt: string; durationMinutes: number }) =>
+        !!meeting && Date.parse(t.startsAt) === meeting.scheduledAt.getTime() && t.durationMinutes === (meeting.durationMinutes ?? DEFAULT_MINUTES);
+      if (!meeting || meeting.guests !== others.length || !dto.times.every(ownTime)) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
     }
     return [...new Set(dto.userIds)];
   }
