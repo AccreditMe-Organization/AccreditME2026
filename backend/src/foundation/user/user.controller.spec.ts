@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { UserController } from './user.controller';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { UserService, toSafeUser } from './user.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -342,10 +345,17 @@ describe('UserController', () => {
       expect(result).toMatchObject({ total: 91, page: 3, pageSize: 25 });
     });
 
-    it('getById strips invitationToken and every other internal-only field', async () => {
-      service.getByIdForViewer.mockResolvedValue(RAW_USER_WITH_SECRETS);
+    // ACC-159 — the record read carries invitationExpiresAt, as the service
+    // decided it (set for an INVITED person only); every other field still goes.
+    it('getById strips invitationToken and every other internal-only field, and passes the invitation expiry through', async () => {
+      const expiresAt = new Date('2026-11-22T10:00:00.000Z');
+      service.getByIdForViewer.mockResolvedValue({ ...RAW_USER_WITH_SECRETS, invitationExpiresAt: expiresAt });
       const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view'], undefined);
-      for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
+      for (const field of SENSITIVE_FIELDS.filter((f) => f !== 'invitationExpiresAt')) {
+        expect(result).not.toHaveProperty(field);
+      }
+      expect(result.invitationExpiresAt).toBe(expiresAt);
+      expect(JSON.stringify(result)).not.toContain('raw-invitation-secret');
       expect(result.id).toBe(USER_ID);
     });
 
@@ -386,5 +396,30 @@ describe('UserController', () => {
       expect(result.user.id).toBe(USER_ID);
       expect(result.promotionCompleted).toBe(true);
     });
+  });
+});
+
+// ACC-159 — who may resend an invitation, and who may read the seats: whoever
+// may invite. The seat route is declared before :id, or Nest would read
+// "seats" as a user id.
+describe('UserController — invitation routes (ACC-159)', () => {
+  const handler = (name: 'resendInvitation' | 'getSeatPosition'): object => UserController.prototype[name];
+
+  it('resend and the seat read both need users:invite', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler('resendInvitation'))).toEqual(['users:invite']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler('getSeatPosition'))).toEqual(['users:invite']);
+  });
+
+  it('the routes are POST :id/resend-invitation and GET seats', () => {
+    expect(Reflect.getMetadata(PATH_METADATA, handler('resendInvitation'))).toBe(':id/resend-invitation');
+    expect(Reflect.getMetadata(METHOD_METADATA, handler('resendInvitation'))).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(PATH_METADATA, handler('getSeatPosition'))).toBe('seats');
+    expect(Reflect.getMetadata(METHOD_METADATA, handler('getSeatPosition'))).toBe(RequestMethod.GET);
+  });
+
+  it('GET seats is declared before GET :id', () => {
+    const order = Object.getOwnPropertyNames(UserController.prototype);
+    expect(order.indexOf('getSeatPosition')).toBeGreaterThan(-1);
+    expect(order.indexOf('getSeatPosition')).toBeLessThan(order.indexOf('getById'));
   });
 });

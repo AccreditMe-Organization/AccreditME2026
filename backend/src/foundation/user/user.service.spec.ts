@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Logger, Not
 import {
   DEPARTURE_SUMMARY_REASSIGNED,
   DEPARTURE_SUMMARY_UNASSIGNED,
+  INVITATION_TTL_MS,
   MISSING_PLACEMENT_BODY,
   MISSING_PLACEMENT_TITLE,
   UserService,
@@ -20,6 +21,7 @@ import { AuthProvider } from '../../providers/auth/auth.provider';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 import { resolveAppLinkConfig } from '../../common/config/app-url.config';
 import { renderEmailHtml } from '../notification/email-html';
 import type { StagePoolService } from '../workflow/stage-pool.service';
@@ -572,7 +574,7 @@ describe('UserService', () => {
     it('allows self-view with zero permissions (ACC-43)', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u1', []);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false, invitationExpiresAt: null });
     });
 
     it('rejects viewing another user without users:view', async () => {
@@ -583,7 +585,7 @@ describe('UserService', () => {
     it('allows viewing another user with users:view', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false, invitationExpiresAt: null });
     });
 
     // ACC-221 — whether the person is the account owner comes with the same
@@ -591,7 +593,7 @@ describe('UserService', () => {
     it('says the account owner is the account owner, from the same query (ACC-221)', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [{ id: ORG_A }] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: true, twoFactorEnabled: false });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: true, twoFactorEnabled: false, invitationExpiresAt: null });
       expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
       expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { id: 'u1', organizationId: ORG_A },
@@ -2240,7 +2242,7 @@ describe('UserService', () => {
     // made before either invitee accepts (both status INVITED, never
     // ACTIVE), previously both passed validateSingleAssigneeCap()'s count
     // query since it only ever counted ACTIVE holders.
-    it('counts an INVITED holder, not just ACTIVE, closing the double-invite race', async () => {
+    it('counts an open INVITED holder, not just ACTIVE, closing the double-invite race', async () => {
       mockPrisma.orgPosition.findFirst.mockResolvedValue(SINGLE_ASSIGNEE_POSITION);
       mockPrisma.user.count.mockResolvedValue(1); // the first invitee's own still-INVITED row
 
@@ -2251,8 +2253,9 @@ describe('UserService', () => {
           'actor-1',
         ),
       ).rejects.toThrow(ConflictException);
+      // ACC-159 — by the seat-holders rule: an open invitation counts, an expired one doesn't.
       expect(mockPrisma.user.count).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ status: { in: ['ACTIVE', 'INVITED'] } }) }),
+        expect.objectContaining({ where: expect.objectContaining({ OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: expect.any(Date) } }] }) }),
       );
     });
 
@@ -3856,13 +3859,13 @@ describe('UserService', () => {
 
     // The seat rule must be the SAME rule invite() uses, or the two paths
     // disagree about "full": a pending invitation holds a seat.
-    it('counts INVITED against the seat limit, exactly as invite() does', async () => {
+    it('counts an open invitation against the seat limit, exactly as invite() does', async () => {
       stage();
 
       await service.reactivate('user-1', ORG_A, ACTOR);
 
       expect(mockPrisma.user.count).toHaveBeenCalledWith({
-        where: { organizationId: ORG_A, status: { in: ['ACTIVE', 'INVITED'] } },
+        where: { organizationId: ORG_A, OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: expect.any(Date) } }] },
       });
     });
 
@@ -4065,6 +4068,201 @@ describe('UserService', () => {
   });
 
   // ── ACC-83: revoke invitation ────────────────────────────────────────────────
+
+  // ACC-159 — resend: a new link, the old one dead, and two more days.
+  describe('resendInvitation (ACC-159)', () => {
+    const OLD_TOKEN = 'a'.repeat(48);
+    const AT = new Date('2026-11-20T10:00:00.000Z');
+    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+    const pending = (overrides: Record<string, unknown> = {}) => ({
+      status: 'INVITED',
+      invitationExpiresAt: new Date(AT.getTime() + 24 * 60 * 60 * 1000), // still open
+      positionId: 'pos-1',
+      primaryOrgUnitId: 'unit-1',
+      invitationToken: OLD_TOKEN,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      useFixedClock(AT);
+      mockPrisma.organization.findFirst.mockResolvedValue({ name: 'Al Nakheel', slug: 'al-nakheel' });
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
+    });
+    afterEach(() => jest.useRealTimers());
+
+    it('the invitation lasts two days', () => {
+      expect(INVITATION_TTL_MS).toBe(TWO_DAYS);
+    });
+
+    it('writes a NEW token, so the old link stops working, and restarts the two days', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending());
+
+      const result = await service.resendInvitation('user-9', ORG_A, ACTOR);
+
+      const write = mockPrisma.user.updateMany.mock.calls[0][0];
+      expect(write.where).toEqual({ id: 'user-9', organizationId: ORG_A });
+      expect(write.data.invitationToken).toMatch(/^[0-9a-f]{48}$/);
+      expect(write.data.invitationToken).not.toBe(OLD_TOKEN);
+      expect(write.data.invitationExpiresAt).toEqual(new Date(AT.getTime() + TWO_DAYS));
+      expect(result).toEqual({ invitationExpiresAt: new Date(AT.getTime() + TWO_DAYS) });
+    });
+
+    it('takes the person row lock, and re-reads the status under it', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending());
+
+      await service.resendInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      const lock = mockPrisma.$queryRaw.mock.calls.find((c: unknown[]) =>
+        (c[0] as readonly string[]).join('?').includes('FOR UPDATE'),
+      );
+      expect(lock).toBeDefined();
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('emails the new link (and never the old one), after the commit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending());
+
+      await service.resendInvitation('user-9', ORG_A, ACTOR);
+
+      const token = mockPrisma.user.updateMany.mock.calls[0][0].data.invitationToken;
+      const notice = mockNotification.create.mock.calls[0][0];
+      expect(notice.userId).toBe('user-9');
+      expect(notice.channel).toBe('EMAIL');
+      expect(notice.bodyEn).toContain(`https://al-nakheel.accreditme.app/accept-invitation?token=${token}`);
+      expect(notice.bodyEn).not.toContain(OLD_TOKEN);
+      // The transaction ran before the email was sent.
+      const [committedAt] = mockPrisma.$transaction.mock.invocationCallOrder;
+      const [sentAt] = mockNotification.create.mock.invocationCallOrder;
+      expect(Number(committedAt)).toBeLessThan(Number(sentAt));
+    });
+
+    it('writes one audit row naming the resend, with no token in it', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending());
+
+      await service.resendInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockAuditLog.log).toHaveBeenCalledTimes(1);
+      const row = mockAuditLog.log.mock.calls[0][0];
+      expect(row).toEqual(
+        expect.objectContaining({
+          tenantId: ORG_A,
+          actorId: ACTOR,
+          action: 'UPDATE',
+          objectType: 'User',
+          objectId: 'user-9',
+          metadata: { event: 'invitation_resent' },
+        }),
+      );
+      const token = mockPrisma.user.updateMany.mock.calls[0][0].data.invitationToken;
+      expect(JSON.stringify(row)).not.toContain(OLD_TOKEN);
+      expect(JSON.stringify(row)).not.toContain(token);
+    });
+
+    it('an OPEN invitation already holds its seat and position: neither is checked again', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending());
+
+      await service.resendInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.count).not.toHaveBeenCalled();
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('an EXPIRED invitation holds no seat, so a full organisation refuses the resend', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending({ invitationExpiresAt: new Date(AT.getTime() - 1) }));
+      mockPrisma.organization.findUnique.mockResolvedValue({ maxUsers: 3 });
+      mockPrisma.user.count.mockResolvedValue(3);
+
+      await expect(service.resendInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(/seat limit/);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: AT } }],
+        },
+      });
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('an EXPIRED invitation takes its position again, by the position rules, excluding the person', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending({ invitationExpiresAt: new Date(AT.getTime() - 1) }));
+      mockPrisma.organization.findUnique.mockResolvedValue({ maxUsers: 25 });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-1',
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+        isActive: true,
+      });
+      // The seat count, then the position count: someone else took the position
+      // after the invitation expired.
+      mockPrisma.user.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+
+      await expect(service.resendInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(/already has an active holder/);
+      expect(mockPrisma.user.count).toHaveBeenLastCalledWith({
+        where: expect.objectContaining({ positionId: 'pos-1', primaryOrgUnitId: 'unit-1', id: { not: 'user-9' } }),
+      });
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each(['ACTIVE', 'INACTIVE'])('refuses a %s person with INVITATION_NOT_PENDING, writing and sending nothing', async (status) => {
+      mockPrisma.user.findFirst.mockResolvedValue(pending({ status }));
+
+      const refusal = await service.resendInvitation('user-9', ORG_A, ACTOR).catch((e: unknown) => e);
+
+      expect(refusal).toBeInstanceOf(ConflictException);
+      expect((refusal as ConflictException).getResponse()).toEqual(
+        expect.objectContaining({ statusCode: 409, code: 'INVITATION_NOT_PENDING' }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the person was accepted (or revoked) under the lock, writing nothing', async () => {
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(pending()) // the read before the transaction
+        .mockResolvedValueOnce({ status: 'ACTIVE' }); // the re-read under the lock
+
+      await expect(service.resendInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(/Only a pending invitation/);
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation("resendInvitation: another organisation's person is the identical 404", async () => {
+      // The fake honours the where: only org-a's own row matches.
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(where.id === 'user-9' && where.organizationId === ORG_A ? pending() : null),
+      );
+
+      const crossTenant = await service.resendInvitation('user-9', ORG_B, ACTOR).catch((e: unknown) => e);
+      const missing = await service.resendInvitation('nobody', ORG_A, ACTOR).catch((e: unknown) => e);
+
+      expect(crossTenant).toBeInstanceOf(NotFoundException);
+      expect((crossTenant as NotFoundException).getResponse()).toEqual((missing as NotFoundException).getResponse());
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-9', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-159 — the invite form's seat read: the same count the refusal uses.
+  describe('getSeatPosition (ACC-159)', () => {
+    it('answers the seats in use and the limit, counting open invitations only', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(7);
+
+      expect(await service.getSeatPosition(ORG_A)).toEqual({ occupied: 7, maxUsers: 25 });
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith({ where: { id: ORG_A }, select: { maxUsers: true } });
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: expect.any(Date) } }],
+        },
+      });
+    });
+  });
 
   describe('revokeInvitation', () => {
     const INVITED = {

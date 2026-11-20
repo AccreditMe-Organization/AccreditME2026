@@ -23,3 +23,18 @@ export class UseTransferException extends ConflictException {
     });
   }
 }
+
+/** ACC-159 — only a pending invitation can be resent. */
+export const INVITATION_NOT_PENDING = 'INVITATION_NOT_PENDING';
+
+export class InvitationNotPendingException extends ConflictException {
+  constructor(readonly userStatus: string) {
+    super({
+      statusCode: 409,
+      message: `Only a pending invitation can be resent. This user is ${userStatus}.`,
+      error: 'Conflict',
+      code: INVITATION_NOT_PENDING,
+      userStatus,
+    });
+  }
+}

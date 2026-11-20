@@ -533,7 +533,8 @@ describe('OrgPositionService', () => {
           where: expect.objectContaining({
             organizationId: ORG_A,
             primaryOrgUnitId: 'unit-1',
-            status: { in: ['ACTIVE', 'INVITED'] },
+            // ACC-159 — an open invitation holds the position; an expired one doesn't.
+            OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: expect.any(Date) } }],
             id: { not: 'candidate-1' },
           }),
         }),
@@ -602,7 +603,7 @@ describe('OrgPositionService', () => {
   // specifically so the write-side check and listAvailablePositionsForUser()
   // (the read-side picker filter, tested above) can no longer drift apart.
   describe('hasAnyHeadConferringHolder', () => {
-    it('returns true when any ACTIVE or INVITED holder of a head-conferring position exists in the unit', async () => {
+    it('returns true when any ACTIVE or open INVITED holder of a head-conferring position exists in the unit', async () => {
       mockPrisma.user.count.mockResolvedValue(1);
 
       const result = await service.hasAnyHeadConferringHolder('unit-1', ORG_A, null);
@@ -612,7 +613,8 @@ describe('OrgPositionService', () => {
         where: {
           organizationId: ORG_A,
           primaryOrgUnitId: 'unit-1',
-          status: { in: ['ACTIVE', 'INVITED'] },
+          // ACC-159 — the seat-holders rule: an expired invitation holds no position.
+          OR: [{ status: 'ACTIVE' }, { status: 'INVITED', invitationExpiresAt: { gte: expect.any(Date) } }],
           position: { isUnitHeadPosition: true },
         },
       });
