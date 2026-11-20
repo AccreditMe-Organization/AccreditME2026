@@ -7019,9 +7019,54 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   applies.
 - **Record routes:** `COMMITTEE_CHANGE_REQUEST` names the request's committee
   and its owning unit.
-- **Known gap until PR 2:** the awaiting-decision lists read Under review
-  only, and `awaitingDecisionBy` is null in an added stage. The screens are
-  PR 3.
+- **The awaiting list (PR 2).** `GET /committee-change-requests/awaiting-decision`
+  reads each arm with its own capped query (`awaiting-decision-candidates.ts`)
+  and merges them, so one arm's rows never use the other's cap. Both arms page
+  (keyset on submittedAt and id, 200 a page, at most 5, until 200 are kept), so
+  older rows the viewer cannot keep never hide theirs. The chain arm: requests
+  Under review, each page's chains in one batch. The review arm first works
+  out where the viewer can be in a pool without reading a request (the added
+  stages and entries; each pool resolved without a record; for the record-routed
+  entries, the committees the viewer and whoever they cover sit on and the units
+  they lead, `findUnitsLedBy()`), then reads only the requests standing there,
+  filtered IN SQL, a page at a time, each checked exactly: the pool and
+  `readableCommitteeIds()`. The gate is still one query,
+  `awaitingDecisionGate()`: the chain's three arms plus "a submitted request's
+  newest instance in an added stage here". Pinned query counts: 1 with nothing
+  in an added stage; 4 for a non-reviewer while something is (no request read);
+  16 for a reviewer with one request; 14 for a chain decider; 21 for a chain
+  decider whose request is on the second page. Every
+  organisation predicate in both queries is held load-bearing by gate-named
+  specs on corrupt cross-organisation rows. Home's counts read the same API;
+  `awaiting-me` never lists a review stage (app moves only), so nothing counts
+  twice. `awaitingDecisionBy` gains `REVIEW_STAGE` (the stage's names), in the
+  list, a read and the NOT_DECIDER refusal. The screens are PR 3.
+- **What the screens read (PR 3a).** The protected template's read carries
+  `reviewStages` (`canAdd`, `max`, `count`, `after`, `who`), built by
+  `reviewStagesRead()` from the rules the save refuses by
+  (`reviewStageFits()`, `REVIEW_STAGE_WHO_MODES`,
+  `REVIEW_STAGE_REFUSED_KINDS`); absent on every other template. Every
+  review-stage move has an app-move line: the read keys an added stage as
+  `REVIEW_STAGE_MOVE_KEY`. An empty added stage is flagged on entry and listed
+  by `STAGE_WITHOUT_ASSIGNEE` (unchanged, now pinned).
+- **A review stage nobody can DECIDE is flagged too (ACC-325).** The two
+  `isUnassigned` flaggers (the engine's entry-time
+  `checkAndFlagUnassignedStage()` and the SLA sweep) test the stage's DECIDERS,
+  not its whole pool: `stageDeciders()` in `workflow/stage-deciders.ts`, a
+  per-record-type registry (`STAGE_DECIDER_FILTERS`, beside
+  `TRANSITION_PRECONDITIONS`, fail open). Its one entry, committee change
+  requests on an added review stage only, keeps a pool member who is not the
+  requester (`requestedById`, the column the decision path refuses
+  `CHANGE_REQUEST_OWN_DECISION` on) and may open the committee
+  (`committeeReadersAmong()`). Draft and Under review keep their whole pool. It
+  decides only the flag, never who may act. The sweep re-derives it, so the
+  flag clears when a reader who is not the requester joins. Cost: none for any
+  other entry; a review-stage entry costs one request read and one readers read
+  per committee, batched per organisation in the sweep. Setup health's type is
+  unchanged.
+- **A cover gives reach only while its person is ACTIVE** (PR 2):
+  `findUnitsCoveredBy()`, `findUnitLeadersAmong()` and the gate's cover arm;
+  `findRunningActingCoversForUnits()` (what a unit's cover IS) is unchanged.
 - **Real-database specs:** the "added review stages (ACC-245)" block of
   `committee-change-request.db-spec.ts`, 17 tests, two of them concurrent (an
   add while a Submit moves, a remove while a request enters the stage; each
@@ -9258,6 +9303,32 @@ flag off on save). Nothing is disabled before the click: the server decides.
 
 Measured before shipping (read only, 10 Nov): al-manara and al-nakheel each
 have one root, headed by one holder, with no cover. No root was headless.
+
+**ACC-324 — a cover heads a unit only while its person is ACTIVE.** "Headed"
+is a current head holder, or a cover in force whose person is ACTIVE:
+`findActiveCoversForUnits()` in `unit-headship.ts` (`ACTIVE_COVER_PERSON`,
+`runningActingCoverWhere(now)`, from the period table). The invariant reads
+it, so deactivating the root's only active cover is refused
+`ROOT_UNIT_NEEDS_HEAD` inside the deactivation's own transaction (the
+baseline, the person turned INACTIVE, the assertion); a root covered only by
+a deactivated person is already headless (logged, never refused). Every
+reader that DECIDES from a unit's cover reads this rule, never the
+`actingHeadUserId` cache:
+  - the root-unit invariant (`isHeaded`);
+  - the vacancy flag's two recomputers (`refreshOrgUnitHeadVacancy()`, the SLA
+    sweep's `recomputeOrgUnitVacancies()`) and its escalation step
+    (`resolveActingHeadForOrgUnit()`), so Setup health's
+    `ORG_UNIT_WITHOUT_HEAD` lists such a root as blocking work;
+  - `OrgUnitHeadService.hasDirectOrActingHead()` (invite, promote, transfer);
+  - `OrgPositionService.resolveHeadEscalationTargets()` (a task's Head tier);
+  - a promotion's new manager in `UserService.transferUser()`.
+The cache is left to what it records and shows: `clearActingHead()` ends the
+cover it names, `getHeadStatus()` returns it, and two screens show it (the
+transfer wizard's manager preview, the headship panel's End cover). A cover arranged for later, or one that lapsed on its
+own date, no longer keeps a unit off the list either. `findRunningActingCover()`
+is unchanged: it shows the cover on record. Measured before shipping (read
+only, 19 Nov): no unit on the shared database has an acting head, cached or in
+the period table, so the change moves no flag there.
 
 ---
 
@@ -17614,14 +17685,34 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     approved;
   - its action items whose task is still open;
   - a note on each (`PUT …/open-actions/:taskId/note`).
+  - **For the agenda (PR 7b):** `GET /meetings/:id/open-actions` answers
+    `{ mayRead, rows }`, each row with `mayOpen`. This meeting's own visibility
+    first (the identical 404); then rows only for whoever may read the LAST
+    meeting's minutes, asked by the same `minutesAccess()` the minutes read
+    uses (an organisation guest of this meeting only reads none); then each
+    row's task linked only where the task page would open it, by
+    `TaskAdmissionService.admittedIds()`, one query for every row. A fixed
+    number of queries for any number of rows (db-spec).
+  - **Nothing to show answers one way (P206):** no earlier approved meeting and
+    "you can't read it" are both `{ mayRead: false, rows: [] }`, never an error.
+    The last meeting is checked with `MeetingAccess.canSee()`, which writes no
+    concealed-refusal log line: nothing is concealed from this caller there.
 - **Distribute (`POST /meetings/:id/distribute`, the app's move into Minutes
   Review):**
   - only Minutes Draft's pool may press it;
-  - attendance must be recorded for every member and organisation guest
-    (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`), checked inside the move
-    under the meeting row's lock, so nothing is written;
+  - ONE readiness check, `distributeBlockedBy()` (`meeting-minutes-rules.ts`),
+    read by the minutes read's `distribute.blockedBy` and run again inside the
+    move under the meeting row's lock, so nothing is written:
+    - attendance recorded for every member and organisation guest
+      (`MEETING_ATTENDANCE_INCOMPLETE`, with `missing`);
+    - then no decision whose votes exceed the members now present
+      (`MEETING_VOTES_EXCEED_PRESENT`, with `items`: item, total, present). The
+      attendance tap that lowered the count is not refused (P206);
   - the review date (`reviewBy`, a day after today, default 5 working days) and
-    the round (`reviewRound` + 1) are written with the move (`inTx`);
+    the round (`reviewRound` + 1) are written with the move (`inTx`). The
+    default is `reviewDayDefaults()` (`meeting-minutes-rules.ts`), its one home;
+    the minutes read offers it as `distribute.defaultReviewBy` (PR 7b), so the
+    screen does no working-day arithmetic;
   - the members recorded present are told after the commit.
 - **Return (`POST /meetings/:id/return`, the app's move back to Minutes
   Draft):**
@@ -17637,7 +17728,9 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
     corrections" in the round;
   - "No corrections" after suggesting is `MEETING_REVIEW_SUGGESTED`.
   - Apply and decline are the recorders', under `apply_suggestions`. A declined
-    suggestion's author is told, with the reply.
+    suggestion's author is told, with the reply. **A decline needs a reply**
+    (PR 7c-1, P212): trimmed, and an empty one is
+    `MEETING_SUGGESTION_REPLY_REQUIRED` (400), refused before any write.
 - **Approve Minutes is held** by `TRANSITION_PRECONDITIONS` MEETING (a move that
   enters `MINUTES_FINAL`), in this order:
   1. the review is open: not every present member answered, and the date has
@@ -17672,7 +17765,11 @@ home), `meeting-minutes.service.ts`, `meeting-review.service.ts`,
   - reviews to answer;
   - invitations not answered before the start;
   - each part is one SQL read, every filter (the stage's action, the round
-    unanswered, the start) before its cap of 200.
+    unanswered, the start) before its cap of 200;
+  - a review row carries `since`, when the meeting entered its current stage
+    (its newest instance's open entry, scoped by organisation through the
+    instance, else `updatedAt`), a correlated subquery inside the same read, so
+    the call is still 2 queries in one `Promise.all` (PR 7c-2).
 
 **The engine, for every record type:**
 
@@ -17766,6 +17863,52 @@ with `schedule()`).
 - **Organisation scoping:** another organisation's series is
   `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
   `seriesId` filter lists nothing of theirs.
+- **The series on a meeting (PR 8-be, P236 Q1):** `GET /meetings/:id`'s
+  `series` also gives the pattern's day (`on`: kind, weekday, day of the month,
+  ordinal), `firstDate`, `endsOn` or `count`, and `previousId` / `nextId`: the
+  nearest meetings either side that aren't cancelled and that this viewer may
+  open, else null. One indexed read of the series' meeting ids in order, then
+  their stages and who may open them, each in one batch, and the nearest on each
+  side picked in memory: **a fixed number of queries whatever the series' size**
+  (P237; a db-spec counts a series of 3 and of 30), and only for a series
+  meeting.
+- **Who may open many meetings, in one query (P237):**
+  `MeetingAccess.openable(ids)` is `canSee()`'s rule batched, built from
+  `meeting-membership.ts`'s `meetingOpener()` (the viewer's side, read once: no
+  query for a `meetings:view` holder, the oversight set otherwise) and
+  `meetingMayOpenSql()` (`meetings:view`, else the MEMBER and SCHEDULER clauses
+  or the OVERSEER clause). The clash check reads the same pair, so the rule has
+  one copy. A db-spec holds `openable()` equal to `canSee()` for every candidate
+  (this series, another organisation's, an invented id) and every viewer kind
+  (member, overseer, invited to one, `meetings:view`, `committees:view` only,
+  outsider).
+- **What "this and all later" would do (PR 8-be, Q2):** `POST
+  /meetings/:id/scope-preview` (`{ change: EDIT | RESCHEDULE, … }`, the edit's
+  or the reschedule's fields without a reason) answers `{ meetings: [{ id,
+  title, startsAt, durationMinutes }], kept: [{ meetingId, title, fields,
+  startsAt }], clashes }`, for the scope confirm:
+  - it runs **the write's own decisions**, one copy each: `planEdit()` (the
+    fields changed and those a later meeting keeps) and `placeLater()` (the
+    anchor's move as people read it, then off non-working days and the owner's
+    other meetings). The write runs them on rows read under its locks; the
+    preview on the same rows read **without** a lock, and **writes nothing**;
+  - the same "who may ask" as the write (`writing()`: the identical 404 for a
+    meeting the asker can't see, `MEETING_NOT_ALLOWED` otherwise) and the same
+    refusals (`MEETING_NOT_IN_SERIES`, the stage's action, a time in the past,
+    the same time);
+  - clashes are asked of the anchor's invitees at each meeting's new time (one
+    batched check, cap 53); a "clash" with a meeting that is itself moving is
+    left out. **An edit that moves no time (no new duration) asks nothing and
+    answers `clashes: []`**, so the confirm never presents a clash already there
+    as the edit's; a new duration is still checked (P237);
+  - the stage rules are read once: `laterMeetings()` returns each meeting's, and
+    the anchor's refusal is built from them by `StageRulesService
+    .assertRulesAllow()` (`assertStageAllows()`'s refusal, one copy);
+  - a db-spec proves no row changes (and no lock is taken: it answers while
+    another transaction holds a meeting and its workflow instance FOR UPDATE),
+    and that the previewed
+    times are exactly what the write then stores, including a meeting moved off
+    a day the owner already meets.
 ### 18.15 The screens, part 1 (PR 6)
 
 Plan §6.5 lists the departures. Frontend under `foundation/meetings/`, plus two
@@ -17892,7 +18035,15 @@ routes of §18.10.
   only with `may.manageGuests`, since it adds a guest.
 - **An edit sends only the fields the person changed** (P198), so it never
   writes back someone else's newer value for a field left alone. Save with
-  nothing changed sends nothing. Two people changing the SAME field is ACC-323.
+  nothing changed sends nothing.
+- **Two people changing the SAME field: the stale save is refused (ACC-323).**
+  The edit also sends `expected`, each changed field's value as the dialog
+  loaded it (the presenter by attendee id, null for none). `update()` compares
+  them with the stored row under the agenda lock and refuses a difference with
+  `MEETING_AGENDA_CHANGED` (Reload), with nothing written and no audit row.
+  Compared by field, not by a timestamp: edits to different fields both land,
+  and a reorder never makes an edit stale. `expected` is optional, so either
+  side may deploy first. No migration.
 - **Duration** is 5 to 120 minutes, or Not set.
 - **Remove item** (editing only) asks first, and says the item's papers go to
   the recycle bin.
@@ -17940,3 +18091,284 @@ languages, each keeping 20px:
 | Filled, a presenter found by name, or refused | 309 / 312 at 1280; 326 / 329 at 390 |
 
 The design measured 301 / 322. Only the description scrolls, inside itself.
+
+### 18.17 The screens, part 2b: the meeting held and its minutes drafted (PR 7b)
+
+Plan §6.7. Frontend under `foundation/meetings/`; the reads and writes of
+§18.13.
+
+**What the page reads, besides PR 6's:** `GET /meetings/:id/minutes` and `GET
+/meetings/:id/open-actions`, alongside the meeting. A 403 or 404 on either is
+"not for you" (nothing drawn); any other failure is said in the agenda panel's
+line, with Retry, never swallowed. Every minutes write answers with the whole
+minutes, which the page shows.
+
+**Attendance** (`am-meeting-attendance`) takes the invitees' place once there
+are minutes:
+
+- Present / Apologies / Absent per invitee, a radiogroup saved on each tap (one
+  row, `PUT …/attendance`), with a "Saved" tick on the row; Mark all present
+  sends everyone not yet present in one write. Arrow keys move in reading
+  direction. Under a coarse pointer the segments are 44px tall, 72px wide.
+- The quorum line counts MEMBERS present: met, or not met with how many more are
+  needed. Guests don't count, which the panel says.
+- `may.recordAttendance` decides the controls. Before the start, in the draft,
+  the panel says when attendance opens (`MEETING_NOT_STARTED` stays as built);
+  anyone else reads what was recorded.
+
+**"Open actions from the last meeting"** (`am-meeting-open-actions`) is the
+agenda's fixed first section, not an agenda item: never moved, edited or
+removed, no papers. Drawn only with rows. A title links to its task only with
+`mayOpen`; the status is the task's. Whoever records the minutes notes each row
+in Minutes Draft (`may.recordMinutes`); anyone else reads the note.
+
+**Each agenda item's minutes** (`am-meeting-item-minutes`), under the item:
+
+- the discussion (saved whole, trimmed, an emptied one null);
+- decisions with votes, all three counts or none, "Taken without quorum" on
+  each decision taken below it;
+- the action item drafts: owner and due date, marked a draft (no task until the
+  minutes are approved), removable while a draft.
+
+**Raise action item** (`app-meeting-action-dialog`): What, an Owner from the
+invitees who are people of the organisation (never an outside guest, who has no
+user), and a Due date and time on the tenant's wall clock (due dates are always
+date-time, ACC-94), with the meeting's day-and-time field.
+
+**Distribute Minutes** (`app-meeting-distribute-dialog`, a confirm), beside the
+moves for `may.distribute`: opens on `distribute.defaultReviewBy` and sends a
+date only when the person changes it. While `distribute.blockedBy` holds it, it
+says why (who is missing, or which item's votes exceed the members present)
+and offers no Distribute.
+
+**After lane B's review (P206):**
+
+- **Answers in order:** every minutes write answers with the whole minutes, so
+  the page keeps one `MinutesWriteOrder` (provided by the page) and shows an
+  answer only when it answers the newest write begun. **A dropped answer never
+  leaves the page stale (P211):** once one was dropped, the page reads the
+  minutes again when the newest write settles, answered or failed, or at once
+  if it already had. Chosen over serialising the writes, so taps stay
+  immediate.
+- **Attendance taps are queued per row** while a save runs, never dropped, and
+  sent when it ends; focus moves only once a tap is accepted. A value stays
+  shown while its save is in flight, and after a failure, marked by its row's
+  error; a save clears only its own rows' errors. At the start time a timer
+  (cleared on destroy; re-armed if it fires early, and chained past
+  setTimeout's 24.8-day limit) removes "opens at" and the page reads the
+  minutes again, so attendance opens without a reload.
+- **Distribute's blocking refusals** (`MEETING_ATTENDANCE_INCOMPLETE`,
+  `MEETING_VOTES_EXCEED_PRESENT`) make the page read the minutes again; the
+  dialog then draws `blockedBy`'s list, never a sentence missing its numbers.
+- **Typed discussion is kept:** the box follows the STORED discussion only when
+  that string changes and the box is clean. A change while the person has typed
+  keeps their text, with a line saying it changed elsewhere and Reload.
+- **Votes are checked before sending:** whole numbers, 0 or more, all three or
+  none, said under the field. `MEETING_VOTES_EXCEED_PRESENT` says its numbers.
+- **Open actions:** a new read drops notes saved on the page since.
+
+**The dialogs**, measured under the 420px cap at 1280 and 390, in both
+languages, each keeping 20px:
+
+| Dialog | Tallest body (en / ar) |
+|---|---|
+| Raise action item (empty, every error, filled, refused) | 288 / 285 at 390; 271 / 285 at 1280 |
+| Distribute Minutes (ready, refused, five missing) | 177 / 190 |
+
+### 18.18 The screens, part 2c: the review (PR 7c-1)
+
+Plan §6.8. Frontend under `foundation/meetings/`, on the routes of §18.13. Every
+review write answers with nothing, so the page reads the minutes again after
+one; Return for Correction moves the stage, so the page reads the meeting.
+
+**Who sees what, from the server's flags only:**
+
+- **The review banner** (`am-meeting-review-banner`), "Review the minutes by
+  {date}": `may.review` (a member recorded present, while the stage takes
+  corrections). It says the person's own answer (`review.mine`). "No
+  corrections" is offered only before any answer (`mine` null): after it, only
+  Suggest, which the server allows (it replaces the answer); after a suggestion
+  the server refuses it (`MEETING_REVIEW_SUGGESTED`). This round's changes are
+  named by item ("item 2, decision").
+- **The Review card** (`am-meeting-review-card`): whenever the minutes are in
+  review or approved and a round has run. Whoever has the minutes read (§4.1)
+  sees it: who answered, the open suggestions, the date, each reviewer, and the
+  suggestions about the minutes as a whole.
+- **Suggestions about an item** sit under that item. Whoever may apply
+  suggestions (`may.applySuggestions`) gets **Edit to apply** and **Decline…**;
+  on the card, **Mark applied** and **Decline…** for the whole-minutes ones.
+- **Return for Correction**: `may.returnForCorrection`, beside the moves.
+
+**Edit to apply** (P212) opens the item's discussion and decision editors (the
+server allows those writes in review under `apply_suggestions`, recording a
+review change). The write goes FIRST; only once it succeeds is the suggestion
+marked applied (`…/apply`). A failed write applies nothing.
+
+**Marking applied is safe to press twice and after a lost answer** (P220), on
+an item (Edit to apply) and on the card (Mark applied): one apply request at a
+time, and `MEETING_SUGGESTION_DECIDED` reads as already applied (an earlier
+press reached the server), so the minutes are read again with no error. A
+failed apply is said from its code, by one rule, `meetingFailure()`
+(`meeting-refusal.ts`):
+
+- **Retry** only when the server could not be reached or timed out (status 0,
+  408, 502, 503 or 504, Design System rule 5.5): on an item "Your edit was saved,
+  but the suggestion couldn't be marked applied"; on the card "The suggestion
+  couldn't be marked applied", since nothing was edited;
+- **Reload** for a stale refusal;
+- any other refusal its own sentence, and nothing to press.
+
+**Stale refusals offer Reload, never Retry** (`meetingNeedsReload()`):
+`MEETING_CHANGED`, `MEETING_SUGGESTION_NOT_FOUND`,
+`MEETING_SUGGESTION_DECIDED` and `MEETING_REVIEW_SUGGESTED` (a stale banner's
+"No corrections"), beside the agenda's three. Reload reads the meeting again; in
+a dialog it takes the primary button's place and closes the dialog first. The
+banner, the card, an item's apply line and all three dialogs offer it, and say
+every failure through the same `meetingFailure()`: when the server could not be
+reached, the banner offers Retry beside its line and each dialog's primary
+button becomes Retry, which sends the same request again (P227).
+
+**The dialogs:**
+
+- **Suggest a correction** (`app-meeting-suggest-dialog`): About (an item, or
+  the minutes as a whole, sent as no item) and the suggestion, required. Opened
+  from the banner only (plan 7c draws no per-item Suggest), so About starts on
+  the minutes as a whole.
+- **Decline this suggestion?** (`app-meeting-decline-dialog`): the suggestion
+  quoted, and a REQUIRED reply its author reads; the server refuses an empty
+  one too. It keeps the last suggestion it was given while it closes, so the
+  quote does not blank as the page clears its own.
+- **Return for Correction?** (`app-meeting-return-dialog`): who is told (the
+  present members, as the server tells them), the answers so far, and an
+  optional reason.
+
+Every dialog says a refusal in its footer.
+
+Measured under the 420px cap at 1280 and 390, in both languages, each keeping
+20px (`meeting-review-dialogs.layout.spec.ts`).
+
+### 18.19 The screens, part 2d: approval and Home (PR 7c-2)
+
+Plan §6.8. What holds Approve Minutes, its confirm, and the minutes to review on
+Home, the rail and the Awaiting page.
+
+**Approve Minutes held.** The moves read (`GET /workflows/instances/:id/moves`)
+already says, for each ADVANCE move, what its record's precondition would refuse
+now (`blockedBy`, PR 4): for a meeting, `minutesApprovalBlocks()`, one blocker at
+a time (seeing all of them is ACC-326).
+
+- **The move buttons** (`app-workflow-transition-actions`) take `explains`, the
+  codes the record's page can say; empty by default, so other records are
+  unchanged. A move whose `blockedBy` carries one is drawn disabled with "Why?"
+  beside it; a press the server refuses with one (held since the read) says the
+  same and reads the moves again. Either emits `why` with the move and its block.
+- **The meeting page** explains `MEETING_APPROVAL_BLOCKS`
+  (`MEETING_REVIEW_OPEN`, `MEETING_SUGGESTION_OPEN`, `MEETING_ACTION_PAST_DUE`,
+  `MEETING_ACTION_PAST_SLA_LIMIT`), and opens **Can't move to Minutes Approved
+  yet** (`app-meeting-cant-approve-dialog`, a 420 confirm with Close only). The
+  lead is said from the code (who has yet to answer and until when; the open
+  suggestions counted; the action items past due, or past the latest a task may
+  be due, with that date); it never claims the blocker is the last. At most six
+  names or items are listed, then "and n more"; an item is one line, due date
+  first, cut with an ellipsis and whole in its tooltip. The dialog keeps its
+  refusal while it closes. Measured under the cap with ten people and ten long
+  items, in both languages, at 1280 and 390
+  (`meeting-cant-approve-dialog.layout.spec.ts`).
+- **Approve Minutes asks first**: a move entering a stage flagged
+  `MINUTES_FINAL` opens the confirm "Approve the minutes?" (final, and each
+  action item becomes a task whose owner is told).
+
+**Minutes to review, counted everywhere from one helper.**
+`MyWorkCountsService.awaiting` gained a third half, `reviews`: the review arm of
+`GET /meetings/awaiting-me`, asked only while the Meetings module is open (the
+rail's own rule, `meetingsOpen()`). The invitation arm is not read. Either half
+failing fails the read whole. `awaitingTotal()` is the one count, read by Home's
+tile and panel, the rail's Awaiting badge and the `/awaiting` page, which reads
+the same half (`meetingReviews()`). A row (`reviewRow()` in `awaiting-rows.ts`,
+which Home now uses for every kind) names the meeting, "Minutes to review · by
+{date}", how long it has waited since `since`, and links to the meeting.
+
+**Telling Home and the rail.** No corrections, a suggestion, Return for
+Correction and Distribute Minutes tell `MyWorkEvents` after they succeed (never
+when they fail), as the workflow moves already do; Approve is a workflow move.
+
+**Cost:** Home's awaiting read is one more request while the Meetings module is
+open: `GET /meetings/awaiting-me`, 2 queries. Nothing is added to the
+per-request path (no guard, interceptor or middleware), and nothing polls.
+
+### 18.20 The screens, part 2e: the approved minutes on A4 (PR 7d-1)
+
+Plan §3.11, design artboard 13. The answers to the 7d slice plan (P229):
+
+- **`/meetings/:id/print`**, a route OUTSIDE the app shell (`app.routes.ts`,
+  first, behind sign-in; `permissionGuard` checks no module there, as on
+  `/meetings/:id`), so
+  neither the screen nor the paper carries the rail or top bar. On screen it has
+  a small bar (Back to the meeting, Print), hidden when printing. A browser
+  print page: there is no PDF.
+- **Approved minutes only.** Before Minutes Approved the page says so and prints
+  nothing; a refusal to open the minutes (`MEETING_MINUTES_NOT_OPEN`) reads the
+  same, and a meeting the reader may not see is the meeting page's not-found.
+  Who may print is exactly who may read the approved minutes (the minutes
+  read's own rule).
+- **Print minutes** is a button in the meeting page's header, shown once the
+  minutes are approved, at every width (no row menu, no phone-only layout).
+- **On the page:** the organisation (`tenantName`), the committee or unit, the
+  title, when (start to end) and where; attendance in five groups (members
+  present, with apologies and absent, then the organisation guests and outside
+  guests who came, an outside guest with their organisation, role and an
+  outlined mark); the quorum line, with guests not counted; each item's
+  discussion, decisions, vote, "Taken without quorum" and action items (owner
+  and due date, no task status); the approval line, at the top and again at the
+  end.
+- **The approval line** reads the minutes read's `approvedBy`: the approver's
+  name, even after they leave the committee or are deactivated, and the seat
+  they held at approval, from the membership ledger (the newest event recorded
+  at or before `minutesApprovedAt`; a LEFT event means no seat), falling back to
+  their current seat where the ledger has nothing that early (which can name a
+  seat they have since left), and no seat for a unit meeting. The ledger is read
+  by `createdAt` (when the change was recorded), not `effectiveDate`, which can
+  be back- or forward-dated; ties are broken by id. Read with the minutes, under
+  the minutes read's access check, organisation-scoped; at most three indexed
+  reads, and only while the minutes are approved (a tenant could add a move out
+  of Minutes Approved, so the stamp alone isn't trusted).
+- **The print stylesheet:** `@page { size: A4 portrait; margin: 18mm }`, black
+  on white, marks as outlined text, items kept whole across pages, and the page
+  number in a margin box as "1 / 3" (`counter(pages)`, Chrome/Edge 131+; no
+  number below that, plan §8). The number is language-neutral because a margin
+  box's text can't be translated.
+- **Dates** go through the formatting layer, so Hijri follows the reader's
+  preference (ACC-94 D4), as the screen does.
+- **The session clocks (P232):** outside the shell, so the page starts them
+  itself, exactly as `AppShellComponent` does: `IdleService.start()` (ACC-122)
+  and `SessionLimitService.start()` (ACC-126), the limit stopped on destroy, and
+  both warnings drawn the same way (deferred).
+
+### 18.21 The screens, part 2f: the phone (PR 7d-2)
+
+Plan 7d, design artboard 14, at 390. The phone rules are CONTAINER queries on
+each page's own column (`meeting-page`, `meeting-list`), not media queries:
+they follow the space the page has, and a 390px layout spec can measure them
+(a Karma window can't be 390 wide).
+
+- **The meeting page** below two 300px cards side by side (611.98px): one
+  column, the side column's cards (attendance, the review card, or the
+  invitees) above the agenda, and every button at least 44px tall (44 x 44
+  when icon-only), in the page and the panels inside it. The side column is
+  FIRST IN THE DOM, so the phone's order is the tab order (WCAG 2.4.3, P233);
+  on a wider page grid placement keeps the agenda at inline-start.
+- **The review banner:** on the phone its answers are full-width buttons, the
+  primary ("No corrections") on top. It is first in the DOM too, so the tab
+  order is the order on screen (WCAG 2.4.3).
+- **`/meetings`:** below 560px each row is a card (the title and owner, when
+  with Hijri, the stage chip, one under another) and the whole header row is
+  hidden (its padding and border with it; data-list's header row carries
+  `am-dl__head` for this). Each When and Stage cell names its column in
+  `sr-only` text, so a card still reads "When …" (P233). The trailing cell is
+  hidden by its own class, never by `:empty`. No row menu (P229).
+- **Dialogs:** each meeting dialog already has a layout spec at 390 in both
+  languages; full-height sheets are not built (P229, raised separately).
+- **Measured** at 390 and 1280 in both languages:
+  `meeting-page.phone.layout.spec.ts`, `meeting-list.phone.layout.spec.ts`
+  and `meetings-panel.phone.layout.spec.ts` (the shared capped frame Home's
+  rows use).

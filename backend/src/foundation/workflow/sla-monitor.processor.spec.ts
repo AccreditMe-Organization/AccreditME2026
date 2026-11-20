@@ -64,6 +64,8 @@ const mockPrisma = {
   userRole: { findMany: jest.fn() },
   user: { findMany: jest.fn(), update: jest.fn(), groupBy: jest.fn() },
   orgUnit: { findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  // ACC-324 — the covers in force whose person is ACTIVE (findActiveCoversForUnits).
+  orgUnitHeadAssignment: { findMany: jest.fn() },
   organization: { findMany: jest.fn() },
   orgPosition: { findMany: jest.fn() },
   // ACC-167 — the committee-pool escalation resolves the chair.
@@ -166,6 +168,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.task.findMany.mockResolvedValue([]); // no-op sweepOverdueTasks
+    mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]); // ACC-324 — no covers unless a test says
     // ACC-40 Section 2.7 — default: no expired acting-org-unit assignments,
     // so sweepExpiredActingOrgUnitAssignments() is a no-op for every
     // pre-existing test. Tests exercising it override this per-case.
@@ -1367,6 +1370,18 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             : units.filter((u) => where.organizationId === undefined || u.organizationId === where.organizationId),
         ),
       );
+      // ACC-324 — a unit's actingHeadUserId stands for its ACTIVE cover in force:
+      // the recomputer reads the period table (findActiveCoversForUnits), never
+      // the cache, so the fake serves the covers from the period-table query,
+      // honouring its organisation and unit filters.
+      mockPrisma.orgUnitHeadAssignment.findMany.mockImplementation(({ where }: any) => {
+        const ids: string[] = typeof where.orgUnitId === 'string' ? [where.orgUnitId] : (where.orgUnitId?.in ?? []);
+        return Promise.resolve(
+          units
+            .filter((u) => u.actingHeadUserId && ids.includes(u.id) && (where.organizationId === undefined || u.organizationId === where.organizationId))
+            .map((u) => ({ orgUnitId: u.id, userId: u.actingHeadUserId })),
+        );
+      });
       mockPrisma.user.groupBy.mockImplementation(({ where }: HolderCountArgs) => {
         const counts = new Map<string, number>();
         for (const h of holders) {
@@ -1384,7 +1399,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         .filter((arg) => arg.where.id === id)
         .map((arg) => arg.data);
 
-    it('reads two queries per tenant however many units it has, and never walks a unit with its own Head', async () => {
+    it('reads three queries per tenant however many units it has (units, holders, covers), and never walks a unit with its own Head', async () => {
       givenTenants(
         [ORG_A],
         [unit({ id: 'unit-1' }), unit({ id: 'unit-2' }), unit({ id: 'unit-3' })],
@@ -1404,7 +1419,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         [
           {
             where: { organizationId: ORG_A, isActive: true },
-            select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true, actingHeadUserId: true },
+            select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true },
           },
         ],
       ]);
@@ -1447,6 +1462,23 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       expect(writesFor('unit-1')).toEqual([{ isHeadVacant: false, headVacantSince: null, isHeadFullyUnresolved: false }]);
       expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+    });
+
+    // ACC-324 — the cache still names an acting Head, but the period table has no
+    // cover in force whose person is ACTIVE (deactivated, lapsed, or not started):
+    // the unit is vacant, and the cover read asks for an ACTIVE person, in force.
+    it('ACC-324 — a cached acting Head with no ACTIVE cover in force does not cover the unit', async () => {
+      givenTenants([ORG_A], [unit({ id: 'unit-1', isHeadVacant: false, actingHeadUserId: 'deactivated-cover' })], []);
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]); // the period table: nobody active in force
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+
+      await runProcess();
+
+      expect(writesFor('unit-1')).toEqual([{ isHeadVacant: true, headVacantSince: expect.any(Date), isHeadFullyUnresolved: true }]);
+      const coverRead = (mockPrisma.orgUnitHeadAssignment.findMany.mock.calls as [{ where: Record<string, unknown> }][])[0]![0].where;
+      expect(coverRead).toEqual(
+        expect.objectContaining({ organizationId: ORG_A, user: { status: 'ACTIVE' }, kind: 'ACTING', endedAt: null }),
+      );
     });
 
     // The other half of the same gap: vacant, but the flag says covered.

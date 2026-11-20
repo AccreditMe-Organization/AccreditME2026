@@ -19,6 +19,7 @@ import { AwaitingPageComponent } from './awaiting-page.component';
 
 const STAGES_URL = `${environment.apiUrl}/workflows/awaiting-me`;
 const CHANGES_URL = `${environment.apiUrl}/committee-change-requests/awaiting-decision`;
+const MEETINGS_URL = `${environment.apiUrl}/meetings/awaiting-me`;
 const DAY = 86_400_000;
 const BASE = Date.parse('2026-01-01T00:00:00.000Z');
 const at = (days: number) => new Date(BASE + days * DAY).toISOString();
@@ -47,7 +48,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   let fixture: ComponentFixture<AwaitingPageComponent>;
   let http: HttpTestingController;
 
-  function setup(opts: { approve?: boolean; committeesClosed?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
+  function setup(opts: { approve?: boolean; committeesClosed?: boolean; meetingsOpen?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
     TestBed.configureTestingModule({
       imports: [AwaitingPageComponent],
       providers: [
@@ -71,6 +72,9 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     http = TestBed.inject(HttpTestingController);
     // ACC-283 PR 2 — the page asks MyWorkCountsService's module rule, as Home does.
     if (opts.committeesClosed) spyOn(TestBed.inject(MyWorkCountsService), 'committeesOpen').and.returnValue(false);
+    // ACC-316 PR 7c-2 — the minutes to review are asked only with the Meetings
+    // module open; closed here unless a spec opens it, so the others stay as they were.
+    spyOn(TestBed.inject(MyWorkCountsService), 'meetingsOpen').and.returnValue(!!opts.meetingsOpen);
     fixture = TestBed.createComponent(AwaitingPageComponent);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
@@ -117,6 +121,19 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     fixture.detectChanges();
     expect(shownIds(el)).toEqual(['cr-head']);
     expect(text(el.querySelector('[data-testid="awaiting-count"]'))).toBe('1');
+  });
+
+  // ACC-316 PR 7c-2 — minutes to review are listed and counted, as Home and the rail count them.
+  it('with the Meetings module open, minutes to review are listed and counted, linked to the meeting', () => {
+    const el = setup({ meetingsOpen: true });
+    stageReq().flush({ total: 0, rows: [], oldestSince: null });
+    noChanges();
+    http.expectOne(MEETINGS_URL).flush({ review: [{ meetingId: 'm-7', title: 'Infection Control · March', reviewBy: '2027-03-25', since: '2026-11-04T06:00:00.000Z' }], answer: [] });
+    fixture.detectChanges();
+    expect(shownIds(el)).toEqual(['m-7']);
+    expect(text(el.querySelector('[data-testid="awaiting-count"]'))).toBe('1');
+    expect(text(el.querySelector('[data-awaiting-id="m-7"]'))).toContain('Minutes to review · by 25 Mar 2027');
+    expect(el.querySelector('[data-awaiting-id="m-7"] a')!.getAttribute('href')).toBe('/meetings/m-7');
   });
 
   it('with the Committees module closed it never asks for the change requests', () => {

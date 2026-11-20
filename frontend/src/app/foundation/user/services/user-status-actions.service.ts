@@ -93,7 +93,14 @@ export class UserStatusActionsService {
       // user.service.ts deactivate(): tokenVersion is bumped (sessions end on
       // the next request), and task.service.ts reassignAllForUser() sends each
       // task back to its pool, to the acting user, or to UNASSIGNED.
-      message: this.translate.instant('user.deactivateConfirm'),
+      // ACC-306 — and committee-seat-departure.service.ts ends every seat they
+      // hold except on a Dissolved committee, whose roster is kept
+      // (SEAT_DEPARTURE_POLICY.keepDissolvedRosters; never refused for a seat).
+      // The seats sentence goes INTO the one key, as the reactivate roles line
+      // does: placement is the translation's.
+      message: this.translate.instant('user.deactivateConfirm', {
+        seats: this.translate.instant('user.deactivateSeatsNote'),
+      }),
       header: this.translate.instant('user.deactivateHeader', { name: user.name }),
       acceptLabel: this.translate.instant('user.deactivate'),
       accept: () => {

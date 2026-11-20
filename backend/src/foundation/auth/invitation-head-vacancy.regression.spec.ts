@@ -122,6 +122,8 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
     ];
 
     const prisma = {
+      // ACC-324 — no cover in force (findActiveCoversForUnits reads the period table).
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
       orgUnit: {
         findFirst: jest.fn(
           ({ where }: { where: { id: string; organizationId: string } }) =>

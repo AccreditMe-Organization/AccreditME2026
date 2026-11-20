@@ -60,6 +60,8 @@ export type MeetingRefusalCode =
   | 'MEETING_SUGGESTION_NOT_FOUND'
   | 'MEETING_SUGGESTION_DECIDED'
   | 'MEETING_SUGGESTION_TEXT_REQUIRED'
+  /** A decline without a reply (PR 7c-1): the author reads why. */
+  | 'MEETING_SUGGESTION_REPLY_REQUIRED'
   | 'MEETING_MINUTES_NOT_OPEN'
   // ACC-316 PR 5 — series.
   | 'MEETING_SERIES_PATTERN_INVALID'
@@ -115,6 +117,7 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_SUGGESTION_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEETING_SUGGESTION_DECIDED: HttpStatus.CONFLICT,
   MEETING_SUGGESTION_TEXT_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_SUGGESTION_REPLY_REQUIRED: HttpStatus.BAD_REQUEST,
   MEETING_MINUTES_NOT_OPEN: HttpStatus.FORBIDDEN,
   MEETING_SERIES_PATTERN_INVALID: HttpStatus.BAD_REQUEST,
   MEETING_SERIES_END_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -170,6 +173,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_SUGGESTION_NOT_FOUND: 'Suggestion not found.',
   MEETING_SUGGESTION_DECIDED: 'This suggestion was already applied or declined.',
   MEETING_SUGGESTION_TEXT_REQUIRED: 'Write the correction.',
+  MEETING_SUGGESTION_REPLY_REQUIRED: 'Say why the suggestion is declined.',
   MEETING_MINUTES_NOT_OPEN: "This meeting's minutes aren't open to you yet.",
   MEETING_SERIES_PATTERN_INVALID: 'Choose a day the repeat can use: a weekday for weekly, or a day or a weekday of the month for monthly.',
   MEETING_SERIES_END_REQUIRED: 'Give an end date or a number of meetings, not both.',

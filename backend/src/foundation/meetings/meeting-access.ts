@@ -1,7 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
+import { meetingMayOpenSql, meetingOpener } from '../../common/services/meeting-membership';
 import { MeetingRefusal } from './meeting-refusal';
 import type { EngineTx } from '../workflow/workflow.service';
 
@@ -47,6 +48,44 @@ export class MeetingAccess {
     });
     if (!meeting) throw new NotFoundException(MEETING_NOT_FOUND);
     return { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
+  }
+
+  /**
+   * ACC-316 PR 7b (P206) — may see it, as a yes or no: the meeting's owner, or
+   * null. The same rule as seeing(), through assertCanView(), which writes no
+   * concealed-refusal log line: for a read that asks about ANOTHER meeting on
+   * this caller's behalf (the last meeting's open actions), where nothing is
+   * concealed from them. Only the two refusals the rule raises mean "no".
+   */
+  async canSee(id: string, organizationId: string, viewer: MeetingViewer, now: Date): Promise<MeetingOwner | null> {
+    try {
+      await this.visibility.assertCanView('MEETING', id, organizationId, viewer.permissions, viewer.id, { oversight: true, now });
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) return null;
+      throw error;
+    }
+    const meeting = await this.prisma.meeting.findFirst({
+      where: { id, organizationId },
+      select: { committeeId: true, orgUnitId: true, committee: { select: { orgUnitId: true } } },
+    });
+    if (!meeting) return null;
+    return { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
+  }
+
+  /**
+   * P237 — which of these meetings the viewer may open: canSee()'s rule for
+   * many meetings in ONE query (meeting-membership.ts's meetingMayOpenSql(),
+   * the parent rule's own clauses), plus the viewer's oversight set once, so
+   * the cost does not grow with the number of ids. Another organisation's or
+   * an invented id is never in the answer.
+   */
+  async openable(ids: readonly string[], organizationId: string, viewer: MeetingViewer, now: Date): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const opener = await meetingOpener(this.prisma, organizationId, viewer, now);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT m.id FROM "Meeting" m
+      WHERE m."organizationId" = ${organizationId} AND m.id = ANY(${[...ids]}::text[]) AND ${meetingMayOpenSql('m', opener)}`;
+    return new Set(rows.map((r) => r.id));
   }
 
   /** May write: sees it and schedules for its owner (MEETING_NOT_ALLOWED otherwise). */

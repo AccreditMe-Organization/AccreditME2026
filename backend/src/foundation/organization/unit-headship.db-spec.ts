@@ -13,7 +13,10 @@ import {
   findCurrentHeadHolders,
   findRunningActingCover,
   findUnitHeadedBy,
+  findActiveCoversForUnits,
+  findUnitLeadersAmong,
   findUnitsCoveredBy,
+  findUnitsLedBy,
   findUnitSubtreeIds,
 } from './unit-headship';
 
@@ -81,6 +84,7 @@ describe('unit-headship on a real database (ACC-244)', () => {
     await person('outgoing', A, { positionId: head, primaryOrgUnitId: unit['SIB'] });
     await person('incoming', A, { positionId: head, primaryOrgUnitId: unit['SIB'] });
     for (const k of ['coverNow', 'coverFuture', 'coverLapsed', 'coverEnded', 'coverEdgeStart', 'coverEdgeEnd', 'coverVacancy']) await person(k, A);
+    await person('coverInactive', A, { status: 'INACTIVE' }); // ACC-245: a cover in force, its person deactivated
     await person('headInB', B, { positionId: headB, primaryOrgUnitId: unit['BUNIT'] });
     await person('coverInB', B);
 
@@ -95,6 +99,7 @@ describe('unit-headship on a real database (ACC-244)', () => {
     await period(unit['OLD']!, user['coverEdgeStart']!, { validFrom: NOW }); // starts exactly now: in force
     await period(unit['GONE']!, user['coverEdgeEnd']!, { validTo: NOW }); // ends exactly now: lapsed
     await period(unit['DEPT']!, user['coverVacancy']!, { reason: 'VACANCY' });
+    await period(unit['SIB']!, user['coverInactive']!, {});
     await prisma.orgUnitHeadAssignment.create({
       data: { organizationId: B, orgUnitId: unit['BUNIT']!, userId: user['coverInB']!, kind: 'ACTING', reason: 'ABSENCE', createdById: user['headInB']!, validFrom: at(-HOUR) } as never,
     });
@@ -151,6 +156,32 @@ describe('unit-headship on a real database (ACC-244)', () => {
       expect(await findUnitsCoveredBy(prisma, A, user['coverEdgeEnd']!, at(-1))).toEqual([unit['GONE']]);
     });
 
+    // ACC-245 — reach needs an ACTIVE person, for a cover as for a head holder.
+    it('a cover in force whose person is deactivated gives no reach, in either reader', async () => {
+      expect(await findUnitsCoveredBy(prisma, A, user['coverInactive']!, NOW)).toEqual([]);
+      expect(await findUnitLeadersAmong(prisma, A, [unit['SIB']!], [user['coverInactive']!, user['outgoing']!], NOW)).toEqual(new Set([user['outgoing']]));
+      // Non-vacuity: the same period, its person active again, does give reach.
+      await prisma.user.update({ where: { id: user['coverInactive']! }, data: { status: 'ACTIVE' } });
+      try {
+        expect(await findUnitsCoveredBy(prisma, A, user['coverInactive']!, NOW)).toEqual([unit['SIB']]);
+        expect(await findUnitLeadersAmong(prisma, A, [unit['SIB']!], [user['coverInactive']!], NOW)).toEqual(new Set([user['coverInactive']]));
+      } finally {
+        await prisma.user.update({ where: { id: user['coverInactive']! }, data: { status: 'INACTIVE' } });
+      }
+    });
+
+    // ACC-245 PR 2 (P203) — the units these people lead, for many at once.
+    it('findUnitsLedBy: a head’s unit and a cover in force count; a deactivated cover and another organisation’s head do not', async () => {
+      const people = [user['deptHead']!, user['coverNow']!, user['coverInactive']!, user['headInB']!, user['plainInWard']!];
+      expect(await findUnitsLedBy(prisma, A, people, NOW)).toEqual([unit['DEPT'], unit['WARD']].sort());
+      // Each alone, so a wrong union cannot pass by luck.
+      expect(await findUnitsLedBy(prisma, A, [user['deptHead']!], NOW)).toEqual([unit['DEPT']]);
+      expect(await findUnitsLedBy(prisma, A, [user['coverNow']!], NOW)).toEqual([unit['WARD']]);
+      expect(await findUnitsLedBy(prisma, A, [user['coverInactive']!, user['headInB']!], NOW)).toEqual([]);
+      // Asked in B, B's head leads B's unit.
+      expect(await findUnitsLedBy(prisma, B, [user['headInB']!], NOW)).toEqual([unit['BUNIT']]);
+    });
+
     it('both reasons count, unless one is asked for', async () => {
       expect(await findUnitsCoveredBy(prisma, A, user['coverVacancy']!, NOW)).toEqual([unit['DEPT']]);
       expect(await findUnitsCoveredBy(prisma, A, user['coverVacancy']!, NOW, 'ABSENCE')).toEqual([]);
@@ -172,6 +203,24 @@ describe('unit-headship on a real database (ACC-244)', () => {
       expect(await findUnitSubtreeIds(prisma, A, [unit['GONE']!])).toEqual([]);
       expect(await findUnitSubtreeIds(prisma, A, [])).toEqual([]);
     });
+  });
+
+  // ACC-324 (P213) — the period-table cover read, asked of another organisation's units and covers.
+  it(`${TENANT_ISOLATION_GATE_STRING} — findActiveCoversForUnits: another organisation's cover on the same unit ids is never returned`, async () => {
+    // B's own unit, with B's own cover in force: asked in A, nothing.
+    expect(await findActiveCoversForUnits(prisma, A, [unit['BUNIT']!], NOW)).toEqual(new Map());
+    expect(await findActiveCoversForUnits(prisma, B, [unit['BUNIT']!], NOW)).toEqual(new Map([[unit['BUNIT'], user['coverInB']]])); // non-vacuity
+    // A row filed under B that names A's unit (a corrupt link): asked in A, A's own cover only.
+    await prisma.orgUnitHeadAssignment.create({
+      data: { organizationId: B, orgUnitId: unit['SIB']!, userId: user['coverInB']!, kind: 'ACTING', reason: 'ABSENCE', createdById: user['headInB']!, validFrom: at(-HOUR) } as never,
+    });
+    try {
+      const inA = await findActiveCoversForUnits(prisma, A, [unit['SIB']!, unit['WARD']!], NOW);
+      expect([...inA.values()]).not.toContain(user['coverInB']);
+      expect(inA.get(unit['WARD']!)).toBe(user['coverNow']); // A's own cover still found
+    } finally {
+      await prisma.orgUnitHeadAssignment.deleteMany({ where: { organizationId: B, orgUnitId: unit['SIB']! } });
+    }
   });
 
   it(`${TENANT_ISOLATION_GATE_STRING} — unit-headship: another organisation's heads, covers and units`, async () => {

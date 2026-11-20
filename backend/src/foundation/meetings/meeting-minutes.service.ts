@@ -16,8 +16,9 @@ import {
   quorumLine,
   reviewClosed,
   reviewDatePassed,
+  reviewDayDefaults,
   reviewers,
-  unrecordedAttendance,
+  distributeBlockedBy,
   type MinutesPhase,
 } from './meeting-minutes-rules';
 import type {
@@ -28,7 +29,8 @@ import type {
   RecordAttendanceDto,
   UpdateActionItemDto,
 } from './dto/meeting.dto';
-import type { IMeetingMinutes, IMeetingOpenAction } from './interfaces/meeting.interface';
+import type { IMeetingMinutes, IMeetingOpenAction, IMeetingOpenActions } from './interfaces/meeting.interface';
+import { TaskAdmissionService } from '../task/task-admission.service';
 
 /** What a minutes write needs its stage to allow. */
 type MinutesNeed = 'attendance' | 'minutes' | 'actions' | 'actionDates';
@@ -64,6 +66,7 @@ export class MeetingMinutesService {
     private readonly stageRules: StageRulesService,
     private readonly workflow: WorkflowService,
     private readonly calendar: WorkingCalendarService,
+    private readonly taskAdmission: TaskAdmissionService,
   ) {
     this.access = new MeetingAccess(prisma, visibility);
   }
@@ -72,14 +75,10 @@ export class MeetingMinutesService {
 
   async getMinutes(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingMinutes> {
     const owner = await this.access.seeing(id, organizationId, viewer, now);
-    const [rules, recorder] = await Promise.all([
-      this.stageRules.currentStageRules('MEETING', id, organizationId),
-      this.isRecorder(owner, organizationId, viewer.id, now),
-    ]);
-    const phase = minutesPhase(rules);
+    const { rules, recorder, phase, readable } = await this.minutesAccess(id, owner, organizationId, viewer, now);
     // Distribute Minutes leaves the stage where the minutes are written.
     const writing = rules.actions[MEETING_ACTIONS.RECORD_MINUTES] === true;
-    if (!phase || !(await this.mayRead(phase, owner, id, organizationId, viewer.id, recorder, now))) {
+    if (!phase || !readable) {
       throw new MeetingRefusal('MEETING_MINUTES_NOT_OPEN');
     }
 
@@ -92,12 +91,18 @@ export class MeetingMinutesService {
         quorumAtAttendance: true,
         unitQuorum: true,
         minutesApprovedAt: true,
+        committeeId: true,
+        approvedBy: { select: { id: true, name: true } },
         committee: { select: { quorumCount: true } },
       },
     });
     if (!meeting) throw new MeetingRefusal('MEETING_MINUTES_NOT_OPEN');
     const round = meeting.reviewRound;
-    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked] = await Promise.all([
+    // PR 7d-1 (P230) — the approver is named only while the minutes ARE approved:
+    // the seeded Minutes Approved is final, but a tenant may add a move out of
+    // it, and the stamp would then outlive the approval.
+    const approval = phase === 'approved' && meeting.minutesApprovedAt && meeting.approvedBy ? { at: meeting.minutesApprovedAt, by: meeting.approvedBy } : null;
+    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked, approverSeat] = await Promise.all([
       this.prisma.meetingAttendee.findMany({
         where: { organizationId, meetingId: id },
         select: {
@@ -153,7 +158,8 @@ export class MeetingMinutesService {
       this.calendar.getEffectiveTimeZone(organizationId),
       this.openActions(this.prisma, id, organizationId),
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
-      writing ? unrecordedAttendance(this.prisma, id, organizationId) : Promise.resolve([]),
+      writing ? distributeBlockedBy(this.prisma, id, organizationId) : Promise.resolve(null),
+      approval && meeting.committeeId ? approverSeatAt(this.prisma, organizationId, meeting.committeeId, approval.by.id, approval.at) : Promise.resolve(null),
     ]);
 
     const quorum = quorumLine(
@@ -215,8 +221,18 @@ export class MeetingMinutesService {
         changes,
         mine: myStatus,
       },
-      distribute: writing ? { ready: blocked.length === 0, blockedBy: blocked.length ? { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: blocked } : null } : null,
+      distribute: writing
+        ? {
+            ready: blocked === null,
+            blockedBy: blocked,
+            // PR 7b — the review date Distribute uses when none is chosen (the screen offers it).
+            defaultReviewBy: (await reviewDayDefaults(this.calendar, organizationId, now)).defaultDay,
+          }
+        : null,
       approvedAt: meeting.minutesApprovedAt,
+      // PR 7d-1 — who approved, for the print's approval line: their name even
+      // if they have since left or been deactivated, and the seat they held then.
+      approvedBy: approval ? { id: approval.by.id, name: approval.by.name, seat: approverSeat } : null,
       may: {
         recordAttendance: recorder && meeting.scheduledAt <= now && rules.actions[MEETING_ACTIONS.RECORD_ATTENDANCE] === true,
         recordMinutes: recorder && rules.actions[MEETING_ACTIONS.RECORD_MINUTES] === true,
@@ -227,6 +243,56 @@ export class MeetingMinutesService {
         changeActionDates: recorder && rules.actions[MEETING_ACTIONS.CHANGE_ACTION_DATES] === true,
       },
     };
+  }
+
+  /**
+   * ACC-316 PR 7b — "Open actions from the last meeting", the agenda's fixed
+   * first section, for anyone who sees this meeting (P202):
+   *
+   * 1. This meeting's own visibility first: anyone else gets the identical 404
+   *    a missing meeting gets.
+   * 2. The rows come from the LAST meeting, so they are shown only to whoever
+   *    may read ITS approved minutes, by the same rule as its minutes read
+   *    (minutesAccess()); an organisation guest of this meeting only does not.
+   *    No earlier approved meeting and "you can't read it" answer the SAME way,
+   *    `{ mayRead: false, rows: [] }` (P206): no error, nothing says a section
+   *    is hidden, and the screen draws nothing for either. The last meeting is
+   *    checked with MeetingAccess.canSee(), which writes no concealed-refusal
+   *    log line: nothing is concealed from this caller here.
+   * 3. Each row's task is linked only where the task page would open it, asked
+   *    for every row at once (TaskAdmissionService.admittedIds()).
+   */
+  async getOpenActions(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingOpenActions> {
+    await this.access.seeing(id, organizationId, viewer, now);
+    const last = await this.lastApprovedMeeting(this.prisma, id, organizationId);
+    if (!last) return { mayRead: false, rows: [] };
+    const lastOwner = await this.access.canSee(last.id, organizationId, viewer, now);
+    if (!lastOwner) return { mayRead: false, rows: [] };
+    const { readable } = await this.minutesAccess(last.id, lastOwner, organizationId, viewer, now);
+    if (!readable) return { mayRead: false, rows: [] };
+    const rows = await this.openActions(this.prisma, id, organizationId, last);
+    const admitted = await this.taskAdmission.admittedIds(
+      rows.map((r) => r.taskId),
+      viewer,
+      organizationId,
+      now,
+    );
+    return { mayRead: true, rows: rows.map((r) => ({ ...r, mayOpen: admitted.has(r.taskId) })) };
+  }
+
+  /**
+   * §4.1 for one meeting, the one place it is asked: its phase, whether the
+   * viewer records its minutes, and whether they may read them. This meeting's
+   * minutes read and the next meeting's open actions both call it.
+   */
+  private async minutesAccess(id: string, owner: MeetingOwner, organizationId: string, viewer: MeetingViewer, now: Date) {
+    const [rules, recorder] = await Promise.all([
+      this.stageRules.currentStageRules('MEETING', id, organizationId),
+      this.isRecorder(owner, organizationId, viewer.id, now),
+    ]);
+    const phase = minutesPhase(rules);
+    const readable = !!phase && (await this.mayRead(phase, owner, id, organizationId, viewer.id, recorder, now));
+    return { rules, recorder, phase, readable };
   }
 
   /**
@@ -278,23 +344,9 @@ export class MeetingMinutesService {
     client: Pick<PrismaService, 'meeting' | 'meetingActionItem' | 'meetingOpenActionNote'>,
     id: string,
     organizationId: string,
+    known?: { id: string },
   ): Promise<IMeetingOpenAction[]> {
-    const meeting = await client.meeting.findFirst({
-      where: { id, organizationId },
-      select: { scheduledAt: true, committeeId: true, orgUnitId: true },
-    });
-    if (!meeting) return [];
-    const last = await client.meeting.findFirst({
-      where: {
-        organizationId,
-        id: { not: id },
-        ...(meeting.committeeId ? { committeeId: meeting.committeeId } : { committeeId: null, orgUnitId: meeting.orgUnitId }),
-        scheduledAt: { lt: meeting.scheduledAt },
-        minutesApprovedAt: { not: null },
-      },
-      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
-      select: { id: true },
-    });
+    const last = known ?? (await this.lastApprovedMeeting(client, id, organizationId));
     if (!last) return [];
     const [items, notes] = await Promise.all([
       client.meetingActionItem.findMany({
@@ -316,6 +368,26 @@ export class MeetingMinutesService {
         fromMeetingId: last.id,
         note: noteOf.get(i.task!.id) ?? null,
       }));
+  }
+
+  /** The newest earlier meeting of the same committee or unit whose minutes were approved, or null. */
+  private async lastApprovedMeeting(client: Pick<PrismaService, 'meeting'>, id: string, organizationId: string): Promise<{ id: string } | null> {
+    const meeting = await client.meeting.findFirst({
+      where: { id, organizationId },
+      select: { scheduledAt: true, committeeId: true, orgUnitId: true },
+    });
+    if (!meeting) return null;
+    return client.meeting.findFirst({
+      where: {
+        organizationId,
+        id: { not: id },
+        ...(meeting.committeeId ? { committeeId: meeting.committeeId } : { committeeId: null, orgUnitId: meeting.orgUnitId }),
+        scheduledAt: { lt: meeting.scheduledAt },
+        minutesApprovedAt: { not: null },
+      },
+      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
   }
 
   // ── Attendance ──────────────────────────────────────────────────────────────
@@ -604,5 +676,48 @@ export async function minutesAudit(
 ): Promise<void> {
   await tx.auditLog.create({
     data: { organizationId, actorId, action: 'UPDATE', objectType: 'Meeting', objectId: meetingId, after: { minutes: after } as never },
+  });
+}
+
+/**
+ * PR 7d-1 — the seat the approver held on the committee when the minutes were
+ * approved, read from the membership ledger: the newest event recorded at or
+ * before approval (a LEFT event means no seat).
+ *
+ * - **`createdAt`, not `effectiveDate`:** the ledger is read by when a change was
+ *   RECORDED, because `effectiveDate` may be back- or forward-dated (an add can
+ *   name a past or future start), and what the record said at approval is what
+ *   was recorded by then.
+ * - **Ties** (two events recorded in the same millisecond) are broken by id,
+ *   descending, so the answer is the same on every read.
+ * - **No event that early** (a membership older than the ledger): their current
+ *   seat. That can name a seat they have since left, the best the record has.
+ *
+ * Null when neither exists: the approval line then names them without a seat.
+ * Organisation-scoped throughout; at most three indexed reads, and only for
+ * approved minutes.
+ */
+export async function approverSeatAt(
+  prisma: PrismaService,
+  organizationId: string,
+  committeeId: string,
+  userId: string,
+  approvedAt: Date,
+): Promise<{ id: string; labelEn: string; labelAr: string | null } | null> {
+  const event = await prisma.committeeMembershipEvent.findFirst({
+    where: { organizationId, committeeId, userId, createdAt: { lte: approvedAt } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { action: true, roleValueId: true },
+  });
+  let seatId: string | null;
+  if (event) seatId = event.action === 'LEFT' ? null : event.roleValueId;
+  else {
+    const member = await prisma.committeeMember.findFirst({ where: { organizationId, committeeId, userId }, select: { roleValueId: true } });
+    seatId = member?.roleValueId ?? null;
+  }
+  if (!seatId) return null;
+  return prisma.lookupValue.findFirst({
+    where: { id: seatId, OR: [{ organizationId }, { organizationId: null }] },
+    select: { id: true, labelEn: true, labelAr: true },
   });
 }

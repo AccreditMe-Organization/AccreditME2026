@@ -4867,6 +4867,14 @@ SYSTEM-REFERENCE.md §5.15.6. Briefly:
 - **The handover sweep never refuses**; it completes and logs.
 - **Screens say it from the code** (`root-unit-refusal.ts`), one key pair,
   nothing disabled before the click.
+- **ACC-324 — a cover heads a unit only while its person is ACTIVE**
+  (`findActiveCoversForUnits()`, `ACTIVE_COVER_PERSON`). Every reader that
+  decides from a cover reads it, never the `actingHeadUserId` cache: the
+  invariant, the vacancy flag's two recomputers and escalation step,
+  `hasDirectOrActingHead()`, `resolveHeadEscalationTargets()` and a
+  promotion's new manager. The cache only records and shows
+  (`clearActingHead()`, `getHeadStatus()`, two screens);
+  `findRunningActingCover()` shows the cover on record.
 - **No migration.**
 
 ## Key Architecture Decisions (ACC-292)
@@ -5295,7 +5303,24 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   recommended by lane B, open to change: Approve now skips added stages; a
   stage nobody can decide waits; Submit after a Return starts at the first
   added stage; committee members may review; no reordering.
-- **No migration.** The awaiting-decision lists are PR 2; the screens PR 3.
+- **PR 2: the awaiting list includes added stages.** Each arm (chain, review)
+  has its own capped read, so one never crowds out the other. The review arm
+  finds where the viewer can be in a pool BEFORE reading a request (pools
+  resolved without a record; record-routed entries narrowed in SQL), so a
+  non-reviewer pays 4 queries and reads no request. A review row is kept for a
+  viewer in its pool who may open the committee. The gate is still one query
+  (`awaitingDecisionGate()`).
+  `awaitingDecisionBy` gains `REVIEW_STAGE`. A cover gives reach only while its
+  person is ACTIVE (`findUnitsCoveredBy()`, `findUnitLeadersAmong()`).
+- **ACC-325: a review stage nobody can decide is flagged.** The `isUnassigned`
+  flaggers test the stage's deciders (`stageDeciders()`, a per-record-type
+  registry beside `TRANSITION_PRECONDITIONS`, fail open): for an added review
+  stage, not the requester and able to open the committee. Never who may act.
+- **PR 3a: what the screens read.** `reviewStages` on the protected
+  template's read (whether one more fits, where it may go, who may decide one),
+  from the rules the save refuses by, never a copy; an app-move line for every
+  review-stage move (`REVIEW_STAGE_MOVE_KEY`).
+- **No migration.** The screens are PR 3b.
 
 ## Open / Deferred Items
 

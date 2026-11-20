@@ -46,7 +46,23 @@ export interface IMeeting extends IMeetingListItem {
   /** The viewer's own answer when they are an invitee; null otherwise. */
   myAnswer: { answer: 'ATTENDING' | 'CANT_ATTEND' | null; note: string | null } | null;
   /** ACC-316 PR 5 — "Meeting 3 of 12" and the series it belongs to; null for a single meeting. */
-  series: { id: string; index: number; total: number; every: string; ended: boolean } | null;
+  series: {
+    id: string;
+    index: number;
+    total: number;
+    every: string;
+    ended: boolean;
+    /** PR 8-be (Q1) — the pattern's day, for the header's readback ("the 4th Thursday"). */
+    on: { kind: string; weekday: number | null; dayOfMonth: number | null; ordinal: string | null };
+    /** yyyy-MM-dd. */
+    firstDate: string;
+    /** yyyy-MM-dd, or null when the series ends after `count` meetings. */
+    endsOn: string | null;
+    count: number | null;
+    /** The nearest meetings either side, not cancelled and open to this viewer; else null. */
+    previousId: string | null;
+    nextId: string | null;
+  } | null;
 }
 
 /** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */
@@ -69,6 +85,17 @@ export interface IMeetingSeriesPreview {
 export interface IMeetingScopeResult {
   changed: string[];
   kept: { meetingId: string; title: string; fields: string[] }[];
+}
+
+/**
+ * PR 8-be (P236, Q2) — what "this and all later" WOULD do: the meetings it
+ * reaches, at their times as they'd be (in time order); those that keep a field
+ * as their own, at their own time; and the clashes at the new times.
+ */
+export interface IMeetingScopePreview {
+  meetings: { id: string; title: string; startsAt: Date; durationMinutes: number }[];
+  kept: { meetingId: string; title: string; fields: string[]; startsAt: Date }[];
+  clashes: IMeetingClash[];
 }
 
 /** "6 attending · 2 can't · quorum 5": MEMBER answers only (plan §3.4). */
@@ -198,6 +225,22 @@ export interface IMeetingOpenAction {
   note: string | null;
 }
 
+/** An open action as the agenda shows it: linked to its task only where the task page would open it. */
+export interface IMeetingOpenActionRow extends IMeetingOpenAction {
+  mayOpen: boolean;
+}
+
+/**
+ * ACC-316 PR 7b — "Open actions from the last meeting" for the agenda. Rows
+ * only for whoever may read the LAST meeting's approved minutes. Anyone else
+ * who sees this meeting, and everyone when there is no earlier approved
+ * meeting, gets `mayRead: false` and no rows.
+ */
+export interface IMeetingOpenActions {
+  mayRead: boolean;
+  rows: IMeetingOpenActionRow[];
+}
+
 export interface IMeetingSuggestion {
   id: string;
   round: number;
@@ -232,8 +275,24 @@ export interface IMeetingMinutes {
   openActions: IMeetingOpenAction[];
   review: IMeetingReview;
   /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
-  distribute: { ready: boolean; blockedBy: { code: string; missing: { attendeeId: string; name: string }[] } | null } | null;
+  distribute: {
+    ready: boolean;
+    /** What holds Distribute: attendance first, then votes above the members present (P206). */
+    blockedBy:
+      | { code: 'MEETING_ATTENDANCE_INCOMPLETE'; missing: { attendeeId: string; name: string }[] }
+      | { code: 'MEETING_VOTES_EXCEED_PRESENT'; items: { agendaItemId: string; title: string; total: number; present: number }[] }
+      | null;
+    /** yyyy-MM-dd: the review date when none is chosen (PR 7b). */
+    defaultReviewBy: string;
+  } | null;
   approvedAt: Date | null;
+  /**
+   * PR 7d-1 — who approved the minutes, named even after they leave or are
+   * deactivated, with the committee seat they held at approval (the membership
+   * ledger; their current seat where the ledger has nothing that early; null
+   * for a unit meeting). Null before approval.
+   */
+  approvedBy: { id: string; name: string; seat: { id: string; labelEn: string; labelAr: string | null } | null } | null;
   may: {
     recordAttendance: boolean;
     recordMinutes: boolean;
@@ -247,6 +306,7 @@ export interface IMeetingMinutes {
 
 /** Home's rows for a meeting (self-scoped): reviews to answer, invitations to answer. */
 export interface IMeetingAwaitingMe {
-  review: { meetingId: string; title: string; reviewBy: string | null }[];
+  /** `since`: when the meeting entered its current stage, so Home can order the row by how long it has waited (PR 7c-2). */
+  review: { meetingId: string; title: string; reviewBy: string | null; since: Date }[];
   answer: { meetingId: string; title: string; scheduledAt: Date }[];
 }

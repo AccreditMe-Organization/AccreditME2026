@@ -181,11 +181,23 @@ describe('OrgUnitHeadService', () => {
       });
     });
 
-    it('returns true when there is no direct holder but an Acting Head is declared', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+    it('returns true when there is no direct holder but an acting Head is in force (an ACTIVE person)', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
       mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: UNIT_1, userId: ACTING_USER.id }]);
 
       await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(true);
+      expect(mockPrisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1, user: { status: 'ACTIVE' }, kind: 'ACTING', endedAt: null }) }),
+      );
+    });
+
+    it('ACC-324 — a cached acting Head with no ACTIVE cover in force (deactivated, or not started yet) is not a head', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(false);
     });
 
     it('returns false when there is neither a direct holder nor an Acting Head — genuinely headless', async () => {
@@ -1023,11 +1035,22 @@ describe('OrgUnitHeadService', () => {
     });
 
     it('throws ConflictException when an Acting Head is already assigned', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: 'someone-else' });
+      // ACC-327 — its own state: the refusal comes from an OPEN acting period on the
+      // unit (the period table), not the cached actingHeadUserId. Set here, so the
+      // test passes alone as well as after the others.
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
+        user: { name: 'Someone Else' },
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        validTo: null,
+      });
 
-      await expect(
-        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
-      ).rejects.toThrow(ConflictException);
+      const refusal = service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1');
+      await expect(refusal).rejects.toThrow(ConflictException);
+      await expect(refusal).rejects.toThrow('Someone Else is already acting head of this unit from 2026-09-01 to no end date.');
+      // Refused before anyone is looked up or anything is written.
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnitHeadAssignment.create).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when the unit already has an active real Head — never shadows a real holder', async () => {
@@ -1543,6 +1566,8 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       orgPosition: { findFirst: jest.fn() },
       user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), update: jest.fn().mockResolvedValue({}) },
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
+      // ACC-324 — no cover in force (findActiveCoversForUnits reads the period table).
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn() },
       // ACC-288 — the root-head invariant: no organisation row, so no root to

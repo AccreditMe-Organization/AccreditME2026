@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { RootUnitNeedsHeadRefusal } from './org-unit-refusals';
-import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
+import { findActiveCoversForUnits, findCurrentHeadHolders } from './unit-headship';
 
 /**
  * ACC-288 — the root unit always keeps a head or an acting head.
@@ -24,8 +24,10 @@ import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship'
  * ## "Headed" is read through unit-headship.ts, and only there
  *
  * `findCurrentHeadHolders()` (an ACTIVE user on an active head position whose
- * primary unit is the root) or `findRunningActingCover()` (an ACTING period in
- * force now). Never `OrgUnit.isHeadVacant` or `actingHeadUserId`: both are
+ * primary unit is the root) or `findActiveCoversForUnits()` (an ACTING period in
+ * force now whose person is ACTIVE — ACC-324: a deactivated cover heads nothing,
+ * as the chain and oversight already say). Never `OrgUnit.isHeadVacant` or
+ * `actingHeadUserId`: both are
  * caches, and a cover that starts next month or lapsed on its own date makes
  * them wrong in opposite directions.
  *
@@ -81,11 +83,11 @@ async function findRoot(organizationId: string, client: RootHeadInvariantClient)
   });
 }
 
-/** Whether `root` has a current head holder or an acting cover in force now. */
+/** Whether `root` has a current head holder, or an acting cover in force now whose person is ACTIVE. */
 async function isHeaded(organizationId: string, root: RootUnit, client: RootHeadInvariantClient): Promise<boolean> {
   const holders = await findCurrentHeadHolders(client, organizationId, root.id);
   if (holders.length > 0) return true;
-  return (await findRunningActingCover(client, organizationId, root.id, new Date())) !== null;
+  return (await findActiveCoversForUnits(client, organizationId, [root.id], new Date())).has(root.id);
 }
 
 /**

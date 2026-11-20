@@ -1291,8 +1291,9 @@ describe('UserService', () => {
           holders: [],
           pendingHeadUserId: null,
           headHandoverEffectiveDate: null,
-          actingHeadUserId: 'acting-parent-1',
+          actingHeadUserId: 'stale-cache', // ACC-324 — never read: the cover in force is
         });
+        mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: CHILD_UNIT.parentId, userId: 'acting-parent-1' }]);
 
         await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
 
@@ -1300,6 +1301,20 @@ describe('UserService', () => {
           where: { id: 'u1' },
           data: { primaryOrgUnitId: 'unit-dest', managerId: 'acting-parent-1' },
         });
+      });
+
+      it('ACC-324 — a cached acting Head with no ACTIVE cover in force is not the new manager: the promotion is refused', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(CHILD_UNIT);
+        mockOrgUnitHeadService.hasDirectOrActingHead.mockResolvedValue(true);
+        mockOrgUnitHeadService.getHeadStatus.mockResolvedValue({
+          holders: [],
+          pendingHeadUserId: null,
+          headHandoverEffectiveDate: null,
+          actingHeadUserId: 'deactivated-cover',
+        });
+        mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
+
+        await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow("Could not resolve the parent unit's current Head or Acting Head");
       });
 
       it('throws ConflictException when the parent unit has no Head or Acting Head — single-level only, no walking to grandparent', async () => {
@@ -4326,7 +4341,14 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       // ACC-133 — getHeadStatus() also reads the head ledger and the cover
       // periods; this test is about the role grant, so both are empty.
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}), findMany: jest.fn().mockResolvedValue([]) },
-      orgUnitHeadAssignment: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-324 — the root's acting head is a cover in force whose person is ACTIVE, served to that read only.
+      orgUnitHeadAssignment: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn(({ where }: { where: { user?: unknown; orgUnitId?: string | { in: string[] } } }) => {
+          const ids = typeof where.orgUnitId === 'string' ? [where.orgUnitId] : (where.orgUnitId?.in ?? []);
+          return Promise.resolve(where.user && ids.includes('unit-root') ? [{ orgUnitId: 'unit-root', userId: 'root-head-1' }] : []);
+        }),
+      },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       // ACC-120 — count() is the root-role invariant's own read: holders of
       // TENANT_ADMIN joined to User and filtered to ACTIVE. Defaults to 1 so

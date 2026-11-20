@@ -75,6 +75,50 @@ export async function unrecordedAttendance(client: Reader, meetingId: string, or
     ORDER BY u.name, a.id`;
 }
 
+/** A decision whose votes add up to more than the members now recorded present (attendance lowered after the vote). */
+export interface VotesAbovePresent {
+  agendaItemId: string;
+  title: string;
+  total: number;
+  present: number;
+}
+
+export async function votesAbovePresent(client: Reader, meetingId: string, organizationId: string): Promise<VotesAbovePresent[]> {
+  const rows = await client.$queryRaw<{ agendaItemId: string; title: string; total: number; present: number }[]>`
+    WITH present AS (
+      SELECT count(*)::int AS n FROM "MeetingAttendee" a
+      WHERE a."organizationId" = ${organizationId} AND a."meetingId" = ${meetingId} AND a.kind = 'MEMBER' AND a.attendance = 'PRESENT'
+    )
+    SELECT d."agendaItemId", i.title, (d."votesFor" + d."votesAgainst" + d."votesAbstain")::int AS total, present.n AS present
+    FROM "MeetingDecision" d
+    JOIN "AgendaItem" i ON i.id = d."agendaItemId" AND i."organizationId" = ${organizationId}
+    CROSS JOIN present
+    WHERE d."organizationId" = ${organizationId} AND d."meetingId" = ${meetingId}
+      AND d."votesFor" IS NOT NULL
+      AND d."votesFor" + d."votesAgainst" + d."votesAbstain" > present.n
+    ORDER BY i."order", d."order", d.id`;
+  return rows;
+}
+
+/**
+ * Distribute Minutes' ONE readiness check (P206), read by the minutes read's
+ * `distribute.blockedBy` and run again inside the move under the meeting row's
+ * lock: attendance recorded for every member and organisation guest, then no
+ * decision whose votes exceed the members now present (attendance lowered after
+ * a vote is not refused at the tap; it holds Distribute, naming the item).
+ */
+export type DistributeBlock =
+  | { code: 'MEETING_ATTENDANCE_INCOMPLETE'; missing: { attendeeId: string; name: string }[] }
+  | { code: 'MEETING_VOTES_EXCEED_PRESENT'; items: VotesAbovePresent[] };
+
+export async function distributeBlockedBy(client: Reader, meetingId: string, organizationId: string): Promise<DistributeBlock | null> {
+  const missing = await unrecordedAttendance(client, meetingId, organizationId);
+  if (missing.length > 0) return { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing };
+  const over = await votesAbovePresent(client, meetingId, organizationId);
+  if (over.length > 0) return { code: 'MEETING_VOTES_EXCEED_PRESENT', items: over };
+  return null;
+}
+
 /** One reviewer's state in a round: a PRESENT member, and whether they answered (No corrections, or a suggestion). */
 export interface Reviewer {
   userId: string;
@@ -195,3 +239,21 @@ export async function meetingMinutesFinalPrecondition(
 }
 
 export type MeetingApprovalRefusal = 'MEETING_REVIEW_OPEN' | 'MEETING_SUGGESTION_OPEN' | 'MEETING_ACTION_PAST_DUE' | 'MEETING_ACTION_PAST_SLA_LIMIT';
+
+/** Distribute Minutes' review date when none is chosen: this many working days after today. */
+export const REVIEW_WORKING_DAYS = 5;
+
+/**
+ * Today in the organisation's zone, and the default review date (yyyy-MM-dd,
+ * REVIEW_WORKING_DAYS working days ahead). The one home of the default: the
+ * Distribute move uses it when no date is sent, and the minutes read offers it
+ * to the screen, which does no working-day arithmetic of its own.
+ */
+export async function reviewDayDefaults(
+  calendar: { getEffectiveTimeZone(organizationId: string): Promise<string>; addWorkingDays(from: string, days: number, organizationId: string): Promise<string> },
+  organizationId: string,
+  now: Date,
+): Promise<{ today: string; defaultDay: string }> {
+  const today = DateTime.fromJSDate(now).setZone(await calendar.getEffectiveTimeZone(organizationId)).toISODate()!;
+  return { today, defaultDay: await calendar.addWorkingDays(today, REVIEW_WORKING_DAYS, organizationId) };
+}

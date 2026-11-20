@@ -4,10 +4,22 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
-import { MeetingService, type MeetingAgendaItemDto, type MeetingAttendeeDto, type MeetingDto, type MeetingFileDto } from '../../services/meeting.service';
+import {
+  MeetingService,
+  type MeetingAgendaItemDto,
+  type MeetingAttendeeDto,
+  type MeetingDto,
+  type MeetingFileDto,
+  type MeetingMinutesDto,
+  type MeetingMinutesItemDto,
+  type MeetingOpenActionsDto,
+  type MeetingSuggestionDto,
+} from '../../services/meeting.service';
 import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingAgendaItemDialogComponent } from '../meeting-agenda-item-dialog/meeting-agenda-item-dialog.component';
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
+import { MeetingOpenActionsComponent } from '../meeting-open-actions/meeting-open-actions.component';
+import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-item-minutes.component';
 
 /**
  * ACC-316 PR 7 — the meeting's Agenda panel (Meeting Screens round 5, section
@@ -21,7 +33,7 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
 @Component({
   selector: 'am-meeting-agenda-panel',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, CdkDropList, CdkDrag, CdkDragHandle, MeetingAgendaItemDialogComponent, MeetingFileListComponent],
+  imports: [TranslatePipe, ButtonModule, CdkDropList, CdkDrag, CdkDragHandle, MeetingAgendaItemDialogComponent, MeetingFileListComponent, MeetingOpenActionsComponent, MeetingItemMinutesComponent],
   template: `
     <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-agenda">
       <h2 class="m-0 flex flex-wrap items-center justify-between gap-2 text-[15px] font-semibold">
@@ -36,6 +48,13 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
           <p-button size="small" [text]="true" icon="pi pi-plus" [label]="'meeting.agenda.add' | translate" data-testid="meeting-agenda-add" (onClick)="openItem(null)" />
         }
       </h2>
+      <!-- PR 7b — the fixed first section: never an agenda item, never moved, edited or removed. -->
+      <am-meeting-open-actions
+        [meetingId]="meeting().id"
+        [openActions]="openActions()"
+        [canNote]="minutes()?.may?.recordMinutes ?? false"
+        (minutesChange)="minutesChange.emit($event)"
+      />
       @if (items().length === 0) {
         <p class="m-0 text-meta text-[var(--am-ink-500)]">{{ 'meeting.agenda.empty' | translate }}</p>
       }
@@ -76,6 +95,20 @@ import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list
                 [testId]="'meeting-papers-' + item.id"
                 (changed)="filesChanged.emit()"
               />
+              @if (minutesOf(item.id); as im) {
+                <am-meeting-item-minutes
+                  [meetingId]="meeting().id"
+                  [item]="im"
+                  [canWrite]="minutes()!.may.recordMinutes"
+                  (minutesChange)="minutesChange.emit($event)"
+                  (raiseAction)="raiseAction.emit({ id: im.id, order: im.order, title: im.title })"
+                  [suggestions]="suggestionsOf(im.id)"
+                  [canApply]="minutes()!.may.applySuggestions"
+                  (decline)="declineSuggestion.emit($event)"
+                  (applied)="suggestionApplied.emit()"
+                  (reload)="reload.emit()"
+                />
+              }
             </div>
             @if (canManage()) {
               <p-button size="small" [text]="true" [label]="'meeting.agenda.edit' | translate" [ariaLabel]="'meeting.agenda.editNamed' | translate: { title: item.title }" [attr.data-testid]="'meeting-agenda-edit-' + item.id" (onClick)="openItem(item, i + 1)" />
@@ -160,6 +193,18 @@ export class MeetingAgendaPanelComponent {
   readonly itemsChange = output<MeetingAgendaItemDto[]>();
   /** A paper was added or removed: the page reads the files again. */
   readonly filesChanged = output<void>();
+  /** PR 7b — the minutes, where the viewer may read them; each item's discussion, decisions and actions show under it. */
+  readonly minutes = input<MeetingMinutesDto | null>(null);
+  /** PR 7b — "Open actions from the last meeting", the fixed first section. */
+  readonly openActions = input<MeetingOpenActionsDto | null>(null);
+  /** The minutes as the server holds them after a minutes write. */
+  readonly minutesChange = output<MeetingMinutesDto>();
+  /** "Raise action item" on an item: the page opens the dialog. */
+  readonly raiseAction = output<{ id: string; order: number; title: string }>();
+  /** PR 7c-1 — Decline… on an item's suggestion, and a suggestion applied. */
+  readonly declineSuggestion = output<MeetingSuggestionDto>();
+  readonly suggestionApplied = output<void>();
+
   /** A read the page made after a write failed (the files or the invitees): said here, with Retry. */
   readonly readError = input<string | null>(null);
   readonly retryRead = output<void>();
@@ -193,6 +238,17 @@ export class MeetingAgendaPanelComponent {
     const sum = this.items().reduce((n, i) => n + (i.durationMinutes ?? 0), 0);
     return this.format.count('meeting.minutesPlanned', total, { planned: this.format.number(sum) });
   });
+
+  /** This item's suggestions in the current review round. */
+  suggestionsOf(itemId: string): MeetingSuggestionDto[] {
+    const m = this.minutes();
+    if (!m) return [];
+    return m.review.suggestions.filter((s) => s.agendaItemId === itemId && s.round === m.review.round);
+  }
+
+  minutesOf(itemId: string): MeetingMinutesItemDto | null {
+    return this.minutes()?.items.find((i) => i.id === itemId) ?? null;
+  }
 
   papersOf(itemId: string): MeetingFileDto[] {
     return this.papers().filter((f) => f.agendaItemId === itemId);

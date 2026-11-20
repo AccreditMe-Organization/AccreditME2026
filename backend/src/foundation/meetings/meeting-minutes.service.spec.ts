@@ -6,6 +6,7 @@ import type { WorkflowService } from '../workflow/workflow.service';
 import type { StageRulesService } from '../workflow/stage-rules.service';
 import type { NotificationService } from '../notification/notification.service';
 import type { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { TaskAdmissionService } from '../task/task-admission.service';
 import { MeetingMinutesService } from './meeting-minutes.service';
 import { MeetingReviewService } from './meeting-review.service';
 
@@ -39,7 +40,7 @@ describe('MeetingMinutesService and MeetingReviewService — tenant scoping (ACC
       $queryRaw: jest.fn(async () => []),
     } as unknown as PrismaService;
     const stageRules = { stageRulesFor: jest.fn(async () => new Map()) } as unknown as StageRulesService;
-    const minutes = new MeetingMinutesService(prisma, visibility, stageRules, {} as WorkflowService, {} as WorkingCalendarService);
+    const minutes = new MeetingMinutesService(prisma, visibility, stageRules, {} as WorkflowService, {} as WorkingCalendarService, {} as TaskAdmissionService);
     const review = new MeetingReviewService(prisma, visibility, stageRules, {} as WorkflowService, {} as NotificationService, {} as WorkingCalendarService);
     return { minutes, review, prisma, attendees };
   }
