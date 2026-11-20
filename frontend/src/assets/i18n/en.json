@@ -4944,7 +4944,9 @@
       },
       "ownerFilter": "Meetings of {{owner}}",
       "oneOwner": "one committee or unit",
-      "clearOwner": "Show all meetings"
+      "clearOwner": "Show all meetings",
+      "seriesTitle": "Whole series · {{owner}}",
+      "oneSeries": "one series"
     },
     "page": {
       "loading": "Loading the meeting…",
@@ -4957,7 +4959,8 @@
       "unit": "Unit",
       "quorum": "Quorum {{n}}",
       "where": "Where",
-      "organiser": "Organiser"
+      "organiser": "Organiser",
+      "series": "Series"
     },
     "answer": {
       "title": "Your answer to the invitation",
@@ -5358,6 +5361,44 @@
       "vote": "Vote: {{for}} for · {{against}} against · {{abstain}} abstain",
       "actionItems": "Action items",
       "actionLine": "{{title}} · {{owner}} · due {{date}}"
+    },
+    "series": {
+      "every": {
+        "WEEK_1": "Every week",
+        "WEEK_2": "Every 2 weeks",
+        "MONTH_1": "Every month",
+        "MONTH_3": "Every 3 months",
+        "MONTH_6": "Every 6 months",
+        "MONTH_12": "Every 12 months"
+      },
+      "on": {
+        "WEEKDAY": "{{every}} on {{weekday}}",
+        "DAY_OF_MONTH": "{{every}} on day {{day}}",
+        "ORDINAL_WEEKDAY": "{{every}}, the {{which}} {{weekday}}"
+      },
+      "ordinal": {
+        "FIRST": "1st",
+        "SECOND": "2nd",
+        "THIRD": "3rd",
+        "FOURTH": "4th",
+        "LAST": "last"
+      },
+      "weekday": {
+        "1": "Monday",
+        "2": "Tuesday",
+        "3": "Wednesday",
+        "4": "Thursday",
+        "5": "Friday",
+        "6": "Saturday",
+        "7": "Sunday"
+      },
+      "line": "{{pattern}} · {{n}} of {{total}}",
+      "ended": "{{every}} · ended after {{n}} of {{total}}",
+      "whole": "Whole series",
+      "previousGlyph": "‹",
+      "nextGlyph": "›",
+      "previous": "Previous meeting, {{date}}",
+      "next": "Next meeting, {{date}}"
     }
   }
 }
