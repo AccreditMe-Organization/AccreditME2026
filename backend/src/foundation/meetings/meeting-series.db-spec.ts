@@ -490,6 +490,158 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
     });
   });
 
+  // ── PR 8-be (P236) ──────────────────────────────────────────────────────────
+
+  describe('the series on a meeting (Q1)', () => {
+    it('names the pattern, the dates and the nearest meetings either side', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third] = r.meetingIds;
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!;
+      expect(s).toMatchObject({ id: r.seriesId, index: 2, total: 4, every: 'WEEK_1', ended: false, count: 4, endsOn: null, previousId: first, nextId: third });
+      expect(s.on).toEqual({ kind: 'WEEKDAY', weekday: 2, dayOfMonth: null, ordinal: null });
+      expect(s.firstDate).toBe(nextWeekday(w, 2));
+    });
+
+    it('previous and next skip a cancelled meeting', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
+      const cancelled = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'cancelled' } });
+      await prisma.workflowInstance.updateMany({ where: { objectType: 'MEETING', objectId: third! }, data: { currentStageId: cancelled.id } });
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!.nextId).toBe(fourth);
+      expect((await meetings.getForViewer(fourth!, w.orgId, as(w, 'chair'))).series!.previousId).toBe(second);
+    });
+
+    it("previous and next are null where the viewer can't open them (the parent rule)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      // Invited to the second meeting only: they may open it, and no other of the series.
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: second!, kind: 'ORG_GUEST', userId: w.people['outsider']!, invitedAt: new Date() } });
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'outsider'))).series!;
+      expect([s.previousId, s.nextId]).toEqual([null, null]);
+    });
+  });
+
+  describe('what "this and all later" would do (Q2, the scope preview)', () => {
+    /** Every row the write could touch, as a fingerprint, to prove the preview changes none. */
+    const fingerprint = async (w: World, seriesId: string) => ({
+      meetings: (await seriesMeetings(seriesId)).map((m) => [m.id, m.scheduledAt.toISOString(), m.updatedAt.toISOString(), m.location, m.durationMinutes, m.ownEdits.join(',')]),
+      reschedules: await prisma.meetingReschedule.count({ where: { organizationId: w.orgId } }),
+      audit: await prisma.auditLog.count({ where: { organizationId: w.orgId } }),
+      series: (await prisma.meetingSeries.findFirstOrThrow({ where: { id: seriesId } })).updatedAt.toISOString(),
+    });
+
+    it('a reschedule: writes nothing, and its times are exactly what the write then stores', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      const before = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt]));
+      await meetings.reschedule(fourth!, { scheduledAt: new Date(before[fourth!]!.getTime() + 3_600_000).toISOString(), reason: 'Room clash' }, w.orgId, as(w, 'chair'));
+      const to = new Date(before[second!]!.getTime() + 2 * 3_600_000).toISOString();
+
+      const untouched = await fingerprint(w, r.seriesId);
+      const preview = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to }, w.orgId, as(w, 'chair'));
+      expect(await fingerprint(w, r.seriesId)).toEqual(untouched);
+      expect(preview.meetings.map((m) => m.id)).toEqual([second, third]);
+      expect(preview.kept).toEqual([{ meetingId: fourth, title: expect.any(String), fields: ['scheduledAt'], startsAt: expect.any(Date) }]);
+
+      await series.rescheduleLater(second!, { scheduledAt: to, reason: 'Afternoon' }, w.orgId, as(w, 'chair'));
+      const stored = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      for (const m of preview.meetings) expect([m.id, stored[m.id]]).toEqual([m.id, m.startsAt.toISOString()]);
+    });
+
+    it("a reschedule that moves a meeting off another of the owner's days: the preview places it as the write does", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second, third] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // A meeting of the same committee, outside the series, a day after the third:
+      // a one-day shift lands the third on it, so the placement must move it on.
+      const busyDay = new Date(rows[2]!.scheduledAt.getTime() + 86_400_000);
+      await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Extra', typeValueId: meetingType, scheduledAt: busyDay, durationMinutes: 60, location: 'Room 1', committeeId: w.committeeId },
+      });
+      const to = new Date(rows[1]!.scheduledAt.getTime() + 86_400_000).toISOString();
+      const preview = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to }, w.orgId, as(w, 'chair'));
+      await series.rescheduleLater(second!, { scheduledAt: to, reason: 'A day later' }, w.orgId, as(w, 'chair'));
+      const stored = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      const previewed = Object.fromEntries(preview.meetings.map((m) => [m.id, m.startsAt.toISOString()]));
+      expect(previewed[third!]).toBe(stored[third!]);
+      expect(previewed[third!]).not.toBe(new Date(rows[2]!.scheduledAt.getTime() + 86_400_000).toISOString());
+    });
+
+    it('an edit: the meetings it changes and those that keep their own, as the write then reports, writing nothing', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      await meetings.update(third!, { location: 'Room 9' }, w.orgId, as(w, 'chair'));
+      const untouched = await fingerprint(w, r.seriesId);
+      const preview = await series.scopePreview(second!, { change: 'EDIT', location: 'Hall A', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect(await fingerprint(w, r.seriesId)).toEqual(untouched);
+      expect(preview.meetings.map((m) => m.id)).toEqual([second, third, fourth]);
+      expect(preview.meetings.map((m) => m.durationMinutes)).toEqual([90, 90, 90]);
+      expect(preview.kept).toEqual([{ meetingId: third, title: expect.any(String), fields: ['location'], startsAt: expect.any(Date) }]);
+      const res = await series.updateLater(second!, { location: 'Hall A', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect([...res.scope.changed].sort()).toEqual(preview.meetings.map((m) => m.id).sort());
+      expect(res.scope.kept.map((k) => [k.meetingId, k.fields])).toEqual(preview.kept.map((k) => [k.meetingId, k.fields]));
+    });
+
+    it('takes no row lock: it answers while another transaction holds a meeting FOR UPDATE', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: second! } })).scheduledAt;
+      const answered = await prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${second!} FOR UPDATE`;
+          const p = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: new Date(at.getTime() + 3_600_000).toISOString() }, w.orgId, as(w, 'chair'));
+          return p.meetings.length;
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      );
+      expect(answered).toBeGreaterThan(0);
+    });
+
+    it("the clashes at the new times, and never with a meeting that is itself moving", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [first, second] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // A week later: each meeting lands on the next one's old time. Those aren't clashes.
+      const week = await series.scopePreview(first!, { change: 'RESCHEDULE', scheduledAt: new Date(rows[0]!.scheduledAt.getTime() + 7 * 86_400_000).toISOString() }, w.orgId, as(w, 'chair'));
+      expect(week.clashes).toEqual([]);
+      // An hour later, where the member has another (unit) meeting: that one is.
+      const to = new Date(rows[1]!.scheduledAt.getTime() + 3_600_000);
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId;
+      const other = await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Other', typeValueId: meetingType, scheduledAt: to, durationMinutes: 60, location: 'Room 1', orgUnitId: unit },
+      });
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: other.id, kind: 'ORG_GUEST', userId: w.people['member']!, invitedAt: new Date() } });
+      const hour = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to.toISOString() }, w.orgId, as(w, 'chair'));
+      const atSecond = hour.clashes.find((c) => c.startsAt === to.toISOString())!;
+      expect(atSecond.people.map((p) => p.userId)).toEqual([w.people['member']]);
+    });
+
+    it('the same "who may ask" as the write: someone who may not edit is refused, and so is a meeting outside a series', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      expect(await code(series.scopePreview(r.meetingIds[1]!, { change: 'EDIT', location: 'X' }, w.orgId, as(w, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      await prisma.meeting.update({ where: { id: r.meetingIds[3]! }, data: { seriesId: null, seriesIndex: null } });
+      expect(await code(series.scopePreview(r.meetingIds[3]!, { change: 'EDIT', location: 'X' }, w.orgId, as(w, 'chair')))).toBe('MEETING_NOT_IN_SERIES');
+    });
+
+    itEnforcesTenantIsolation("another organisation's meeting is the same 404 as a missing one", async () => {
+      const r = await series.create(weekly(a, { count: 2, weekday: 4, firstDate: nextWeekday(a, 4) }), a.orgId, as(a, 'chair'));
+      const other = as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
+      expect(await code(series.scopePreview(r.meetingIds[0]!, { change: 'EDIT', location: 'X' }, b.orgId, other))).toBe(404);
+      expect(await code(series.scopePreview('no-such-meeting', { change: 'EDIT', location: 'X' }, b.orgId, other))).toBe(404);
+      expect(await code(meetings.getForViewer(r.meetingIds[0]!, b.orgId, other))).toBe(404);
+    });
+  });
+
   describe('another organisation', () => {
     itEnforcesTenantIsolation("End series never presses a move into another organisation's stage", async () => {
       const e = await world();
