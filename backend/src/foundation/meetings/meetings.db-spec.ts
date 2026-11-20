@@ -1277,6 +1277,10 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(asChair[1]!.people).toEqual([]);
       expect(asChair[2]!.people).toEqual([]);
       expect(asChair[3]!.people).toEqual([]);
+      // PR 8a — how many were checked ("3 of 11 invitees"): the committee's active members, at every time, a clash or not.
+      const members = await prisma.committeeMember.count({ where: { committeeId: w.committeeId, organizationId: w.orgId, isActive: true } });
+      expect(members).toBeGreaterThan(0);
+      expect(asChair.map((c) => c.invitees)).toEqual([members, members, members, members]);
 
       // Root's head schedules a Ward meeting for wardPerson, who is also invited to the committee meeting:
       // the committee meeting is above Ward, so its title is withheld from them.
@@ -1288,6 +1292,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         now,
       );
       expect(asWard[0]!.people[0]!.meetings[0]!.title).toBe('Monthly review'); // Root's head oversees it
+      expect(asWard[0]!.invitees).toBe(1); // only the person named
       // Editing the meeting itself leaves its own time out.
       expect((await clashes.check({ meetingId: busy.id, times: [times[0]!] } as never, w.orgId, as(w, 'chair'), now))[0]!.people).toEqual([]);
 
