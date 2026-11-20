@@ -191,6 +191,9 @@ export class MeetingReviewService {
   ): Promise<void> {
     const owner = await this.access.seeing(id, organizationId, viewer, now);
     if (!(await this.isRecorder(owner, organizationId, viewer.id, now))) throw new MeetingRefusal('MEETING_NOT_RECORDER');
+    // ACC-316 PR 7c-1 (P212) — a decline says why: its author reads the reply.
+    // Trimmed by the DTO (an empty one is null), refused here, before any write.
+    if (decision === 'DECLINED' && !dto.reply) throw new MeetingRefusal('MEETING_SUGGESTION_REPLY_REQUIRED');
     const decided = await this.prisma
       .$transaction(async (tx) => {
         await this.stageRules.assertStageAllows('MEETING', id, MEETING_ACTIONS.APPLY_SUGGESTIONS, organizationId, tx, { lock: 'share' });

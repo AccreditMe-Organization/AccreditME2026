@@ -3692,6 +3692,18 @@
         "one": "{{count}} not done · status read from each task",
         "other": "{{count}} not done · status read from each task"
       },
+      "reviewAnswered": {
+        "one": "{{count}} answered",
+        "other": "{{count}} answered"
+      },
+      "reviewWaiting": {
+        "one": "{{count}} no answer yet",
+        "other": "{{count}} no answer yet"
+      },
+      "suggestionsOpen": {
+        "one": "{{count}} suggestion open",
+        "other": "{{count}} suggestions open"
+      },
       "minutesPlanned": {
         "one": "{{planned}} of {{count}} min planned",
         "other": "{{planned}} of {{count}} min planned"
@@ -5021,6 +5033,77 @@
       "votesAboveItem": "{{title}}: {{votes}}, {{members}}",
       "blockedNow": "Something now holds the minutes back. It is listed above."
     },
+    "review": {
+      "title": "Review the minutes by {{day}}",
+      "titleNoDate": "Review the minutes",
+      "lead": "You were present on {{held}}. Read each item below, then answer. No answer by {{day}} counts as no corrections.",
+      "leadNoDate": "You were present on {{held}}. Read each item below, then answer.",
+      "mine": {
+        "NO_CORRECTIONS": "You answered: no corrections.",
+        "SUGGESTED": "You suggested a correction."
+      },
+      "changed": "Changed during review: {{list}}",
+      "changeOnItem": "item {{n}}, {{what}}",
+      "change": {
+        "DISCUSSION": "discussion",
+        "DECISION": "decision",
+        "ACTION_DATE": "action date"
+      },
+      "suggest": "Suggest a correction…",
+      "noCorrections": "No corrections",
+      "error": "Your answer couldn't be saved.",
+      "cardTitle": "Review",
+      "answered": "Answered",
+      "notAnswered": "No answer yet",
+      "from": "Suggested by {{name}}",
+      "fromWhole": "About the minutes as a whole · suggested by {{name}}",
+      "status": {
+        "OPEN": "Open",
+        "APPLIED": "Applied",
+        "DECLINED": "Declined"
+      },
+      "reply": "Reply: {{reply}}",
+      "markApplied": "Mark applied",
+      "decline": "Decline…",
+      "editToApply": "Edit to apply",
+      "applyingHint": "Edit the item, then save: the suggestion is marked applied.",
+      "applyFailed": "Your edit was saved, but the suggestion couldn't be marked applied.",
+      "markFailed": "The suggestion couldn't be marked applied.",
+      "silence": "No answer by the review date counts as no corrections.",
+      "closesOn": "Review closes {{day}}",
+      "closedOn": "Review closed {{day}}"
+    },
+    "suggest": {
+      "title": "Suggest a correction",
+      "context": "Whoever records the minutes applies or declines it",
+      "about": "About",
+      "aboutHint": "An agenda item, or the minutes as a whole",
+      "whole": "The minutes as a whole",
+      "text": "Suggestion",
+      "textRequired": "Write the correction.",
+      "submit": "Send suggestion",
+      "error": "The suggestion couldn't be sent."
+    },
+    "decline": {
+      "title": "Decline this suggestion?",
+      "contextItem": "Item {{n}} · from {{name}}",
+      "contextWhole": "The minutes as a whole · from {{name}}",
+      "reply": "Reply",
+      "replyHint": "{{name}} sees this with the suggestion",
+      "replyRequired": "Say why the suggestion is declined.",
+      "error": "The suggestion couldn't be declined."
+    },
+    "return": {
+      "open": "Return for Correction",
+      "title": "Return for Correction?",
+      "lead": "The minutes go back to Minutes Draft. Distributing again starts a new review with a new date.",
+      "told": "Told",
+      "answers": "Answers so far",
+      "reason": "Reason",
+      "reasonHint": "Shown to the present members and in the draft",
+      "submit": "Return for Correction",
+      "error": "The minutes couldn't be returned."
+    },
     "invitees": {
       "title": "Invitees",
       "addGuest": "Guest",
@@ -5152,6 +5235,12 @@
       "agendaItemNotFound": "This item is no longer on the agenda. Reload the meeting.",
       "agendaOrderMismatch": "The agenda changed since you opened it. Reload the meeting and try again.",
       "agendaChanged": "The agenda changed since you opened it. Reload the meeting and try again.",
+      "notReviewer": "Only members recorded present review these minutes.",
+      "reviewSuggested": "You already suggested a correction this round.",
+      "suggestionNotFound": "This suggestion is no longer there. Reload the meeting.",
+      "suggestionDecided": "This suggestion has already been decided.",
+      "suggestionTextRequired": "Write the correction.",
+      "suggestionReplyRequired": "Say why the suggestion is declined.",
       "minutesNotOpen": "These minutes aren't open to you yet.",
       "notRecorder": "Only whoever records this meeting's minutes can do that.",
       "notStarted": "Attendance opens when the meeting starts.",

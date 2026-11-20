@@ -1663,6 +1663,21 @@ them together with their resolver.
          write; attendance taps queued; typed discussion kept; votes checked on
          the client; votes above the members present hold Distribute (one
          readiness check); "nothing to show" is `mayRead: false` both ways.
+   - **PR 7c-1 as built (P212, 20 Nov):** SYSTEM-REFERENCE §18.18. The banner,
+     the Review card, Suggest a correction, suggestions on their items with
+     Edit to apply (the write first, then apply, Retry for apply alone) and
+     Decline (the reply required on the server too,
+     `MEETING_SUGGESTION_REPLY_REQUIRED`), Return for Correction. Approval,
+     "Can't move yet" (one blocker at a time; all of them is ACC-326) and Home's
+     review rows are 7c-2.
+     - **After lane B's review (P220):** marking applied is safe to press twice
+       and after a lost answer (`MEETING_SUGGESTION_DECIDED` reads as applied);
+       an apply failure is said from its code (Retry only when unreachable,
+       Reload when stale, else its own sentence); `MEETING_CHANGED` and the two
+       suggestion codes offer Reload everywhere in the review; "No corrections"
+       only before any answer; Return's refusal in the footer; Decline keeps its
+       quote while closing; Suggest has no `about` input (no per-item Suggest
+       is drawn).
    - **PR 7c, review and approval:** the review banner (No corrections /
      Suggest a correction), suggestions applied or declined, the Review card,
      Return for Correction, Approve Minutes with "Can't move to Minutes
