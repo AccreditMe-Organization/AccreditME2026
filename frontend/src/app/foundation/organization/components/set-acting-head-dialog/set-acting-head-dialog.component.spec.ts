@@ -47,7 +47,7 @@ const VACANT: IOrgUnitHeadStatus = {
   headHandoverEffectiveDate: null,
   actingHeadUserId: null,
   // ACC-133 — the extended head read.
-  lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
+  lastVacancy: null, pendingHeadAccessSince: null, cover: null, activeCover: null, scheduledCover: null, recentlyEndedCovers: [],
 };
 
 const HELD: IOrgUnitHeadStatus = {
@@ -56,7 +56,7 @@ const HELD: IOrgUnitHeadStatus = {
   headHandoverEffectiveDate: null,
   actingHeadUserId: null,
   // ACC-133 — the extended head read.
-  lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
+  lastVacancy: null, pendingHeadAccessSince: null, cover: null, activeCover: null, scheduledCover: null, recentlyEndedCovers: [],
 };
 
 function setup(status: IOrgUnitHeadStatus): {

@@ -37,6 +37,7 @@ const STATUS = (headSince: string | null = FAHAD.headSince): IOrgUnitHeadStatus 
   lastVacancy: null,
   pendingHeadAccessSince: null,
   cover: null,
+  activeCover: null,
   scheduledCover: null,
   recentlyEndedCovers: [],
 });

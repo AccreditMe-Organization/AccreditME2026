@@ -145,7 +145,28 @@ export class OrgUnitHeadService {
       vacatedByName = actor?.name ?? null;
     }
 
-    const running = await findRunningActingCover(this.prisma, organizationId, orgUnitId, now);
+    // ACC-328 — the cover the server USES as acting head: in force, and its
+    // person ACTIVE (findActiveCoversForUnits(), the rule a promotion's parent
+    // manager reads since ACC-324). `cover` above stays the cover on record.
+    const [running, activeCoverUserId] = await Promise.all([
+      findRunningActingCover(this.prisma, organizationId, orgUnitId, now),
+      findActiveCoversForUnits(this.prisma, organizationId, [orgUnitId], now).then((m) => m.get(orgUnitId) ?? null),
+    ]);
+    // Normally the same person as the cover in force, whose name is already
+    // read. Only if they differ (an older overlapping period) is the name
+    // looked up, and only for a caller who may see names.
+    let activeCoverName: string | null = null;
+    if (activeCoverUserId && options.includeNames) {
+      activeCoverName =
+        running?.userId === activeCoverUserId
+          ? running.userName
+          : ((
+              await this.prisma.user.findFirst({
+                where: { id: activeCoverUserId, organizationId },
+                select: { name: true },
+              })
+            )?.name ?? null);
+    }
 
     // A cover that has not started yet, and covers whose period ended in the
     // last 7 days. One read for both.
@@ -199,6 +220,7 @@ export class OrgUnitHeadService {
             validTo: running.validTo,
           }
         : null,
+      activeCover: activeCoverUserId ? { userId: activeCoverUserId, name: named(activeCoverName) } : null,
       scheduledCover: scheduled
         ? {
             userId: scheduled.userId,

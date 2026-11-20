@@ -59,7 +59,7 @@ class HostComponent {
     headHandoverEffectiveDate: null,
     actingHeadUserId: null,
     // ACC-133 — the extended head read.
-    lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
+    lastVacancy: null, pendingHeadAccessSince: null, cover: null, activeCover: null, scheduledCover: null, recentlyEndedCovers: [],
   });
   readonly people = [{ id: 'u-huda', name: 'Dr. Huda Zahrani', email: 'huda@example.com' }];
 }
@@ -93,7 +93,7 @@ class NestedHostComponent {
     headHandoverEffectiveDate: null,
     actingHeadUserId: null,
     // ACC-133 — the extended head read.
-    lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
+    lastVacancy: null, pendingHeadAccessSince: null, cover: null, activeCover: null, scheduledCover: null, recentlyEndedCovers: [],
   });
 }
 

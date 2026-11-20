@@ -1162,13 +1162,16 @@ export class TransferUserWizardComponent implements OnInit {
               unit: parentUnitName,
             }),
           );
-        } else if (status.actingHeadUserId) {
-          this.userService.getById(status.actingHeadUserId).subscribe({
-            next: (u) =>
-              this.derivedManagerText.set(
-                this.translate.instant('user.transfer.derivedManagerActing', { name: u.name, unit: parentUnitName }),
-              ),
-          });
+        } else if (status.activeCover) {
+          // ACC-328 — the cover the server will use (ACTIVE person, in force),
+          // never the cached actingHeadUserId, which can name a deactivated
+          // person or a cover that has not started.
+          this.derivedManagerText.set(
+            this.translate.instant('user.transfer.derivedManagerActing', {
+              name: status.activeCover.name ?? this.translate.instant('headship.head.assigned'),
+              unit: parentUnitName,
+            }),
+          );
         } else {
           this.derivedManagerText.set(null);
         }

@@ -39,6 +39,8 @@ export interface IOrgUnitHeadStatus {
   lastVacancy: { at: string; by: { userId: string; name: string | null } | null } | null;
   pendingHeadAccessSince: string | null;
   cover: IOrgUnitHeadCover | null;
+  /** ACC-328 — the cover the server uses as acting head (ACTIVE person, in force). */
+  activeCover: { userId: string; name: string | null } | null;
   scheduledCover: IOrgUnitHeadCover | null;
   recentlyEndedCovers: { userId: string; name: string | null; endedAt: string }[];
 }
