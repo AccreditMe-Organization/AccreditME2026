@@ -2,6 +2,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { committeeOversightUnitIds } from './committee-membership';
 import { MEETING_KIND_RULES } from '../../foundation/workflow/meeting-authority';
+import { MEETINGS_PERMISSIONS } from '../constants/permissions';
 
 /**
  * ACC-316 PR 3a — WHO MAY SEE A MEETING WITHOUT meetings:view: the one copy of
@@ -110,6 +111,38 @@ export function meetingInviteeSql(alias: string, viewerId: string): Prisma.Sql {
 export function meetingOverseenSql(alias: string, unitIds: readonly string[]): Prisma.Sql {
   if (unitIds.length === 0) return Prisma.sql`FALSE`;
   return Prisma.sql`${meetingOwningUnitSql(alias)} = ANY(${[...unitIds]}::text[])`;
+}
+
+/**
+ * P237 — WHO MAY OPEN A MEETING, for many meetings in one query: the parent
+ * rule ObjectVisibilityService applies to one MEETING on a read (with
+ * oversight), built from the same clauses: `meetings:view`, else the MEMBER
+ * and SCHEDULER clauses or the OVERSEER clause over the viewer's oversight set.
+ * meetingOpener() reads the viewer's side once (no query for a meetings:view
+ * holder, their oversight set otherwise); meetingMayOpenSql() is the rule over
+ * a meeting row. Read by the clash check and MeetingAccess.openable(); a
+ * db-spec holds openable() equal to canSee() for every viewer kind.
+ */
+export interface MeetingOpener {
+  viewerId: string;
+  seesAll: boolean;
+  oversight: readonly string[];
+}
+
+export async function meetingOpener(
+  client: Client,
+  organizationId: string,
+  viewer: { id: string; permissions: readonly string[] },
+  now: Date,
+): Promise<MeetingOpener> {
+  const seesAll = viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW);
+  return { viewerId: viewer.id, seesAll, oversight: seesAll ? [] : [...(await meetingOversightUnitIds(client, organizationId, viewer.id, now))] };
+}
+
+/** The rule above as SQL over the meeting row `alias` (the caller scopes the row by organisation). */
+export function meetingMayOpenSql(alias: string, opener: MeetingOpener): Prisma.Sql {
+  if (opener.seesAll) return Prisma.sql`TRUE`;
+  return Prisma.sql`(${meetingMemberSql(alias, opener.viewerId)} OR ${meetingOverseenSql(alias, opener.oversight)})`;
 }
 
 /** Is `viewerId` a MEMBER of this meeting (in this organisation)? One query. */

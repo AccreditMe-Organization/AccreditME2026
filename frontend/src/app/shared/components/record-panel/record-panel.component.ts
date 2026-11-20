@@ -3,8 +3,8 @@ import { NgTemplateOutlet } from '@angular/common';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { MessageModule } from 'primeng/message';
-import { ButtonModule } from 'primeng/button';
 import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
+import { LoadErrorComponent } from '../load-error/load-error.component';
 
 // ACC-76 — the object-detail pattern's building block. Committee is its first
 // consumer; Meeting Management is expected to reuse it rather than rebuild it.
@@ -71,7 +71,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 @Component({
   selector: 'app-record-panel',
   standalone: true,
-  imports: [TranslatePipe, ProgressSpinnerModule, MessageModule, ButtonModule, NgTemplateOutlet],
+  imports: [TranslatePipe, ProgressSpinnerModule, MessageModule, NgTemplateOutlet, LoadErrorComponent],
   host: { '[style.display]': "isDenied() ? 'none' : null", '[attr.data-outcome]': 'outcome()?.status ?? null' },
   template: `
     <section
@@ -129,15 +129,8 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
               </div>
             }
             @case ('error') {
-              <div class="flex flex-col items-start gap-2 p-4" role="alert" data-panel-error>
-                <p-message severity="error" [text]="(error() ?? 'recordPanel.errorLoad') | translate" />
-                @if (o.errorId) {
-                  <span dir="ltr" class="text-xs text-[var(--am-ink-500)] [unicode-bidi:isolate]">
-                    {{ 'recordPanel.errorId' | translate: { id: o.errorId } }}
-                  </span>
-                }
-                <p-button size="small" [outlined]="true" [label]="'common.retry' | translate" (onClick)="retry.emit()" />
-              </div>
+              <!-- CC-331 — the shared block every capped panel uses too. -->
+              <am-load-error [message]="(error() ?? 'recordPanel.errorLoad') | translate" [errorId]="o.errorId" (retry)="retry.emit()" />
             }
             @case ('empty') {
               <ng-container [ngTemplateOutlet]="emptyTpl" />

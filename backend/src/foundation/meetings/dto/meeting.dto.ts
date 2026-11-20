@@ -151,6 +151,54 @@ export class RescheduleMeetingDto {
   scope?: (typeof MEETING_EDIT_SCOPES)[number];
 }
 
+/**
+ * PR 8-be (P236, Q2) — POST /meetings/:id/scope-preview: what "this and all
+ * later" WOULD do, for the scope confirm. The same fields as the edit or the
+ * reschedule (a reschedule's reason isn't needed: nothing is written or sent).
+ */
+export const MEETING_SCOPE_CHANGES = ['EDIT', 'RESCHEDULE'] as const;
+
+export class MeetingScopePreviewDto {
+  @IsIn(MEETING_SCOPE_CHANGES)
+  change!: (typeof MEETING_SCOPE_CHANGES)[number];
+
+  /** The new time, for a reschedule (required then). */
+  @ValidateIf((o: MeetingScopePreviewDto) => o.change === 'RESCHEDULE')
+  @IsISO8601({ strict: true })
+  scheduledAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  typeValueId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  durationMinutes?: number;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(300)
+  location?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsUrl(URL_OPTIONS)
+  @MaxLength(2000)
+  meetingUrl?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  unitQuorum?: number | null;
+}
+
 /** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
 export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits'] as const;
 export type MeetingListView = (typeof MEETING_LIST_VIEWS)[number];
