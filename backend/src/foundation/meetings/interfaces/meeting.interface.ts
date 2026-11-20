@@ -272,6 +272,7 @@ export interface IMeetingMinutes {
 
 /** Home's rows for a meeting (self-scoped): reviews to answer, invitations to answer. */
 export interface IMeetingAwaitingMe {
-  review: { meetingId: string; title: string; reviewBy: string | null }[];
+  /** `since`: when the meeting entered its current stage, so Home can order the row by how long it has waited (PR 7c-2). */
+  review: { meetingId: string; title: string; reviewBy: string | null; since: Date }[];
   answer: { meetingId: string; title: string; scheduledAt: Date }[];
 }

@@ -237,8 +237,16 @@ export class MeetingReviewService {
       SELECT 1 FROM "WorkflowStageRecordAction" ra
       WHERE ra."organizationId" = ${organizationId} AND ra."actionKey" = ${action} AND ra."stageId" = ${current(Prisma.sql`m.id`)})`;
     const [review, answer] = await Promise.all([
-      this.prisma.$queryRaw<{ meetingId: string; title: string; reviewBy: Date | null }[]>`
-        SELECT m.id AS "meetingId", m.title, m."reviewBy"
+      this.prisma.$queryRaw<{ meetingId: string; title: string; reviewBy: Date | null; since: Date }[]>`
+        SELECT m.id AS "meetingId", m.title, m."reviewBy",
+          -- Home orders by how long a row has waited (PR 7c-2): since the meeting
+          -- entered its current stage, its newest instance's open entry.
+          COALESCE((
+            SELECT wis."enteredAt" FROM "WorkflowInstanceStage" wis
+            JOIN "WorkflowInstance" wi ON wi.id = wis."workflowInstanceId"
+            WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'MEETING'::"WorkflowObjectType" AND wi."objectId" = m.id
+              AND wis."exitedAt" IS NULL
+            ORDER BY wi."createdAt" DESC, wis."enteredAt" DESC LIMIT 1), m."updatedAt") AS since
         FROM "MeetingAttendee" a
         JOIN "Meeting" m ON m.id = a."meetingId" AND m."organizationId" = ${organizationId}
         WHERE a."organizationId" = ${organizationId} AND a."userId" = ${viewerId} AND a.kind = 'MEMBER' AND a.attendance = 'PRESENT'
@@ -261,7 +269,7 @@ export class MeetingReviewService {
         LIMIT ${AWAITING_CAP}`,
     ]);
     return {
-      review: review.map((r) => ({ meetingId: r.meetingId, title: r.title, reviewBy: r.reviewBy?.toISOString().slice(0, 10) ?? null })),
+      review: review.map((r) => ({ meetingId: r.meetingId, title: r.title, reviewBy: r.reviewBy?.toISOString().slice(0, 10) ?? null, since: r.since })),
       answer,
     };
   }

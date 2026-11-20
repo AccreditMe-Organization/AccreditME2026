@@ -724,6 +724,12 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
       const mine = await review.awaitingMe(a.orgId, a.people['member']!);
       expect(mine.review.map((r) => r.meetingId)).toContain(m.id);
       expect(mine.answer.map((r) => r.meetingId)).toContain(invite.id);
+      // PR 7c-2 — the row waits since the meeting entered its current stage.
+      const entry = await prisma.workflowInstanceStage.findFirstOrThrow({
+        where: { exitedAt: null, workflowInstance: { organizationId: a.orgId, objectType: 'MEETING', objectId: m.id } },
+        orderBy: { enteredAt: 'desc' },
+      });
+      expect(mine.review.find((r) => r.meetingId === m.id)!.since).toEqual(entry.enteredAt);
       await review.noCorrections(m.id, a.orgId, as(a, 'member'));
       expect((await review.awaitingMe(a.orgId, a.people['member']!)).review.map((r) => r.meetingId)).not.toContain(m.id);
       // Another organisation's rows never appear.
