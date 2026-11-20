@@ -14,8 +14,6 @@ import { isCancelled, isClosed, ownerGlyph, ownerLink, ownerName, stageName } fr
 import { seriesSummary } from '../../meeting-series-text';
 
 const PAGE = 25;
-/** The whole series view's one answer: a series' most meetings, the server's SERIES_LIST_CAP. */
-const SERIES_LIST_CAP = 53;
 
 /**
  * ACC-316 PR 6 — /meetings: the saved views (Mine, Past, Minutes I record, All
@@ -64,7 +62,8 @@ const SERIES_LIST_CAP = 53;
           [trackBy]="trackById"
           [columns]="columns()"
           [scopes]="scopes()"
-          [pageSize]="seriesFilter() ? seriesCap : pageSize"
+          [pageSize]="pageSize"
+          [showPager]="!seriesFilter()"
           [searchPlaceholder]="'meeting.list.search' | translate"
           [emptyTitle]="'meeting.list.emptyTitle' | translate"
           [emptyMessage]="'meeting.list.emptyBody' | translate"
@@ -96,7 +95,7 @@ const SERIES_LIST_CAP = 53;
             >
               @if (v('meeting')) {
                 <span class="flex min-w-0 flex-col">
-                  <span class="text-[13px] font-medium truncate" [class.line-through]="cancelled(m)" [title]="m.title">{{ m.title }}</span>
+                  <span class="text-value font-medium truncate" [class.line-through]="cancelled(m)" [title]="m.title">{{ m.title }}</span>
                   <span class="text-meta text-[var(--am-ink-500)] truncate">
                     <span aria-hidden="true">{{ glyph(m) }}</span>
                     <a [routerLink]="ownerLink(m)" (click)="$event.stopPropagation()" class="text-[var(--am-blue-primary)]">{{ owner(m) }}</a>
@@ -107,7 +106,7 @@ const SERIES_LIST_CAP = 53;
                 <span class="flex min-w-0 flex-col" data-meeting-when>
                   <!-- P233 — each cell names its column, so a phone card (no headers) still reads "When …". -->
                   <span class="sr-only">{{ columnLabel('when') }}</span>
-                  <span class="text-[13px]">{{ format.dateTime(m.scheduledAt) }}</span>
+                  <span class="text-value">{{ format.dateTime(m.scheduledAt) }}</span>
                   <span class="text-meta text-[var(--am-ink-500)] truncate">{{ format.hijri(m.scheduledAt) }} · {{ format.weekday(m.scheduledAt, 'short') }}</span>
                   <!-- P240 — the series view's note, from the meeting's stored reschedule only. -->
                   @if (m.movedFrom) {
@@ -189,10 +188,11 @@ export class MeetingListComponent {
    * PR 8b — one series' meetings (?seriesId=, from a meeting's "Whole series"):
    * ONE list by date (view=series, P240), every meeting of it this person may
    * open, cancelled ones included, in one answer the server caps at a series'
-   * most (53). Its owner and pattern come from the link's navigation state,
-   * else from the first row's meeting (one read, only then).
+   * most (its SERIES_LIST_CAP; no copy here: the page is the answer's own
+   * length, and there is no pager). Shown in the server's order, never sorted
+   * here. Its owner and pattern come from the link's navigation state, else
+   * from the first row's meeting (one read, only then).
    */
-  readonly seriesCap = SERIES_LIST_CAP;
   readonly seriesFilter = signal<string | null>(null);
   readonly series = signal<MeetingSeriesDto | null>(null);
   readonly seriesOwner = signal<string | null>(null);
@@ -241,7 +241,7 @@ export class MeetingListComponent {
         tap((r) => {
           if (r.items[0]) this.nameSeries(seriesId, r.items[0]);
         }),
-        map((r) => ({ data: r.items, total: r.items.length, page: 1, pageSize: SERIES_LIST_CAP })),
+        map((r) => ({ data: r.items, total: r.items.length, page: 1, pageSize: Math.max(r.items.length, 1) })),
       );
     }
     return this.meetings

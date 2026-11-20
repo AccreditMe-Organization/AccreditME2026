@@ -61,6 +61,21 @@ describe('MeetingListComponent — the whole series (ACC-316 PR 8b)', () => {
     expect(text(el, 'meeting-list-order')).toBe('Sorted by date, earliest first.');
   });
 
+  it("shows the server's order as it is (never sorted here), with no views to switch between and no pager (P243)", async () => {
+    // Out of date order on purpose: what the server sends is what is drawn.
+    const later = { ...cancelled, id: 'm-9', title: 'P&T · December 2027', scheduledAt: '2027-12-23T10:30:00Z', stage: { id: 's-p', nameEn: 'Planned', nameAr: 'مجدول', flags: [] } };
+    const { el, fixture } = create({ series: aSeries(), ownerName: 'Pharmacy and Therapeutics Committee' }, [later, cancelled]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const rows = Array.from(el.querySelectorAll('[data-meeting-row]')).map((r) => r.getAttribute('data-meeting-row'));
+    expect(rows).toEqual(['m-9', 'm-3']);
+    // No scope chips: no button names a view.
+    const buttons = Array.from(el.querySelectorAll('button')).map((b) => b.textContent?.trim());
+    for (const view of ['Upcoming', 'Past', 'Mine, upcoming first']) expect(buttons).not.toContain(view);
+    expect(el.querySelector('p-paginator')).withContext('no pager on the one answer').toBeNull();
+  });
+
   it('a moved meeting says where it was moved from; one never moved says nothing', async () => {
     const moved = { ...cancelled, id: 'm-2', title: 'P&T · May 2027', stage: { id: 's-p', nameEn: 'Planned', nameAr: 'مجدول', flags: [] }, movedFrom: '2027-05-20T10:30:00Z' };
     const { el, fixture } = create({ series: aSeries(), ownerName: 'Pharmacy and Therapeutics Committee' }, [moved, { ...cancelled, movedFrom: null }]);
