@@ -10,14 +10,14 @@ import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
 import { COMMITTEE_ACTIONS, MEETING_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { MeetingsService } from './meetings.service';
-import { MeetingClashService } from './meeting-clash.service';
+import { DEFAULT_MINUTES, MeetingClashService } from './meeting-clash.service';
 import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
 import { mayActInStagePool } from '../workflow/stage-pool.service';
 import { insertMeetingsInTx, ownerMembers, type NewMeeting } from './meeting-create';
 import { patternDays, seriesTitle, type SeriesPattern } from './meeting-series-dates';
-import type { CreateMeetingSeriesDto, EndMeetingSeriesDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
-import type { IMeeting, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
+import type { CheckMeetingClashesDto, CreateMeetingSeriesDto, EndMeetingSeriesDto, MeetingScopePreviewDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
+import type { IMeeting, IMeetingScopePreview, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
 
 /** The fields "this and all later" carries to later meetings. The title is each meeting's own (plan §3.2). */
 const SERIES_FIELDS = ['typeValueId', 'durationMinutes', 'location', 'meetingUrl', 'unitQuorum'] as const;
@@ -26,6 +26,57 @@ type SeriesField = (typeof SERIES_FIELDS)[number];
 const SERIES_TX = { maxWait: 10_000, timeout: 120_000 } as const;
 /** How far a moved day may walk forward looking for a free working day. */
 const MOVE_LIMIT = 31;
+
+/** What an edit reads of each meeting it may change. */
+const EDIT_ROW = { id: true, title: true, typeValueId: true, durationMinutes: true, location: true, meetingUrl: true, unitQuorum: true, ownEdits: true, updatedAt: true } as const;
+/** What a reschedule reads of each meeting it may move. */
+const MOVE_ROW = { id: true, title: true, scheduledAt: true, ownEdits: true, updatedAt: true, seriesIndex: true, durationMinutes: true } as const;
+
+/** A meeting "this and all later" may move, as read (under its lock in the write, without one in the preview). */
+interface MovingRow {
+  id: string;
+  title: string;
+  scheduledAt: Date;
+  ownEdits: string[];
+  seriesIndex: number;
+  durationMinutes: number | null;
+}
+
+interface EditRow {
+  title: string;
+  typeValueId: string;
+  durationMinutes: number | null;
+  location: string | null;
+  meetingUrl: string | null;
+  unitQuorum: number | null;
+  ownEdits: string[];
+}
+
+/** The series fields an edit asks for, trimmed. */
+function wantedFields(dto: Partial<Record<SeriesField, unknown>>): Partial<Record<SeriesField, unknown>> {
+  const wanted: Partial<Record<SeriesField, unknown>> = {};
+  for (const f of SERIES_FIELDS) if (dto[f] !== undefined) wanted[f] = typeof dto[f] === 'string' ? (dto[f] as string).trim() : dto[f];
+  return wanted;
+}
+
+/**
+ * THE EDIT RULE for "this and all later", ONE copy, used by the write and the
+ * preview: the fields this meeting changes, and those it keeps as its own (a
+ * later meeting's `ownEdits`). The anchor alone may change its title, and its
+ * change is the series': its own edits of those fields stop being its own. A
+ * meeting left with neither a place nor a link is refused.
+ */
+function planEdit(row: EditRow, anchor: boolean, wanted: Partial<Record<SeriesField, unknown>>, title: string | undefined): { keep: SeriesField[]; data: Record<string, unknown> } {
+  const keep = anchor ? [] : SERIES_FIELDS.filter((f) => wanted[f] !== undefined && row.ownEdits.includes(f));
+  const fields = SERIES_FIELDS.filter((f) => wanted[f] !== undefined && !keep.includes(f) && wanted[f] !== row[f]);
+  const data: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, wanted[f]]));
+  if (anchor && title !== undefined && title.trim() !== row.title) data['title'] = title.trim();
+  const location = 'location' in data ? data['location'] : row.location;
+  const link = 'meetingUrl' in data ? data['meetingUrl'] : row.meetingUrl;
+  if (!location && !link) throw new MeetingRefusal('MEETING_PLACE_REQUIRED');
+  if (anchor && Object.keys(data).length > 0) data['ownEdits'] = row.ownEdits.filter((f) => !(f in data));
+  return { keep, data };
+}
 
 interface Planned {
   owner: MeetingOwner;
@@ -326,12 +377,9 @@ export class MeetingSeriesService {
   /** Edit this meeting and the later ones still in Planned or Agenda Issued, keeping each one's own edits. */
   async updateLater(id: string, dto: UpdateMeetingDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeeting & { scope: IMeetingScopeResult }> {
     const owner = await this.access.writing(id, organizationId, viewer, now);
-    if (dto.title !== undefined && !dto.title.trim()) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
-    if (dto.typeValueId !== undefined) await this.meetings.assertMeetingType(dto.typeValueId, organizationId);
-    if (owner.committeeId && dto.unitQuorum != null) throw new MeetingRefusal('MEETING_QUORUM_UNIT_ONLY');
+    await this.assertEditable(dto, owner, organizationId);
     const targets = await this.laterMeetings(id, organizationId, now, MEETING_ACTIONS.EDIT_DETAILS);
-    const wanted: Partial<Record<SeriesField, unknown>> = {};
-    for (const f of SERIES_FIELDS) if (dto[f] !== undefined) wanted[f] = typeof dto[f] === 'string' ? (dto[f] as string).trim() : dto[f];
+    const wanted = wantedFields(dto);
 
     const scope: IMeetingScopeResult = { changed: [], kept: [] };
     await this.prisma
@@ -344,22 +392,11 @@ export class MeetingSeriesService {
             continue;
           }
           await lockMeetingRow(tx, target.id, organizationId);
-          const row = await tx.meeting.findFirstOrThrow({
-            where: { id: target.id, organizationId },
-            select: { title: true, typeValueId: true, durationMinutes: true, location: true, meetingUrl: true, unitQuorum: true, ownEdits: true, updatedAt: true },
-          });
+          const row = await tx.meeting.findFirstOrThrow({ where: { id: target.id, organizationId }, select: EDIT_ROW });
           if (anchor && dto.expectedUpdatedAt && new Date(dto.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new MeetingRefusal('MEETING_CHANGED');
-          const keep = anchor ? [] : SERIES_FIELDS.filter((f) => wanted[f] !== undefined && row.ownEdits.includes(f));
-          const fields = SERIES_FIELDS.filter((f) => wanted[f] !== undefined && !keep.includes(f) && wanted[f] !== row[f]);
-          const data: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, wanted[f]]));
-          if (anchor && dto.title !== undefined && dto.title.trim() !== row.title) data['title'] = dto.title.trim();
-          const location = 'location' in data ? data['location'] : row.location;
-          const link = 'meetingUrl' in data ? data['meetingUrl'] : row.meetingUrl;
-          if (!location && !link) throw new MeetingRefusal('MEETING_PLACE_REQUIRED');
+          const { keep, data } = planEdit(row, anchor, wanted, dto.title);
           if (keep.length > 0) scope.kept.push({ meetingId: target.id, title: row.title, fields: keep });
           if (Object.keys(data).length === 0) continue;
-          // The anchor's change is the series': its own edits of those fields are no longer its own.
-          if (anchor) data['ownEdits'] = row.ownEdits.filter((f) => !(f in data));
           await tx.meeting.update({ where: { id: target.id }, data: data as Prisma.MeetingUpdateInput });
           await tx.auditLog.create({
             data: {
@@ -406,7 +443,7 @@ export class MeetingSeriesService {
     await this.prisma
       .$transaction(async (tx) => {
         // 1. Lock each (id order) and read it under its lock.
-        const locked: { id: string; title: string; scheduledAt: Date; ownEdits: string[]; seriesIndex: number }[] = [];
+        const rows: MovingRow[] = [];
         for (const t of targets) {
           const anchor = t.id === id;
           const rules = await this.stageRules.currentStageRules('MEETING', t.id, organizationId, tx, { lock: 'share' });
@@ -415,56 +452,22 @@ export class MeetingSeriesService {
             continue;
           }
           await lockMeetingRow(tx, t.id, organizationId);
-          const row = await tx.meeting.findFirstOrThrow({
-            where: { id: t.id, organizationId },
-            select: { title: true, scheduledAt: true, ownEdits: true, updatedAt: true, seriesIndex: true },
-          });
+          const row = await tx.meeting.findFirstOrThrow({ where: { id: t.id, organizationId }, select: MOVE_ROW });
           if (anchor && dto.expectedUpdatedAt && new Date(dto.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new MeetingRefusal('MEETING_CHANGED');
-          if (!anchor && row.ownEdits.includes('scheduledAt')) {
-            scope.kept.push({ meetingId: t.id, title: row.title, fields: ['scheduledAt'] });
-            continue;
-          }
-          locked.push({ id: t.id, title: row.title, scheduledAt: row.scheduledAt, ownEdits: row.ownEdits, seriesIndex: row.seriesIndex ?? 0 });
+          rows.push({ id: t.id, title: row.title, scheduledAt: row.scheduledAt, ownEdits: row.ownEdits, seriesIndex: row.seriesIndex ?? 0, durationMinutes: row.durationMinutes });
         }
-        const anchorRow = locked.find((l) => l.id === id);
-        if (!anchorRow) return;
-        if (toAt.getTime() === anchorRow.scheduledAt.getTime()) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
-        // The anchor's move in the organisation's zone, as people read it: a
-        // number of calendar days and a wall-clock change, never elapsed time,
-        // so a clock change between two meetings doesn't move their hour.
-        const from = DateTime.fromJSDate(anchorRow.scheduledAt).setZone(zone);
-        const to = DateTime.fromJSDate(toAt).setZone(zone);
-        const dayShift = Math.round((Date.parse(`${to.toISODate()}T00:00:00Z`) - Date.parse(`${from.toISODate()}T00:00:00Z`)) / 86_400_000);
-        const minuteShift = to.hour * 60 + to.minute - (from.hour * 60 + from.minute);
-
-        // 2. The days the owner already meets on, other than the meetings moving now.
-        const moving = new Set(locked.map((l) => l.id));
-        const taken = await this.ownerDays(tx, organizationId, targets[0]!.owner, moving, zone, toAt);
-
-        // 3. Each new time, in series order, then the writes.
-        for (const l of [...locked].sort((x, y) => x.seriesIndex - y.seriesIndex)) {
-          let at = toAt;
-          if (l.id !== id) {
-            const wall = DateTime.fromJSDate(l.scheduledAt).setZone(zone);
-            const minutes = wall.hour * 60 + wall.minute + minuteShift;
-            const carry = Math.floor(minutes / 1440);
-            const minuteOfDay = ((minutes % 1440) + 1440) % 1440;
-            const shiftedDay = DateTime.fromISO(wall.toISODate()!, { zone: 'UTC' }).plus({ days: dayShift + carry }).toISODate()!;
-            let day = await this.calendar.nextWorkingDay(shiftedDay, organizationId);
-            for (let step = 0; taken.has(day) && step < MOVE_LIMIT; step++) {
-              day = await this.calendar.nextWorkingDay(DateTime.fromISO(day, { zone: 'UTC' }).plus({ days: 1 }).toISODate()!, organizationId);
-            }
-            at = DateTime.fromISO(day, { zone }).set({ hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60 }).toJSDate();
-            if (at <= now) continue;
-          }
-          taken.add(DateTime.fromJSDate(at).setZone(zone).toISODate()!);
-          if (at.getTime() === l.scheduledAt.getTime()) continue;
+        // 2. Where each goes: the one placement rule, shared with the preview.
+        const placed = await this.placeLater(tx, id, toAt, rows, targets[0]!.owner, zone, organizationId, now);
+        if (!placed) return;
+        scope.kept.push(...placed.kept);
+        // 3. The writes.
+        for (const m of placed.moves) {
           await tx.meetingReschedule.create({
-            data: { organizationId, meetingId: l.id, fromAt: l.scheduledAt, toAt: at, reason, scope: 'THIS_AND_LATER', actorId: viewer.id },
+            data: { organizationId, meetingId: m.id, fromAt: m.fromAt, toAt: m.at, reason, scope: 'THIS_AND_LATER', actorId: viewer.id },
           });
           await tx.meeting.update({
-            where: { id: l.id },
-            data: { scheduledAt: at, ...(l.id === id && { ownEdits: l.ownEdits.filter((f) => f !== 'scheduledAt') }) },
+            where: { id: m.id },
+            data: { scheduledAt: m.at, ...(m.id === id && { ownEdits: m.ownEdits.filter((f) => f !== 'scheduledAt') }) },
           });
           await tx.auditLog.create({
             data: {
@@ -472,14 +475,14 @@ export class MeetingSeriesService {
               actorId: viewer.id,
               action: 'UPDATE',
               objectType: 'Meeting',
-              objectId: l.id,
-              before: { scheduledAt: l.scheduledAt.toISOString() },
-              after: { scheduledAt: at.toISOString() },
+              objectId: m.id,
+              before: { scheduledAt: m.fromAt.toISOString() },
+              after: { scheduledAt: m.at.toISOString() },
               metadata: { change: 'reschedule', scope: 'THIS_AND_LATER', from: id, reason },
             },
           });
-          scope.changed.push(l.id);
-          told.push({ id: l.id, title: l.title, at });
+          scope.changed.push(m.id);
+          told.push({ id: m.id, title: m.title, at: m.at });
         }
       }, SERIES_TX)
       .catch((error: unknown) => asMeetingConflict(error));
@@ -488,16 +491,167 @@ export class MeetingSeriesService {
     return { ...(await this.meetings.getForViewer(id, organizationId, viewer, now)), scope };
   }
 
+  /**
+   * PR 8-be (P236, Q2) — WHAT "THIS AND ALL LATER" WOULD DO, before Apply: the
+   * meetings it reaches with their times as they'd be, what each keeps as its
+   * own, and the clashes at those times. For the scope confirm.
+   *
+   * It runs the write's own decisions (`planEdit()` for an edit,
+   * `placeLater()` for a reschedule) on the same rows, read WITHOUT a lock, and
+   * writes nothing. The same "who may ask" as the write (`writing()`: the same
+   * 404 for a meeting the asker can't see, MEETING_NOT_ALLOWED otherwise), the
+   * same refusals, and bounded by the series' size (53).
+   *
+   * Clashes are asked of the anchor's invitees (in a series, the owner's
+   * members) at each meeting's new time; a "clash" with a meeting that is itself
+   * moving is left out, since it won't be there.
+   */
+  async scopePreview(id: string, dto: MeetingScopePreviewDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingScopePreview> {
+    const owner = await this.access.writing(id, organizationId, viewer, now);
+    const action = dto.change === 'RESCHEDULE' ? MEETING_ACTIONS.RESCHEDULE : MEETING_ACTIONS.EDIT_DETAILS;
+    let toAt: Date | null = null;
+    if (dto.change === 'RESCHEDULE') {
+      // The DTO requires scheduledAt for a reschedule.
+      toAt = new Date(dto.scheduledAt!);
+      if (toAt <= now) throw new MeetingRefusal('MEETING_TIME_IN_PAST');
+    } else {
+      await this.assertEditable(dto, owner, organizationId);
+    }
+    const targets = await this.laterMeetings(id, organizationId, now, action);
+    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', targets.map((t) => t.id));
+    if (rules.get(id)?.actions[action] !== true) await this.stageRules.assertStageAllows('MEETING', id, action, organizationId);
+    const allowed = targets.filter((t) => rules.get(t.id)?.actions[action] === true);
+    const rows = await this.prisma.meeting.findMany({
+      where: { organizationId, id: { in: allowed.map((t) => t.id) } },
+      select: { ...EDIT_ROW, ...MOVE_ROW },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    const meetings: IMeetingScopePreview['meetings'] = [];
+    const kept: IMeetingScopePreview['kept'] = [];
+    if (dto.change === 'RESCHEDULE') {
+      const zone = await this.calendar.getEffectiveTimeZone(organizationId);
+      const moving: MovingRow[] = allowed
+        .map((t) => byId.get(t.id))
+        .filter((r): r is NonNullable<typeof r> => !!r)
+        .map((r) => ({ id: r.id, title: r.title, scheduledAt: r.scheduledAt, ownEdits: r.ownEdits, seriesIndex: r.seriesIndex ?? 0, durationMinutes: r.durationMinutes }));
+      const placed = await this.placeLater(this.prisma, id, toAt!, moving, targets[0]!.owner, zone, organizationId, now);
+      if (placed) {
+        for (const m of placed.moves) meetings.push({ id: m.id, title: m.title, startsAt: m.at, durationMinutes: m.durationMinutes ?? DEFAULT_MINUTES });
+        for (const k of placed.kept) kept.push({ ...k, startsAt: byId.get(k.meetingId)!.scheduledAt });
+      }
+    } else {
+      const wanted = wantedFields(dto);
+      for (const t of allowed) {
+        const row = byId.get(t.id);
+        if (!row) continue;
+        const { keep, data } = planEdit(row, t.id === id, wanted, undefined);
+        if (keep.length > 0) kept.push({ meetingId: t.id, title: row.title, fields: keep, startsAt: row.scheduledAt });
+        if (Object.keys(data).length === 0) continue;
+        meetings.push({ id: t.id, title: row.title, startsAt: row.scheduledAt, durationMinutes: (data['durationMinutes'] as number | undefined) ?? row.durationMinutes ?? DEFAULT_MINUTES });
+      }
+    }
+    meetings.sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime());
+
+    // The clashes at the times as they'd be; never with a meeting that is itself moving.
+    const movingIds = new Set(meetings.map((m) => m.id));
+    const clashes =
+      meetings.length === 0
+        ? []
+        : (
+            await this.clashes.check(
+              { meetingId: id, times: meetings.map((m) => ({ startsAt: m.startsAt.toISOString(), durationMinutes: m.durationMinutes })) } as CheckMeetingClashesDto,
+              organizationId,
+              viewer,
+              now,
+            )
+          )
+            .map((c) => ({ ...c, people: c.people.map((p) => ({ ...p, meetings: p.meetings.filter((o) => !o.id || !movingIds.has(o.id)) })).filter((p) => p.meetings.length > 0) }))
+            .filter((c) => c.people.length > 0);
+    return { meetings, kept, clashes };
+  }
+
+  /** An edit's own refusals, before anything is read: the title, the type, a quorum on a committee meeting. */
+  private async assertEditable(dto: Pick<UpdateMeetingDto, 'title' | 'typeValueId' | 'unitQuorum'>, owner: MeetingOwner, organizationId: string): Promise<void> {
+    if (dto.title !== undefined && !dto.title.trim()) throw new MeetingRefusal('MEETING_TITLE_REQUIRED');
+    if (dto.typeValueId !== undefined) await this.meetings.assertMeetingType(dto.typeValueId, organizationId);
+    if (owner.committeeId && dto.unitQuorum != null) throw new MeetingRefusal('MEETING_QUORUM_UNIT_ONLY');
+  }
+
+  /**
+   * THE PLACEMENT RULE for "this and all later" reschedules, ONE copy, used by
+   * the write (on rows read under their locks) and the preview (on rows read
+   * without one). The anchor's move as people read it, in the organisation's
+   * zone: a number of calendar days and a wall-clock change, never elapsed
+   * time, so a clock change between two meetings doesn't move their hour. Each
+   * later meeting then moves by it, off a day that isn't a working day and past
+   * a day the owner already meets. A later meeting rescheduled on its own keeps
+   * its time (`kept`); one whose new time would be past, or unchanged, isn't
+   * moved. Null when the anchor itself isn't among the rows.
+   */
+  private async placeLater(
+    client: Pick<EngineTx, 'meeting' | 'workflowInstance' | 'workflowStage' | 'workflowStageRecordAction'>,
+    id: string,
+    toAt: Date,
+    rows: MovingRow[],
+    owner: { committeeId: string | null; orgUnitId: string | null },
+    zone: string,
+    organizationId: string,
+    now: Date,
+  ): Promise<{ moves: (MovingRow & { fromAt: Date; at: Date })[]; kept: IMeetingScopeResult['kept'] } | null> {
+    const kept: IMeetingScopeResult['kept'] = [];
+    const locked = rows.filter((r) => {
+      if (r.id !== id && r.ownEdits.includes('scheduledAt')) {
+        kept.push({ meetingId: r.id, title: r.title, fields: ['scheduledAt'] });
+        return false;
+      }
+      return true;
+    });
+    const anchorRow = locked.find((l) => l.id === id);
+    if (!anchorRow) return null;
+    if (toAt.getTime() === anchorRow.scheduledAt.getTime()) throw new MeetingRefusal('MEETING_RESCHEDULE_SAME_TIME');
+    const from = DateTime.fromJSDate(anchorRow.scheduledAt).setZone(zone);
+    const to = DateTime.fromJSDate(toAt).setZone(zone);
+    const dayShift = Math.round((Date.parse(`${to.toISODate()}T00:00:00Z`) - Date.parse(`${from.toISODate()}T00:00:00Z`)) / 86_400_000);
+    const minuteShift = to.hour * 60 + to.minute - (from.hour * 60 + from.minute);
+
+    // The days the owner already meets on, other than the meetings moving now.
+    const moving = new Set(locked.map((l) => l.id));
+    const taken = await this.ownerDays(client, organizationId, owner, moving, zone, toAt);
+
+    const moves: (MovingRow & { fromAt: Date; at: Date })[] = [];
+    for (const l of [...locked].sort((x, y) => x.seriesIndex - y.seriesIndex)) {
+      let at = toAt;
+      if (l.id !== id) {
+        const wall = DateTime.fromJSDate(l.scheduledAt).setZone(zone);
+        const minutes = wall.hour * 60 + wall.minute + minuteShift;
+        const carry = Math.floor(minutes / 1440);
+        const minuteOfDay = ((minutes % 1440) + 1440) % 1440;
+        const shiftedDay = DateTime.fromISO(wall.toISODate()!, { zone: 'UTC' }).plus({ days: dayShift + carry }).toISODate()!;
+        let day = await this.calendar.nextWorkingDay(shiftedDay, organizationId);
+        for (let step = 0; taken.has(day) && step < MOVE_LIMIT; step++) {
+          day = await this.calendar.nextWorkingDay(DateTime.fromISO(day, { zone: 'UTC' }).plus({ days: 1 }).toISODate()!, organizationId);
+        }
+        at = DateTime.fromISO(day, { zone }).set({ hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60 }).toJSDate();
+        if (at <= now) continue;
+      }
+      taken.add(DateTime.fromJSDate(at).setZone(zone).toISODate()!);
+      if (at.getTime() === l.scheduledAt.getTime()) continue;
+      moves.push({ ...l, fromAt: l.scheduledAt, at });
+    }
+    return { moves, kept };
+  }
+
   /** The days (organisation's zone) the owner has a meeting that isn't cancelled and isn't one of `except`, from `from` for a year. */
   private async ownerDays(
-    tx: EngineTx,
+    client: Pick<EngineTx, 'meeting' | 'workflowInstance' | 'workflowStage' | 'workflowStageRecordAction'>,
     organizationId: string,
     owner: { committeeId: string | null; orgUnitId: string | null },
     except: ReadonlySet<string>,
     zone: string,
     from: Date,
   ): Promise<Set<string>> {
-    const rows = await tx.meeting.findMany({
+    const rows = await client.meeting.findMany({
       where: {
         organizationId,
         ...(owner.committeeId ? { committeeId: owner.committeeId } : { committeeId: null, orgUnitId: owner.orgUnitId }),
@@ -506,7 +660,7 @@ export class MeetingSeriesService {
       },
       select: { id: true, scheduledAt: true },
     });
-    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id), tx);
+    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id), client);
     return new Set(
       rows.filter((r) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED)).map((r) => DateTime.fromJSDate(r.scheduledAt).setZone(zone).toISODate()!),
     );

@@ -20,7 +20,7 @@ import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
 import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
-import { COMMITTEE_ACTIONS, MEETING_ACTIONS } from '../workflow/record-registry';
+import { COMMITTEE_ACTIONS, MEETING_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { committeeTypeValues } from '../committees/committee-type-values';
 import { SEAT_ACTIONS } from '../committees/seat-actions';
@@ -200,17 +200,32 @@ export class MeetingsService {
         organizer: { select: { id: true, name: true } },
         reschedules: { orderBy: { createdAt: 'desc' }, take: 1, select: { fromAt: true, reason: true, createdAt: true } },
         seriesIndex: true,
-        series: { select: { id: true, every: true, endedAt: true, _count: { select: { meetings: true } } } },
+        series: {
+          select: {
+            id: true,
+            every: true,
+            onKind: true,
+            weekday: true,
+            dayOfMonth: true,
+            ordinal: true,
+            firstDate: true,
+            endsOn: true,
+            count: true,
+            endedAt: true,
+            _count: { select: { meetings: true } },
+          },
+        },
       },
     });
     if (!meeting) throw new NotFoundException(NOT_FOUND);
 
     const owner: MeetingOwner = { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
-    const [rules, types, scheduler, mine] = await Promise.all([
+    const [rules, types, scheduler, mine, neighbours] = await Promise.all([
       this.stageRules.currentStageRules('MEETING', id, organizationId),
       committeeTypeValues(this.prisma, organizationId, [meeting.typeValueId], MEETING_TYPE),
       isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
       this.prisma.meetingAttendee.findFirst({ where: { organizationId, meetingId: id, userId: viewer.id }, select: { answer: true, answerNote: true } }),
+      meeting.series ? this.seriesNeighbours(meeting.series.id, id, organizationId, viewer, now) : Promise.resolve({ previousId: null, nextId: null }),
     ]);
     // ACC-316 PR 3b — the answers' summary, only for whoever may edit the meeting.
     const answers = scheduler ? await meetingAnswerSummary(this.prisma, id, organizationId, meeting.committee?.quorumCount ?? meeting.unitQuorum ?? null) : null;
@@ -241,9 +256,57 @@ export class MeetingsService {
       answers,
       myAnswer: mine ? { answer: mine.answer, note: mine.answerNote } : null,
       series: meeting.series
-        ? { id: meeting.series.id, index: meeting.seriesIndex ?? 0, total: meeting.series._count.meetings, every: meeting.series.every, ended: meeting.series.endedAt !== null }
+        ? {
+            id: meeting.series.id,
+            index: meeting.seriesIndex ?? 0,
+            total: meeting.series._count.meetings,
+            every: meeting.series.every,
+            ended: meeting.series.endedAt !== null,
+            // PR 8-be (P236, Q1) — what the header's readback needs.
+            on: { kind: meeting.series.onKind, weekday: meeting.series.weekday, dayOfMonth: meeting.series.dayOfMonth, ordinal: meeting.series.ordinal },
+            firstDate: meeting.series.firstDate.toISOString().slice(0, 10),
+            endsOn: meeting.series.endsOn?.toISOString().slice(0, 10) ?? null,
+            count: meeting.series.count,
+            previousId: neighbours.previousId,
+            nextId: neighbours.nextId,
+          }
         : null,
     };
+  }
+
+  /**
+   * PR 8-be (P236, Q1) — the series' previous and next meetings for the
+   * header's links: the nearest ones not cancelled, and only ones this viewer
+   * may open (the parent rule, `MeetingAccess.canSee()`, never a second copy),
+   * else null. One indexed read of the series' meetings in order, their stages
+   * in one batch, then the rule for each candidate outward until one is open,
+   * so bounded by the series' size (53).
+   */
+  private async seriesNeighbours(
+    seriesId: string,
+    id: string,
+    organizationId: string,
+    viewer: MeetingViewer,
+    now: Date,
+  ): Promise<{ previousId: string | null; nextId: string | null }> {
+    const rows = await this.prisma.meeting.findMany({
+      where: { organizationId, seriesId },
+      orderBy: [{ seriesIndex: 'asc' }, { scheduledAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    const at = rows.findIndex((r) => r.id === id);
+    if (at < 0) return { previousId: null, nextId: null };
+    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.filter((r) => r.id !== id).map((r) => r.id));
+    const live = (r: { id: string }) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED);
+    const firstOpen = async (candidates: { id: string }[]): Promise<string | null> => {
+      for (const c of candidates) {
+        if (!live(c)) continue;
+        if (await this.access.canSee(c.id, organizationId, viewer, now)) return c.id;
+      }
+      return null;
+    };
+    const [previousId, nextId] = await Promise.all([firstOpen(rows.slice(0, at).reverse()), firstOpen(rows.slice(at + 1))]);
+    return { previousId, nextId };
   }
 
   private ownerOf(m: {

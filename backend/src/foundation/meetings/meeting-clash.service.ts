@@ -15,8 +15,8 @@ import type { IMeetingClash } from './interfaces/meeting.interface';
 /** A series' cap: the most times one check takes. */
 // ACC-316 PR 5 — a series' most meetings (weekly for twelve months, both ends included).
 export const CLASH_TIMES_CAP = 53;
-/** A meeting saved before durations were required is taken as an hour. */
-const DEFAULT_MINUTES = 60;
+/** A meeting saved before durations were required is taken as an hour (here and in the scope preview). */
+export const DEFAULT_MINUTES = 60;
 /** The longest a meeting may last (ScheduleMeetingDto): how far before a time another meeting may start and still overlap it. */
 const MAX_MINUTES = 1440;
 
