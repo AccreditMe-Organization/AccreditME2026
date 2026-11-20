@@ -1702,7 +1702,10 @@ them together with their resolver.
        stays at every width; (6) no task status on the print. `approvedBy` is
        read with the minutes, organisation-scoped, with the seat held at
        approval from the membership ledger (else the current seat).
-     - **7d-1 as built:** SYSTEM-REFERENCE §18.20. **7d-2:** the phone pass.
+     - **7d-1 as built:** SYSTEM-REFERENCE §18.20. **7d-2 as built:** §18.21,
+       the phone by container queries: the meeting page's side cards above the
+       agenda and 44px buttons, the banner's answers full-width with the
+       primary first, and `/meetings` as cards.
    - **Live after 7d:** the whole single meeting, to approved minutes and tasks.
 8. **PR 8: screens, part 3, series.**
    - Step 2 Repeat with its preview, the series line and view, the scope
