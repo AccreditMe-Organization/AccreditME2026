@@ -11,6 +11,7 @@ import type { PreparedTask } from '../task/task.service';
 import { ACTION_ITEM_PRIORITY, draftActionItems } from './meeting-minutes-rules';
 import { lockMeetingRow } from './meeting-access';
 import { MeetingRefusal } from './meeting-refusal';
+import { discardAllMeetingAi } from './ai/meeting-ai-cleanup';
 
 /**
  * ACC-316 — what entering a meeting's stages does (TRANSITION_EFFECTS, plan
@@ -21,7 +22,8 @@ import { MeetingRefusal } from './meeting-refusal';
  *                  get the invitation in the app and by email, outside guests
  *                  by email in the organisation's language (PR 3b).
  *   Cancelled      everyone invited is told, with the reason; outside guests
- *                  by email, only if they were invited.
+ *                  by email, only if they were invited. Every AI suggestion
+ *                  and every rough note is deleted (ACC-322).
  *   Minutes        (PR 4) every action item still a draft becomes a task, its
  *   Approved       owner the only assignee, due when the draft says; the
  *                  meeting is stamped approved. The move's own transaction:
@@ -131,6 +133,8 @@ const cancelled = transitionEffect<Invited | null>({
         where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, invitedAt: { not: null } },
         select: { userId: true, kind: true, outsideEmail: true },
       }),
+      // ACC-322 — nothing AI outlives a cancelled meeting.
+      discardAllMeetingAi(tx, ctx.objectId, ctx.organizationId),
     ]);
     return { ...meeting, ...split(rows) };
   },

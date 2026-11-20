@@ -92,6 +92,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get meetingSuggestion() { return this._client.meetingSuggestion; }
   get meetingReviewChange() { return this._client.meetingReviewChange; }
   get meetingReschedule() { return this._client.meetingReschedule; }
+  // ACC-322 — Meetings AI.
+  get meetingAiNotes() { return this._client.meetingAiNotes; }
+  get meetingAiSuggestion() { return this._client.meetingAiSuggestion; }
+  get meetingAiRun() { return this._client.meetingAiRun; }
   get auditLog() { return this._client.auditLog; }
   get aiInteractionLog() { return this._client.aiInteractionLog; }
   get authUser() { return this._client.authUser; }
