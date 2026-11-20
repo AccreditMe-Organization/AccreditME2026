@@ -43,9 +43,20 @@ const MINUTES = aMinutes({
   ],
   quorum: { quorum: 2, presentMembers: 2, met: true },
   items: [aMinutesItem({ discussion: 'Room 3 is closed for maintenance until the filters are replaced.' })],
-  review: { round: 1, reviewBy: '2027-03-25', datePassed: false, closed: false, reviewers: [{ userId: 'u-1', name: 'Dr. Nora Al-Otaibi', answered: false }], suggestions: [], changes: [], mine: null },
+  review: {
+    round: 1,
+    reviewBy: '2027-03-25',
+    datePassed: false,
+    closed: false,
+    reviewers: [{ userId: 'u-1', name: 'Dr. Nora Al-Otaibi', answered: false }],
+    // A whole-minutes suggestion the viewer may apply: the review card (a side
+    // card) then has controls, so the tab order can be measured.
+    suggestions: [{ id: 's-1', round: 1, agendaItemId: null, author: { id: 'u-2', name: 'Huda Al-Harbi' }, text: 'Add the apologies received.', status: 'OPEN', reply: null, createdAt: '2027-03-19T08:00:00.000Z', decidedAt: null }],
+    changes: [],
+    mine: null,
+  },
   distribute: null,
-  may: { recordAttendance: false, recordMinutes: false, distribute: false, returnForCorrection: false, review: true, applySuggestions: false, changeActionDates: false },
+  may: { recordAttendance: false, recordMinutes: false, distribute: false, returnForCorrection: false, review: true, applySuggestions: true, changeActionDates: false },
 });
 
 describe('Meeting page — phone 390, measured (ACC-316 PR 7d-2)', () => {
@@ -137,6 +148,19 @@ describe('Meeting page — phone 390, measured (ACC-316 PR 7d-2)', () => {
       for (const b of buttons) expect(box(b).height).withContext(`"${b.textContent?.trim()}" height`).toBeGreaterThanOrEqual(44 - 0.5);
 
       expect(page.scrollWidth).withContext('nothing wider than the phone').toBeLessThanOrEqual(box(page).width + 0.5);
+
+      // P233 — the tab order is the order on screen (WCAG 2.4.3): from the top
+      // of the page, Tab reaches a side-card control before the first agenda one.
+      // With no positive tabindex, Tab follows the DOM order of these.
+      const focusable = Array.from(
+        page.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]'),
+      ).filter((el) => el.tabIndex >= 0 && el.offsetParent !== null);
+      expect(focusable.some((el) => el.tabIndex > 0)).withContext('no positive tabindex').toBeFalse();
+      const firstIn = (container: Element) => focusable.findIndex((el) => container.contains(el));
+      const main = host.querySelector('[data-testid="meeting-main"]')!;
+      expect(firstIn(side)).withContext('a side-card control is focusable').toBeGreaterThanOrEqual(0);
+      expect(firstIn(main)).withContext('an agenda control is focusable').toBeGreaterThanOrEqual(0);
+      expect(firstIn(side)).withContext('Tab reaches the side cards before the agenda').toBeLessThan(firstIn(main));
       measured.push(`[${language}, 390] side ${Math.round(box(side).top)}–${Math.round(box(side).bottom)}, agenda from ${Math.round(box(agenda).top)}; answers ${Math.round(box(primary).width)}px wide; ${buttons.length} buttons ≥ 44px`);
     }, 60_000);
 
@@ -147,6 +171,16 @@ describe('Meeting page — phone 390, measured (ACC-316 PR 7d-2)', () => {
       expect(box(side).width).toBeGreaterThan(0);
       expect(Math.abs(box(side).top - box(agenda).top)).withContext('the same row').toBeLessThan(1);
       expect(box(side).width).withContext('two columns').toBeLessThan(700);
+      // P233 — the agenda is at inline-start: left in English, right in Arabic,
+      // though the side column now comes first in the DOM.
+      if (language === 'en') expect(box(agenda).left).withContext('the agenda on the left').toBeLessThan(box(side).left);
+      else expect(box(agenda).right).withContext('the agenda on the right').toBeGreaterThan(box(side).right);
+      // P233 — the banner's order on a wide page is pinned: "No corrections" first.
+      const primary = host.querySelector('[data-testid="meeting-review-no-corrections"] .p-button')!;
+      const suggest = host.querySelector('[data-testid="meeting-review-suggest"] .p-button')!;
+      expect(primary.compareDocumentPosition(suggest) & Node.DOCUMENT_POSITION_FOLLOWING).withContext('No corrections first in the DOM').toBeTruthy();
+      if (language === 'en') expect(box(primary).left).withContext('No corrections at inline-start').toBeLessThan(box(suggest).left);
+      else expect(box(primary).right).withContext('No corrections at inline-start').toBeGreaterThan(box(suggest).right);
       measured.push(`[${language}, 1280] two columns, side ${Math.round(box(side).width)}px`);
     }, 60_000);
   }

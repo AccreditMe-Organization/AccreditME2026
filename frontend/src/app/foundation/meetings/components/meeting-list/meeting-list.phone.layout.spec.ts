@@ -96,7 +96,9 @@ describe('Meetings list — phone 390, measured (ACC-316 PR 7d-2)', () => {
       const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-meeting-row]'));
       expect(rows.length).withContext('rows drawn').toBe(3);
       const row = rows[0]!;
-      const [title, when, stage] = Array.from(row.children).filter((c) => (c as HTMLElement).offsetParent !== null) as HTMLElement[];
+      const title = row.firstElementChild as HTMLElement;
+      const when = row.querySelector<HTMLElement>('[data-meeting-when]')!;
+      const stage = row.querySelector<HTMLElement>('[data-meeting-stage]')!;
       for (const [name, el] of [['row', row], ['title', title], ['when', when], ['stage', stage]] as const) {
         expect(el).withContext(name).toBeTruthy();
         expect(box(el!).height).withContext(`${name} height`).toBeGreaterThan(0);
@@ -106,6 +108,15 @@ describe('Meetings list — phone 390, measured (ACC-316 PR 7d-2)', () => {
       expect(box(row).height).withContext('a 44px target').toBeGreaterThanOrEqual(44);
       const heads = Array.from(host.querySelectorAll<HTMLElement>('.am-ml__head')).filter((h) => h.offsetParent !== null);
       expect(heads.length).withContext('no column headers').toBe(0);
+      // P233 — the header row goes with them: no padding or border left behind.
+      const headerRow = host.querySelector<HTMLElement>('.am-dl__head');
+      expect(headerRow).withContext('the header row exists').not.toBeNull();
+      expect(getComputedStyle(headerRow!).display).withContext('the header row hidden').toBe('none');
+      // P233 — each card's When and Stage still carry their column's name.
+      const label = (key: 'when' | 'stage') => (language === 'en' ? en : ar).meeting.list.col[key];
+      const whenCell = row.querySelector('[data-meeting-when]')!;
+      expect(whenCell.textContent).withContext('When named').toContain(label('when'));
+      expect(row.querySelector('[data-meeting-stage-name]')?.textContent?.trim()).withContext('Stage named').toBe(label('stage'));
       expect(page.scrollWidth).withContext('nothing wider than the phone').toBeLessThanOrEqual(box(page).width + 0.5);
       expect(box(page).width).toBeLessThanOrEqual(390);
       measured.push(`[${language}, 390] row ${Math.round(box(row).height)}px tall; title, when, stage stacked`);

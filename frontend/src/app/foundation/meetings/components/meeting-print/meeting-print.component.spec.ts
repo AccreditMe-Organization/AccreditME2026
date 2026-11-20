@@ -14,6 +14,8 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { aMeeting, aMinutes, aMinutesItem, anAttendanceRow, anAttendee } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingMinutesDto } from '../../services/meeting.service';
 import { MeetingPrintComponent } from './meeting-print.component';
+import { IdleService } from '../../../../core/services/idle.service';
+import { SessionLimitService } from '../../../../core/services/session-limit.service';
 import { routes } from '../../../../app.routes';
 
 // ACC-316 PR 7d-1 — the approved minutes on A4: what's printed, in which
@@ -23,6 +25,8 @@ import { routes } from '../../../../app.routes';
 describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
   preserveDocumentLanguage();
   let minutesRead: () => Observable<MeetingMinutesDto>;
+  let idle: { start: jasmine.Spy; warningVisible: ReturnType<typeof signal<boolean>> };
+  let sessionLimit: { start: jasmine.Spy; stop: jasmine.Spy; warningVisible: ReturnType<typeof signal<boolean>> };
 
   const APPROVED = (over: Partial<MeetingMinutesDto> = {}): MeetingMinutesDto =>
     aMinutes({
@@ -51,6 +55,8 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
     });
 
   function create(language: 'en' | 'ar' = 'en') {
+    idle = { start: jasmine.createSpy('idle.start'), warningVisible: signal(false) };
+    sessionLimit = { start: jasmine.createSpy('sessionLimit.start'), stop: jasmine.createSpy('sessionLimit.stop'), warningVisible: signal(false) };
     TestBed.configureTestingModule({
       imports: [MeetingPrintComponent],
       providers: [
@@ -61,6 +67,8 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
         providePrimeNG({}),
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'm-1' }) } } },
         { provide: NavigationAccessService, useValue: { tenantName: signal('Al Nakheel Specialist Hospital') } },
+        { provide: IdleService, useValue: idle },
+        { provide: SessionLimitService, useValue: sessionLimit },
         {
           provide: MeetingService,
           useValue: {
@@ -164,6 +172,16 @@ describe('MeetingPrintComponent (ACC-316 PR 7d-1)', () => {
     const { el } = create();
     expect(q(el, 'meeting-print-not-found')).not.toBeNull();
     expect(q(el, 'meeting-print-not-approved')).toBeNull();
+  });
+
+  // P232 — outside the shell, so the page runs the shell's session clocks itself.
+  it('starts the idle clock and the 12-hour limit as the shell does, and stops the limit when the page goes', () => {
+    const { fixture } = create();
+    expect(idle.start).toHaveBeenCalledTimes(1);
+    expect(sessionLimit.start).toHaveBeenCalledTimes(1);
+    expect(sessionLimit.stop).not.toHaveBeenCalled();
+    fixture.destroy();
+    expect(sessionLimit.stop).toHaveBeenCalledTimes(1);
   });
 
   it("Print opens the browser's print", () => {
