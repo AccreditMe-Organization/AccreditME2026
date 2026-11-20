@@ -86,12 +86,15 @@ const PAGE = 25;
                 </span>
               }
               @if (v('when')) {
-                <span class="flex min-w-0 flex-col">
+                <span class="flex min-w-0 flex-col" data-meeting-when>
+                  <!-- P233 — each cell names its column, so a phone card (no headers) still reads "When …". -->
+                  <span class="sr-only">{{ columnLabel('when') }}</span>
                   <span class="text-[13px]">{{ format.dateTime(m.scheduledAt) }}</span>
                   <span class="text-meta text-[var(--am-ink-500)] truncate">{{ format.hijri(m.scheduledAt) }} · {{ format.weekday(m.scheduledAt, 'short') }}</span>
                 </span>
               }
               @if (v('stage')) {
+                <span class="sr-only" data-meeting-stage-name>{{ columnLabel('stage') }}</span>
                 <span
                   class="justify-self-start text-[11.5px] font-medium px-2 py-px rounded-full border"
                   [class.text-[var(--am-ink-500)]]="closed(m)"
@@ -100,7 +103,7 @@ const PAGE = 25;
                   >{{ stage(m) }}</span
                 >
               }
-              <span></span>
+              <span class="am-ml__trail"></span>
             </div>
           </ng-template>
         </app-data-list>
@@ -115,7 +118,8 @@ const PAGE = 25;
        * owner, when with Hijri, then the stage chip, one under another. A
        * CONTAINER query on the page's own width, so a 390px layout spec can
        * measure it. The column headers name columns a card no longer has, so
-       * they are hidden there.
+       * the whole header row is hidden there (its padding and border with it,
+       * P233), and each cell names its column for a screen reader instead.
        */
       .am-ml {
         container: meeting-list / inline-size;
@@ -128,10 +132,11 @@ const PAGE = 25;
           grid-template-columns: minmax(0, 1fr);
           gap: var(--am-space-4);
         }
-        .am-ml__head {
+        .am-ml__head,
+        .am-ml ::ng-deep .am-dl__head {
           display: none;
         }
-        .am-ml__row > span:empty {
+        .am-ml__trail {
           display: none;
         }
       }
@@ -178,6 +183,11 @@ export class MeetingListComponent {
       { key: 'stage', label: this.translate.instant('meeting.list.col.stage'), width: '1fr' },
     ];
   });
+
+  /** A column's name, for the screen-reader text each cell carries (P233). */
+  columnLabel(key: string): string {
+    return this.columns().find((c) => c.key === key)?.label ?? '';
+  }
 
   // An ARROW PROPERTY (data-list reads it as an input). The page and its size become skip and take.
   readonly source: DataListSource<MeetingListItemDto> = (query) => {

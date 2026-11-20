@@ -211,46 +211,9 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
         }
 
         <div class="am-mp__grid grid gap-3" data-testid="meeting-grid">
-          <div class="flex min-w-0 flex-col gap-3">
-            <!-- The agenda, its editor and its papers (PR 7). -->
-            <am-meeting-agenda-panel
-              [meeting]="m"
-              [items]="agenda()"
-              [attendees]="attendees()"
-              [papers]="files().papers"
-              [canManage]="m.may.manageAgenda"
-              (itemsChange)="onAgendaChange($event)"
-              (filesChanged)="loadFiles()"
-              [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
-              (retryRead)="retryRead()"
-              (reload)="load()"
-              [minutes]="minutes()"
-              [openActions]="openActions()"
-              (minutesChange)="minutes.set($event)"
-              (raiseAction)="actionItem.set($event)"
-              (declineSuggestion)="declining.set($event)"
-              (suggestionApplied)="afterReview()"
-            />
-            <!-- General attachments: absent while empty for someone who may not add one. -->
-            @if (m.may.manageAgenda || files().attachments.length > 0) {
-              <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-attachments">
-                <h2 class="m-0 flex items-center gap-2 text-[15px] font-semibold">
-                  {{ 'meeting.files.attachments' | translate }}
-                  <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(files().attachments.length) }}</span>
-                </h2>
-                <am-meeting-file-list
-                  [meetingId]="m.id"
-                  [files]="files().attachments"
-                  [canManage]="m.may.manageAgenda"
-                  addLabel="meeting.files.addAttachment"
-                  [contextLabel]="m.title"
-                  testId="meeting-attachment-list"
-                  (changed)="loadFiles()"
-                />
-              </section>
-            }
-          </div>
-
+          <!-- PR 7d-2 (P233) — the side column comes FIRST in the DOM, so the phone
+               order (side cards above the agenda) is also the tab order (WCAG 2.4.3).
+               On a wider page, grid placement keeps the agenda at inline-start. -->
           @if (minutes(); as mm) {
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
             <div class="am-mp__side flex min-w-0 flex-col gap-3" data-testid="meeting-side">
@@ -316,6 +279,46 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             }
           </section>
           }
+
+          <div class="am-mp__main flex min-w-0 flex-col gap-3" data-testid="meeting-main">
+            <!-- The agenda, its editor and its papers (PR 7). -->
+            <am-meeting-agenda-panel
+              [meeting]="m"
+              [items]="agenda()"
+              [attendees]="attendees()"
+              [papers]="files().papers"
+              [canManage]="m.may.manageAgenda"
+              (itemsChange)="onAgendaChange($event)"
+              (filesChanged)="loadFiles()"
+              [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
+              (retryRead)="retryRead()"
+              (reload)="load()"
+              [minutes]="minutes()"
+              [openActions]="openActions()"
+              (minutesChange)="minutes.set($event)"
+              (raiseAction)="actionItem.set($event)"
+              (declineSuggestion)="declining.set($event)"
+              (suggestionApplied)="afterReview()"
+            />
+            <!-- General attachments: absent while empty for someone who may not add one. -->
+            @if (m.may.manageAgenda || files().attachments.length > 0) {
+              <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-attachments">
+                <h2 class="m-0 flex items-center gap-2 text-[15px] font-semibold">
+                  {{ 'meeting.files.attachments' | translate }}
+                  <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(files().attachments.length) }}</span>
+                </h2>
+                <am-meeting-file-list
+                  [meetingId]="m.id"
+                  [files]="files().attachments"
+                  [canManage]="m.may.manageAgenda"
+                  addLabel="meeting.files.addAttachment"
+                  [contextLabel]="m.title"
+                  testId="meeting-attachment-list"
+                  (changed)="loadFiles()"
+                />
+              </section>
+            }
+          </div>
         </div>
       </div>
 
@@ -381,6 +384,8 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
        * one column: the side column's cards (attendance, the review card, the
        * invitees) come above the agenda, and every button is at least 44px tall
        * (44 x 44 for an icon-only one), in this page and the panels inside it.
+       * The side column is first in the DOM (the phone's order is the tab
+       * order); on a wider page grid placement puts the agenda at inline-start.
        */
       .am-mp {
         container: meeting-page / inline-size;
@@ -388,12 +393,22 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
       .am-mp__grid {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       }
+      .am-mp__main {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .am-mp__side {
+        grid-column: 2;
+        grid-row: 1;
+      }
       @container meeting-page (max-width: 611.98px) {
         .am-mp__grid {
           grid-template-columns: minmax(0, 1fr);
         }
+        .am-mp__main,
         .am-mp__side {
-          order: -1;
+          grid-column: 1;
+          grid-row: auto;
         }
         .am-mp ::ng-deep .p-button {
           min-block-size: 44px;
