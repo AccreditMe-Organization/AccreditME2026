@@ -259,6 +259,13 @@ export interface IMeetingMinutes {
     defaultReviewBy: string;
   } | null;
   approvedAt: Date | null;
+  /**
+   * PR 7d-1 — who approved the minutes, named even after they leave or are
+   * deactivated, with the committee seat they held at approval (the membership
+   * ledger; their current seat where the ledger has nothing that early; null
+   * for a unit meeting). Null before approval.
+   */
+  approvedBy: { id: string; name: string; seat: { id: string; labelEn: string; labelAr: string | null } | null } | null;
   may: {
     recordAttendance: boolean;
     recordMinutes: boolean;

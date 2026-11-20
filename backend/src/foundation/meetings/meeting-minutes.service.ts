@@ -91,12 +91,14 @@ export class MeetingMinutesService {
         quorumAtAttendance: true,
         unitQuorum: true,
         minutesApprovedAt: true,
+        committeeId: true,
+        approvedBy: { select: { id: true, name: true } },
         committee: { select: { quorumCount: true } },
       },
     });
     if (!meeting) throw new MeetingRefusal('MEETING_MINUTES_NOT_OPEN');
     const round = meeting.reviewRound;
-    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked] = await Promise.all([
+    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked, approverSeat] = await Promise.all([
       this.prisma.meetingAttendee.findMany({
         where: { organizationId, meetingId: id },
         select: {
@@ -153,6 +155,9 @@ export class MeetingMinutesService {
       this.openActions(this.prisma, id, organizationId),
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
       writing ? distributeBlockedBy(this.prisma, id, organizationId) : Promise.resolve(null),
+      meeting.minutesApprovedAt && meeting.approvedBy && meeting.committeeId
+        ? approverSeatAt(this.prisma, organizationId, meeting.committeeId, meeting.approvedBy.id, meeting.minutesApprovedAt)
+        : Promise.resolve(null),
     ]);
 
     const quorum = quorumLine(
@@ -223,6 +228,12 @@ export class MeetingMinutesService {
           }
         : null,
       approvedAt: meeting.minutesApprovedAt,
+      // PR 7d-1 — who approved, for the print's approval line: their name even
+      // if they have since left or been deactivated, and the seat they held then.
+      approvedBy:
+        meeting.minutesApprovedAt && meeting.approvedBy
+          ? { id: meeting.approvedBy.id, name: meeting.approvedBy.name, seat: approverSeat }
+          : null,
       may: {
         recordAttendance: recorder && meeting.scheduledAt <= now && rules.actions[MEETING_ACTIONS.RECORD_ATTENDANCE] === true,
         recordMinutes: recorder && rules.actions[MEETING_ACTIONS.RECORD_MINUTES] === true,
@@ -666,5 +677,38 @@ export async function minutesAudit(
 ): Promise<void> {
   await tx.auditLog.create({
     data: { organizationId, actorId, action: 'UPDATE', objectType: 'Meeting', objectId: meetingId, after: { minutes: after } as never },
+  });
+}
+
+/**
+ * PR 7d-1 — the seat the approver held on the committee when the minutes were
+ * approved, read from the membership ledger: the newest event recorded at or
+ * before approval (a LEFT event means no seat). With no event that early (a
+ * membership older than the ledger), their current seat. Null when neither
+ * exists: the approval line then names them without a seat. Organisation-scoped
+ * throughout; at most three indexed reads, and only for approved minutes.
+ */
+async function approverSeatAt(
+  prisma: PrismaService,
+  organizationId: string,
+  committeeId: string,
+  userId: string,
+  approvedAt: Date,
+): Promise<{ id: string; labelEn: string; labelAr: string | null } | null> {
+  const event = await prisma.committeeMembershipEvent.findFirst({
+    where: { organizationId, committeeId, userId, createdAt: { lte: approvedAt } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { action: true, roleValueId: true },
+  });
+  let seatId: string | null;
+  if (event) seatId = event.action === 'LEFT' ? null : event.roleValueId;
+  else {
+    const member = await prisma.committeeMember.findFirst({ where: { organizationId, committeeId, userId }, select: { roleValueId: true } });
+    seatId = member?.roleValueId ?? null;
+  }
+  if (!seatId) return null;
+  return prisma.lookupValue.findFirst({
+    where: { id: seatId, OR: [{ organizationId }, { organizationId: null }] },
+    select: { id: true, labelEn: true, labelAr: true },
   });
 }
