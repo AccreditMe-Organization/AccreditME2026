@@ -1783,6 +1783,7 @@ them together with their resolver.
         `on`, `firstDate`, `endsOn`/`count`, and `previousId`/`nextId` (one
         indexed read of the series' meeting ids in order, only for a series
         meeting).
+        **Decided by lane B (P236): yes. Built in PR 8-be (#388), with previousAt, nextAt and endedAfter added in 8b (#389, P240).**
      2. **[T] The scope confirm needs to know, before Apply, what "this and all
         later" would do:** the range, the meetings it reaches, what each kept,
         and each one's new time for its clashes. Today that's only computed
@@ -1794,12 +1795,14 @@ them together with their resolver.
         answers `{ meetings: [{ id, title, startsAt }], kept: [...], clashes:
         [...] }`, organisation-scoped, under the same who-may-ask as the
         write. No migration.
+        **Decided by lane B (P236): yes. Built in PR 8-be (#388): the write's own placement code, no write, no lock.**
      3. **[A] There's no screen to edit a meeting's details** (type, duration,
         place, link, quorum). The design's scope confirm is "Edit or reschedule
         in a series", and `PATCH /meetings/:id` is built, but only Reschedule
         has a screen. *Recommendation:* build Edit details in 8c, as Schedule
         step 1's fields without Starts, offered on `may.edit`, and asking the
         scope in a series.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      4. **[A] End series has no "Last meeting" choice.** The design ("Meetings
         after the one you choose are cancelled", Last meeting 22 Oct 2026)
         lets the person pick where the series stops. The built endpoint
@@ -1807,11 +1810,13 @@ them together with their resolver.
         an optional `lastMeetingId` (the series keeps that meeting and those
         before it), defaulting to the next meeting held. So "End series" from
         a meeting's page means "after this one", as drawn.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      5. **[A] The standing agenda's "Edit…" in step 2 isn't drawn.**
         *Recommendation:* a swap view in step 2 (as Show who is), listing the
         items with title, presenter and duration, with Add and Remove, at most
         10 items. A presenter not yet invited becomes a guest, as built. The
         line reads "n items · Edit…", and "None · Add…" when empty.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      6. **[T] Every's starting value** comes from the committee's
         `meetingFrequency`: WEEKLY → every week, MONTHLY → every month,
         QUARTERLY → 3 months, BIANNUAL → 6 months, ANNUAL → 12 months.
@@ -1819,30 +1824,37 @@ them together with their resolver.
         repeat". *Recommendation:* that map, in one place on the screen, with
         the design's line "From the committee's frequency, Quarterly → every 3
         months".
+        **Decided by lane B (P236): yes, one mapping in one place.**
      7. **[A] A long series' preview.** A weekly series has up to 53 dates;
         the design shows five and "+7 more dates" in the context line.
         *Recommendation:* the first five, then a line "n later dates · m moved
         · k have a clash · Show all", which swaps in the whole list (it
         scrolls inside itself). A Moved or Clash date beyond the fifth is then
         never hidden without a count.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      8. **[A] R5-4: the scope confirm with "This meeting only" chosen.**
         *Recommendation (the design's):* Reschedule's per-person line and rows
         for that one meeting.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      9. **[A] R5-5: Add a guest when the guest has a clash.** *Recommendation
         (the design's):* the same line for that person. The clash endpoint
         already takes `userIds`. It's a small part of 8c.
+        **Answered by Ahmad, 20 Nov: as recommended.**
      10. **[A] R5-7: the warning anywhere else.** *Recommendation (the
          design's):* nowhere else in v1, not on the meeting page and not in
          notices.
+         **Answered by Ahmad, 20 Nov: as recommended.**
      11. **[A] The series line after End series.** Not drawn.
          *Recommendation:* "Every month · ended after 4 of 12", with Whole
          series still a link.
+         **Answered by Ahmad, 20 Nov: as recommended. Built in 8b (#389).**
      12. **[T] Already decided by the backend, recorded so they aren't
          reopened:**
          - R5-1: back-to-back isn't a clash;
          - R5-2: the same series counts;
          - R4-1: a moved meeting keeps the pattern's month in its title;
          - an outside guest is never checked.
+         **Recorded by lane B (P236).**
 9. **PR 9: contract.**
    - Drop `Meeting.status`, `Meeting.minutesText`, `AgendaItem.presenter` and
      `Task.meetingId`, after nothing reads them.
