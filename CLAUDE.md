@@ -5375,10 +5375,17 @@ Briefly:
   - **A cancelled meeting** loses every suggestion and every note.
 - **`aiFeaturesAvailability()` answers several features in two queries.** A
   page with several AI features asks once.
+- **A FEATURE MAY SET ITS OWN CALL TIMEOUT** (`AiFeatureCallConfig.timeoutMs`,
+  P249). Draft minutes takes 300 s, because its largest answer cannot finish
+  in the provider's 120 s. Every other feature keeps 120 s
+  (`AI_DEFAULT_TIMEOUT_MS`). The run's claim goes stale only after the timeout
+  plus 60 s, so a live run never looks stale. The screen must wait longer than
+  300 s, and on a client timeout it reads the run's state, never Retry.
 - **8 credits, open to every organisation with AI** (Ahmad, 20 Nov), seeded
   AFTER the deploy (`npm run seed:ai-feature-costs`). The live proof follows
-  the seed, on al-nakheel, and credits used stay used (ACC-236). Thinking
-  against the 16,000 output budget is measured there.
+  the seed, on al-nakheel, and credits used stay used (ACC-236). The thinking
+  used against the 16,000 output budget, and the call's real duration against
+  the 300 s, are both measured there.
 - **One additive migration** (`acc322_meetings_ai`): two enums, three tables,
   and two nullable `AgendaItem` source columns for PR 3. It runs in the
   pre-deploy step.

@@ -84,6 +84,28 @@ describe('AnthropicAiProvider (ACC-194)', () => {
     await expect(new AnthropicAiProvider().complete(request)).rejects.toEqual(new AiProviderCallError(200, 'refusal'));
   });
 
+  // ACC-322 (P249) — a feature may set its own timeout; every other call keeps 120 s.
+  describe('the call timeout', () => {
+    const answer = ok({ model: 'm', content: [{ type: 'text', text: 'x' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } });
+    let timeout: jest.SpyInstance;
+    beforeEach(() => {
+      timeout = jest.spyOn(AbortSignal, 'timeout');
+    });
+    afterEach(() => timeout.mockRestore());
+
+    it("aborts at the request's own timeout", async () => {
+      fetchMock.mockResolvedValue(answer);
+      await new AnthropicAiProvider().complete({ ...request, timeoutMs: 300_000 });
+      expect(timeout).toHaveBeenCalledWith(300_000);
+    });
+
+    it('with none set, still aborts at 120 s', async () => {
+      fetchMock.mockResolvedValue(answer);
+      await new AnthropicAiProvider().complete(request);
+      expect(timeout).toHaveBeenCalledWith(120_000);
+    });
+  });
+
   it('a network failure and a timeout are failed calls', async () => {
     fetchMock.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'TimeoutError' }));
     await expect(new AnthropicAiProvider().complete(request)).rejects.toEqual(new AiProviderCallError(null, 'timeout'));

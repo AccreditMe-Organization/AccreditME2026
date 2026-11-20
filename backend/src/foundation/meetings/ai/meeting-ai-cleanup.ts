@@ -2,9 +2,12 @@ import type { EngineTx } from '../../workflow/workflow.service';
 
 /**
  * ACC-322 — when Meetings AI's stored rows end (plan step-322 §2). Each runs
- * inside the transaction of the move that ends them, under the meeting row's
- * lock, so no run's save can slip in after it: a save re-checks the stage
- * under the same lock.
+ * inside the transaction of the move that ends them. What keeps a run's save
+ * from slipping in after the delete is the INSTANCE lock: the move holds the
+ * meeting's workflow instance FOR UPDATE until it commits, and a save takes it
+ * FOR SHARE first, so it waits for the move and then re-checks the stage
+ * (finding it gone, it saves nothing). Distribute also holds the meeting row;
+ * the cancelled effect takes no meeting-row lock and needs none.
  */
 
 type AiTx = Pick<EngineTx, 'meetingAiNotes' | 'meetingAiSuggestion'>;

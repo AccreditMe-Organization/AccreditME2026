@@ -37,6 +37,20 @@ export interface AiFeatureCallConfig {
   maxTokens: number;
   /** The input the feature may send. Enforced by the feature (ACC-193 for summaries). */
   inputTokenCap?: number;
+  /**
+   * ACC-322 — how long the provider call may take, in ms. Unset: 120 s
+   * (AI_DEFAULT_TIMEOUT_MS), which every feature before Draft minutes uses.
+   * Set it only for a feature whose largest answer cannot finish in 120 s.
+   */
+  timeoutMs?: number;
+}
+
+/** The provider call's timeout when a feature sets none. */
+export const AI_DEFAULT_TIMEOUT_MS = 120_000;
+
+/** A feature's call timeout: its own, else the default. */
+export function aiFeatureTimeoutMs(key: AiFeatureKey): number {
+  return AI_FEATURES[key].timeoutMs ?? AI_DEFAULT_TIMEOUT_MS;
 }
 
 export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = {
@@ -54,11 +68,13 @@ export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = 
   // price is flat.
   morning_briefing: { tier: 'STANDARD', effort: 'low', maxTokens: 4000 },
   // ACC-322 — Draft minutes, with the action items, at most 6 agenda items a
-  // call. Output: the worst case is about 11,400 tokens of JSON in Arabic
-  // (minutes-draft-answer.spec.ts), leaving about 4,600 for thinking at medium
+  // call. Output: the worst case is about 11,300 tokens of JSON in Arabic
+  // (minutes-draft-answer.spec.ts), leaving about 4,700 for thinking at medium
   // effort. Input: 18,000 characters of notes in Arabic plus 6 items, under
-  // 20,000 by the same spec. Plan step-322 §1.2.
-  minutes_drafting: { tier: 'STANDARD', effort: 'medium', maxTokens: 16_000, inputTokenCap: 20_000 },
+  // 20,000 by the same spec. Plan step-322 §1.2. 300 s (P249): at 120 s the
+  // largest answer would need over 130 tokens a second, so the biggest meetings
+  // would time out every time.
+  minutes_drafting: { tier: 'STANDARD', effort: 'medium', maxTokens: 16_000, inputTokenCap: 20_000, timeoutMs: 300_000 },
 };
 
 export const DEFAULT_ANTHROPIC_MODELS: Readonly<Record<AiTier, string>> = {

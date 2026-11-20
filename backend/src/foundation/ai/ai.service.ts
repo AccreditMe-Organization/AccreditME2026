@@ -127,6 +127,8 @@ export class AiService {
         system: request.system,
         maxTokens: feature.maxTokens,
         effort: feature.effort,
+        // ACC-322 — only a feature that sets its own; every other call keeps the provider's 120 s.
+        ...(feature.timeoutMs !== undefined && { timeoutMs: feature.timeoutMs }),
       });
       if (request.accept && !request.accept(answer.content, answer.truncated)) {
         throw new AiUnusableAnswerError(answer.content.length, answer.truncated, answer.inputTokens, answer.outputTokens);

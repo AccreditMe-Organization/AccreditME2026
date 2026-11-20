@@ -966,6 +966,13 @@ caps, the lock order and the deletes. What the build settled, or added:
     line M5 needs;
   - each decision's `abovePresent`, for the M6 flag.
 - **The `AgendaItem` source columns carry foreign keys** (`SET NULL`).
+- **The call may take 300 s** (P249, lane B's review). That is
+  `AiFeatureCallConfig.timeoutMs`, passed by the gateway to the provider; any
+  feature that sets none keeps 120 s. The claim goes stale 60 s after the
+  timeout. The live proof records the call's real duration next to the
+  thinking it used.
+- **Each press reads every ACTIVE person** for the name table. That read is
+  capped by the seat limit.
 - **The rate limit is `RATE_LIMITS.meetingAi`,** 10 a minute per user. PR 3
   and PR 5 reuse it.
 - **The AI credits page names the feature** "Minutes drafts" /

@@ -17314,19 +17314,33 @@ built.
      - every invitee's full name, and each name word of three or more letters
        that only one invitee has, becomes a label (`[P1]`);
      - an outside guest's name words are always replaced;
-     - every ACTIVE person's full name is replaced;
+     - every ACTIVE person's full name is replaced. Each press reads every
+       ACTIVE person in the organisation for this. The read is bounded by the
+       seat limit (`Organization.maxUsers` counts ACTIVE + INVITED), so it has
+       a hard cap (the performance rule);
      - every email becomes `[email]`;
      - Arabic is normalised, and honorifics stay outside the label.
 
      If the input is over 20,000 tokens (`estimateTokens`), the press is
      refused with `MEETING_AI_TOO_LONG`.
-  5. **One run per meeting**, claimed by `INSERT … ON CONFLICT` (stale after
-     3 minutes), else `MEETING_AI_IN_PROGRESS`. The claim is released on every
-     exit.
-  6. **The gateway, with `accept()`:**
-     - an empty, cut-short or unparseable answer is refunded;
-     - so is one naming no item we sent;
-     - an all-"nothing" answer is refunded and refused
+  5. **One run per meeting**, claimed by `INSERT … ON CONFLICT`, else
+     `MEETING_AI_IN_PROGRESS`. The claim is released on every exit.
+     - **It goes stale 6 minutes after it was taken.** That is
+       `MEETING_AI_CLAIM_STALE_MS`, the feature's call timeout plus 60 s, so a
+       live run never looks stale.
+     - **The release logs ids and the error's name only**, never its message.
+  6. **The gateway, with `accept()`.** The call may take **300 s**
+     (`AI_FEATURES.minutes_drafting.timeoutMs`, P249).
+     - The gateway passes a feature's own `timeoutMs` to the provider. A
+       feature that sets none keeps the provider's 120 s
+       (`AI_DEFAULT_TIMEOUT_MS`).
+     - At 120 s, the largest answer (about 11,300 tokens plus thinking) would
+       need over 130 tokens a second.
+
+     Refunded through `accept()`:
+     - an empty, cut-short or unparseable answer;
+     - an answer naming no item we sent;
+     - an all-"nothing" answer, which is also refused
        `MEETING_AI_NOTHING_SUGGESTED`.
   7. **The save:** ONE transaction under the minutes' lock order (the instance
      FOR SHARE, then the meeting row FOR UPDATE).
@@ -17366,8 +17380,12 @@ built.
     and due date from the inline Edit row.
 - **When the rows end:**
   - **Distribute's `inTx`** deletes the undecided minutes and action
-    suggestions and every note, under the meeting row's lock. Its audit row
-    records `aiDiscarded`.
+    suggestions and every note. Its audit row records `aiDiscarded`.
+  - **What keeps a run's save from landing after a delete is the INSTANCE
+    lock.** The move holds the meeting's workflow instance FOR UPDATE until it
+    commits. A save takes it FOR SHARE first, so it waits, re-checks the stage
+    and saves nothing. The cancelled effect takes no meeting-row lock and needs
+    none.
   - **The minutes read's `distribute.aiUndecided`** is the count named in
     the confirm (M2). It never holds Distribute.
   - **The cancelled effect** deletes every suggestion and every note.
@@ -17381,7 +17399,18 @@ built.
   - the cancel delete;
   - the writer-only notes read;
   - the past-date rule;
-  - the batched availability.
+  - the batched availability;
+  - and, in P249, the provider using the request's timeout, the 120 s
+    default, the gateway passing a feature's timeout on, and the stale window
+    longer than the timeout.
+- **For PR 2:**
+  - **Never write the saved notes back into the box while someone types.**
+    The notes DTO trims, so writing the saved value back would eat a trailing
+    space.
+  - **The screen's request for Draft minutes waits longer than 300 s.** On a
+    client timeout, the screen reads `GET …/ai` and shows `running` or the
+    saved suggestions, never Retry. Giving up earlier would say "timed out"
+    while the server finishes the run and charges for it.
 
 ---
 

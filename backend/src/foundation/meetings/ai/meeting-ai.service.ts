@@ -4,7 +4,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../../common/services/object-visibility.service';
 import { AiService } from '../../ai/ai.service';
 import { AiRefusalException } from '../../ai/ai-refusal';
-import { AI_FEATURES } from '../../ai/ai.config';
+import { AI_FEATURES, aiFeatureTimeoutMs } from '../../ai/ai.config';
 import { aiFeaturesAvailability } from '../../ai/ai-availability';
 import { StageRulesService, type StageRules } from '../../workflow/stage-rules.service';
 import type { EngineTx } from '../../workflow/workflow.service';
@@ -37,9 +37,13 @@ import type {
 } from './interfaces/meeting-ai.interface';
 import type { AcceptMeetingAiDto, DraftMinutesAiDto, MeetingAiNotesDto } from './dto/meeting-ai.dto';
 
-export const MINUTES_FEATURE = 'minutes_drafting';
-/** A claim older than this is a crashed run, and may be taken over (> the provider's 120 s timeout; ACC-198's). */
-export const MEETING_AI_CLAIM_STALE_MS = 3 * 60 * 1000;
+export const MINUTES_FEATURE = 'minutes_drafting' as const;
+/**
+ * A claim older than this is a crashed run, and may be taken over: the
+ * feature's own call timeout plus a minute for the reads and the save around
+ * it (P249), so a live run never looks stale.
+ */
+export const MEETING_AI_CLAIM_STALE_MS = aiFeatureTimeoutMs(MINUTES_FEATURE) + 60_000;
 
 /** What a stored minutes suggestion holds (names already written back). */
 interface MinutesPayload {
@@ -579,7 +583,8 @@ export class MeetingAiService {
         data: { claimedById: null, claimedAt: null, ...(done && { lastDoneAt: now }) },
       });
     } catch (error) {
-      this.logger.error(`Could not release the minutes AI claim on meeting ${id}: ${(error as Error).message}`);
+      // Ids and the error's kind only, never its message (ACC-297's rule).
+      this.logger.error(`Could not release the minutes AI claim on meeting ${id} (org ${organizationId}): ${(error as Error).name}`);
     }
   }
 }
