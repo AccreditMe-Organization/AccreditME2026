@@ -4946,7 +4946,9 @@
       "oneOwner": "one committee or unit",
       "clearOwner": "Show all meetings",
       "seriesTitle": "Whole series · {{owner}}",
-      "oneSeries": "one series"
+      "oneSeries": "one series",
+      "seriesOrder": "Sorted by date, earliest first.",
+      "movedFrom": "Rescheduled from {{date}}"
     },
     "page": {
       "loading": "Loading the meeting…",

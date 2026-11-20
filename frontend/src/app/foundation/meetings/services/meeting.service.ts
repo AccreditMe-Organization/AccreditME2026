@@ -18,7 +18,7 @@ function fileBody(file: File): FormData {
  * worked out here.
  */
 
-export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits';
+export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits' | 'series';
 export type MeetingAttendeeKind = 'MEMBER' | 'ORG_GUEST' | 'OUTSIDE_GUEST';
 export type MeetingAnswer = 'ATTENDING' | 'CANT_ATTEND';
 
@@ -52,6 +52,8 @@ export interface MeetingListItemDto {
   meetingUrl: string | null;
   owner: MeetingOwnerDto;
   stage: MeetingStageDto;
+  /** PR 8b — the whole series view only: where the meeting's latest reschedule moved it from. */
+  movedFrom?: string | null;
 }
 
 export interface MeetingListDto {

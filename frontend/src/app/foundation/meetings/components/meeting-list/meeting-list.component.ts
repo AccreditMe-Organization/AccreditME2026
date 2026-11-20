@@ -14,6 +14,8 @@ import { isCancelled, isClosed, ownerGlyph, ownerLink, ownerName, stageName } fr
 import { seriesSummary } from '../../meeting-series-text';
 
 const PAGE = 25;
+/** The whole series view's one answer: a series' most meetings, the server's SERIES_LIST_CAP. */
+const SERIES_LIST_CAP = 53;
 
 /**
  * ACC-316 PR 6 — /meetings: the saved views (Mine, Past, Minutes I record, All
@@ -30,19 +32,20 @@ const PAGE = 25;
   template: `
     <div class="am-ml flex flex-col gap-3 h-full min-h-0" data-testid="meeting-list-page">
       <app-page-header [title]="'meeting.title' | translate" />
-      <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="meeting-list-order">{{ 'meeting.list.order' | translate }}</p>
+      <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="meeting-list-order">{{ (seriesFilter() ? 'meeting.list.seriesOrder' : 'meeting.list.order') | translate }}</p>
       <!--
         PR 8b — the whole series (?seriesId=, the meeting header's "Whole
         series"): its owner and its pattern, then its meetings by the same views
         an owner's list has. A cancelled one reads Cancelled (A9).
+        P240 — one list, by date (view=series), as drawn.
       -->
       @if (seriesFilter()) {
         <section class="flex flex-col gap-1" data-testid="meeting-list-series">
-          <h2 class="m-0 text-[15px] font-semibold" data-testid="meeting-list-series-title">{{ 'meeting.list.seriesTitle' | translate: { owner: seriesOwnerLabel() } }}</h2>
+          <h2 class="m-0 text-heading font-semibold" data-testid="meeting-list-series-title">{{ 'meeting.list.seriesTitle' | translate: { owner: seriesOwnerLabel() } }}</h2>
           @if (seriesText()) {
-            <p class="m-0 text-[13px]" data-testid="meeting-list-series-line">{{ seriesText() }}</p>
+            <p class="m-0 text-value" data-testid="meeting-list-series-line"><bdi>{{ seriesText() }}</bdi></p>
           }
-          <a routerLink="/meetings" class="text-[13px] text-[var(--am-blue-primary)] self-start" data-testid="meeting-list-series-clear">{{ 'meeting.list.clearOwner' | translate }}</a>
+          <a routerLink="/meetings" class="text-value text-[var(--am-blue-primary)] self-start" data-testid="meeting-list-series-clear">{{ 'meeting.list.clearOwner' | translate }}</a>
         </section>
       }
       <!-- ACC-316 PR 7 — opened from a committee's or unit's Meetings panel (See all). -->
@@ -61,7 +64,7 @@ const PAGE = 25;
           [trackBy]="trackById"
           [columns]="columns()"
           [scopes]="scopes()"
-          [pageSize]="pageSize"
+          [pageSize]="seriesFilter() ? seriesCap : pageSize"
           [searchPlaceholder]="'meeting.list.search' | translate"
           [emptyTitle]="'meeting.list.emptyTitle' | translate"
           [emptyMessage]="'meeting.list.emptyBody' | translate"
@@ -106,6 +109,10 @@ const PAGE = 25;
                   <span class="sr-only">{{ columnLabel('when') }}</span>
                   <span class="text-[13px]">{{ format.dateTime(m.scheduledAt) }}</span>
                   <span class="text-meta text-[var(--am-ink-500)] truncate">{{ format.hijri(m.scheduledAt) }} · {{ format.weekday(m.scheduledAt, 'short') }}</span>
+                  <!-- P240 — the series view's note, from the meeting's stored reschedule only. -->
+                  @if (m.movedFrom) {
+                    <span class="text-meta text-[var(--am-ink-500)]" data-meeting-moved-from>{{ 'meeting.list.movedFrom' | translate: { date: format.date(m.movedFrom) } }}</span>
+                  }
                 </span>
               }
               @if (v('stage')) {
@@ -180,10 +187,12 @@ export class MeetingListComponent {
   readonly ownerLabel = computed(() => this.ownerName() ?? this.translate.instant('meeting.list.oneOwner'));
   /**
    * PR 8b — one series' meetings (?seriesId=, from a meeting's "Whole series"):
-   * its Upcoming and Past, under the plain visibility rule. Its owner and
-   * pattern come from the link's navigation state, else from the first row's
-   * meeting (one read, only then).
+   * ONE list by date (view=series, P240), every meeting of it this person may
+   * open, cancelled ones included, in one answer the server caps at a series'
+   * most (53). Its owner and pattern come from the link's navigation state,
+   * else from the first row's meeting (one read, only then).
    */
+  readonly seriesCap = SERIES_LIST_CAP;
   readonly seriesFilter = signal<string | null>(null);
   readonly series = signal<MeetingSeriesDto | null>(null);
   readonly seriesOwner = signal<string | null>(null);
@@ -199,7 +208,8 @@ export class MeetingListComponent {
   /** The views; "All meetings" only where the server says so, with no client copy of the rule. */
   readonly scopes = computed<DataListScope[]>(() => {
     this.translate.currentLang();
-    const views: MeetingListView[] = this.ownerFilter() || this.seriesFilter()
+    if (this.seriesFilter()) return [];
+    const views: MeetingListView[] = this.ownerFilter()
       ? ['upcoming', 'past']
       : ['mine', 'past', 'minutes', ...(this.canSeeAll() ? (['all'] as const) : []), 'subunits'];
     return views.map((key) => ({ key, label: this.translate.instant(`meeting.list.view.${key}`) }));
@@ -225,12 +235,20 @@ export class MeetingListComponent {
     const page = query.page ?? 1;
     const owner = this.ownerFilter();
     const seriesId = this.seriesFilter();
+    if (seriesId) {
+      // The whole series is one answer, never paged: the server's view=series.
+      return this.meetings.list({ view: 'series', seriesId, q: query.search || undefined }).pipe(
+        tap((r) => {
+          if (r.items[0]) this.nameSeries(seriesId, r.items[0]);
+        }),
+        map((r) => ({ data: r.items, total: r.items.length, page: 1, pageSize: SERIES_LIST_CAP })),
+      );
+    }
     return this.meetings
       .list({
         view: (query.scope as MeetingListView | undefined) ?? (owner || seriesId ? 'upcoming' : 'mine'),
         q: query.search || undefined,
         ...(owner ?? {}),
-        ...(seriesId ? { seriesId } : {}),
         skip: (page - 1) * pageSize,
         take: Math.min(pageSize, 50),
       })
@@ -238,7 +256,6 @@ export class MeetingListComponent {
         tap((r) => {
           this.canSeeAll.set(r.canSeeAll);
           if (owner && !this.ownerName() && r.items[0]) this.ownerName.set(ownerName(r.items[0].owner, this.language));
-          if (seriesId && r.items[0]) this.nameSeries(seriesId, r.items[0]);
         }),
         map((r) => ({ data: r.items, total: r.total, page, pageSize })),
       );

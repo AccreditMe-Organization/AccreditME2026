@@ -5662,7 +5662,9 @@
       "oneOwner": "لجنة أو وحدة واحدة",
       "clearOwner": "عرض كل الاجتماعات",
       "seriesTitle": "السلسلة كاملة · {{owner}}",
-      "oneSeries": "سلسلة اجتماعات"
+      "oneSeries": "سلسلة اجتماعات",
+      "seriesOrder": "مرتبة حسب التاريخ، الأقدم أولًا.",
+      "movedFrom": "أُعيدت جدولته من {{date}}"
     },
     "page": {
       "loading": "جارٍ تحميل الاجتماع…",
@@ -6111,8 +6113,8 @@
       "line": "{{pattern}} · {{n}} من {{total}}",
       "ended": "{{every}} · انتهت بعد {{n}} من {{total}}",
       "whole": "السلسلة كاملة",
-      "previousGlyph": "›",
-      "nextGlyph": "‹",
+      "previousGlyph": "‹",
+      "nextGlyph": "›",
       "previous": "الاجتماع السابق، {{date}}",
       "next": "الاجتماع التالي، {{date}}"
     }
