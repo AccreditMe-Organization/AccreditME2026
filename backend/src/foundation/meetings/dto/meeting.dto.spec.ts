@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CheckMeetingClashesDto, CreateAgendaItemDto, ScheduleMeetingDto, UpdateAgendaItemDto, UpdateMeetingDto } from './meeting.dto';
+import { CheckMeetingClashesDto, CreateAgendaItemDto, ListMeetingsDto, ScheduleMeetingDto, UpdateAgendaItemDto, UpdateMeetingDto } from './meeting.dto';
 
 /** ACC-316 PR 3b — the request shapes refuse what the service should never see (lane B's review, fix 9). */
 describe('meeting DTOs', () => {
@@ -15,6 +15,15 @@ describe('meeting DTOs', () => {
   it('the clash check takes at most 53 times', async () => {
     expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(53).fill(time) })).toEqual([]);
     expect(await errorsOf(CheckMeetingClashesDto, { committeeId: 'c', times: Array(54).fill(time) })).toEqual(['times']);
+  });
+
+  // ACC-316 PR 8b (P240) — the whole series view names its series.
+  it('view=series needs a seriesId; the other views do not', async () => {
+    expect(await errorsOf(ListMeetingsDto, { view: 'series' })).toEqual(['seriesId']);
+    expect(await errorsOf(ListMeetingsDto, { view: 'series', seriesId: '' })).toEqual(['seriesId']);
+    expect(await errorsOf(ListMeetingsDto, { view: 'series', seriesId: 's-1' })).toEqual([]);
+    expect(await errorsOf(ListMeetingsDto, { view: 'upcoming' })).toEqual([]);
+    expect(await errorsOf(ListMeetingsDto, { view: 'nothing' })).toEqual(['view']);
   });
 
   it("an online meeting link is https only (it goes into an outside guest's email)", async () => {
