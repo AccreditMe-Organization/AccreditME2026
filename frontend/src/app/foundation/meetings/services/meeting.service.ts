@@ -103,6 +103,19 @@ export interface MeetingSeriesDto extends MeetingSeriesPattern {
   nextAt: string | null;
   /** An ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
   endedAfter: number | null;
+  /** PR 8d — whether this viewer may end the series (who may schedule for its owner, while it runs). */
+  mayEnd: boolean;
+}
+
+/** PR 8d — End series' confirm, from the server's own plan (POST /meetings/series/:id/end/preview). */
+export interface MeetingEndSeriesPreviewDto {
+  /** The last meeting the series keeps; null when none is left open to keep. */
+  last: { id: string; startsAt: string } | null;
+  /** The meetings End would cancel, in order. */
+  cancelled: { id: string; startsAt: string }[];
+  /** Meetings that have started and weren't cancelled. */
+  held: number;
+  total: number;
 }
 
 export interface MeetingDto extends MeetingListItemDto {
@@ -463,6 +476,16 @@ export class MeetingService {
   /** PR 8c — Edit details (PATCH /meetings/:id). */
   update(id: string, body: UpdateMeetingRequest): Observable<MeetingDto> {
     return this.http.patch<MeetingDto>(`${this.base}/${id}`, body);
+  }
+
+  /** PR 8d — End series' confirm: what End would keep and cancel. Writes nothing. */
+  endSeriesPreview(seriesId: string, body: { lastMeetingId?: string }): Observable<MeetingEndSeriesPreviewDto> {
+    return this.http.post<MeetingEndSeriesPreviewDto>(`${this.base}/series/${seriesId}/end/preview`, body);
+  }
+
+  /** PR 8d — End series: the series keeps `lastMeetingId` and those before it (Q4). */
+  endSeries(seriesId: string, body: { reason: string; lastMeetingId?: string }): Observable<{ cancelled: string[]; failed: string[] }> {
+    return this.http.post<{ cancelled: string[]; failed: string[] }>(`${this.base}/series/${seriesId}/end`, body);
   }
 
   /** PR 8c — the scope confirm's read: what "this and all later" would do. Writes nothing. */

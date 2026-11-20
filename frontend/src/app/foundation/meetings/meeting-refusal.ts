@@ -62,6 +62,9 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_SERIES_TIME_INVALID: 'meeting.refusal.seriesTimeInvalid',
   // PR 8c — the scope confirm (a meeting no longer in its series).
   MEETING_NOT_IN_SERIES: 'meeting.refusal.notInSeries',
+  // PR 8d — End series.
+  MEETING_SERIES_NOT_FOUND: 'meeting.refusal.seriesNotFound',
+  MEETING_SERIES_CANNOT_CANCEL: 'meeting.refusal.seriesCannotCancel',
 };
 
 /** The translation key for a meeting refusal, or null when the error carries no code this file knows. */

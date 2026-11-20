@@ -31,6 +31,7 @@ import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../me
 import { refusalCode } from '../../../../core/http/refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
 import { MeetingEditDialogComponent } from '../meeting-edit-dialog/meeting-edit-dialog.component';
+import { MeetingEndSeriesDialogComponent } from '../meeting-end-series-dialog/meeting-end-series-dialog.component';
 import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meeting-add-guest-dialog.component';
 import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
@@ -68,6 +69,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
     WorkflowStageIndicatorComponent,
     MeetingRescheduleDialogComponent,
     MeetingEditDialogComponent,
+    MeetingEndSeriesDialogComponent,
     MeetingAddGuestDialogComponent,
     MeetingAgendaPanelComponent,
     MeetingFileListComponent,
@@ -120,6 +122,10 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             }
             @if (m.may.reschedule) {
               <p-button size="small" severity="secondary" [label]="'meeting.reschedule.open' | translate" data-testid="meeting-reschedule" (onClick)="rescheduleOpen.set(true)" />
+            }
+            <!-- PR 8d (Q4) — End series, after this meeting: the server's series.mayEnd, never on a cancelled meeting. -->
+            @if (m.series?.mayEnd && !cancelled()) {
+              <p-button size="small" severity="danger" [outlined]="true" [label]="'meeting.endSeries.open' | translate" data-testid="meeting-end-series" (onClick)="endSeriesOpen.set(true)" />
             }
             @if (minutes()?.may?.distribute) {
               <p-button size="small" [label]="'meeting.distribute.open' | translate" data-testid="meeting-distribute" (onClick)="distributeOpen.set(true)" />
@@ -371,6 +377,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
 
       <app-meeting-reschedule-dialog [visible]="rescheduleOpen()" (visibleChange)="rescheduleOpen.set($event)" [meeting]="m" (rescheduled)="load()" />
       <app-meeting-edit-dialog [visible]="editOpen()" (visibleChange)="editOpen.set($event)" [meeting]="m" (saved)="load()" />
+      <app-meeting-end-series-dialog [visible]="endSeriesOpen()" (visibleChange)="endSeriesOpen.set($event)" [meeting]="m" (ended)="load()" />
       <app-meeting-add-guest-dialog [visible]="guestOpen()" (visibleChange)="guestOpen.set($event)" [meeting]="m" (added)="load()" />
       <app-meeting-action-dialog
         [visible]="actionItem() !== null"
@@ -522,6 +529,7 @@ export class MeetingPageComponent {
   readonly instance = signal<WorkflowInstanceDto | null>(null);
   readonly rescheduleOpen = signal(false);
   readonly editOpen = signal(false);
+  readonly endSeriesOpen = signal(false);
   /** PR 7b — the minutes, where this person may read them (null otherwise, and before the meeting is held). */
   readonly minutes = signal<MeetingMinutesDto | null>(null);
   /** PR 7b — "Open actions from the last meeting", for whoever may read that meeting's minutes. */
@@ -763,6 +771,7 @@ export class MeetingPageComponent {
         confirmKey: 'meeting.cancel.confirm',
         keepKey: 'meeting.cancel.keep',
         danger: true,
+        context: this.cancelContext(),
       };
     }
     // PR 7c-2 — Approve Minutes: the minutes become final and the action items tasks.
@@ -774,6 +783,19 @@ export class MeetingPageComponent {
     }
     return null;
   };
+
+  /**
+   * PR 8d — Cancel Meeting's context line: "IPC · 22 Oct 2026, 10:00", and for
+   * a series meeting "· Only this meeting" (Meeting Screens: cancelling one
+   * occurrence; the series goes on).
+   */
+  private cancelContext(): string {
+    const m = this.meeting();
+    if (!m) return '';
+    const parts = [this.owner(), this.format.dateTime(m.scheduledAt)];
+    if (m.series) parts.push(this.translate.instant('meeting.cancel.onlyThis') as string);
+    return parts.join(' · ');
+  }
 
   answer(answer: MeetingAnswer): void {
     this.answering.set(answer);

@@ -73,7 +73,20 @@ export interface IMeeting extends IMeetingListItem {
     nextAt: Date | null;
     /** PR 8b — an ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
     endedAfter: number | null;
+    /** PR 8d — whether this viewer may end the series: who may schedule for its owner, while it runs. */
+    mayEnd: boolean;
   } | null;
+}
+
+/** PR 8d — End series' confirm: what End would keep and cancel, before it runs. */
+export interface IMeetingEndSeriesPreview {
+  /** The last meeting the series keeps; null when none is left open to keep. */
+  last: { id: string; startsAt: Date } | null;
+  /** The meetings End would cancel, in order. */
+  cancelled: { id: string; startsAt: Date }[];
+  /** Meetings that have started and weren't cancelled. */
+  held: number;
+  total: number;
 }
 
 /** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */

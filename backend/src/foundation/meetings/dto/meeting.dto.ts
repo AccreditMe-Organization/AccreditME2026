@@ -825,7 +825,19 @@ export class CreateMeetingSeriesDto {
   standingAgenda?: StandingAgendaItemDto[];
 }
 
-export class EndMeetingSeriesDto {
+export class EndMeetingSeriesPreviewDto {
+  /**
+   * PR 8d (Q4) — the last meeting the series keeps: it and those before it
+   * stay, every later open one is cancelled. Omitted: the next meeting held.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  lastMeetingId?: string;
+}
+
+export class EndMeetingSeriesDto extends EndMeetingSeriesPreviewDto {
   /** Sent to everyone invited to each meeting cancelled. */
   @IsString()
   @IsNotEmpty()

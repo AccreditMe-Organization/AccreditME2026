@@ -17,8 +17,8 @@ import { mayActInStagePool } from '../workflow/stage-pool.service';
 import { insertMeetingsInTx, ownerMembers, type NewMeeting } from './meeting-create';
 import { patternDays, seriesTitle, type SeriesPattern } from './meeting-series-dates';
 import { searchOrgPeople } from './meeting-people.service';
-import type { CheckMeetingClashesDto, CreateMeetingSeriesDto, EndMeetingSeriesDto, MeetingScopePreviewDto, PresenterCandidatesQueryDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
-import type { IMeeting, IMeetingGuestCandidates, IMeetingScopePreview, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
+import type { CheckMeetingClashesDto, CreateMeetingSeriesDto, EndMeetingSeriesDto, EndMeetingSeriesPreviewDto, MeetingScopePreviewDto, PresenterCandidatesQueryDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
+import type { IMeeting, IMeetingEndSeriesPreview, IMeetingGuestCandidates, IMeetingScopePreview, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
 
 /** The fields "this and all later" carries to later meetings. The title is each meeting's own (plan §3.2). */
 const SERIES_FIELDS = ['typeValueId', 'durationMinutes', 'location', 'meetingUrl', 'unitQuorum'] as const;
@@ -309,11 +309,10 @@ export class MeetingSeriesService {
   // ── End series ──────────────────────────────────────────────────────────────
 
   /**
-   * Cancels every later meeting still in Planned or Agenda Issued, each by its
-   * own Cancel Meeting with the reason, then stamps endedAt. Safe to run again:
-   * an ended series still cancels what is left.
+   * The series, for whoever may schedule for its owner (End and its preview).
+   * Another organisation's series is MEETING_SERIES_NOT_FOUND, as an invented id is.
    */
-  async end(seriesId: string, dto: EndMeetingSeriesDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<{ cancelled: string[]; failed: string[] }> {
+  private async seriesForEnd(seriesId: string, organizationId: string, viewer: MeetingViewer, now: Date): Promise<{ endedAt: Date | null }> {
     const series = await this.prisma.meetingSeries.findFirst({
       where: { id: seriesId, organizationId },
       select: { id: true, committeeId: true, orgUnitId: true, endedAt: true, committee: { select: { orgUnitId: true } } },
@@ -321,15 +320,71 @@ export class MeetingSeriesService {
     if (!series) throw new MeetingRefusal('MEETING_SERIES_NOT_FOUND');
     const owner: MeetingOwner = { key: seriesId, committeeId: series.committeeId, unitId: series.orgUnitId ?? series.committee?.orgUnitId ?? null };
     if (!(await isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now))) throw new MeetingRefusal('MEETING_NOT_ALLOWED');
-    const reason = dto.reason.trim();
+    return { endedAt: series.endedAt };
+  }
 
-    const later = await this.prisma.meeting.findMany({
-      where: { organizationId, seriesId, scheduledAt: { gt: now } },
+  /**
+   * PR 8d (Q4) — what End would do, the write's and the preview's one rule:
+   * the series keeps its last meeting and those before it, and every LATER
+   * meeting still in Planned or Agenda Issued (its stage allows Reschedule)
+   * is cancelled. The last meeting is `lastMeetingId`, a meeting of THIS
+   * series (another series', another organisation's or an invented id is
+   * MEETING_NOT_IN_SERIES), else the next meeting held: the first of the
+   * open ones. Three queries whatever the series' size.
+   */
+  private async endPlan(
+    seriesId: string,
+    lastMeetingId: string | undefined,
+    organizationId: string,
+    now: Date,
+  ): Promise<{ last: { id: string; scheduledAt: Date } | null; open: { id: string; scheduledAt: Date }[]; meetings: { id: string; scheduledAt: Date }[]; rules: Map<string, StageRules> }> {
+    const meetings = await this.prisma.meeting.findMany({
+      where: { organizationId, seriesId },
       orderBy: [{ seriesIndex: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+      select: { id: true, scheduledAt: true },
     });
-    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', later.map((m) => m.id));
-    const open = later.filter((m) => rules.get(m.id)?.actions[MEETING_ACTIONS.RESCHEDULE] === true);
+    const rules = await this.stageRules.stageRulesFor(organizationId, 'MEETING', meetings.map((m) => m.id));
+    const isOpen = (m: { id: string; scheduledAt: Date }): boolean => m.scheduledAt > now && rules.get(m.id)?.actions[MEETING_ACTIONS.RESCHEDULE] === true;
+    let at: number;
+    if (lastMeetingId !== undefined) {
+      at = meetings.findIndex((m) => m.id === lastMeetingId);
+      if (at < 0) throw new MeetingRefusal('MEETING_NOT_IN_SERIES');
+    } else {
+      at = meetings.findIndex(isOpen);
+    }
+    const last = at >= 0 ? meetings[at]! : null;
+    // No open meeting to keep: nothing is left to cancel.
+    const open = at >= 0 ? meetings.slice(at + 1).filter(isOpen) : [];
+    return { last, open, meetings, rules };
+  }
+
+  /**
+   * PR 8d — End series' confirm, before End: the last meeting, the meetings it
+   * would cancel, and how many have been held (started, not cancelled). The
+   * write's own plan, read-only: no write, no lock. Same who-may-ask as End.
+   */
+  async endPreview(seriesId: string, dto: EndMeetingSeriesPreviewDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingEndSeriesPreview> {
+    await this.seriesForEnd(seriesId, organizationId, viewer, now);
+    const { last, open, meetings, rules } = await this.endPlan(seriesId, dto.lastMeetingId, organizationId, now);
+    const held = meetings.filter((m) => m.scheduledAt <= now && !(rules.get(m.id)?.flags ?? []).includes(STAGE_FLAG.MEETING_CANCELLED)).length;
+    return {
+      last: last ? { id: last.id, startsAt: last.scheduledAt } : null,
+      cancelled: open.map((m) => ({ id: m.id, startsAt: m.scheduledAt })),
+      held,
+      total: meetings.length,
+    };
+  }
+
+  /**
+   * Cancels every meeting after the last one kept (endPlan) still in Planned
+   * or Agenda Issued, each by its own Cancel Meeting with the reason, then
+   * stamps endedAt. Safe to run again: an ended series still cancels what is
+   * left.
+   */
+  async end(seriesId: string, dto: EndMeetingSeriesDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<{ cancelled: string[]; failed: string[] }> {
+    const series = await this.seriesForEnd(seriesId, organizationId, viewer, now);
+    const reason = dto.reason.trim();
+    const { open } = await this.endPlan(seriesId, dto.lastMeetingId, organizationId, now);
 
     // Before cancelling anything: the caller can press Cancel Meeting on every
     // one of them (its stage's pool), or nothing is written.

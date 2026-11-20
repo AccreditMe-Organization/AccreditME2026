@@ -13,7 +13,7 @@ import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { WorkflowService, type WorkflowMoveDto } from '../../../workflow/services/workflow.service';
-import { aMeeting, aMinutes, aMinutesItem, anAttendee } from '../../meeting-fixtures.testing';
+import { aMeeting, aMinutes, aMinutesItem, aSeries, anAttendee } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingAgendaItemDto, type MeetingAttendeeDto, type MeetingDto, type MeetingMinutesDto, type MeetingOpenActionsDto } from '../../services/meeting.service';
 import { MeetingPageComponent } from './meeting-page.component';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
@@ -35,6 +35,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
   let openActionsRead: () => Observable<MeetingOpenActionsDto>;
   let agendaRead: () => Observable<MeetingAgendaItemDto[]> = () => of([]);
   let applySuggestion: jasmine.Spy;
+  let endSeriesPreview: jasmine.Spy;
   const writes = { attendance: new Subject<MeetingMinutesDto>(), discussion: new Subject<MeetingMinutesDto>() };
 
   function create() {
@@ -67,6 +68,8 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
             applySuggestion: (...args: unknown[]) => applySuggestion(...args),
             // PR 8c — Edit details loads its types when it opens.
             formChoices: () => of({ types: [] }),
+            // PR 8d — End series asks its plan when it opens.
+            endSeriesPreview: (...args: unknown[]) => endSeriesPreview(...args),
           },
         },
         { provide: WorkflowService, useValue: { getInstancesByObject: () => of([]) } },
@@ -89,6 +92,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     answer = jasmine.createSpy('answer').and.returnValue(of(undefined));
     removeGuest = jasmine.createSpy('removeGuest').and.returnValue(of(undefined));
     applySuggestion = jasmine.createSpy('applySuggestion').and.returnValue(of(undefined));
+    endSeriesPreview = jasmine.createSpy('endSeriesPreview').and.returnValue(of({ last: null, cancelled: [], held: 0, total: 12 }));
     attendeesRead = () => of(attendees);
     agendaRead = () => of([]);
     filesRead = () => of({ attachments: [], papers: [] });
@@ -132,6 +136,29 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     it('absent when it does not', () => {
       meeting = () => of(aMeeting({ may: { ...aMeeting().may, edit: false } }));
       expect(q(create().el, 'meeting-edit')).toBeNull();
+    });
+  });
+
+  describe("End series follows the series' mayEnd (PR 8d, Q4)", () => {
+    it('shown when the server allows it, and opens the dialog for this meeting', () => {
+      meeting = () => of(aMeeting({ series: aSeries({ id: 'series-1', mayEnd: true }) }));
+      const { el, fixture } = create();
+      const button = q(el, 'meeting-end-series');
+      expect(button?.textContent?.trim()).toBe('End series…');
+      button!.querySelector('button')!.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.endSeriesOpen()).toBeTrue();
+      expect(endSeriesPreview).toHaveBeenCalledOnceWith('series-1', { lastMeetingId: aMeeting().id });
+    });
+    it('absent when the server says no, outside a series, and on a cancelled meeting', () => {
+      meeting = () => of(aMeeting({ series: aSeries({ mayEnd: false }) }));
+      expect(q(create().el, 'meeting-end-series')).toBeNull();
+      TestBed.resetTestingModule();
+      meeting = () => of(aMeeting({ series: null }));
+      expect(q(create().el, 'meeting-end-series')).toBeNull();
+      TestBed.resetTestingModule();
+      meeting = () => of(aMeeting({ series: aSeries({ mayEnd: true }), stage: { id: 's-c', nameEn: 'Cancelled', nameAr: null, flags: ['MEETING_CANCELLED'] } }));
+      expect(q(create().el, 'meeting-end-series')).toBeNull();
     });
   });
 
@@ -260,6 +287,15 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     const move = (over: Partial<WorkflowMoveDto>): WorkflowMoveDto => ({ id: 't', labelEn: 'Go', labelAr: null, kind: 'ADVANCE', toStageId: 's', toStageNameEn: 'Next', toStageNameAr: null, ...over });
     it('a move that needs a reason is Cancel\'s', () => {
       expect(create().c.confirmFor(move({ needsReason: true }))?.titleKey).toBe('meeting.cancel.title');
+    });
+    // PR 8d — Cancel Meeting names the meeting; in a series it says it cancels only this one.
+    it('Cancel\'s context names the owner and the time, and "Only this meeting" in a series', () => {
+      const single = create().c;
+      const when = single.format.dateTime(aMeeting().scheduledAt);
+      expect(single.confirmFor(move({ needsReason: true }))?.context).toBe(`Pharmacy and Therapeutics Committee · ${when}`);
+      TestBed.resetTestingModule();
+      meeting = () => of(aMeeting({ series: aSeries() }));
+      expect(create().c.confirmFor(move({ needsReason: true }))?.context).toBe(`Pharmacy and Therapeutics Committee · ${when} · Only this meeting`);
     });
     it('a move into a stage flagged AGENDA_ISSUED is Issue Agenda\'s', () => {
       expect(create().c.confirmFor(move({ needsReason: false, toStageFlags: ['AGENDA_ISSUED'] }))?.titleKey).toBe('meeting.issue.title');

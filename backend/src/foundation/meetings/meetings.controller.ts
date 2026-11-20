@@ -35,6 +35,7 @@ import {
   CheckMeetingClashesDto,
   CreateMeetingSeriesDto,
   EndMeetingSeriesDto,
+  EndMeetingSeriesPreviewDto,
   GuestCandidatesQueryDto,
   MayScheduleQueryDto,
   PresenterCandidatesQueryDto,
@@ -57,6 +58,7 @@ import type {
   IMeetingFile,
   IMeetingFiles,
   IMeetingList,
+  IMeetingEndSeriesPreview,
   IMeetingScopePreview,
   IMeetingScopeResult,
   IMeetingSeriesPreview,
@@ -107,6 +109,19 @@ export class MeetingsController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<{ seriesId: string; meetingIds: string[] }> {
     return this.series.create(dto, tenantId, { id: userId, permissions });
+  }
+
+  /** PR 8d — End series' confirm: what End would keep and cancel, writing nothing. */
+  @Post('series/:seriesId/end/preview')
+  @HttpCode(HttpStatus.OK)
+  endSeriesPreview(
+    @Param('seriesId') seriesId: string,
+    @Body() dto: EndMeetingSeriesPreviewDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingEndSeriesPreview> {
+    return this.series.endPreview(seriesId, dto, tenantId, { id: userId, permissions });
   }
 
   @Post('series/:seriesId/end')

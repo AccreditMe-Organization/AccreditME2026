@@ -18039,6 +18039,23 @@ with `schedule()`).
     The invitees of each are told after the commit.
   - an edit sends no notice, as a single meeting's edit sends none.
 - **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
+  - **where it stops (PR 8d, Q4):** an optional `lastMeetingId`. The series
+    keeps that meeting and those before it; every LATER meeting still in
+    Planned or Agenda Issued (its stage allows Reschedule) is cancelled.
+    Omitted, the last is the next meeting held: the first of the open ones,
+    so a call without it no longer cancels that one (before 8d it cancelled
+    every later open meeting). A meeting of another series, another
+    organisation's or an invented id is 400 `MEETING_NOT_IN_SERIES`, and
+    nothing is written. One plan (`endPlan()`), three queries whatever the
+    series' size, read by End and its preview alike;
+  - **its preview (PR 8d):** `POST /meetings/series/:seriesId/end/preview`,
+    the same body without the reason, answers that plan read-only: `last`
+    (`{ id, startsAt }` or null when nothing is left open to keep),
+    `cancelled` (each `{ id, startsAt }`, in order), `held` (started and not
+    cancelled) and `total`. No write, no lock. Same who-may-ask as End (whoever
+    may schedule for the owner, else `MEETING_NOT_ALLOWED`; another
+    organisation's series `MEETING_SERIES_NOT_FOUND`); the pool check is End's
+    own, at the write;
   - first, the caller must be in the pool of every later open meeting's stage
     (Cancel Meeting is a person's move, both its stages this organisation's);
     otherwise 403
@@ -18064,7 +18081,9 @@ with `schedule()`).
   their dates), and `endedAfter`: for an ended series, the place of its last
   meeting not cancelled (0 if every one was), null while it runs. That is a
   fact about the series, like its total, so it counts meetings this viewer
-  can't open, and names none.
+  can't open, and names none. And `mayEnd` (PR 8d): whoever may schedule for
+  the owner, while the series runs (no query: the read's own scheduler
+  check).
 - **Who may open many meetings, in one query (P237):**
   `MeetingAccess.openable(ids)` is `canSee()`'s rule batched, built from
   `meeting-membership.ts`'s `meetingOpener()` (the viewer's side, read once: no
@@ -18757,3 +18776,55 @@ Plan PR 8 slice 8c (P235, P245, P253), Meeting Screens round 5 (artboards
     refused (the refusal sits in the footer);
   - Add a guest: a person with a clash 171 / 183 (209 at 390 in English), six
     meetings shown 303 / 315 (341 at 390 in English).
+
+### 18.25 The screens, part 3d: End series, and cancelling one meeting (PR 8d)
+
+Plan PR 8 slice 8d (P235, P245, P255), Meeting Screens' End the series and
+Cancel Meeting, Ahmad's answer of 20 Nov (Q4).
+
+- **End series…** is on a series meeting's page header, beside Reschedule,
+  on the read's `series.mayEnd`, and never on a cancelled meeting. From a
+  meeting's page it means "after this one" (Q4): the meeting on screen is the
+  last one the series keeps.
+- **"End the monthly series?"** (`app-meeting-end-series-dialog`, a 420
+  confirm), titled by how often it repeats ("weekly", "fortnightly",
+  "monthly", "quarterly", "six-monthly", "yearly"), its context the owner and
+  "4 of 12 held":
+  - "Meetings after the last one are cancelled and everyone invited is told,
+    with your reason. Held meetings stay as they are.";
+  - **Last meeting** and **Cancelled** ("7 meetings, 26 Nov 2026 → 27 May
+    2027", `plural.meeting.scopeMeetings`, or "None"), from End's preview
+    (§18.14), never worked out on the screen: which later meetings are still
+    open is their stages' rule. The plan said the series list for the count;
+    the list can't tell an open meeting from one past Agenda Issued, so the
+    preview is the write's own plan instead;
+  - **Reason**, required: the built endpoint sends it with each cancellation.
+    The drawing has no field for it (94 / 104 is the sentence and the pairs);
+  - **End is never pressed blind** (P254's rule for the scope confirm):
+    pressed while the plan loads, it waits and ends when it arrives; a lost
+    plan offers Retry, and End asks again, then ends; a refused one is said
+    from its code, with no Retry, and End does nothing. **Never disabled:** an
+    empty reason shows its error and moves focus to it;
+  - End sends `lastMeetingId` (this meeting) and the reason. All cancelled: it
+    closes and the page reads the meeting again (the series line then reads
+    "ended after n of N", §18.22). **Some not cancelled** (`failed`): it stays
+    open, says "2 meetings couldn't be cancelled. End series again to finish."
+    (`plural.meeting.endSeriesFailed`), asks the plan again, and the page reads
+    the meeting again only when it closes (ACC-55's contract). A refusal is
+    said from its code (`MEETING_SERIES_CANNOT_CANCEL`,
+    `MEETING_SERIES_NOT_FOUND`, `MEETING_NOT_IN_SERIES`), the dialog open.
+- **Cancel Meeting** names the meeting in its context line, "Pharmacy and
+  Therapeutics Committee · 22 Oct 2026, 10:00", and for a series meeting adds
+  "· Only this meeting" (the series goes on). `MoveConfirmCopy` gained an
+  optional `context`, already in the reader's words; other records give none.
+- **Measured** at 1280 and 390 in both languages, each body 20px under the cap:
+  - End series: empty, with its error, a realistic reason and the 500-character
+    limit (only the field scrolls) 293 / 299 (319 at 390 in Arabic); a refused
+    plan 341 / 331 (the tightest, 341 of 420 in English). **The reason field
+    has five rows** (P256): at three, CI's Linux fonts wrapped the realistic
+    English reason to four lines at 390 and the field scrolled (content 100,
+    box 79), though it fit on Windows. The layout spec now asserts that reason
+    leaves at least one line to spare in both languages and both widths, so a
+    smaller field fails locally too, not only on CI's fonts;
+  - Cancel Meeting in a series, with its context line: 157 / 171 (178 at 390
+    in English); the context line never runs sideways.

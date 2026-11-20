@@ -48,6 +48,7 @@ export function aSeries(overrides: Partial<MeetingSeriesDto> = {}): MeetingSerie
     nextId: 'm-next',
     nextAt: '2027-04-22T10:30:00.000Z',
     endedAfter: null,
+    mayEnd: false,
     ...overrides,
   };
 }

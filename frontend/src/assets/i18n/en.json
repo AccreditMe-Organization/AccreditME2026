@@ -3787,6 +3787,10 @@
       "keptMore": {
         "one": "and {{count}} more kept its own edit",
         "other": "and {{count}} more kept their own edits"
+      },
+      "endSeriesFailed": {
+        "one": "{{count}} meeting couldn't be cancelled. End series again to finish.",
+        "other": "{{count}} meetings couldn't be cancelled. End series again to finish."
       }
     }
   },
@@ -5208,7 +5212,8 @@
       "lead": "It stays in the list as Cancelled, with your reason. Everyone invited is told.",
       "hint": "Sent to invitees with the cancellation",
       "confirm": "Cancel Meeting",
-      "keep": "Keep meeting"
+      "keep": "Keep meeting",
+      "onlyThis": "Only this meeting"
     },
     "issue": {
       "title": "Issue Agenda?",
@@ -5348,7 +5353,9 @@
       "seriesTooLong": "A series ends at most 12 months ahead.",
       "seriesEmpty": "The repeat makes no meeting before its end.",
       "seriesTimeInvalid": "Give the time as hours and minutes.",
-      "notInSeries": "This meeting isn't part of a series any more."
+      "notInSeries": "This meeting isn't part of a series any more.",
+      "seriesNotFound": "This series doesn't exist any more.",
+      "seriesCannotCancel": "You can't cancel some of this series' meetings, so the series wasn't ended."
     },
     "agendaItem": {
       "addTitle": "Add agenda item",
@@ -5561,6 +5568,29 @@
         "unitQuorum": "its own quorum"
       },
       "apply": "Apply"
+    },
+    "endSeries": {
+      "open": "End series…",
+      "title": {
+        "WEEK_1": "End the weekly series?",
+        "WEEK_2": "End the fortnightly series?",
+        "MONTH_1": "End the monthly series?",
+        "MONTH_3": "End the quarterly series?",
+        "MONTH_6": "End the six-monthly series?",
+        "MONTH_12": "End the yearly series?"
+      },
+      "held": "{{held}} of {{total}} held",
+      "lead": "Meetings after the last one are cancelled and everyone invited is told, with your reason. Held meetings stay as they are.",
+      "last": "Last meeting",
+      "cancelled": "Cancelled",
+      "none": "None",
+      "previewError": "Couldn't work out which meetings would be cancelled.",
+      "reason": "Reason",
+      "reasonHint": "Sent to invitees with each cancellation",
+      "reasonRequired": "Give a reason.",
+      "keep": "Keep series",
+      "confirm": "End series",
+      "error": "The series wasn't ended. Try again."
     }
   }
 }
