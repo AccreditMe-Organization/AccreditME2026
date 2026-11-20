@@ -115,6 +115,12 @@ const GATE_PATTERN = /hasPermission|isPlatformAdmin|canWriteModule|\bcan[A-Z]\w*
 // file by hand.
 const ALLOWLIST = new Map([
   [
+    'foundation/meetings/components/meeting-repeat-step/meeting-repeat-step.component.ts#pi-times',
+    'Removes a standing agenda item from the series being drafted in Schedule\'s step 2 ' +
+      '(ACC-316 PR 8a, Q5). It writes nothing: the items are sent only with Schedule, ' +
+      'which the Meetings panel offers only to whoever may schedule (GET /meetings/may-schedule).',
+  ],
+  [
     'foundation/organization/components/org-unit-tree/org-unit-tree.component.ts#pi-times',
     'Clears the tree search box (ACC-120 slice 11). A view control: it changes what the ' +
       'reader sees and writes nothing. Every write on the page is in the row menu or the ' +
