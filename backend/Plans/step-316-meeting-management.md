@@ -1781,6 +1781,13 @@ them together with their resolver.
        - **Reads:** `POST /meetings/series/:seriesId/end` (built), and the
          series list for the count.
        - **Measures:** both confirms.
+       - **As built (P255, 20 Nov):** SYSTEM-REFERENCE §18.25. End series
+         takes `lastMeetingId` (Q4), omitted the next meeting held, so a call
+         without it now keeps that one. The confirm's count is a new read-only
+         preview of End's own plan (`POST /meetings/series/:seriesId/end/
+         preview`), not the series list: the list can't tell which meetings
+         are still open. The confirm adds the Reason End requires (not drawn).
+         The read's series gained `mayEnd`. No migration.
      - **Not in PR 8:** the Outlook rows and the Outlook failure line
        (ACC-293); the list's row ⋯ menu and "Review" next step (B3, R3-9);
        sheets (P229).
