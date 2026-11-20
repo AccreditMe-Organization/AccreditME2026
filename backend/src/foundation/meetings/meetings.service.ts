@@ -225,7 +225,9 @@ export class MeetingsService {
       committeeTypeValues(this.prisma, organizationId, [meeting.typeValueId], MEETING_TYPE),
       isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
       this.prisma.meetingAttendee.findFirst({ where: { organizationId, meetingId: id, userId: viewer.id }, select: { answer: true, answerNote: true } }),
-      meeting.series ? this.seriesNeighbours(meeting.series.id, id, organizationId, viewer, now) : Promise.resolve({ previousId: null, nextId: null }),
+      meeting.series
+        ? this.seriesNeighbours(meeting.series.id, id, meeting.series.endedAt !== null, organizationId, viewer, now)
+        : Promise.resolve({ previousId: null, previousAt: null, nextId: null, nextAt: null, endedAfter: null }),
     ]);
     // ACC-316 PR 3b — the answers' summary, only for whoever may edit the meeting.
     const answers = scheduler ? await meetingAnswerSummary(this.prisma, id, organizationId, meeting.committee?.quorumCount ?? meeting.unitQuorum ?? null) : null;
@@ -269,6 +271,10 @@ export class MeetingsService {
             count: meeting.series.count,
             previousId: neighbours.previousId,
             nextId: neighbours.nextId,
+            // PR 8b (P239) — the links' dates, and where an ended series stopped.
+            previousAt: neighbours.previousAt,
+            nextAt: neighbours.nextAt,
+            endedAfter: neighbours.endedAfter,
           }
         : null,
     };
@@ -282,29 +288,45 @@ export class MeetingsService {
    * (`MeetingAccess.openable()`, canSee()'s rule batched, never a second copy),
    * and the nearest on each side picked in memory: a fixed number of queries
    * whatever the series' size (P237).
+   *
+   * PR 8b (P239) — from the same rows, with no further query: each link's date
+   * (the header names it, "‹ 27 Aug 2026"), and for an ENDED series the place
+   * of its last meeting not cancelled ("ended after 4 of 12"; 0 when every one
+   * was cancelled), null while it runs. That is a fact about the series, like
+   * its total, so it counts meetings this viewer can't open; it names none.
    */
   private async seriesNeighbours(
     seriesId: string,
     id: string,
+    ended: boolean,
     organizationId: string,
     viewer: MeetingViewer,
     now: Date,
-  ): Promise<{ previousId: string | null; nextId: string | null }> {
+  ): Promise<{ previousId: string | null; previousAt: Date | null; nextId: string | null; nextAt: Date | null; endedAfter: number | null }> {
     const rows = await this.prisma.meeting.findMany({
       where: { organizationId, seriesId },
       orderBy: [{ seriesIndex: 'asc' }, { scheduledAt: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+      select: { id: true, seriesIndex: true, scheduledAt: true },
     });
     const at = rows.findIndex((r) => r.id === id);
-    if (at < 0) return { previousId: null, nextId: null };
+    if (at < 0) return { previousId: null, previousAt: null, nextId: null, nextAt: null, endedAfter: null };
     const others = rows.filter((r) => r.id !== id).map((r) => r.id);
     const [rules, open] = await Promise.all([
-      this.stageRules.stageRulesFor(organizationId, 'MEETING', others),
+      this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id)),
       this.access.openable(others, organizationId, viewer, now),
     ]);
-    const nearest = (candidates: { id: string }[]): string | null =>
-      candidates.find((c) => !rules.get(c.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED) && open.has(c.id))?.id ?? null;
-    return { previousId: nearest(rows.slice(0, at).reverse()), nextId: nearest(rows.slice(at + 1)) };
+    const live = (r: { id: string }) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED);
+    const nearest = (candidates: typeof rows) => candidates.find((c) => live(c) && open.has(c.id)) ?? null;
+    const previous = nearest(rows.slice(0, at).reverse());
+    const next = nearest(rows.slice(at + 1));
+    const held = rows.filter(live).map((r) => r.seriesIndex ?? 0);
+    return {
+      previousId: previous?.id ?? null,
+      previousAt: previous?.scheduledAt ?? null,
+      nextId: next?.id ?? null,
+      nextAt: next?.scheduledAt ?? null,
+      endedAfter: ended ? (held.length > 0 ? Math.max(...held) : 0) : null,
+    };
   }
 
   private ownerOf(m: {

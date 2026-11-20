@@ -62,6 +62,11 @@ export interface IMeeting extends IMeetingListItem {
     /** The nearest meetings either side, not cancelled and open to this viewer; else null. */
     previousId: string | null;
     nextId: string | null;
+    /** PR 8b (P239) — when those two meetings start, for the links' labels. */
+    previousAt: Date | null;
+    nextAt: Date | null;
+    /** PR 8b — an ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
+    endedAfter: number | null;
   } | null;
 }
 
