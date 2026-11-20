@@ -21,9 +21,16 @@ describe('meeting DTOs', () => {
   it('view=series needs a seriesId; the other views do not', async () => {
     expect(await errorsOf(ListMeetingsDto, { view: 'series' })).toEqual(['seriesId']);
     expect(await errorsOf(ListMeetingsDto, { view: 'series', seriesId: '' })).toEqual(['seriesId']);
+    expect(await errorsOf(ListMeetingsDto, { view: 'series', seriesId: '  ' })).toEqual(['seriesId']);
     expect(await errorsOf(ListMeetingsDto, { view: 'series', seriesId: 's-1' })).toEqual([]);
     expect(await errorsOf(ListMeetingsDto, { view: 'upcoming' })).toEqual([]);
     expect(await errorsOf(ListMeetingsDto, { view: 'nothing' })).toEqual(['view']);
+  });
+
+  it('a bare ?seriesId= on any other view is ignored, as before view=series (P243)', async () => {
+    expect(await errorsOf(ListMeetingsDto, { view: 'upcoming', seriesId: '' })).toEqual([]);
+    expect(await errorsOf(ListMeetingsDto, { seriesId: '' })).toEqual([]);
+    expect(await errorsOf(ListMeetingsDto, { view: 'past', seriesId: 's-1' })).toEqual([]);
   });
 
   it("an online meeting link is https only (it goes into an outside guest's email)", async () => {

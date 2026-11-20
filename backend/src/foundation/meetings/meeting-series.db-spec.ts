@@ -691,10 +691,49 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
         })),
       });
       const list = await meetings.list({ view: 'series', seriesId: r.seriesId, take: 10 }, w.orgId, as(w, 'chair', [MEETINGS_PERMISSIONS.VIEW]));
-      expect(list.total).toBe(SERIES_LIST_CAP + 2);
       // The cap, not `take` (10) and not the page size (25): one answer of exactly the cap.
       expect(list.items.length).toBe(SERIES_LIST_CAP);
+      // Its total is what it lists, never the uncapped count (P243).
+      expect(list.total).toBe(SERIES_LIST_CAP);
       expect(list.items[0]!.id).toBe(first.id);
+      // Non-vacuity: the series really holds more than the cap.
+      expect(await prisma.meeting.count({ where: { seriesId: r.seriesId } })).toBe(SERIES_LIST_CAP + 2);
+
+      // 3 (P243) — the cap with visibility: someone without meetings:view, invited
+      // to the 2nd, the 54th and the 55th by date, sees exactly those, by date.
+      // The rule is in the WHERE before the LIMIT, so the two past the cap are there.
+      const byDate = await prisma.meeting.findMany({ where: { seriesId: r.seriesId }, orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }], select: { id: true } });
+      const invited = [byDate[1]!.id, byDate[53]!.id, byDate[54]!.id];
+      await prisma.meetingAttendee.createMany({
+        data: invited.map((meetingId) => ({ organizationId: w.orgId, meetingId, kind: 'ORG_GUEST' as const, userId: w.people['outsider']!, invitedAt: new Date() })),
+      });
+      const asGuest = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'outsider'));
+      expect([asGuest.items.map((m) => m.id), asGuest.total]).toEqual([invited, 3]);
+    });
+
+    it("a moved meeting's note is its LATEST reschedule, and a tie on the time is broken by id, as the meeting page reads it (P243)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { count: 2, weekday: 1, firstDate: nextWeekday(w, 1) }), w.orgId, as(w, 'chair'));
+      const [first, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: first! } })).scheduledAt;
+      const day = (n: number) => new Date(at.getTime() - n * 86_400_000);
+      const row = (id: string, fromAt: Date, createdAt: Date, meetingId = first!) => ({
+        id, organizationId: w.orgId, meetingId, fromAt, toAt: at, reason: 'x', scope: 'THIS_ONLY' as const, actorId: w.people['chair']!, createdAt,
+      });
+      const t1 = new Date('2026-01-01T08:00:00.000Z');
+      const t2 = new Date('2026-01-02T08:00:00.000Z');
+      // Two reschedules of the first: the newer one is the note.
+      await prisma.meetingReschedule.createMany({ data: [row(`${first}-old`, day(2), t1), row(`${first}-new`, day(1), t2)] });
+      // Two of the second at the SAME moment: the larger id is the note.
+      await prisma.meetingReschedule.createMany({ data: [row(`${second}-a`, day(5), t2, second!), row(`${second}-b`, day(4), t2, second!)] });
+
+      const list = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'member'));
+      const note = (id: string) => list.items.find((m) => m.id === id)!.movedFrom?.toISOString();
+      expect(note(first!)).toBe(day(1).toISOString());
+      expect(note(second!)).toBe(day(4).toISOString());
+      // The meeting page reads the same one.
+      expect((await meetings.getForViewer(first!, w.orgId, as(w, 'member'))).rescheduledFrom?.fromAt.toISOString()).toBe(day(1).toISOString());
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'member'))).rescheduledFrom?.fromAt.toISOString()).toBe(day(4).toISOString());
     });
 
     itEnforcesTenantIsolation("another organisation's series lists nothing", async () => {
