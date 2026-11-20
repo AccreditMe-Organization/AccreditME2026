@@ -17861,6 +17861,35 @@ with `schedule()`).
 - **Organisation scoping:** another organisation's series is
   `MEETING_SERIES_NOT_FOUND`, its meetings the identical 404, and a
   `seriesId` filter lists nothing of theirs.
+- **The series on a meeting (PR 8-be, P236 Q1):** `GET /meetings/:id`'s
+  `series` also gives the pattern's day (`on`: kind, weekday, day of the month,
+  ordinal), `firstDate`, `endsOn` or `count`, and `previousId` / `nextId`: the
+  nearest meetings either side that aren't cancelled and that this viewer may
+  open (`MeetingAccess.canSee()`, the parent rule; never a second copy), else
+  null. One indexed read of the series' meeting ids in order, their stages in
+  one batch, then the rule for each candidate outward until one is open:
+  bounded by the series' size, and only for a series meeting.
+- **What "this and all later" would do (PR 8-be, Q2):** `POST
+  /meetings/:id/scope-preview` (`{ change: EDIT | RESCHEDULE, … }`, the edit's
+  or the reschedule's fields without a reason) answers `{ meetings: [{ id,
+  title, startsAt, durationMinutes }], kept: [{ meetingId, title, fields,
+  startsAt }], clashes }`, for the scope confirm:
+  - it runs **the write's own decisions**, one copy each: `planEdit()` (the
+    fields changed and those a later meeting keeps) and `placeLater()` (the
+    anchor's move as people read it, then off non-working days and the owner's
+    other meetings). The write runs them on rows read under its locks; the
+    preview on the same rows read **without** a lock, and **writes nothing**;
+  - the same "who may ask" as the write (`writing()`: the identical 404 for a
+    meeting the asker can't see, `MEETING_NOT_ALLOWED` otherwise) and the same
+    refusals (`MEETING_NOT_IN_SERIES`, the stage's action, a time in the past,
+    the same time);
+  - clashes are asked of the anchor's invitees at each meeting's new time (one
+    batched check, cap 53); a "clash" with a meeting that is itself moving is
+    left out;
+  - a db-spec proves no row changes (and no lock is taken: it answers while
+    another transaction holds a meeting FOR UPDATE), and that the previewed
+    times are exactly what the write then stores, including a meeting moved off
+    a day the owner already meets.
 ### 18.15 The screens, part 1 (PR 6)
 
 Plan §6.5 lists the departures. Frontend under `foundation/meetings/`, plus two
