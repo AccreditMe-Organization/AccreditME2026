@@ -18291,6 +18291,10 @@ Plan §3.11, design artboard 13. The answers to the 7d slice plan (P229):
   box's text can't be translated.
 - **Dates** go through the formatting layer, so Hijri follows the reader's
   preference (ACC-94 D4), as the screen does.
+- **The session clocks (P232):** outside the shell, so the page starts them
+  itself, exactly as `AppShellComponent` does: `IdleService.start()` (ACC-122)
+  and `SessionLimitService.start()` (ACC-126), the limit stopped on destroy, and
+  both warnings drawn the same way (deferred).
 
 ### 18.21 The screens, part 2f: the phone (PR 7d-2)
 
@@ -18302,13 +18306,18 @@ they follow the space the page has, and a 390px layout spec can measure them
 - **The meeting page** below two 300px cards side by side (611.98px): one
   column, the side column's cards (attendance, the review card, or the
   invitees) above the agenda, and every button at least 44px tall (44 x 44
-  when icon-only), in the page and the panels inside it.
+  when icon-only), in the page and the panels inside it. The side column is
+  FIRST IN THE DOM, so the phone's order is the tab order (WCAG 2.4.3, P233);
+  on a wider page grid placement keeps the agenda at inline-start.
 - **The review banner:** on the phone its answers are full-width buttons, the
   primary ("No corrections") on top. It is first in the DOM too, so the tab
   order is the order on screen (WCAG 2.4.3).
 - **`/meetings`:** below 560px each row is a card (the title and owner, when
-  with Hijri, the stage chip, one under another) and the column headers are
-  hidden. No row menu (P229).
+  with Hijri, the stage chip, one under another) and the whole header row is
+  hidden (its padding and border with it; data-list's header row carries
+  `am-dl__head` for this). Each When and Stage cell names its column in
+  `sr-only` text, so a card still reads "When …" (P233). The trailing cell is
+  hidden by its own class, never by `:empty`. No row menu (P229).
 - **Dialogs:** each meeting dialog already has a layout spec at 390 in both
   languages; full-height sheets are not built (P229, raised separately).
 - **Measured** at 390 and 1280 in both languages:
