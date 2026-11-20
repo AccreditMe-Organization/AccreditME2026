@@ -23,6 +23,12 @@ export interface IMeetingListItem {
   meetingUrl: string | null;
   owner: IMeetingOwner;
   stage: IMeetingStage;
+  /**
+   * PR 8b (P240) — the whole series view only: where the meeting's latest
+   * reschedule moved it from (its own MeetingReschedule row, the one the
+   * meeting page reads); null if it never moved. Absent on the other views.
+   */
+  movedFrom?: Date | null;
 }
 
 export interface IMeetingList {

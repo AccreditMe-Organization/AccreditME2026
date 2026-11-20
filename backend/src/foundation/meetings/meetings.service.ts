@@ -6,6 +6,7 @@ import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import {
   meetingInviteeSql,
+  meetingMayOpenSql,
   meetingMemberSql,
   meetingOversightUnitIds,
   meetingOverseenSql,
@@ -33,6 +34,8 @@ export type { MeetingViewer } from './meeting-access';
 
 const NOT_FOUND = MEETING_NOT_FOUND;
 const PAGE = 25;
+/** PR 8b (P240) — the whole series view's hard cap: a series' most meetings (weekly for twelve months, CLASH_TIMES_CAP). */
+export const SERIES_LIST_CAP = 53;
 const MEETING_TYPE = 'meeting_type';
 
 /** The fields an edit may change, in the order the audit names them. */
@@ -366,7 +369,8 @@ export class MeetingsService {
     const oversight = [...(await meetingOversightUnitIds(this.prisma, organizationId, viewer.id, now))];
     const member = meetingMemberSql('m', viewer.id);
     const overseen = meetingOverseenSql('m', oversight);
-    const visible = seesAll ? Prisma.sql`TRUE` : Prisma.sql`(${member} OR ${overseen})`;
+    // P240 — who may open a meeting: the parent rule's one SQL form (meeting-membership.ts), never a copy.
+    const visible = meetingMayOpenSql('m', { viewerId: viewer.id, seesAll, oversight });
 
     let where: Prisma.Sql;
     let order: Prisma.Sql;
@@ -396,6 +400,12 @@ export class MeetingsService {
         where = Prisma.sql`${overseen} AND NOT ${member}`;
         order = Prisma.sql`m."scheduledAt" DESC, m.id DESC`;
         break;
+      case 'series':
+        // PR 8b (P240) — the whole series: every meeting of it this viewer may
+        // open, past and future, cancelled ones included, by date.
+        where = visible;
+        order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
+        break;
     }
     const owner = dto.committeeId
       ? Prisma.sql`m."committeeId" = ${dto.committeeId}`
@@ -408,15 +418,18 @@ export class MeetingsService {
     const search = term ? Prisma.sql`m.title ILIKE ${'%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%'}` : Prisma.sql`TRUE`;
     const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series} AND ${search}`;
 
+    // The whole series is one answer, never paged: at most SERIES_LIST_CAP meetings (a series' most).
+    const series_ = view === 'series';
+    const [limit, offset] = series_ ? [SERIES_LIST_CAP, 0] : [dto.take ?? PAGE, dto.skip ?? 0];
     const [rows, counts] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT m.id FROM "Meeting" m WHERE ${base}
         ORDER BY ${order}
-        LIMIT ${dto.take ?? PAGE} OFFSET ${dto.skip ?? 0}`,
+        LIMIT ${limit} OFFSET ${offset}`,
       this.prisma.$queryRaw<{ total: bigint }[]>`SELECT count(*)::bigint AS total FROM "Meeting" m WHERE ${base}`,
     ]);
     const ids = rows.map((r) => r.id);
-    return { items: await this.listItems(ids, organizationId), total: Number(counts[0]?.total ?? 0), canSeeAll: seesAll };
+    return { items: await this.listItems(ids, organizationId, series_), total: Number(counts[0]?.total ?? 0), canSeeAll: seesAll };
   }
 
   /**
@@ -443,9 +456,9 @@ export class MeetingsService {
   }
 
   /** The page's rows, in the order given: one read of the meetings, one of their stages. */
-  private async listItems(ids: string[], organizationId: string): Promise<IMeetingListItem[]> {
+  private async listItems(ids: string[], organizationId: string, withReschedule = false): Promise<IMeetingListItem[]> {
     if (ids.length === 0) return [];
-    const [meetings, rules] = await Promise.all([
+    const [meetings, rules, moved] = await Promise.all([
       this.prisma.meeting.findMany({
         where: { id: { in: ids }, organizationId },
         select: {
@@ -460,7 +473,17 @@ export class MeetingsService {
         },
       }),
       this.stageRules.stageRulesFor(organizationId, 'MEETING', ids),
+      // PR 8b — the series view's "Rescheduled from …": each meeting's latest stored reschedule, one batch.
+      withReschedule
+        ? this.prisma.meetingReschedule.findMany({
+            where: { organizationId, meetingId: { in: ids } },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            distinct: ['meetingId'],
+            select: { meetingId: true, fromAt: true },
+          })
+        : Promise.resolve([]),
     ]);
+    const fromAt = new Map(moved.map((r) => [r.meetingId, r.fromAt]));
     const byId = new Map(meetings.map((m) => [m.id, m]));
     return ids.flatMap((id) => {
       const m = byId.get(id);
@@ -476,6 +499,7 @@ export class MeetingsService {
           meetingUrl: m.meetingUrl,
           owner: this.ownerOf(m),
           stage: { id: r?.stageId ?? null, nameEn: r?.stageNameEn ?? null, nameAr: r?.stageNameAr ?? null, flags: r?.flags ?? [] },
+          ...(withReschedule && { movedFrom: fromAt.get(id) ?? null }),
         },
       ];
     });

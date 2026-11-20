@@ -199,8 +199,12 @@ export class MeetingScopePreviewDto {
   unitQuorum?: number | null;
 }
 
-/** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
-export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits'] as const;
+/**
+ * The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov).
+ * PR 8b (P240): `series`, one series' meetings (seriesId required), the whole
+ * series view.
+ */
+export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits', 'series'] as const;
 export type MeetingListView = (typeof MEETING_LIST_VIEWS)[number];
 
 export class ListMeetingsDto {
@@ -208,9 +212,10 @@ export class ListMeetingsDto {
   @IsIn(MEETING_LIST_VIEWS)
   view?: MeetingListView;
 
-  /** ACC-316 PR 5 — one series' meetings (the series view). */
-  @IsOptional()
+  /** ACC-316 PR 5 — one series' meetings (the series view); required by `view=series` (PR 8b). */
+  @ValidateIf((o: ListMeetingsDto) => o.view === 'series' || o.seriesId !== undefined)
   @IsString()
+  @IsNotEmpty()
   seriesId?: string;
 
   /** ACC-316 PR 6 — the list's search: the title contains it (case-insensitive). */
