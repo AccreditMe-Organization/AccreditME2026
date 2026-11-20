@@ -642,29 +642,31 @@ row's id. Each relation to `Meeting` is `onDelete: Cascade`.
 
 ## 3. The hooks from Meetings PRs 4–8
 
-Read on dev `5ae3667`, against step-316 §6a.
+Read on dev `5ae3667`, against step-316 §6a. **Refreshed on dev `d09f226` for
+PR 1 (P248):** Meetings PRs 7c, 7d and 8-be and #380 have merged since, and
+PR 1 built its rows. The "On dev?" column says which.
 
 | Hook | On dev? | Where | What ACC-322 does with it |
 |---|---|---|---|
 | An item's discussion is replaced whole, never appended | **Yes** | `MeetingMinutesService.setItemMinutes()` (PR 4) | Accept replaces it (M5) |
 | Decisions are rows, written one at a time | **Yes** | `addDecision` / `updateDecision` / `removeDecision` (PR 4) | Accept replaces the item's rows in the same transaction |
-| A way to make several minutes writes in ONE transaction, with the lock order, the stage rule, the review-change record and one audit row | **Missing**: `write()` is private | `meeting-minutes.service.ts` | PR 1 adds `MeetingMinutesService.applyAiDraft()`, beside the writes it reuses, so the minutes keep one owner |
+| A way to make several minutes writes in ONE transaction, with the lock order, the stage rule, the review-change record and one audit row | **Built in PR 1**: `applyAiDraft()` (was missing: `write()` is private) | `meeting-minutes.service.ts` | PR 1 adds `MeetingMinutesService.applyAiDraft()`, beside the writes it reuses, so the minutes keep one owner |
 | `checkVotes()`'s total-versus-present refusal | **Yes**, and it refuses while attendance is unrecorded | `meeting-minutes.service.ts` (PR 4) | `applyAiDraft()` keeps the all-three-or-none check and skips this one (M6). Distribute's readiness check holds the minutes instead |
-| The action-item rules (a title, an owner who is a person, a future date) | **Yes**, but inside `addActionItem()` | PR 4 | Extracted to one function that `addActionItem()` and the AI accept both call |
+| The action-item rules (a title, an owner who is a person, a future date) | **Extracted in PR 1**: `actionItemFields()`, `assertActionOwner()` | PR 4 | Extracted to one function that `addActionItem()` and the AI accept both call |
 | `minutesAudit()` takes free `after` metadata | **Yes** | PR 4 | `aiDraft` is added there |
-| The minutes read's `distribute` block | **Yes**: `ready`, `blockedBy`, `defaultReviewBy` | PR 4, 7b | Gains `aiUndecided: number` |
-| Distribute's `inTx` | **Yes** | `MeetingReviewService.distribute()` (PR 4) | Deletes the notes and the undecided minutes suggestions, counting what it deletes |
+| The minutes read's `distribute` block | **Yes**; `aiUndecided` added in PR 1 | PR 4, 7b | Gains `aiUndecided: number` |
+| Distribute's `inTx` | **Yes**; the delete and `aiDiscarded` added in PR 1 | `MeetingReviewService.distribute()` (PR 4) | Deletes the notes and the undecided minutes suggestions, counting what it deletes |
 | The Distribute confirm | **Yes**, but with no extra line | `meeting-distribute-dialog` (PR 7b) | It already takes `minutes`, so it reads `distribute.aiUndecided` and adds the M2 line itself; no new input. Its 420 layout is re-measured |
-| The entry effects for `AGENDA_ISSUED` and `MEETING_CANCELLED` | **Yes** | `meeting-effects.ts` | Each gains a delete |
+| The entry effects for `AGENDA_ISSUED` and `MEETING_CANCELLED` | **Yes**; the cancel delete added in PR 1, the agenda's in PR 3 | `meeting-effects.ts` | Each gains a delete |
 | Approve makes the tasks from the action items | **Yes** | `MINUTES_FINAL` effect | Unchanged: accepted AI drafts are ordinary action items |
 | "Open actions from the last meeting" | **Yes**, but private | `MeetingMinutesService.openActions()` (PR 7b) | PR 3 exports it as a module function, so the minutes read and the agenda's exclusion read one rule |
 | The agenda's lock | **Yes**, but private | `MeetingAgendaService.lockAgenda()` | PR 3 adds `addItems()` to the same service, so it takes the lock where it lives |
 | An add that goes before Any other business | **Missing**: `create()` appends at `max(order) + 1` | `meeting-agenda.service.ts` | PR 3's `addItems()` places items before the trailing `standing` run, renumbering in the same transaction |
 | Which task or change request an agenda item came from | **Missing**: `AgendaItem` has no source column | `schema.prisma` | PR 1 adds `sourceTaskId` and `sourceChangeRequestId`; PR 3 writes them |
-| `MEETING_CHANGED` offers Reload | **Missing** from `RELOAD_CODES` (`frontend/…/meetings/meeting-refusal.ts`) | Coder 2's #380 adds it | PR 2 relies on #380 being merged first |
-| The meeting history screen that reads `aiDraft` | **Missing** (PR 7c or later) | — | The audit is written from PR 1; the "drafted with AI, accepted by …" line shows when the history screen exists |
-| The approved page: the locked line, Print minutes | **Missing** (PR 7c, PR 7d) | — | The summary screen (PR 6) waits for 7d |
-| The phone pass | **Missing** (PR 7d) | — | Each ACC-322 screen PR lays its own panel out at 390, as the design draws |
+| `MEETING_CHANGED` offers Reload | **Yes**: #380 merged (`RELOAD_CODES`) | `frontend/…/meetings/meeting-refusal.ts` | PR 2's wait is met |
+| The meeting history screen that reads `aiDraft` | **Still missing** after 7c and 7d | — | The audit is written from PR 1; the "drafted with AI, accepted by …" line shows when the history screen exists |
+| The approved page: the locked line, Print minutes | **Yes**: 7c and 7d merged | — | PR 6's wait on 7d is met |
+| The phone pass | **Yes**: 7d-2 merged | — | Each ACC-322 screen PR lays its own panel out at 390, as the design draws |
 | Action items with an empty owner or due date | **Decided: not stored** (lane B, Prompt 164) | — | Kept in the suggestion's payload; Accept only once both are set. No migration on `MeetingActionItem` |
 
 **Series (PR 8) and contract (PR 9) touch nothing here.** A series copies
@@ -786,11 +788,11 @@ agrees:
 | PR | What | Waits for |
 |---|---|---|
 | **1. Minutes, backend** | The migration (§2, including the `AgendaItem` source columns); the notes; `minutes_drafting` in `ai.config.ts`; the seed line (seeded **after** the deploy); `GET /meetings/:id/ai` with batched availability; the draft, accept and discard routes; `applyAiDraft()` with the M6 skip; the extracted action-item rules; Distribute's discard and `aiUndecided`; the cancel effect's delete; SYSTEM-REFERENCE §17.12 and CLAUDE.md's ACC-322 entry | dev as it is |
-| **2. Minutes, screens** | The Rough notes box; Draft minutes and Draft again; the suggestion inside each item, with the votes flag; the action-item suggestions and their inline Edit; the undecided count in the header and the Action items card; the Distribute confirm's M2 line, re-measured at 420; Arabic per build notes; phone 390 for this panel | PR 1 deployed, and #380 (`MEETING_CHANGED` in `RELOAD_CODES`) |
+| **2. Minutes, screens** | The Rough notes box; Draft minutes and Draft again; the suggestion inside each item, with the votes flag; the action-item suggestions and their inline Edit; the undecided count in the header and the Action items card; the Distribute confirm's M2 line, re-measured at 420; Arabic per build notes; phone 390 for this panel | PR 1 deployed (#380 has merged) |
 | **3. Agenda, backend** | `meeting_agenda_generation`; the sources and exclusions; `openActions()` exported; `addItems()` with the source columns and the trailing-`standing` placement; the `AGENDA_ISSUED` effect's delete | PR 1 (the tables and columns) |
 | **4. Agenda, screen** | The trigger on the Agenda panel's header, the suggestions in flow, "Add n items", Suggest again, the "Approvals couldn't be checked." partial | PR 3 deployed |
 | **5. Summary, backend only** | `absent_member_summary`; the draft and send routes; the notice; the two `Meeting` columns in their own additive migration | PR 1 (the tables); not Meetings 7c |
-| **6. Summary, screen** | Draft summary beside Print minutes, the panel under the locked line, the Send confirm, the sent line | PR 5 deployed, and Meetings PR 7d |
+| **6. Summary, screen** | Draft summary beside Print minutes, the panel under the locked line, the Send confirm, the sent line | PR 5 deployed (Meetings PR 7d has merged) |
 
 **Each PR deploys before the next. Every migration is expand only.** Each AI
 key's cost row is seeded after its PR deploys (`npm run
@@ -931,3 +933,56 @@ The Arabic is neutral about a person, and uses «المنشأة».
   confirm is re-measured.
 - "Before Any other business" is keyed on trailing `standing` items.
 - PR 5 is backend only, and doesn't wait for 7c.
+
+---
+
+## 10. PR 1 as built (P248, 20 Nov)
+
+**Unchanged from the plan:** the slice, the gate, the order of a press, the
+caps, the lock order and the deletes. What the build settled, or added:
+
+- **Owner and date reasons are stored as codes with names**, and the screen
+  writes each sentence (PR 2):
+  - `{ code: 'OUTSIDE_GUEST', name }`;
+  - `{ code: 'NO_MATCH', name }`;
+  - `{ code: 'DATE_PASSED', day }`.
+
+  A name the notes give without a label comes back as `ownerName`, the field
+  the prompt names for it.
+- **At most the 5 newest recorded actions per item are sent**, each cut to
+  140 characters. The plan sent all of them. This bounds the worst-case input:
+  about 17,300 tokens against the 20,000 cap, pinned by
+  `minutes-draft-answer.spec.ts`.
+- **The largest answer is about 11,300 tokens** against `maxTokens` 16,000,
+  leaving at least 4,000 to think. It is pinned by the same spec. The
+  thinking actually used is measured in the live proof after the seed: it
+  needs the platform key, which only Railway holds.
+- **Accepting a "nothing" suggestion is `MEETING_AI_NOT_OFFERED`.** It can
+  only be discarded.
+- **`GET /meetings/:id/ai` returns:**
+  - `minutes: { may, available, creditCost, running }`, and PR 3 and PR 5 add
+    `agenda` and `summary` beside it;
+  - each minutes suggestion's `replaces: { discussion, decisions }`, for the
+    line M5 needs;
+  - each decision's `abovePresent`, for the M6 flag.
+- **The `AgendaItem` source columns carry foreign keys** (`SET NULL`).
+- **The call may take 300 s** (P249, lane B's review). That is
+  `AiFeatureCallConfig.timeoutMs`, passed by the gateway to the provider; any
+  feature that sets none keeps 120 s. The claim goes stale 60 s after the
+  timeout. The live proof records the call's real duration next to the
+  thinking it used.
+- **Each press reads every ACTIVE person** for the name table. That read is
+  capped by the seat limit.
+- **The rate limit is `RATE_LIMITS.meetingAi`,** 10 a minute per user. PR 3
+  and PR 5 reuse it.
+- **The AI credits page names the feature** "Minutes drafts" /
+  «صياغة المحاضر». An unknown key would read "Another AI feature".
+- **Mutation-checked:**
+  - the M9 check;
+  - the M6 skip;
+  - the outside-guest owner;
+  - the Distribute delete;
+  - the cancel delete;
+  - the writer-only notes read;
+  - the past-date rule;
+  - the batched availability.

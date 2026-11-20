@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { platformAnthropicKey } from '../../foundation/ai/ai.config';
+import { AI_DEFAULT_TIMEOUT_MS, platformAnthropicKey } from '../../foundation/ai/ai.config';
 import { AiProvider, AiProviderCallError, AiProviderRequest, AiProviderResult } from './ai.provider';
 
 interface AnthropicMessage {
@@ -11,7 +11,6 @@ interface AnthropicMessage {
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
-const TIMEOUT_MS = 120_000;
 
 /**
  * Anthropic's Messages API — ACC-194.
@@ -59,7 +58,8 @@ export class AnthropicAiProvider implements AiProvider {
           'content-type': 'application/json',
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        // The feature's own timeout when it sets one (ACC-322: Draft minutes), else 120 s.
+        signal: AbortSignal.timeout(request.timeoutMs ?? AI_DEFAULT_TIMEOUT_MS),
       });
     } catch (error) {
       throw new AiProviderCallError(null, (error as Error).name === 'TimeoutError' ? 'timeout' : 'network');

@@ -1,4 +1,4 @@
-import { aiFeatureAvailability } from './ai-availability';
+import { aiFeatureAvailability, aiFeaturesAvailability } from './ai-availability';
 import { PrismaService } from '../../prisma/prisma.service';
 
 // ACC-197 — the one "may this organisation use this AI feature?" check.
@@ -63,5 +63,39 @@ describe('aiFeatureAvailability (ACC-197)', () => {
 
   it('still available with every credit used: the press, not this check, says "used up"', async () => {
     await expect(setup({ ...baseOrg, aiCreditsUsed: 2000 }).run()).resolves.toEqual({ available: true, creditCost: 2 });
+  });
+});
+
+describe('aiFeaturesAvailability (ACC-322)', () => {
+  beforeAll(() => jest.useFakeTimers().setSystemTime(NOW));
+  afterAll(() => jest.useRealTimers());
+
+  const minutesRow = { featureKey: 'minutes_drafting', creditCost: 8, restricted: false, allowedOrganizationIds: [] };
+
+  it('answers every key from ONE organisation read and ONE feature read, whatever the number of keys', async () => {
+    const { prisma } = setup(baseOrg, [draftingRow, minutesRow]);
+    const answer = await aiFeaturesAvailability(prisma as unknown as PrismaService, ORG, ['task_description_drafting', 'minutes_drafting', 'morning_briefing']);
+    expect(answer).toEqual({
+      task_description_drafting: { available: true, creditCost: 2 },
+      minutes_drafting: { available: true, creditCost: 8 },
+      morning_briefing: { available: false, reason: 'FEATURE_NOT_AVAILABLE', creditCost: null },
+    });
+    expect(prisma.organization.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.aiFeatureCost.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives every key the organisation-wide reason, each with its own price', async () => {
+    const { prisma } = setup({ ...baseOrg, aiMonthlyCredits: 0 }, [draftingRow, minutesRow]);
+    await expect(aiFeaturesAvailability(prisma as unknown as PrismaService, ORG, ['task_description_drafting', 'minutes_drafting'])).resolves.toEqual({
+      task_description_drafting: { available: false, reason: 'NO_ALLOWANCE', creditCost: 2 },
+      minutes_drafting: { available: false, reason: 'NO_ALLOWANCE', creditCost: 8 },
+    });
+  });
+
+  it('the single-key form gives the batched answer for its key', async () => {
+    const { prisma } = setup(baseOrg, [minutesRow]);
+    const single = await aiFeatureAvailability(prisma as unknown as PrismaService, ORG, 'minutes_drafting');
+    const batched = await aiFeaturesAvailability(prisma as unknown as PrismaService, ORG, ['minutes_drafting']);
+    expect(single).toEqual(batched.minutes_drafting);
   });
 });

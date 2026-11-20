@@ -285,7 +285,7 @@ export interface IMeetingMinutes {
   items: IMeetingMinutesItem[];
   openActions: IMeetingOpenAction[];
   review: IMeetingReview;
-  /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
+  /** Distribute Minutes: ready, or why not, and the undecided AI suggestions it will discard. */
   distribute: {
     ready: boolean;
     /** What holds Distribute: attendance first, then votes above the members present (P206). */
@@ -295,6 +295,8 @@ export interface IMeetingMinutes {
       | null;
     /** yyyy-MM-dd: the review date when none is chosen (PR 7b). */
     defaultReviewBy: string;
+    /** ACC-322 (M2) — undecided AI minutes and action suggestions, named in the confirm and discarded. Never holds Distribute. */
+    aiUndecided: number;
   } | null;
   approvedAt: Date | null;
   /**

@@ -71,7 +71,22 @@ export type MeetingRefusalCode =
   | 'MEETING_SERIES_TIME_INVALID'
   | 'MEETING_SERIES_NOT_FOUND'
   | 'MEETING_NOT_IN_SERIES'
-  | 'MEETING_SERIES_CANNOT_CANCEL';
+  | 'MEETING_SERIES_CANNOT_CANCEL'
+  // ACC-322 — Meetings AI (plan step-322 §4).
+  /** The stage, the phase or a returned meeting (M9) does not offer this AI feature. Carries the stage's names. */
+  | 'MEETING_AI_NOT_OFFERED'
+  /** A run of this feature on this meeting is already in progress: refused before any credit is reserved. */
+  | 'MEETING_AI_IN_PROGRESS'
+  /** Draft minutes with no rough notes. */
+  | 'MEETING_AI_NO_NOTES'
+  /** Every item's minutes and actions are settled (M8). */
+  | 'MEETING_AI_NOTHING_TO_DRAFT'
+  /** The model found nothing to suggest in the notes; refunded. */
+  | 'MEETING_AI_NOTHING_SUGGESTED'
+  /** Still over the feature's input cap after cutting; refused before any credit is reserved. Carries `feature`. */
+  | 'MEETING_AI_TOO_LONG'
+  /** The suggestion was already decided, or replaced by Draft again. */
+  | 'MEETING_AI_SUGGESTION_GONE';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -127,6 +142,13 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_SERIES_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEETING_NOT_IN_SERIES: HttpStatus.BAD_REQUEST,
   MEETING_SERIES_CANNOT_CANCEL: HttpStatus.FORBIDDEN,
+  MEETING_AI_NOT_OFFERED: HttpStatus.CONFLICT,
+  MEETING_AI_IN_PROGRESS: HttpStatus.CONFLICT,
+  MEETING_AI_NO_NOTES: HttpStatus.BAD_REQUEST,
+  MEETING_AI_NOTHING_TO_DRAFT: HttpStatus.CONFLICT,
+  MEETING_AI_NOTHING_SUGGESTED: HttpStatus.CONFLICT,
+  MEETING_AI_TOO_LONG: HttpStatus.CONFLICT,
+  MEETING_AI_SUGGESTION_GONE: HttpStatus.CONFLICT,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -183,6 +205,13 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_SERIES_NOT_FOUND: 'Series not found.',
   MEETING_NOT_IN_SERIES: "This meeting isn't part of a series.",
   MEETING_SERIES_CANNOT_CANCEL: "You can't cancel some of this series' meetings, so the series wasn't ended.",
+  MEETING_AI_NOT_OFFERED: "AI isn't offered for this meeting at this stage.",
+  MEETING_AI_IN_PROGRESS: 'AI is already working on this meeting. Wait for it to finish.',
+  MEETING_AI_NO_NOTES: 'Add notes first.',
+  MEETING_AI_NOTHING_TO_DRAFT: 'Every item already has its minutes and actions.',
+  MEETING_AI_NOTHING_SUGGESTED: "AI couldn't suggest anything from these notes. Add more detail and try again. No credits were used.",
+  MEETING_AI_TOO_LONG: 'This is too long for AI to read. Shorten it and try again.',
+  MEETING_AI_SUGGESTION_GONE: 'This suggestion was already decided or replaced. Reload the meeting.',
 };
 
 export class MeetingRefusal extends HttpException {

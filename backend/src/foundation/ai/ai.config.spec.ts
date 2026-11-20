@@ -3,6 +3,7 @@ import {
   AI_FEATURES,
   AI_FEATURE_KEYS,
   DEFAULT_ANTHROPIC_MODELS,
+  aiFeatureTimeoutMs,
   isAiFeatureKey,
   platformAnthropicKey,
   resolveAnthropicModel,
@@ -30,6 +31,16 @@ describe('ai.config (ACC-194)', () => {
       expect(AI_FEATURES[key].maxTokens).toBeGreaterThan(0);
     }
     expect(AI_FEATURES.document_summary.inputTokenCap).toBe(30_000);
+    // ACC-322 — plan step-322 §1.2.
+    expect(AI_FEATURES.minutes_drafting).toEqual({ tier: 'STANDARD', effort: 'medium', maxTokens: 16_000, inputTokenCap: 20_000, timeoutMs: 300_000 });
+  });
+
+  it('only Draft minutes sets its own call timeout (P249); every other feature keeps 120 s', () => {
+    expect(aiFeatureTimeoutMs('minutes_drafting')).toBe(300_000);
+    for (const key of AI_FEATURE_KEYS.filter((k) => k !== 'minutes_drafting')) {
+      expect(AI_FEATURES[key].timeoutMs).toBeUndefined();
+      expect(aiFeatureTimeoutMs(key)).toBe(120_000);
+    }
   });
 
   it('knows its feature keys and nothing else', () => {

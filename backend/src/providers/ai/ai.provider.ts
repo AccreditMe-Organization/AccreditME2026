@@ -24,6 +24,8 @@ export interface AiProviderRequest {
   /** Thinking plus the answer: a hard limit on output. */
   maxTokens: number;
   effort: AiEffort;
+  /** ACC-322 — how long the call may take, in ms. Unset: the provider's default (120 s). */
+  timeoutMs?: number;
 }
 
 export interface AiProviderResult {
