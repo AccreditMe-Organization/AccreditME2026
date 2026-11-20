@@ -306,7 +306,9 @@ describe('TaskListViewComponent — My tasks (view mine, ACC-120 slice 3)', () =
       setup({ phone: true });
       answer(listPage([recordRow('t1', { priority: 'HIGH', status: 'IN_PROGRESS' })], { view: 'mine' }));
       const row = el.querySelector('[data-task-row="t1"]')!;
-      expect(text(row)).toContain('· High · In progress');
+      // The card's due line is parts, each after a CSS "·" (CC-339).
+      const parts = Array.from(row.querySelectorAll('[data-testid="task-list-card-line"] .am-tl__part')).map((p) => p.textContent!.trim());
+      expect(parts).toEqual(['Due 20 Oct 2099', 'High', 'In progress']);
       expect(text(row)).not.toContain('Dr. Sara Al-Qahtani');
     });
   });
