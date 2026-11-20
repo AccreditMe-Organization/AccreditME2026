@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
+import { meetingMayOpenSql, meetingOpener } from '../../common/services/meeting-membership';
 import { MeetingRefusal } from './meeting-refusal';
 import type { EngineTx } from '../workflow/workflow.service';
 
@@ -69,6 +70,22 @@ export class MeetingAccess {
     });
     if (!meeting) return null;
     return { key: id, committeeId: meeting.committeeId, unitId: meeting.orgUnitId ?? meeting.committee?.orgUnitId ?? null };
+  }
+
+  /**
+   * P237 — which of these meetings the viewer may open: canSee()'s rule for
+   * many meetings in ONE query (meeting-membership.ts's meetingMayOpenSql(),
+   * the parent rule's own clauses), plus the viewer's oversight set once, so
+   * the cost does not grow with the number of ids. Another organisation's or
+   * an invented id is never in the answer.
+   */
+  async openable(ids: readonly string[], organizationId: string, viewer: MeetingViewer, now: Date): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const opener = await meetingOpener(this.prisma, organizationId, viewer, now);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT m.id FROM "Meeting" m
+      WHERE m."organizationId" = ${organizationId} AND m.id = ANY(${[...ids]}::text[]) AND ${meetingMayOpenSql('m', opener)}`;
+    return new Set(rows.map((r) => r.id));
   }
 
   /** May write: sees it and schedules for its owner (MEETING_NOT_ALLOWED otherwise). */

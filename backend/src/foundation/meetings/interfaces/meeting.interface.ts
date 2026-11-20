@@ -46,7 +46,23 @@ export interface IMeeting extends IMeetingListItem {
   /** The viewer's own answer when they are an invitee; null otherwise. */
   myAnswer: { answer: 'ATTENDING' | 'CANT_ATTEND' | null; note: string | null } | null;
   /** ACC-316 PR 5 — "Meeting 3 of 12" and the series it belongs to; null for a single meeting. */
-  series: { id: string; index: number; total: number; every: string; ended: boolean } | null;
+  series: {
+    id: string;
+    index: number;
+    total: number;
+    every: string;
+    ended: boolean;
+    /** PR 8-be (Q1) — the pattern's day, for the header's readback ("the 4th Thursday"). */
+    on: { kind: string; weekday: number | null; dayOfMonth: number | null; ordinal: string | null };
+    /** yyyy-MM-dd. */
+    firstDate: string;
+    /** yyyy-MM-dd, or null when the series ends after `count` meetings. */
+    endsOn: string | null;
+    count: number | null;
+    /** The nearest meetings either side, not cancelled and open to this viewer; else null. */
+    previousId: string | null;
+    nextId: string | null;
+  } | null;
 }
 
 /** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */
@@ -69,6 +85,17 @@ export interface IMeetingSeriesPreview {
 export interface IMeetingScopeResult {
   changed: string[];
   kept: { meetingId: string; title: string; fields: string[] }[];
+}
+
+/**
+ * PR 8-be (P236, Q2) — what "this and all later" WOULD do: the meetings it
+ * reaches, at their times as they'd be (in time order); those that keep a field
+ * as their own, at their own time; and the clashes at the new times.
+ */
+export interface IMeetingScopePreview {
+  meetings: { id: string; title: string; startsAt: Date; durationMinutes: number }[];
+  kept: { meetingId: string; title: string; fields: string[]; startsAt: Date }[];
+  clashes: IMeetingClash[];
 }
 
 /** "6 attending · 2 can't · quorum 5": MEMBER answers only (plan §3.4). */

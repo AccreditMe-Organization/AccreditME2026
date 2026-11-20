@@ -177,6 +177,25 @@ export class StageRulesService {
       throw new WorkflowRefusalException('STAGE_ACTION_NOT_ALLOWED', { action: actionKey, stageNameEn: null, stageNameAr: null });
     }
     const rules = await this.currentStageRules(objectType, objectId, organizationId, client, options);
+    this.assertRulesAllow(objectType, objectId, actionKey, organizationId, rules, message);
+    // ACC-286 — returned so a write can ask the same stage's flags (a seat of a
+    // committee in force) without a second read.
+    return rules;
+  }
+
+  /**
+   * P237 — assertStageAllows()'s refusal from rules already read (a batch from
+   * stageRulesFor()), so a caller that has them asks no second time. The same
+   * 409 STAGE_ACTION_NOT_ALLOWED, one copy.
+   */
+  assertRulesAllow(
+    objectType: WorkflowObjectType,
+    objectId: string,
+    actionKey: string,
+    organizationId: string,
+    rules: StageRules,
+    message?: AssertStageAllowsOptions['message'],
+  ): void {
     if (rules.actions[actionKey] !== true) {
       // A refusal is not a mutation, so no audit row (plan §8); ids only.
       this.logger.log(
@@ -189,9 +208,6 @@ export class StageRulesService {
         ...(message && { message: message(rules.stageNameEn) }),
       });
     }
-    // ACC-286 — returned so a write can ask the same stage's flags (a seat of a
-    // committee in force) without a second read.
-    return rules;
   }
 }
 

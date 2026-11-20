@@ -39,6 +39,7 @@ import {
   MayScheduleQueryDto,
   CreateAgendaItemDto,
   ListMeetingsDto,
+  MeetingScopePreviewDto,
   OrderAgendaDto,
   RescheduleMeetingDto,
   ScheduleMeetingDto,
@@ -55,6 +56,7 @@ import type {
   IMeetingFile,
   IMeetingFiles,
   IMeetingList,
+  IMeetingScopePreview,
   IMeetingScopeResult,
   IMeetingSeriesPreview,
 } from './interfaces/meeting.interface';
@@ -206,6 +208,18 @@ export class MeetingsController {
   ): Promise<IMeeting | (IMeeting & { scope: IMeetingScopeResult })> {
     if (dto.scope === 'THIS_AND_LATER') return this.series.rescheduleLater(id, dto, tenantId, { id: userId, permissions });
     return this.meetings.reschedule(id, dto, tenantId, { id: userId, permissions });
+  }
+
+  /** PR 8-be (P236) — what "this and all later" would do, for the scope confirm. Writes nothing. */
+  @Post(':id/scope-preview')
+  scopePreview(
+    @Param('id') id: string,
+    @Body() dto: MeetingScopePreviewDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingScopePreview> {
+    return this.series.scopePreview(id, dto, tenantId, { id: userId, permissions });
   }
 
   // ── People (PR 3b) ───────────────────────────────────────────────────────────

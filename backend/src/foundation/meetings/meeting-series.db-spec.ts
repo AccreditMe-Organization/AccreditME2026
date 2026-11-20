@@ -22,11 +22,14 @@
  */
 import { randomUUID } from 'crypto';
 import { DateTime } from 'luxon';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
@@ -48,7 +51,7 @@ import { copyDefaultSeatActions } from '../committees/seat-actions';
 import { MeetingsService } from './meetings.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingSeriesService } from './meeting-series.service';
-import type { MeetingViewer } from './meeting-access';
+import { MeetingAccess, type MeetingViewer } from './meeting-access';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -487,6 +490,251 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       expect(day(moved.scheduledAt)).not.toBe(day(busy));
       expect(moved.scheduledAt > busy).toBe(true);
       expect(DateTime.fromJSDate(moved.scheduledAt).setZone(d.zone).toFormat('HH:mm')).toBe('10:00');
+    });
+  });
+
+  // ── PR 8-be (P236) ──────────────────────────────────────────────────────────
+
+  describe('the series on a meeting (Q1)', () => {
+    it('names the pattern, the dates and the nearest meetings either side', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third] = r.meetingIds;
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!;
+      expect(s).toMatchObject({ id: r.seriesId, index: 2, total: 4, every: 'WEEK_1', ended: false, count: 4, endsOn: null, previousId: first, nextId: third });
+      expect(s.on).toEqual({ kind: 'WEEKDAY', weekday: 2, dayOfMonth: null, ordinal: null });
+      expect(s.firstDate).toBe(nextWeekday(w, 2));
+    });
+
+    it('previous and next skip a cancelled meeting', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
+      const cancelled = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'cancelled' } });
+      await prisma.workflowInstance.updateMany({ where: { objectType: 'MEETING', objectId: third! }, data: { currentStageId: cancelled.id } });
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!.nextId).toBe(fourth);
+      expect((await meetings.getForViewer(fourth!, w.orgId, as(w, 'chair'))).series!.previousId).toBe(second);
+    });
+
+    it("previous and next are null where the viewer can't open them (the parent rule)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      // Invited to the second meeting only: they may open it, and no other of the series.
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: second!, kind: 'ORG_GUEST', userId: w.people['outsider']!, invitedAt: new Date() } });
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'outsider'))).series!;
+      expect([s.previousId, s.nextId]).toEqual([null, null]);
+    });
+
+    it("who may open the neighbours is canSee()'s answer, batched: equal for every candidate and every kind of viewer (P237)", async () => {
+      const w = await world();
+      const other = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const theirs = await series.create(weekly(other, { count: 2, weekday: 2, firstDate: nextWeekday(other, 2) }), other.orgId, as(other, 'chair'));
+      const [, second] = r.meetingIds;
+      // The overseer: the head of the unit that owns the committee.
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId!;
+      const headPosition = await prisma.orgPosition.create({ data: { organizationId: w.orgId, nameEn: `Head ${randomUUID().slice(0, 6)}`, grade: 1, isUnitHeadPosition: true } });
+      const head = await prisma.user.create({
+        data: { organizationId: w.orgId, email: `head-${randomUUID().slice(0, 8)}@example.test`, name: 'head', status: 'ACTIVE', primaryOrgUnitId: unit, positionId: headPosition.id },
+      });
+      // Invited to the second meeting only.
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: second!, kind: 'ORG_GUEST', userId: w.people['presenter']!, invitedAt: new Date() } });
+      const viewers: [string, MeetingViewer][] = [
+        ['member', as(w, 'member')],
+        ['overseer', { id: head.id, permissions: [] }],
+        ['invited to one', as(w, 'presenter')],
+        ['meetings:view', as(w, 'outsider', [MEETINGS_PERMISSIONS.VIEW])],
+        ['committees:view', as(w, 'outsider', [COMMITTEES_PERMISSIONS.VIEW])],
+        ['outsider', as(w, 'outsider')],
+      ];
+      // Every candidate kind: this series, another organisation's meetings, an invented id.
+      const ids = [...r.meetingIds, ...theirs.meetingIds, 'no-such-meeting'];
+      const access = new MeetingAccess(prisma, visibility);
+      const now = new Date();
+      const grid: Record<string, Record<string, boolean>> = {};
+      for (const [kind, viewer] of viewers) {
+        const batched = await access.openable(ids, w.orgId, viewer, now);
+        const single: Record<string, boolean> = {};
+        for (const id of ids) single[id] = (await access.canSee(id, w.orgId, viewer, now)) !== null;
+        expect([kind, Object.fromEntries(ids.map((id) => [id, batched.has(id)]))]).toEqual([kind, single]);
+        grid[kind] = single;
+      }
+      // Non-vacuity: the rule says yes and no, and each viewer kind is the kind it is meant to be.
+      const seen = (kind: string) => r.meetingIds.filter((id) => grid[kind]![id]).length;
+      expect([seen('member'), seen('overseer'), seen('invited to one'), seen('meetings:view'), seen('committees:view'), seen('outsider')]).toEqual([4, 4, 1, 4, 0, 0]);
+      for (const kind of Object.keys(grid)) for (const id of [...theirs.meetingIds, 'no-such-meeting']) expect([kind, id, grid[kind]![id]]).toEqual([kind, id, false]);
+    });
+
+    it('costs the same number of queries for a series of 3 and a series of 30 (P237)', async () => {
+      // A client that reports every statement, running the same services.
+      const pool = new Pool({ connectionString: url, max: 4 });
+      const client = new PrismaClient({ adapter: new PrismaPg(pool), log: [{ emit: 'event', level: 'query' }] });
+      let statements = 0;
+      client.$on('query', () => {
+        statements++;
+      });
+      try {
+        const db = client as unknown as PrismaService;
+        const counted = new MeetingsService(db, new ObjectVisibilityService(db), workflow, new StageRulesService(db), notifications, calendar);
+        const count = async (n: number) => {
+          const w = await world();
+          const r = await series.create(weekly(w, { count: n, weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+          // Invited to the middle meeting only: every other candidate is one they can't open, the worst case.
+          const middle = r.meetingIds[Math.floor(n / 2)]!;
+          await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: middle, kind: 'ORG_GUEST', userId: w.people['outsider']!, invitedAt: new Date() } });
+          statements = 0;
+          const read = await counted.getForViewer(middle, w.orgId, as(w, 'outsider'));
+          expect([read.series!.total, read.series!.previousId, read.series!.nextId]).toEqual([n, null, null]);
+          return statements;
+        };
+        const three = await count(3);
+        const thirty = await count(30);
+        // Non-vacuity: the read was counted at all.
+        expect(three).toBeGreaterThan(0);
+        expect(thirty).toBe(three);
+      } finally {
+        await client.$disconnect();
+      }
+    });
+  });
+
+  describe('what "this and all later" would do (Q2, the scope preview)', () => {
+    /** Every row the write could touch, as a fingerprint, to prove the preview changes none. */
+    const fingerprint = async (w: World, seriesId: string) => ({
+      meetings: (await seriesMeetings(seriesId)).map((m) => [m.id, m.scheduledAt.toISOString(), m.updatedAt.toISOString(), m.location, m.durationMinutes, m.ownEdits.join(',')]),
+      reschedules: await prisma.meetingReschedule.count({ where: { organizationId: w.orgId } }),
+      audit: await prisma.auditLog.count({ where: { organizationId: w.orgId } }),
+      series: (await prisma.meetingSeries.findFirstOrThrow({ where: { id: seriesId } })).updatedAt.toISOString(),
+    });
+
+    it('a reschedule: writes nothing, and its times are exactly what the write then stores', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      const before = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt]));
+      await meetings.reschedule(fourth!, { scheduledAt: new Date(before[fourth!]!.getTime() + 3_600_000).toISOString(), reason: 'Room clash' }, w.orgId, as(w, 'chair'));
+      const to = new Date(before[second!]!.getTime() + 2 * 3_600_000).toISOString();
+
+      const untouched = await fingerprint(w, r.seriesId);
+      const preview = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to }, w.orgId, as(w, 'chair'));
+      expect(await fingerprint(w, r.seriesId)).toEqual(untouched);
+      expect(preview.meetings.map((m) => m.id)).toEqual([second, third]);
+      expect(preview.kept).toEqual([{ meetingId: fourth, title: expect.any(String), fields: ['scheduledAt'], startsAt: expect.any(Date) }]);
+
+      await series.rescheduleLater(second!, { scheduledAt: to, reason: 'Afternoon' }, w.orgId, as(w, 'chair'));
+      const stored = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      for (const m of preview.meetings) expect([m.id, stored[m.id]]).toEqual([m.id, m.startsAt.toISOString()]);
+    });
+
+    it("a reschedule that moves a meeting off another of the owner's days: the preview places it as the write does", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second, third] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // A meeting of the same committee, outside the series, a day after the third:
+      // a one-day shift lands the third on it, so the placement must move it on.
+      const busyDay = new Date(rows[2]!.scheduledAt.getTime() + 86_400_000);
+      await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Extra', typeValueId: meetingType, scheduledAt: busyDay, durationMinutes: 60, location: 'Room 1', committeeId: w.committeeId },
+      });
+      const to = new Date(rows[1]!.scheduledAt.getTime() + 86_400_000).toISOString();
+      const preview = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to }, w.orgId, as(w, 'chair'));
+      await series.rescheduleLater(second!, { scheduledAt: to, reason: 'A day later' }, w.orgId, as(w, 'chair'));
+      const stored = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      const previewed = Object.fromEntries(preview.meetings.map((m) => [m.id, m.startsAt.toISOString()]));
+      expect(previewed[third!]).toBe(stored[third!]);
+      expect(previewed[third!]).not.toBe(new Date(rows[2]!.scheduledAt.getTime() + 86_400_000).toISOString());
+    });
+
+    it('an edit: the meetings it changes and those that keep their own, as the write then reports, writing nothing', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [, second, third, fourth] = r.meetingIds;
+      await meetings.update(third!, { location: 'Room 9' }, w.orgId, as(w, 'chair'));
+      const untouched = await fingerprint(w, r.seriesId);
+      const preview = await series.scopePreview(second!, { change: 'EDIT', location: 'Hall A', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect(await fingerprint(w, r.seriesId)).toEqual(untouched);
+      expect(preview.meetings.map((m) => m.id)).toEqual([second, third, fourth]);
+      expect(preview.meetings.map((m) => m.durationMinutes)).toEqual([90, 90, 90]);
+      expect(preview.kept).toEqual([{ meetingId: third, title: expect.any(String), fields: ['location'], startsAt: expect.any(Date) }]);
+      const res = await series.updateLater(second!, { location: 'Hall A', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect([...res.scope.changed].sort()).toEqual(preview.meetings.map((m) => m.id).sort());
+      expect(res.scope.kept.map((k) => [k.meetingId, k.fields])).toEqual(preview.kept.map((k) => [k.meetingId, k.fields]));
+    });
+
+    it('takes no row lock: it answers while another transaction holds a meeting and its instance FOR UPDATE', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: second! } })).scheduledAt;
+      const answered = await prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Meeting" WHERE id = ${second!} FOR UPDATE`;
+          // And its workflow instance: a FOR SHARE on it in the preview would wait here too.
+          await tx.$queryRaw`SELECT id FROM "WorkflowInstance" WHERE "objectType" = 'MEETING' AND "objectId" = ${second!} FOR UPDATE`;
+          const p = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: new Date(at.getTime() + 3_600_000).toISOString() }, w.orgId, as(w, 'chair'));
+          return p.meetings.length;
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      );
+      expect(answered).toBeGreaterThan(0);
+    });
+
+    it("the clashes at the new times, and never with a meeting that is itself moving", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [first, second] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // A week later: each meeting lands on the next one's old time. Those aren't clashes.
+      const week = await series.scopePreview(first!, { change: 'RESCHEDULE', scheduledAt: new Date(rows[0]!.scheduledAt.getTime() + 7 * 86_400_000).toISOString() }, w.orgId, as(w, 'chair'));
+      expect(week.clashes).toEqual([]);
+      // An hour later, where the member has another (unit) meeting: that one is.
+      const to = new Date(rows[1]!.scheduledAt.getTime() + 3_600_000);
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId;
+      const other = await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Other', typeValueId: meetingType, scheduledAt: to, durationMinutes: 60, location: 'Room 1', orgUnitId: unit },
+      });
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: other.id, kind: 'ORG_GUEST', userId: w.people['member']!, invitedAt: new Date() } });
+      const hour = await series.scopePreview(second!, { change: 'RESCHEDULE', scheduledAt: to.toISOString() }, w.orgId, as(w, 'chair'));
+      const atSecond = hour.clashes.find((c) => c.startsAt === to.toISOString())!;
+      expect(atSecond.people.map((p) => p.userId)).toEqual([w.people['member']]);
+    });
+
+    it('an edit that moves no time names no clash, even where one is already there; a longer meeting is still checked (P237)', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: second! } })).scheduledAt;
+      // The member already has another meeting at the second meeting's time: an existing clash.
+      const unit = (await prisma.committee.findFirstOrThrow({ where: { id: w.committeeId } })).orgUnitId;
+      const other = await prisma.meeting.create({
+        data: { organizationId: w.orgId, organizerId: w.people['chair']!, title: 'Other', typeValueId: meetingType, scheduledAt: at, durationMinutes: 60, location: 'Room 1', orgUnitId: unit },
+      });
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: other.id, kind: 'ORG_GUEST', userId: w.people['member']!, invitedAt: new Date() } });
+      const moved = await series.scopePreview(second!, { change: 'EDIT', location: 'Hall B' }, w.orgId, as(w, 'chair'));
+      expect(moved.meetings.length).toBeGreaterThan(0);
+      expect(moved.clashes).toEqual([]);
+      // Non-vacuity: the same clash is named once the edit changes the duration.
+      const longer = await series.scopePreview(second!, { change: 'EDIT', durationMinutes: 90 }, w.orgId, as(w, 'chair'));
+      expect(longer.clashes.flatMap((c) => c.people.map((p) => p.userId))).toContain(w.people['member']);
+    });
+
+    it('the same "who may ask" as the write: someone who may not edit is refused, and so is a meeting outside a series', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      expect(await code(series.scopePreview(r.meetingIds[1]!, { change: 'EDIT', location: 'X' }, w.orgId, as(w, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      await prisma.meeting.update({ where: { id: r.meetingIds[3]! }, data: { seriesId: null, seriesIndex: null } });
+      expect(await code(series.scopePreview(r.meetingIds[3]!, { change: 'EDIT', location: 'X' }, w.orgId, as(w, 'chair')))).toBe('MEETING_NOT_IN_SERIES');
+    });
+
+    itEnforcesTenantIsolation("another organisation's meeting is the same 404 as a missing one", async () => {
+      const r = await series.create(weekly(a, { count: 2, weekday: 4, firstDate: nextWeekday(a, 4) }), a.orgId, as(a, 'chair'));
+      const other = as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
+      expect(await code(series.scopePreview(r.meetingIds[0]!, { change: 'EDIT', location: 'X' }, b.orgId, other))).toBe(404);
+      expect(await code(series.scopePreview('no-such-meeting', { change: 'EDIT', location: 'X' }, b.orgId, other))).toBe(404);
+      expect(await code(meetings.getForViewer(r.meetingIds[0]!, b.orgId, other))).toBe(404);
     });
   });
 
