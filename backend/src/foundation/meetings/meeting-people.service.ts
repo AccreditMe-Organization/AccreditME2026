@@ -14,6 +14,51 @@ import type { AddMeetingGuestDto, AnswerMeetingDto } from './dto/meeting.dto';
 import type { IMeetingAnswerSummary, IMeetingAttendee, IMeetingGuestCandidates } from './interfaces/meeting.interface';
 
 /** The MEMBER answers of one meeting, in one grouped query (the record read and the "Can't attend" flag share it). */
+/**
+ * ACC-316 PR 6, PR 8a — the people search, ONE copy: ACTIVE people of the
+ * organisation by name, name, unit and position only (never an email), paged
+ * on the server, at most 50. With `notInvitedTo`, those not yet invited to that
+ * meeting (Add a guest); without, anyone (a standing item's presenter, for a
+ * series not yet made). The caller decides who may ask.
+ */
+export async function searchOrgPeople(
+  prisma: PrismaService,
+  organizationId: string,
+  query: { q?: string; skip?: number; take?: number },
+  notInvitedTo?: string,
+): Promise<IMeetingGuestCandidates> {
+  const take = Math.min(Math.max(query.take ?? 20, 1), 50);
+  const skip = Math.max(query.skip ?? 0, 0);
+  const term = query.q?.trim();
+  const base = {
+    organizationId,
+    status: 'ACTIVE' as const,
+    ...(notInvitedTo && { meetingInvitations: { none: { meetingId: notInvitedTo, organizationId } } }),
+  };
+  const where = { ...base, ...(term && { name: { contains: term, mode: 'insensitive' as const } }) };
+  const [rows, matching, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      skip,
+      take,
+      select: {
+        id: true,
+        name: true,
+        primaryOrgUnit: { select: { nameEn: true, nameAr: true } },
+        position: { select: { nameEn: true, nameAr: true } },
+      },
+    }),
+    prisma.user.count({ where }),
+    prisma.user.count({ where: base }),
+  ]);
+  return {
+    items: rows.map((r) => ({ id: r.id, name: r.name, unit: r.primaryOrgUnit, position: r.position })),
+    total,
+    matching,
+  };
+}
+
 export async function meetingAnswerSummary(
   prisma: Pick<PrismaService, 'meetingAttendee'>,
   meetingId: string,
@@ -255,36 +300,7 @@ export class MeetingPeopleService {
     now: Date = new Date(),
   ): Promise<IMeetingGuestCandidates> {
     await this.access.writing(id, organizationId, viewer, now);
-    const take = Math.min(Math.max(query.take ?? 20, 1), 50);
-    const skip = Math.max(query.skip ?? 0, 0);
-    const term = query.q?.trim();
-    const where = {
-      organizationId,
-      status: 'ACTIVE' as const,
-      meetingInvitations: { none: { meetingId: id, organizationId } },
-      ...(term && { name: { contains: term, mode: 'insensitive' as const } }),
-    };
-    const [rows, matching, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
-        skip,
-        take,
-        select: {
-          id: true,
-          name: true,
-          primaryOrgUnit: { select: { nameEn: true, nameAr: true } },
-          position: { select: { nameEn: true, nameAr: true } },
-        },
-      }),
-      this.prisma.user.count({ where }),
-      this.prisma.user.count({ where: { organizationId, status: 'ACTIVE', meetingInvitations: { none: { meetingId: id, organizationId } } } }),
-    ]);
-    return {
-      items: rows.map((r) => ({ id: r.id, name: r.name, unit: r.primaryOrgUnit, position: r.position })),
-      total,
-      matching,
-    };
+    return searchOrgPeople(this.prisma, organizationId, query, id);
   }
 
   async attendees(id: string, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingAttendee[]> {

@@ -16,8 +16,9 @@ import { MeetingRefusal } from './meeting-refusal';
 import { mayActInStagePool } from '../workflow/stage-pool.service';
 import { insertMeetingsInTx, ownerMembers, type NewMeeting } from './meeting-create';
 import { patternDays, seriesTitle, type SeriesPattern } from './meeting-series-dates';
-import type { CheckMeetingClashesDto, CreateMeetingSeriesDto, EndMeetingSeriesDto, MeetingScopePreviewDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
-import type { IMeeting, IMeetingScopePreview, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
+import { searchOrgPeople } from './meeting-people.service';
+import type { CheckMeetingClashesDto, CreateMeetingSeriesDto, EndMeetingSeriesDto, MeetingScopePreviewDto, PresenterCandidatesQueryDto, RescheduleMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
+import type { IMeeting, IMeetingGuestCandidates, IMeetingScopePreview, IMeetingScopeResult, IMeetingSeriesDate, IMeetingSeriesPreview } from './interfaces/meeting.interface';
 
 /** The fields "this and all later" carries to later meetings. The title is each meeting's own (plan §3.2). */
 const SERIES_FIELDS = ['typeValueId', 'durationMinutes', 'location', 'meetingUrl', 'unitQuorum'] as const;
@@ -121,6 +122,20 @@ export class MeetingSeriesService {
     private readonly clashes: MeetingClashService,
   ) {
     this.access = new MeetingAccess(prisma, visibility);
+  }
+
+  /**
+   * PR 8a (Q5) — who a standing agenda item may name as presenter, for a series
+   * not yet made: anyone ACTIVE in the organisation (one not invited becomes a
+   * guest of each meeting, as built). Asked only by whoever may schedule for
+   * that owner, by the schedule's own answer (maySchedule()); anyone else is
+   * MEETING_NOT_ALLOWED, and another organisation's owner
+   * MEETING_OWNER_NOT_FOUND, as schedule() answers.
+   */
+  async presenterCandidates(dto: PresenterCandidatesQueryDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingGuestCandidates> {
+    const { may } = await this.meetings.maySchedule(dto, organizationId, viewer, now);
+    if (!may) throw new MeetingRefusal('MEETING_NOT_ALLOWED');
+    return searchOrgPeople(this.prisma, organizationId, dto);
   }
 
   // ── Preview and create ──────────────────────────────────────────────────────
