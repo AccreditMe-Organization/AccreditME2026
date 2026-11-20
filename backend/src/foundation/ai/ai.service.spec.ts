@@ -59,6 +59,13 @@ async function refusal(promise: Promise<unknown>): Promise<AiRefusalException> {
 }
 
 describe('AiService.run (ACC-194)', () => {
+  it("ACC-322 (P249) — passes a feature's own call timeout on, and only that feature's", async () => {
+    const { service, provider, prisma } = setup();
+    prisma.aiFeatureCost.findUnique.mockResolvedValue({ featureKey: 'minutes_drafting', creditCost: 8, restricted: false, allowedOrganizationIds: [] });
+    await service.run('minutes_drafting', { organizationId: ORG }, request);
+    expect(provider.complete).toHaveBeenLastCalledWith(expect.objectContaining({ maxTokens: 16_000, effort: 'medium', timeoutMs: 300_000 }));
+  });
+
   it('prices, reserves, calls with the feature’s model, effort and limit, logs, and returns the answer', async () => {
     const { service, provider, credits, prisma } = setup();
     // ACC-197 — the log row's id comes back, so a caller can prove the call later.

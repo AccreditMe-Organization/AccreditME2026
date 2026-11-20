@@ -118,6 +118,7 @@ const FEATURE_NAMES: Readonly<Record<string, string>> = {
   morning_briefing: 'aiCredits.feature.morning_briefing',
   task_description_drafting: 'aiCredits.feature.task_description_drafting',
   workload_balancing: 'aiCredits.feature.workload_balancing',
+  minutes_drafting: 'aiCredits.feature.minutes_drafting',
 };
 
 export function aiFeatureNameKey(key: string | null): string {

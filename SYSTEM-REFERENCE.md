@@ -17255,6 +17255,163 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
 
+### 17.12 Meetings AI — Draft minutes, with the action items (ACC-322 PR 1)
+
+Plan, Ahmad's answers (20 Nov, §6) and the PR order:
+`backend/Plans/step-322-meetings-ai.md`. Code: `foundation/meetings/ai/`, and
+`MeetingMinutesService.applyAiDraft()`. Backend only: the screens are PR 2.
+Suggest agenda items (PR 3) and the absent-member summary (PR 5) are not
+built.
+
+- **Who and where.**
+  - **Who:** whoever records the minutes (`MEETING_RECORDERS`). Anyone else
+    gets `MEETING_NOT_RECORDER`, after the meeting's own visibility check (the
+    identical 404).
+  - **Where:** the minutes are a draft, the stage allows `record_minutes`, and
+    the meeting was never returned (`reviewRound === 0`, M9).
+  - **Otherwise** `MEETING_AI_NOT_OFFERED`, with the stage's names.
+  - `PUT …/ai/notes` has the same gate.
+- **Routes:**
+
+  | route | what |
+  |---|---|
+  | `GET /meetings/:id/ai` | One read |
+  | `PUT /meetings/:id/ai/notes` | Saves the rough notes |
+  | `POST /meetings/:id/ai/minutes` | Draft minutes: 8 credits, `RATE_LIMITS.meetingAi` (10 a minute per user) |
+  | `POST /meetings/:id/ai/suggestions/:sid/accept` | Accept a suggestion |
+  | `POST /meetings/:id/ai/suggestions/:sid/discard` | Discard a suggestion |
+
+  None carries `@Permissions`.
+- **The read** (`IMeetingAi`):
+  - **`minutes`:** `{ may, available, creditCost, running }`. Availability
+    comes from `aiFeaturesAvailability()`, the batched form: one organisation
+    read and one feature read, whatever the number of keys.
+  - **Also returned:** the viewer's own notes, the members present, the
+    undecided suggestions, and the undecided count.
+  - **Anyone who does not record the minutes**, and anyone at all outside
+    the draft phase, gets the flags with `may: false` and no content. There
+    is no error.
+- **Stored** (migration `acc322_meetings_ai`, additive):
+  - **`MeetingAiNotes`:** one row per writer, read only by that writer (M3).
+  - **`MeetingAiSuggestion`:** UNDECIDED suggestions only. Accept and Discard
+    delete the row.
+  - **`MeetingAiRun`:** the one-run claim and the last finished run.
+  - **The new `AgendaItem` columns** `sourceTaskId` and
+    `sourceChangeRequestId` are written by PR 3.
+- **A press**, in order. Steps 1–5 happen before any credit is reserved:
+  1. The person and the gate.
+  2. The writer's notes, else `MEETING_AI_NO_NOTES`. The notes are capped at
+     18,000 characters by the DTO.
+  3. The items to draft, by part (M8), else `MEETING_AI_NOTHING_TO_DRAFT`:
+     - the first press (no finished run yet) drafts every item, both parts;
+     - after that, an item's minutes are drafted when it has no discussion
+       and no decision, or still has an undecided minutes suggestion;
+     - its actions are drafted when it has an undecided action suggestion,
+       or when its minutes are being drafted;
+     - at most 6 items a call.
+  4. **Names are replaced, then the input is counted**
+     (`meeting-ai-names.ts`):
+     - every invitee's full name, and each name word of three or more letters
+       that only one invitee has, becomes a label (`[P1]`);
+     - an outside guest's name words are always replaced;
+     - every ACTIVE person's full name is replaced. Each press reads every
+       ACTIVE person in the organisation for this. The read is bounded by the
+       seat limit (`Organization.maxUsers` counts ACTIVE + INVITED), so it has
+       a hard cap (the performance rule);
+     - every email becomes `[email]`;
+     - Arabic is normalised, and honorifics stay outside the label.
+
+     If the input is over 20,000 tokens (`estimateTokens`), the press is
+     refused with `MEETING_AI_TOO_LONG`.
+  5. **One run per meeting**, claimed by `INSERT … ON CONFLICT`, else
+     `MEETING_AI_IN_PROGRESS`. The claim is released on every exit.
+     - **It goes stale 6 minutes after it was taken.** That is
+       `MEETING_AI_CLAIM_STALE_MS`, the feature's call timeout plus 60 s, so a
+       live run never looks stale.
+     - **The release logs ids and the error's name only**, never its message.
+  6. **The gateway, with `accept()`.** The call may take **300 s**
+     (`AI_FEATURES.minutes_drafting.timeoutMs`, P249).
+     - The gateway passes a feature's own `timeoutMs` to the provider. A
+       feature that sets none keeps the provider's 120 s
+       (`AI_DEFAULT_TIMEOUT_MS`).
+     - At 120 s, the largest answer (about 11,300 tokens plus thinking) would
+       need over 130 tokens a second.
+
+     Refunded through `accept()`:
+     - an empty, cut-short or unparseable answer;
+     - an answer naming no item we sent;
+     - an all-"nothing" answer, which is also refused
+       `MEETING_AI_NOTHING_SUGGESTED`.
+  7. **The save:** ONE transaction under the minutes' lock order (the instance
+     FOR SHARE, then the meeting row FOR UPDATE).
+     - It re-checks the stage and M9, and the person before the transaction.
+     - A meeting that moved on saves nothing and stays charged
+       (`MEETING_CHANGED`).
+     - Draft again replaces only the undecided suggestions of the parts it
+       drafted.
+- **The answer** (`minutes-draft-answer.ts`) is JSON that refers to items by
+  label (`A1`–`A6`) and to people by label.
+  - **Caps:** a discussion of 1,200 characters; at most 3 decisions of 300
+    each; at most 4 actions of 140 each.
+  - **Votes** are copied only with all three counts (M6), and never changed.
+  - **Owners come from labels, exactly:**
+    - an outside guest gives an empty owner with the reason `OUTSIDE_GUEST`
+      (M7);
+    - an inactive person, or a name the notes give without a label, gives
+      `NO_MATCH` with the name (Ahmad's line, §6 answer 4).
+  - **Due dates** are the model's day in the organisation's zone. With no
+    time, the end of that day's working hours. A past day is `DATE_PASSED`.
+  - **Names are written back into every text**, so the suggestion reads as
+    written.
+- **Accept** goes through `MeetingMinutesService.applyAiDraft()`. That is one
+  minutes write, in the same frame as every other: whoever records the
+  minutes, `record_minutes` only (MinutesNeed `aiDraft`), and one audit row
+  with `aiDraft: { kind, interactionId }`.
+  - Its first step deletes the suggestion under the meeting row's lock, so it
+    applies at most once (`MEETING_AI_SUGGESTION_GONE`).
+  - **A minutes suggestion replaces each part it carries (M5):** the
+    discussion, and the item's decisions as a whole.
+  - **Votes skip only the total-versus-present refusal**
+    (`checkVotes(…, { abovePresent: 'keep' })`, M6). The ordinary decision
+    write still refuses them, and Distribute's readiness check holds the
+    minutes until they are corrected.
+  - **An action** passes `actionItemFields()` and `assertActionOwner()`, the
+    rules `addActionItem()` also uses. The body may supply the title, owner
+    and due date from the inline Edit row.
+- **When the rows end:**
+  - **Distribute's `inTx`** deletes the undecided minutes and action
+    suggestions and every note. Its audit row records `aiDiscarded`.
+  - **What keeps a run's save from landing after a delete is the INSTANCE
+    lock.** The move holds the meeting's workflow instance FOR UPDATE until it
+    commits. A save takes it FOR SHARE first, so it waits, re-checks the stage
+    and saves nothing. The cancelled effect takes no meeting-row lock and needs
+    none.
+  - **The minutes read's `distribute.aiUndecided`** is the count named in
+    the confirm (M2). It never holds Distribute.
+  - **The cancelled effect** deletes every suggestion and every note.
+- **The log keeps no customer text.** Its description is ids and counts
+  ("Meeting … minutes draft, 1 item(s), notes 312 characters").
+- **Mutation-checked** (each turns its spec red):
+  - the M9 check;
+  - the M6 skip;
+  - the outside-guest owner;
+  - the Distribute delete;
+  - the cancel delete;
+  - the writer-only notes read;
+  - the past-date rule;
+  - the batched availability;
+  - and, in P249, the provider using the request's timeout, the 120 s
+    default, the gateway passing a feature's timeout on, and the stale window
+    longer than the timeout.
+- **For PR 2:**
+  - **Never write the saved notes back into the box while someone types.**
+    The notes DTO trims, so writing the saved value back would eat a trailing
+    space.
+  - **The screen's request for Draft minutes waits longer than 300 s.** On a
+    client timeout, the screen reads `GET …/ai` and shows `running` or the
+    saved suggestions, never Retry. Giving up earlier would say "timed out"
+    while the server finishes the run and charges for it.
+
 ---
 
 ## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5, 6)

@@ -11,6 +11,7 @@ import { mayActInStagePool } from '../workflow/stage-pool.service';
 import { MEETING_ACTIONS } from '../workflow/record-registry';
 import { isMeetingKindMember, type MeetingOwner } from '../workflow/meeting-authority';
 import { MeetingAccess, asMeetingConflict, lockMeetingRow, type MeetingViewer } from './meeting-access';
+import { discardMinutesAi } from './ai/meeting-ai-cleanup';
 import { MeetingRefusal } from './meeting-refusal';
 import { dayAsDate, distributeBlockedBy, reviewDayDefaults } from './meeting-minutes-rules';
 import { minutesAudit } from './meeting-minutes.service';
@@ -65,9 +66,11 @@ export class MeetingReviewService {
   // ── Distribute and Return (the app's moves) ─────────────────────────────────
 
   /**
-   * The ONE place Distribute Minutes writes, inside the move's transaction
-   * (ACC-322 extends this `inTx` to discard undecided AI suggestions and the
-   * rough notes, plan §6a).
+   * The ONE place Distribute Minutes writes, inside the move's transaction.
+   * ACC-322 (M2, M3): it discards the undecided AI minutes and action
+   * suggestions and the rough notes, under the meeting row's lock, and its
+   * audit row records how many suggestions it discarded. The count never
+   * holds Distribute.
    */
   async distribute(id: string, dto: DistributeMinutesDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<void> {
     await this.access.seeing(id, organizationId, viewer, now);
@@ -89,7 +92,8 @@ export class MeetingReviewService {
             data: { reviewRound: { increment: 1 }, reviewBy: dayAsDate(day) },
             select: { title: true, reviewRound: true },
           });
-          await minutesAudit(tx, organizationId, viewer.id, id, { distributed: true, round: meeting.reviewRound, reviewBy: day });
+          const aiDiscarded = await discardMinutesAi(tx, id, organizationId);
+          await minutesAudit(tx, organizationId, viewer.id, id, { distributed: true, round: meeting.reviewRound, reviewBy: day, aiDiscarded });
           told = { title: meeting.title, userIds: await presentMembers(tx, id, organizationId) };
         },
       })

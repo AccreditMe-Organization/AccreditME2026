@@ -502,6 +502,9 @@ model Organization {
   aiInteractionLogs        AiInteractionLog[]
   aiBriefings              AiBriefing[]
   aiFileSummaries          AiFileSummary[]
+  meetingAiNotes           MeetingAiNotes[] // ACC-322
+  meetingAiSuggestions     MeetingAiSuggestion[] // ACC-322
+  meetingAiRuns            MeetingAiRun[] // ACC-322
   loginAttempts            LoginAttempt[]
   refreshTokens            RefreshToken[]
   userTransferEvents       UserTransferEvent[] // ACC-46 Section 2.6.f
@@ -667,6 +670,8 @@ model User {
   aiInteractionLogs               AiInteractionLog[]
   aiBriefings                     AiBriefing[]
   aiFileSummariesGenerated        AiFileSummary[]            @relation("AiFileSummaryGeneratedBy")
+  meetingAiNotes                  MeetingAiNotes[]           @relation("MeetingAiNotesWriter") // ACC-322
+  meetingAiSuggestionsCreated     MeetingAiSuggestion[]      @relation("MeetingAiSuggestionCreatedBy") // ACC-322
   position                        OrgPosition?               @relation(fields: [positionId], references: [id])
   primaryOrgUnit                  OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
   actingOrgUnit                   OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
@@ -1677,6 +1682,8 @@ model Task {
   meetingActionItem          MeetingActionItem? // ACC-316
   meetingOpenActionNotes     MeetingOpenActionNote[]
 
+  agendaItemsSourced AgendaItem[] @relation("AgendaItemSourceTask") // ACC-322
+
   @@index([organizationId])
   @@index([status])
   @@index([dueAt])
@@ -2178,6 +2185,8 @@ model CommitteeChangeRequest {
   committee   Committee @relation(fields: [committeeId], references: [id])
   requestedBy User      @relation("CommitteeChangeRequestRequester", fields: [requestedById], references: [id])
 
+  agendaItemsSourced AgendaItem[] @relation("AgendaItemSourceChangeRequest") // ACC-322
+
   @@unique([committeeId, number])
   @@index([organizationId])
   @@index([organizationId, committeeId])
@@ -2249,6 +2258,10 @@ model Meeting {
   suggestions     MeetingSuggestion[]
   reviewChanges   MeetingReviewChange[]
   reschedules     MeetingReschedule[]
+  // ACC-322 — AI: the writers' rough notes, undecided suggestions, run claims.
+  aiNotes         MeetingAiNotes[]
+  aiSuggestions   MeetingAiSuggestion[]
+  aiRuns          MeetingAiRun[]
 
   @@index([organizationId])
   @@index([committeeId])
@@ -2258,33 +2271,42 @@ model Meeting {
 }
 
 model AgendaItem {
-  id                  String  @id @default(cuid())
-  meetingId           String
-  title               String
-  description         String?
-  order               Int
-  duration            Int?
+  id                    String  @id @default(cuid())
+  meetingId             String
+  title                 String
+  description           String?
+  order                 Int
+  duration              Int?
   // ACC-316 — superseded by presenterAttendeeId; dropped in the contract step.
-  presenter           String?
+  presenter             String?
   // ACC-316 — NOT NULL from the start: the table has no rows and no writer.
-  organizationId      String
+  organizationId        String
   // The presenter is an invitee: a member, a guest, or an outside guest.
-  presenterAttendeeId String?
+  presenterAttendeeId   String?
   // Copied in by a series' standing agenda.
-  standing            Boolean @default(false)
+  standing              Boolean @default(false)
   // The minutes for this item.
-  discussion          String?
+  discussion            String?
+  // ACC-322 — the task or change request an AI agenda suggestion came from,
+  // written only when the item is added from one (PR 3), read only by the
+  // agenda suggestions' exclusion. Never reconstructed from audit rows.
+  sourceTaskId          String?
+  sourceChangeRequestId String?
 
-  meeting           Meeting               @relation(fields: [meetingId], references: [id])
-  organization      Organization          @relation(fields: [organizationId], references: [id])
-  presenterAttendee MeetingAttendee?      @relation("AgendaItemPresenter", fields: [presenterAttendeeId], references: [id], onDelete: SetNull)
-  decisions         MeetingDecision[]
-  actionItems       MeetingActionItem[]
-  suggestions       MeetingSuggestion[]
-  reviewChanges     MeetingReviewChange[]
+  meeting             Meeting                 @relation(fields: [meetingId], references: [id])
+  organization        Organization            @relation(fields: [organizationId], references: [id])
+  presenterAttendee   MeetingAttendee?        @relation("AgendaItemPresenter", fields: [presenterAttendeeId], references: [id], onDelete: SetNull)
+  sourceTask          Task?                   @relation("AgendaItemSourceTask", fields: [sourceTaskId], references: [id], onDelete: SetNull)
+  sourceChangeRequest CommitteeChangeRequest? @relation("AgendaItemSourceChangeRequest", fields: [sourceChangeRequestId], references: [id], onDelete: SetNull)
+  decisions           MeetingDecision[]
+  actionItems         MeetingActionItem[]
+  suggestions         MeetingSuggestion[]
+  reviewChanges       MeetingReviewChange[]
+  aiSuggestions       MeetingAiSuggestion[]
 
   @@index([meetingId])
   @@index([organizationId])
+  @@index([meetingId, sourceTaskId])
 }
 
 // ACC-316 — a repeating pattern that creates ordinary meetings ahead of time
@@ -2441,6 +2463,83 @@ model MeetingOpenActionNote {
   updatedBy    User?        @relation("MeetingOpenActionNoteUpdatedBy", fields: [updatedById], references: [id])
 
   @@unique([meetingId, taskId])
+  @@index([organizationId])
+}
+
+// ACC-322 — Meetings AI (plan backend/Plans/step-322-meetings-ai.md §2).
+enum MeetingAiKind {
+  AGENDA_ITEM
+  ITEM_MINUTES
+  ACTION_ITEM
+  ABSENT_SUMMARY
+}
+
+enum MeetingAiRunKind {
+  AGENDA
+  MINUTES
+  ABSENT_SUMMARY
+}
+
+/// ACC-322 — the rough notes: one per writer, read only by that writer (M3).
+/// Deleted at Distribute Minutes, at cancel, and with the meeting.
+model MeetingAiNotes {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  writerId       String
+  text           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  writer       User         @relation("MeetingAiNotesWriter", fields: [writerId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, writerId])
+  @@index([organizationId])
+}
+
+/// ACC-322 — an UNDECIDED AI suggestion. Accept and Discard delete the row;
+/// nothing decided is kept here (the record is the minutes and the audit).
+model MeetingAiSuggestion {
+  id              String        @id @default(cuid())
+  organizationId  String
+  meetingId       String
+  // Null for AGENDA_ITEM and ABSENT_SUMMARY.
+  agendaItemId    String?
+  kind            MeetingAiKind
+  order           Int
+  // 'en' | 'ar' — the presser's interface language.
+  language        String
+  // The parsed, checked suggestion, names already written back.
+  payload         Json
+  // The call that made it (AiInteractionLog), for aiDraft. Null if its log row could not be written.
+  aiInteractionId String?
+  createdById     String
+  createdAt       DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agendaItem   AgendaItem?  @relation(fields: [agendaItemId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("MeetingAiSuggestionCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([meetingId, kind])
+}
+
+/// ACC-322 — one run at a time per meeting and feature: the claim, and the last finished run.
+model MeetingAiRun {
+  organizationId String
+  meetingId      String
+  kind           MeetingAiRunKind
+  claimedById    String?
+  claimedAt      DateTime?
+  lastDoneAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, kind])
   @@index([organizationId])
 }
 

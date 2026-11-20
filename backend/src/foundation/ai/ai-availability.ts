@@ -28,6 +28,20 @@ export async function aiFeatureAvailability(
   organizationId: string,
   featureKey: AiFeatureKey,
 ): Promise<AiFeatureAvailability> {
+  return (await aiFeaturesAvailability(prisma, organizationId, [featureKey]))[featureKey];
+}
+
+/**
+ * ACC-322 — the same answer for several features at once, in a FIXED number of
+ * queries whatever the number of keys: one organisation read and one
+ * openAiFeatures(). A page offering several AI features (the meeting page) asks
+ * once, never once per feature. The single-key form above calls this.
+ */
+export async function aiFeaturesAvailability<K extends AiFeatureKey>(
+  prisma: Pick<PrismaService, 'organization' | 'aiFeatureCost'>,
+  organizationId: string,
+  featureKeys: readonly K[],
+): Promise<Record<K, AiFeatureAvailability>> {
   const [org, features] = await Promise.all([
     prisma.organization.findFirst({
       where: { id: organizationId },
@@ -44,11 +58,13 @@ export async function aiFeatureAvailability(
     }),
     openAiFeatures(prisma, organizationId),
   ]);
-  const feature = features.find((f) => f.key === featureKey);
-  if (!org || !feature) return { available: false, reason: 'FEATURE_NOT_AVAILABLE', creditCost: null };
-  const balance = aiBalanceOf(org);
-  if (!balance.enabled) {
-    return { available: false, reason: balance.monthlyCredits > 0 ? 'SWITCHED_OFF' : 'NO_ALLOWANCE', creditCost: feature.creditCost };
+  const balance = org ? aiBalanceOf(org) : null;
+  const out = {} as Record<K, AiFeatureAvailability>;
+  for (const key of featureKeys) {
+    const feature = features.find((f) => f.key === key);
+    if (!balance || !feature) out[key] = { available: false, reason: 'FEATURE_NOT_AVAILABLE', creditCost: null };
+    else if (!balance.enabled) out[key] = { available: false, reason: balance.monthlyCredits > 0 ? 'SWITCHED_OFF' : 'NO_ALLOWANCE', creditCost: feature.creditCost };
+    else out[key] = { available: true, creditCost: feature.creditCost };
   }
-  return { available: true, creditCost: feature.creditCost };
+  return out;
 }

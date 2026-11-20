@@ -58,6 +58,13 @@ export const RATE_LIMITS = {
    * the same person makes no request at all.
    */
   workloadHint: { limit: 20, ttl: MINUTE },
+  /**
+   * ACC-322 — each Meetings AI press (Draft minutes; later Suggest agenda
+   * items and Draft summary), per signed-in USER. ACC-197's tier: a person
+   * never presses ten times a minute, and one run per meeting and feature is
+   * claimed anyway.
+   */
+  meetingAi: { limit: 10, ttl: MINUTE },
 } as const;
 
 /** The second named throttler: counts password-reset requests per email. */

@@ -18,15 +18,30 @@ import { MeetingReviewService } from './meeting-review.service';
 import { MeetingSeriesService } from './meeting-series.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
 import { TaskModule } from '../task/task.module';
+import { AiModule } from '../ai/ai.module';
+import { MeetingAiController } from './ai/meeting-ai.controller';
+import { MeetingAiService } from './ai/meeting-ai.service';
 
 // ACC-316 PR 3a — one meeting's record. TenantModule for ObjectVisibilityService
 // (forwardRef, as CommitteesModule takes it); WorkflowModule for the instance
 // start and the stage rules. NotificationService is @Global (NotificationModule).
 @Module({
   // ACC-316 PR 7b — TaskModule for TaskAdmissionService (the open actions' task links). TaskModule never imports this module, so no forwardRef.
-  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule, TaskModule],
-  controllers: [MeetingsController, MeetingMinutesController],
-  providers: [MeetingsService, MeetingPeopleService, MeetingAgendaService, MeetingFilesService, MeetingClashService, MeetingMinutesService, MeetingReviewService, MeetingSeriesService, MeetingFormChoicesService],
+  // ACC-322 — AiModule for AiService, the one AI gateway (Meetings AI). AiModule imports nothing of meetings.
+  imports: [PrismaModule, forwardRef(() => TenantModule), forwardRef(() => LookupModule), WorkflowModule, WorkingCalendarModule, MeetingInviteesModule, FileStorageModule, TaskModule, AiModule],
+  controllers: [MeetingsController, MeetingMinutesController, MeetingAiController],
+  providers: [
+    MeetingsService,
+    MeetingPeopleService,
+    MeetingAgendaService,
+    MeetingFilesService,
+    MeetingClashService,
+    MeetingMinutesService,
+    MeetingReviewService,
+    MeetingSeriesService,
+    MeetingFormChoicesService,
+    MeetingAiService,
+  ],
   exports: [MeetingsService],
 })
 export class MeetingsModule {}

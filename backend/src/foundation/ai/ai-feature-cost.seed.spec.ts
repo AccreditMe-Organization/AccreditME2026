@@ -11,6 +11,8 @@ describe('planAiFeatureCostSeed (ACC-194, D4/D12/D17)', () => {
       ['morning_briefing', 5],
       // ACC-199 (Q10) — open to every organisation with AI.
       ['workload_balancing', 1],
+      // ACC-322 (Ahmad, 20 Nov) — open to every organisation with AI.
+      ['minutes_drafting', 8],
     ]);
     for (const r of AI_FEATURE_COST_SEED) expect(AI_FEATURE_KEYS).toContain(r.featureKey);
   });
@@ -21,6 +23,7 @@ describe('planAiFeatureCostSeed (ACC-194, D4/D12/D17)', () => {
       expect.objectContaining({ kind: 'create', featureKey: 'document_summary', creditCost: 15, restricted: false, allowedOrganizationIds: [] }),
       expect.objectContaining({ kind: 'create', featureKey: 'morning_briefing', creditCost: 5, restricted: true, allowedOrganizationIds: ['org-nakheel'] }),
       expect.objectContaining({ kind: 'create', featureKey: 'workload_balancing', creditCost: 1, restricted: false, allowedOrganizationIds: [] }),
+      expect.objectContaining({ kind: 'create', featureKey: 'minutes_drafting', creditCost: 8, restricted: false, allowedOrganizationIds: [] }),
     ]);
   });
 
@@ -31,6 +34,7 @@ describe('planAiFeatureCostSeed (ACC-194, D4/D12/D17)', () => {
       ['document_summary', 'keep'],
       ['morning_briefing', 'keep'],
       ['workload_balancing', 'create'],
+      ['minutes_drafting', 'create'],
     ]);
   });
 
