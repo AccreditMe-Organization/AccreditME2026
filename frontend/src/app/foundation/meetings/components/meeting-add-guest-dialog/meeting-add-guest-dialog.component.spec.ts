@@ -7,6 +7,7 @@ import { Subject, of } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { aMeeting } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingClashDto } from '../../services/meeting.service';
@@ -61,6 +62,8 @@ describe('MeetingAddGuestDialogComponent (ACC-316 PR 6)', () => {
   // ── PR 8c (R5-5, Q9) — the chosen person's clash line ──────────────────────
 
   describe('the clash line for the person chosen', () => {
+    // Its Arabic test switches the language: <html> is put back after each test.
+    preserveDocumentLanguage();
     let clashes: jasmine.Spy;
     const huda = { id: 'u-7', name: 'Dr. Huda Zahrani', unit: null, position: null };
     const busy = (title: string | null): MeetingClashDto => ({

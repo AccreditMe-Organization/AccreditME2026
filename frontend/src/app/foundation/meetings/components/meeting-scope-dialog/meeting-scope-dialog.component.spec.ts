@@ -9,6 +9,7 @@ import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { TestFormatContext } from '../../../../core/formatting/format-context';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { aMeeting, aSeries } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingClashDto, type MeetingScopePreviewDto, type MeetingScopePreviewRequest } from '../../services/meeting.service';
 import { MeetingScopeDialogComponent } from './meeting-scope-dialog.component';
@@ -35,6 +36,8 @@ function aPreview(overrides: Partial<MeetingScopePreviewDto> = {}): MeetingScope
 }
 
 describe('MeetingScopeDialogComponent (ACC-316 PR 8c)', () => {
+  // Its Arabic test switches the language: <html> is put back after each test.
+  preserveDocumentLanguage();
   let scopePreview: jasmine.Spy;
   let clashes: jasmine.Spy;
 
