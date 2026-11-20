@@ -18,6 +18,13 @@ export interface WorkflowMoveDto {
   needsReason?: boolean;
   /** ACC-316 PR 6 — the flags of the stage the move enters (its meaning, never its name). */
   toStageFlags?: string[];
+  /**
+   * ACC-316 PR 4 — an ADVANCE move the record's own precondition would refuse
+   * now: the refusal's code and its details, else null. Read by a record page
+   * that can say the code (PR 7c-2: Approve Minutes), through the move buttons'
+   * `explains`.
+   */
+  blockedBy?: ({ code: string } & Record<string, unknown>) | null;
 }
 
 export interface WorkflowMovesDto {

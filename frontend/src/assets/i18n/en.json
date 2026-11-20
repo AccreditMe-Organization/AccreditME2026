@@ -1370,7 +1370,9 @@
       "hint": "Sent to the people told about this move",
       "required": "Give a reason for this move.",
       "confirm": "Confirm"
-    }
+    },
+    "why": "Why?",
+    "whyNamed": "Why {{move}} isn't available yet"
   },
   "notification": {
     "openRecord": "Open record",
@@ -2603,7 +2605,9 @@
       "stale": "Some checks haven't run recently, so these may be out of date. Setup health has the details.",
       "empty": "Nothing needs fixing.",
       "note": "Each line is a live condition, not a message. It clears by itself at the next hourly check once the setup is fixed. There is nothing to dismiss."
-    }
+    },
+    "awaitingReviewMeta": "Minutes to review · by {{day}}",
+    "awaitingReviewMetaNoDate": "Minutes to review"
   },
   "list": {
     "noResults": "No matching results",
@@ -3707,6 +3711,24 @@
       "minutesPlanned": {
         "one": "{{planned}} of {{count}} min planned",
         "other": "{{planned}} of {{count}} min planned"
+      },
+      "cantApprove": {
+        "suggestionsOpen": {
+          "one": "{{count}} suggestion is still open. Apply or decline it first.",
+          "other": "{{count}} suggestions are still open. Apply or decline each first."
+        },
+        "actionsPastDue": {
+          "one": "This action item is past its due date. Change the date first:",
+          "other": "These {{count}} action items are past their due date. Change the dates first:"
+        },
+        "actionsPastLimit": {
+          "one": "This action item is due after {{limit}}, the latest a task may be due. Bring the date forward first:",
+          "other": "These {{count}} action items are due after {{limit}}, the latest a task may be due. Bring the dates forward first:"
+        },
+        "more": {
+          "one": "and {{count}} more",
+          "other": "and {{count}} more"
+        }
       }
     }
   },
@@ -5292,6 +5314,19 @@
       "removeError": "The file couldn't be removed.",
       "viewerContext": "From {{name}}",
       "loadFailed": "Couldn't load the files."
+    },
+    "approve": {
+      "title": "Approve the minutes?",
+      "lead": "The minutes become final and can't be changed. Each action item becomes a task, and its owner is told.",
+      "confirm": "Approve Minutes",
+      "keep": "Not yet"
+    },
+    "cantApprove": {
+      "reviewOpen": "The review is open until {{day}}. Still to answer:",
+      "reviewOpenNoDate": "The review is still open. Still to answer:",
+      "itemLine": "Item {{n}} · due {{at}} · {{title}}",
+      "itemLineNoOrder": "Due {{at}} · {{title}}",
+      "other": "Something holds this move. Reload the meeting and try again."
     }
   }
 }
