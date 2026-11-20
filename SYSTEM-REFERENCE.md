@@ -9040,6 +9040,7 @@ field is kept for older callers (`holders[].{id,name,positionId}`,
 | `lastVacancy {at, by{userId,name}}` | latest `VACATED` event; `by` is its `approvedBy`, who recorded it | no `VACATED` event |
 | `pendingHeadAccessSince` | the pending successor's `HANDOVER_DECLARED.createdAt`: access starts at declaration | nobody pending, or no event |
 | `cover {userId,name,reason,validFrom,validTo}` | `findRunningActingCover()` | no cover in force |
+| `activeCover {userId,name}` (ACC-328) | `findActiveCoversForUnits()`: in force AND its person ACTIVE | no such cover |
 | `scheduledCover` | an ACTING period not ended, starting later | none |
 | `recentlyEndedCovers[] {userId,name,endedAt}` | ACTING periods whose `validTo` fell in the last 7 days, newest first | (empty list) |
 
@@ -9053,6 +9054,11 @@ field is null, and the panel says what is NOT recorded.
 month) and cleared only by End cover; a cover that lapses on its own date
 leaves it set. While a scheduled cover exists, Arrange cover is refused and
 End cover accepted, so the panel treats it as covered.
+
+**`activeCover` is the cover the server USES as acting head (ACC-328)**, the
+rule a promotion's parent manager follows since ACC-324, so the Transfer
+wizard's manager preview reads it (after a head holder), never the cached
+`actingHeadUserId`; it costs this route one more query.
 
 **THE NAMES RULE (D7, Ahmad).** Every person `name` in the response is null
 unless the caller holds `users:view`; ids, dates, reasons and position titles
