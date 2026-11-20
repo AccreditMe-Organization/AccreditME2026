@@ -18378,7 +18378,7 @@ they follow the space the page has, and a 390px layout spec can measure them
 
 ### 18.22 The screens, part 3a: the series on the meeting page (PR 8b)
 
-Plan PR 8 slice 8b (P235, P239), Meeting Screens' header and A9.
+Plan PR 8 slice 8b (P235, P239, P240), Meeting Screens' header and A9.
 
 - **One place words a series: `meeting-series-text.ts`.** The pattern
   mapping (every value of `every`, `on.kind` and `ordinal` the server stores,
@@ -18387,6 +18387,8 @@ Plan PR 8 slice 8b (P235, P239), Meeting Screens' header and A9.
   `seriesLine()` (the header's "… · 4 of 12") and `seriesSummary()` (the
   series view's line). Schedule's step 2 (Repeat, PR 8a) reads the same
   lists and functions, never a second copy. Numbers through the format layer.
+  Every's numbers ("Every 2 weeks") are fixed by its list, so they are fixed
+  strings, never counted ones.
 - **After End series** both lines read "Every month · ended after 4 of 12"
   (Q11, the recommendation), from one key pair, `meeting.series.ended`, and
   the read's `endedAfter` (§18.14).
@@ -18395,20 +18397,35 @@ Plan PR 8 slice 8b (P235, P239), Meeting Screens' header and A9.
   then previous and next as links named by their dates ("‹ 25 Feb 2027",
   each with an accessible name saying which way), shown ONLY where the read
   names them, and "Whole series". The screen never works out a neighbour.
-  Arrows are translations, so they point the reading way in Arabic; dates
-  are isolated (`bdi`).
+  The arrows are U+2039 and U+203A in BOTH languages: both are
+  Bidi_Mirrored, so at dir=rtl the browser draws each flipped and Arabic's
+  previous points right (checked once in Chromium, P240). A spec pins
+  ar.json's glyphs equal to en.json's, because a hand swap would point them
+  the wrong way. The line and the dates are isolated (`bdi`).
 - **`/meetings/:id` is `MeetingPageHostComponent`**, which builds the page
   inside a block keyed by the id: a series link opens the same route with
   another id, which Angular would otherwise reuse with the first meeting's
   state. The page itself is unchanged.
-- **The whole series: `/meetings?seriesId=`**, the list in the owner
-  filter's shape: the series' Upcoming and Past from the server (`GET
-  /meetings?view=…&seriesId=`, under the visibility rule), headed "Whole
-  series · {owner}" and the series' line. The header comes from the link's
-  navigation state (the series and its owner, only when its id is this
-  series'), else the owner from the first row and the line from that
-  meeting's read, once. A cancelled meeting reads Cancelled, struck through
-  (A9).
+- **The whole series: `/meetings?seriesId=`**, ONE list by date, as drawn
+  (P240): `GET /meetings?view=series&seriesId=` answers every meeting of the
+  series the viewer may open (`meetingMayOpenSql()`, the parent rule's one SQL
+  form, which every list view now reads), past and future, cancelled ones
+  included, scoped by organisation, by date, in one answer capped at
+  `SERIES_LIST_CAP` (53, a series' most), never paged. `seriesId` is
+  required with it. No views to switch between; the order line reads "Sorted
+  by date, earliest first." It is headed "Whole series · {owner}" and the
+  series' line: from the link's navigation state (the series and its owner,
+  only when its id is this series'), else the owner from the first row and the
+  line from that meeting's read, once. A cancelled meeting reads Cancelled,
+  struck through (A9).
+- **The rows' notes, only from stored data.** "Rescheduled from 20 May 2027"
+  is the meeting's latest `MeetingReschedule` row (`movedFrom`, one batched
+  read, on this view only): the reschedule the meeting page's own
+  "Rescheduled from" reads. **Not built:** the drawing's "Its own time, 10:00"
+  (that a later "this and all later" reschedule skipped this meeting is not
+  stored as such) and the cancelled meeting's reason (it is the Cancel move's
+  comment, not on the meeting or series rows). Neither is rebuilt from the
+  audit log.
 - **Measured** at 1280 and 390 in both languages
   (`meeting-page.series.layout.spec.ts`): in the facts row at 1280 and one
   column on the phone, the line drawn whole, the links previous → whole →
