@@ -17758,13 +17758,17 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   else the owner's members.
 - **Only the owner's members and this meeting's invitees** may be checked; a
   sent `userIds` naming anyone else is 400 `MEETING_CLASH_PERSON_NOT_INVITEE`.
-  **One widening (PR 8c, R5-5), for Add a guest:** with a `meetingId`, a person
-  Add a guest may choose (ACTIVE in this organisation) may also be named. The
+  **One widening (PR 8c, R5-5), for Add a guest's own question and nothing
+  more:** with a `meetingId`, a person Add a guest may choose (ACTIVE in this
+  organisation) may also be named, ONLY when every time sent is the meeting's
+  own stored start and duration. Any other time with such a person is that
+  same 400 (P254): it would read their busy times across the calendar. The
   asker has already passed `writing()`, the same gate as Add a guest and its
   search, which lists those very people. Someone inactive, another
   organisation's person or an invented id is still that 400, and a new meeting
-  (no `meetingId`) still checks the owner's members only. One count query, only
-  when a name isn't a member or invitee.
+  (no `meetingId`) still checks the owner's members only. The meeting's time
+  and the person count are read in one query, only when a name isn't a member
+  or invitee.
 - **What counts:** for each time and person, the other meetings they are an
   invitee of, not cancelled (by the `MEETING_CANCELLED` flag), whose time
   STRICTLY overlaps. Back-to-back is not a clash, and the same series counts.
@@ -18703,8 +18707,10 @@ Plan PR 8 slice 8c (P235, P245, P253), Meeting Screens round 5 (artboards
     never worked out on the screen, since times move off non-working days and
     the owner's own meetings. While it is asked the line says so; pressing
     Apply then waits for it and applies when it arrives, so "this and later"
-    is never applied blind. A lost preview offers Retry; a refused one is said
-    from its code, with no Retry;
+    is never applied blind. A lost preview offers Retry (and Apply asks again,
+    then applies); a refused one is said from its code, with no Retry, and
+    Apply does nothing for "this and all later" while it stands (P254). "This
+    meeting only" still applies;
   - **kept:** "Kept its own edit: 26 Nov 2026 (its own time, 10:00)", the
     fields in words ("its own place, its own link"); one line, then "and n
     more kept their own edits" (`plural.meeting.keptMore`);
@@ -18730,7 +18736,7 @@ Plan PR 8 slice 8c (P235, P245, P253), Meeting Screens round 5 (artboards
   never carries a title (§18.14). In a series its button reads Next.
 - **Add a guest** (R5-5, Q9): once a person is chosen, "Dr. Huda Zahrani has
   another meeting then · Show which", their meetings as rows (the clash check
-  naming that person, §18.11's widening). The latest choice wins; an outside
+  naming that person at the meeting's own time, §18.11's widening). The latest choice wins; an outside
   guest is never checked. A warning: Add stays enabled.
 - **Nowhere else in v1** (Q10): not on the meeting page and not in notices.
 - **`am-meeting-clash`** gained three opt-in forms: `person` (one person, the
