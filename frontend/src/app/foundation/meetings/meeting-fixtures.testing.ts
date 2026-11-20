@@ -1,4 +1,4 @@
-import type { MeetingAttendanceRowDto, MeetingAttendeeDto, MeetingDto, MeetingMinutesDto, MeetingMinutesItemDto } from './services/meeting.service';
+import type { MeetingAttendanceRowDto, MeetingAttendeeDto, MeetingDto, MeetingMinutesDto, MeetingMinutesItemDto, MeetingSeriesDto } from './services/meeting.service';
 
 /**
  * ACC-316 PR 6 — a meeting as the server answers GET /meetings/:id, for the
@@ -23,6 +23,31 @@ export function aMeeting(overrides: Partial<MeetingDto> = {}): MeetingDto {
     may: { edit: true, reschedule: true, manageGuests: true, manageAgenda: true, answer: true },
     answers: { members: 8, attending: 5, cantAttend: 2, noAnswer: 1, quorum: 5, belowQuorum: false },
     myAnswer: { answer: null, note: null },
+    series: null,
+    ...overrides,
+  };
+}
+
+/**
+ * ACC-316 PR 8b — a meeting's series: the 4th of 12, monthly on the 4th
+ * Thursday, with a meeting either side the viewer may open.
+ */
+export function aSeries(overrides: Partial<MeetingSeriesDto> = {}): MeetingSeriesDto {
+  return {
+    id: 'series-1',
+    index: 4,
+    total: 12,
+    every: 'MONTH_1',
+    on: { kind: 'ORDINAL_WEEKDAY', weekday: 4, dayOfMonth: null, ordinal: 'FOURTH' },
+    ended: false,
+    firstDate: '2026-12-24',
+    endsOn: null,
+    count: 12,
+    previousId: 'm-prev',
+    previousAt: '2027-02-25T10:30:00.000Z',
+    nextId: 'm-next',
+    nextAt: '2027-04-22T10:30:00.000Z',
+    endedAfter: null,
     ...overrides,
   };
 }
