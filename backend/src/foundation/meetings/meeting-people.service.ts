@@ -13,7 +13,6 @@ import { emailOutsideGuests, notifyUsers, organisationNames } from './meeting-se
 import type { AddMeetingGuestDto, AnswerMeetingDto } from './dto/meeting.dto';
 import type { IMeetingAnswerSummary, IMeetingAttendee, IMeetingGuestCandidates } from './interfaces/meeting.interface';
 
-/** The MEMBER answers of one meeting, in one grouped query (the record read and the "Can't attend" flag share it). */
 /**
  * ACC-316 PR 6, PR 8a — the people search, ONE copy: ACTIVE people of the
  * organisation by name, name, unit and position only (never an email), paged
@@ -59,6 +58,7 @@ export async function searchOrgPeople(
   };
 }
 
+/** The MEMBER answers of one meeting, in one grouped query (the record read and the "Can't attend" flag share it). */
 export async function meetingAnswerSummary(
   prisma: Pick<PrismaService, 'meetingAttendee'>,
   meetingId: string,

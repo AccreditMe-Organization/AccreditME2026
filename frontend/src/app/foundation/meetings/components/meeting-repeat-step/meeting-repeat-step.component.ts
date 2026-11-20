@@ -5,7 +5,7 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { Observable, catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
+import { Observable, catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap, tap } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
@@ -52,7 +52,12 @@ type Candidate = MeetingGuestCandidatesDto['items'][number];
 export const REPEAT_DATES_SHOWN = 5;
 /** A series' most standing agenda items (Ahmad, 20 Nov, Q5; the server's MEETING_STANDING_AGENDA_MAX). */
 export const REPEAT_STANDING_MAX = 10;
-/** How many meetings Ends · After starts at, by Every: about a year, inside the server's 12 months. */
+/**
+ * How many meetings Ends · After starts at, by Every: 12 weekly (12 weeks), 12
+ * fortnightly (about 6 months), 12 monthly (a year), 4 quarterly (a year), 2
+ * six-monthly (a year), 1 yearly; each inside the server's 12 months. A
+ * starting value: the person may type any number from 1 to 53.
+ */
 const DEFAULT_COUNT: Readonly<Record<MeetingSeriesEvery, number>> = { WEEK_1: 12, WEEK_2: 12, MONTH_1: 12, MONTH_3: 4, MONTH_6: 2, MONTH_12: 1 };
 
 /** yyyy-MM-dd of a calendar day (a picker's local Date). */
@@ -612,13 +617,18 @@ export class MeetingRepeatStepComponent {
 
   constructor() {
     // The preview, read again as the choices settle: one request at a time, the latest wins.
+    // A changed request makes the step loading AT ONCE, before the debounce (P250):
+    // otherwise, for those 250 ms, the button would still count the old preview's
+    // meetings for choices that make a different number. Only a CHANGED request
+    // does this (distinct first), so a signal that changes nothing never leaves
+    // the step loading with no request on its way.
     toObservable(computed(() => ({ request: this.request(), retry: this.retries() })))
       .pipe(
-        debounceTime(250),
         distinctUntilChanged((a, b) => a.retry === b.retry && JSON.stringify(a.request) === JSON.stringify(b.request)),
+        tap(({ request }) => this.previewState.set(request ? 'loading' : 'idle')),
+        debounceTime(250),
         switchMap(({ request }) => {
           if (!request) return of({ kind: 'idle' as const });
-          this.previewState.set('loading');
           return this.meetings.seriesPreview(request).pipe(
             map((preview) => ({ kind: 'ready' as const, preview })),
             catchError((err: unknown) => of({ kind: 'error' as const, key: meetingRefusalKey(err) ?? 'meeting.repeat.datesError' })),

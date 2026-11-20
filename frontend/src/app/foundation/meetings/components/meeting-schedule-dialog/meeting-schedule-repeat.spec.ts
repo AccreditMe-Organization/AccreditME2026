@@ -227,6 +227,29 @@ describe('Schedule meeting — the clash line and Repeat (ACC-316 PR 8a)', () =>
       expect(text('repeat-later')).toBeNull();
     }));
 
+    it('while the dates are worked out again, Schedule counts nothing: never the old preview for new choices (P250)', fakeAsync(() => {
+      const { c, fill, settle, repeat, fixture } = create();
+      fill();
+      c.next();
+      settle();
+      expect(c.submitLabel()).toBe('Schedule 5 meetings');
+      // A different Every: the old preview's five no longer apply, from this moment.
+      preview = { dates: preview.dates.slice(0, 2), clashes: preview.clashes.slice(0, 2) };
+      repeat()!.form.controls.every.setValue('MONTH_6');
+      fixture.detectChanges();
+      expect(repeat()!.previewState()).toBe('loading');
+      expect(repeat()!.count()).toBeNull();
+      expect(c.submitLabel()).toBe('Schedule');
+      tick(100);
+      expect(repeat()!.count()).withContext('still inside the debounce').toBeNull();
+      settle();
+      expect(c.submitLabel()).toBe('Schedule 2 meetings');
+      // A change that changes nothing in the request leaves the dates as they are.
+      repeat()!.form.controls.every.setValue('MONTH_6');
+      fixture.detectChanges();
+      expect(repeat()!.previewState()).toBe('ready');
+    }));
+
     it('a Clash chip swaps in that date\'s people, and "← All dates" brings the dates back', fakeAsync(() => {
       const { c, fill, settle, q, text, fixture } = create();
       fill();
