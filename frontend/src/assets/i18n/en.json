@@ -1370,7 +1370,9 @@
       "hint": "Sent to the people told about this move",
       "required": "Give a reason for this move.",
       "confirm": "Confirm"
-    }
+    },
+    "why": "Why?",
+    "whyNamed": "Why {{move}} isn't available yet"
   },
   "notification": {
     "openRecord": "Open record",
@@ -2603,7 +2605,9 @@
       "stale": "Some checks haven't run recently, so these may be out of date. Setup health has the details.",
       "empty": "Nothing needs fixing.",
       "note": "Each line is a live condition, not a message. It clears by itself at the next hourly check once the setup is fixed. There is nothing to dismiss."
-    }
+    },
+    "awaitingReviewMeta": "Minutes to review · by {{day}}",
+    "awaitingReviewMetaNoDate": "Minutes to review"
   },
   "list": {
     "noResults": "No matching results",
@@ -2783,6 +2787,12 @@
     "footMatchOf": "{{matching}} of {{total}} match",
     "footShowing": "Showing {{shown}} of {{total}}"
   },
+  "personTasks": {
+    "title": "Tasks",
+    "error": "Couldn't load these tasks.",
+    "empty": "No tasks.",
+    "popupTitle": "All tasks · {{name}}"
+  },
   "recordTasks": {
     "title": "Tasks",
     "ownTitle": "Your tasks on this committee",
@@ -2794,6 +2804,10 @@
     "closePopup": "Close all tasks"
   },
   "taskActions": {
+    "failure": {
+      "changed": "This task has changed.",
+      "failed": "Couldn't do that."
+    },
     "viewEvidence": "View evidence ({{count}})",
     "open": "Open task",
     "rejectSub": "Hand back with a reason",
@@ -2842,6 +2856,7 @@
     },
     "searchLabel": "Search tasks",
     "searchPlaceholder": "Search task or assignee…",
+    "searchPlaceholderTask": "Search task…",
     "filter": {
       "recordType": "Record type",
       "unit": "Unit",
@@ -2904,7 +2919,7 @@
     "due": {
       "completedOn": "✓ Completed {{date}}",
       "cancelledOn": "Cancelled {{date}}",
-      "onHoldDue": "⏸ On hold to {{hold}} · due {{date}}",
+      "onHoldDue": "⏸ On hold to {{hold}} · Due {{date}}",
       "onHold": "⏸ On hold to {{hold}}",
       "none": "No due date",
       "overdue": "⚠ {{span}} overdue · {{date}}",
@@ -3692,9 +3707,45 @@
         "one": "{{count}} not done · status read from each task",
         "other": "{{count}} not done · status read from each task"
       },
+      "reviewAnswered": {
+        "one": "{{count}} answered",
+        "other": "{{count}} answered"
+      },
+      "reviewWaiting": {
+        "one": "{{count}} no answer yet",
+        "other": "{{count}} no answer yet"
+      },
+      "suggestionsOpen": {
+        "one": "{{count}} suggestion open",
+        "other": "{{count}} suggestions open"
+      },
       "minutesPlanned": {
         "one": "{{planned}} of {{count}} min planned",
         "other": "{{planned}} of {{count}} min planned"
+      },
+      "cantApprove": {
+        "suggestionsOpen": {
+          "one": "{{count}} suggestion is still open. Apply or decline it first.",
+          "other": "{{count}} suggestions are still open. Apply or decline each first."
+        },
+        "actionsPastDue": {
+          "one": "This action item is past its due date. Change the date first:",
+          "other": "These {{count}} action items are past their due date. Change the dates first:"
+        },
+        "actionsPastLimit": {
+          "one": "This action item is due after {{limit}}, the latest a task may be due. Bring the date forward first:",
+          "other": "These {{count}} action items are due after {{limit}}, the latest a task may be due. Bring the dates forward first:"
+        },
+        "more": {
+          "one": "and {{count}} more",
+          "other": "and {{count}} more"
+        }
+      },
+      "print": {
+        "approvedBy": {
+          "one": "Approved by {{who}} on {{date}}, after review by the {{count}} present member.",
+          "other": "Approved by {{who}} on {{date}}, after review by the {{count}} present members."
+        }
       }
     }
   },
@@ -5021,6 +5072,77 @@
       "votesAboveItem": "{{title}}: {{votes}}, {{members}}",
       "blockedNow": "Something now holds the minutes back. It is listed above."
     },
+    "review": {
+      "title": "Review the minutes by {{day}}",
+      "titleNoDate": "Review the minutes",
+      "lead": "You were present on {{held}}. Read each item below, then answer. No answer by {{day}} counts as no corrections.",
+      "leadNoDate": "You were present on {{held}}. Read each item below, then answer.",
+      "mine": {
+        "NO_CORRECTIONS": "You answered: no corrections.",
+        "SUGGESTED": "You suggested a correction."
+      },
+      "changed": "Changed during review: {{list}}",
+      "changeOnItem": "item {{n}}, {{what}}",
+      "change": {
+        "DISCUSSION": "discussion",
+        "DECISION": "decision",
+        "ACTION_DATE": "action date"
+      },
+      "suggest": "Suggest a correction…",
+      "noCorrections": "No corrections",
+      "error": "Your answer couldn't be saved.",
+      "cardTitle": "Review",
+      "answered": "Answered",
+      "notAnswered": "No answer yet",
+      "from": "Suggested by {{name}}",
+      "fromWhole": "About the minutes as a whole · suggested by {{name}}",
+      "status": {
+        "OPEN": "Open",
+        "APPLIED": "Applied",
+        "DECLINED": "Declined"
+      },
+      "reply": "Reply: {{reply}}",
+      "markApplied": "Mark applied",
+      "decline": "Decline…",
+      "editToApply": "Edit to apply",
+      "applyingHint": "Edit the item, then save: the suggestion is marked applied.",
+      "applyFailed": "Your edit was saved, but the suggestion couldn't be marked applied.",
+      "markFailed": "The suggestion couldn't be marked applied.",
+      "silence": "No answer by the review date counts as no corrections.",
+      "closesOn": "Review closes {{day}}",
+      "closedOn": "Review closed {{day}}"
+    },
+    "suggest": {
+      "title": "Suggest a correction",
+      "context": "Whoever records the minutes applies or declines it",
+      "about": "About",
+      "aboutHint": "An agenda item, or the minutes as a whole",
+      "whole": "The minutes as a whole",
+      "text": "Suggestion",
+      "textRequired": "Write the correction.",
+      "submit": "Send suggestion",
+      "error": "The suggestion couldn't be sent."
+    },
+    "decline": {
+      "title": "Decline this suggestion?",
+      "contextItem": "Item {{n}} · from {{name}}",
+      "contextWhole": "The minutes as a whole · from {{name}}",
+      "reply": "Reply",
+      "replyHint": "{{name}} sees this with the suggestion",
+      "replyRequired": "Say why the suggestion is declined.",
+      "error": "The suggestion couldn't be declined."
+    },
+    "return": {
+      "open": "Return for Correction",
+      "title": "Return for Correction?",
+      "lead": "The minutes go back to Minutes Draft. Distributing again starts a new review with a new date.",
+      "told": "Told",
+      "answers": "Answers so far",
+      "reason": "Reason",
+      "reasonHint": "Shown to the present members and in the draft",
+      "submit": "Return for Correction",
+      "error": "The minutes couldn't be returned."
+    },
     "invitees": {
       "title": "Invitees",
       "addGuest": "Guest",
@@ -5152,6 +5274,12 @@
       "agendaItemNotFound": "This item is no longer on the agenda. Reload the meeting.",
       "agendaOrderMismatch": "The agenda changed since you opened it. Reload the meeting and try again.",
       "agendaChanged": "The agenda changed since you opened it. Reload the meeting and try again.",
+      "notReviewer": "Only members recorded present review these minutes.",
+      "reviewSuggested": "You already suggested a correction this round.",
+      "suggestionNotFound": "This suggestion is no longer there. Reload the meeting.",
+      "suggestionDecided": "This suggestion has already been decided.",
+      "suggestionTextRequired": "Write the correction.",
+      "suggestionReplyRequired": "Say why the suggestion is declined.",
       "minutesNotOpen": "These minutes aren't open to you yet.",
       "notRecorder": "Only whoever records this meeting's minutes can do that.",
       "notStarted": "Attendance opens when the meeting starts.",
@@ -5203,6 +5331,44 @@
       "removeError": "The file couldn't be removed.",
       "viewerContext": "From {{name}}",
       "loadFailed": "Couldn't load the files."
+    },
+    "approve": {
+      "title": "Approve the minutes?",
+      "lead": "The minutes become final and can't be changed. Each action item becomes a task, and its owner is told.",
+      "confirm": "Approve Minutes",
+      "keep": "Not yet"
+    },
+    "cantApprove": {
+      "reviewOpen": "The review is open until {{day}}. Still to answer:",
+      "reviewOpenNoDate": "The review is still open. Still to answer:",
+      "itemLine": "Item {{n}} · due {{at}} · {{title}}",
+      "itemLineNoOrder": "Due {{at}} · {{title}}",
+      "other": "Something holds this move. Reload the meeting and try again."
+    },
+    "print": {
+      "open": "Print minutes",
+      "loading": "Loading the minutes…",
+      "notApproved": "These minutes aren't approved yet, so they can't be printed.",
+      "back": "Back to the meeting",
+      "toolbar": "Print",
+      "print": "Print",
+      "minutes": "Minutes",
+      "attendance": "Attendance",
+      "present": "Present",
+      "apologies": "Apologies",
+      "absent": "Absent",
+      "guests": "Guests",
+      "outsideGuests": "Outside guests",
+      "nameSeat": "{{name}} ({{seat}})",
+      "guestsNoQuorum": "Guests don't count toward quorum.",
+      "quorumNotMet": "✕ Quorum not met · {{present}} of {{members}} present, quorum {{quorum}}",
+      "items": "Items",
+      "itemTitle": "{{n}} · {{title}}",
+      "discussion": "Discussion: {{text}}",
+      "decision": "Decision: {{text}}",
+      "vote": "Vote: {{for}} for · {{against}} against · {{abstain}} abstain",
+      "actionItems": "Action items",
+      "actionLine": "{{title}} · {{owner}} · due {{date}}"
     }
   }
 }

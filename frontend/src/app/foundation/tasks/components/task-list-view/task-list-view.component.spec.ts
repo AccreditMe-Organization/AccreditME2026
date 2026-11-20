@@ -97,7 +97,9 @@ describe('TaskListViewComponent (ACC-229)', () => {
     expect(req.request.params.has('sourceType')).toBeFalse();
     expect(req.request.params.has('sourceId')).toBeFalse();
     answer(req, listPage([recordRow('t1', { record: { type: 'COMMITTEE', id: 'c-1', nameEn: 'Quality', nameAr: null } })]));
-    expect(rowEls()[0]!.textContent).toContain('Committee · Quality');
+    // The whole record line is its title (a phone card draws its "·" in CSS, CC-341).
+    const titles = Array.from(rowEls()[0]!.querySelectorAll('[title]')).map((e) => e.getAttribute('title'));
+    expect(titles).toContain('Committee · Quality');
   });
 
   it('a filter goes to the SERVER, shows a chip, and the live region counts the matches', () => {

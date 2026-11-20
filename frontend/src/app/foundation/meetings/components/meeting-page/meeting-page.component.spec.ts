@@ -34,6 +34,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
   let minutesRead: () => Observable<MeetingMinutesDto>;
   let openActionsRead: () => Observable<MeetingOpenActionsDto>;
   let agendaRead: () => Observable<MeetingAgendaItemDto[]> = () => of([]);
+  let applySuggestion: jasmine.Spy;
   const writes = { attendance: new Subject<MeetingMinutesDto>(), discussion: new Subject<MeetingMinutesDto>() };
 
   function create() {
@@ -63,6 +64,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
             saveDiscussion: () => writes.discussion,
             answer,
             removeGuest,
+            applySuggestion: (...args: unknown[]) => applySuggestion(...args),
           },
         },
         { provide: WorkflowService, useValue: { getInstancesByObject: () => of([]) } },
@@ -84,6 +86,7 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     ];
     answer = jasmine.createSpy('answer').and.returnValue(of(undefined));
     removeGuest = jasmine.createSpy('removeGuest').and.returnValue(of(undefined));
+    applySuggestion = jasmine.createSpy('applySuggestion').and.returnValue(of(undefined));
     attendeesRead = () => of(attendees);
     agendaRead = () => of([]);
     filesRead = () => of({ attachments: [], papers: [] });
@@ -247,6 +250,50 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
     it('any other move is pressed at once', () => {
       expect(create().c.confirmFor(move({ needsReason: false, toStageFlags: [] }))).toBeNull();
     });
+    // ACC-316 PR 7c-2 — Approve Minutes asks first: the minutes become final.
+    it('a move into a stage flagged MINUTES_FINAL asks the Approve Minutes confirm', () => {
+      const copy = create().c.confirmFor(move({ needsReason: false, toStageFlags: ['MINUTES_FINAL'] }));
+      expect(copy).toEqual({ titleKey: 'meeting.approve.title', leadKey: 'meeting.approve.lead', confirmKey: 'meeting.approve.confirm', keepKey: 'meeting.approve.keep', danger: false });
+    });
+  });
+
+  // ACC-316 PR 7d-1 — Print minutes, in the header, for approved minutes only (P229).
+  describe('Print minutes (PR 7d-1)', () => {
+    it('is offered once the minutes are approved, linked to the print page', () => {
+      minutesRead = () => of(aMinutes({ phase: 'approved', distribute: null, approvedAt: '2027-04-06T09:00:00.000Z' }));
+      const { el } = create();
+      expect(q(el, 'meeting-print-minutes')?.getAttribute('href')).toBe('/meetings/m-1/print');
+    });
+
+    it('is absent before approval: a draft is never printable as the minutes', () => {
+      for (const phase of ['draft', 'review'] as const) {
+        TestBed.resetTestingModule();
+        minutesRead = () => of(aMinutes({ phase }));
+        expect(q(create().el, 'meeting-print-minutes')).withContext(phase).toBeNull();
+      }
+    });
+  });
+
+  // ACC-316 PR 7c-2 — Approve Minutes held: the page explains its four codes,
+  // and "Why?" (or a refused press) opens "Can't move to Minutes Approved yet".
+  describe('Approve Minutes held (PR 7c-2)', () => {
+    const APPROVE: WorkflowMoveDto = { id: 't-approve', labelEn: 'Approve Minutes', labelAr: null, kind: 'ADVANCE', toStageId: 's', toStageNameEn: 'Minutes Approved', toStageNameAr: null, toStageFlags: ['MINUTES_FINAL'] };
+
+    it('passes the approval codes to the move buttons to explain', () => {
+      expect([...create().c.approvalBlocks].sort()).toEqual(['MEETING_ACTION_PAST_DUE', 'MEETING_ACTION_PAST_SLA_LIMIT', 'MEETING_REVIEW_OPEN', 'MEETING_SUGGESTION_OPEN']);
+    });
+
+    it('a why opens the dialog naming the stage and the one thing that holds it; Close closes it', async () => {
+      const { c, fixture } = create();
+      c.cantApprove.set({ move: APPROVE, blockedBy: { code: 'MEETING_SUGGESTION_OPEN', open: 1 } });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(document.querySelector('[data-testid="cant-approve-lead"]')?.textContent?.trim()).toBe('1 suggestion is still open. Apply or decline it first.');
+      expect(document.querySelector('.p-dialog')?.textContent).toContain("Can't move to Minutes Approved yet");
+      document.querySelector<HTMLElement>('[data-testid="cant-approve-close"] button')!.click();
+      fixture.detectChanges();
+      expect(c.cantApprove()).toBeNull();
+    });
   });
 
   describe('after an agenda write (P198)', () => {
@@ -357,6 +404,111 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
       minutesRead = () => of(aMinutes({ attendance: [{ ...aMinutes().attendance[0]!, attendance: 'PRESENT' }] }));
       writes.discussion.error(new HttpErrorResponse({ status: 500 }));
       expect(c.minutes()!.attendance[0]!.attendance).toBe('PRESENT');
+    });
+  });
+
+  describe('the review (PR 7c-1)', () => {
+    const inReview = (may: Partial<MeetingMinutesDto['may']>) =>
+      aMinutes({
+        phase: 'review',
+        review: { round: 1, reviewBy: '2027-03-25', datePassed: false, closed: false, reviewers: [], suggestions: [], changes: [], mine: null },
+        may: { ...aMinutes().may, recordAttendance: false, recordMinutes: false, distribute: false, ...may },
+      });
+
+    it('the banner follows may.review, the Review card shows in review, and Return follows may.returnForCorrection', () => {
+      minutesRead = () => of(inReview({ review: true, returnForCorrection: true }));
+      const { el } = create();
+      expect(q(el, 'meeting-review-banner')).not.toBeNull();
+      expect(q(el, 'meeting-review-card')).not.toBeNull();
+      expect(q(el, 'meeting-return')).not.toBeNull();
+    });
+
+    it('without those flags: no banner and no Return, and the card still shows to whoever reads the minutes', () => {
+      minutesRead = () => of(inReview({ review: false, returnForCorrection: false }));
+      const { el } = create();
+      expect(q(el, 'meeting-review-banner')).toBeNull();
+      expect(q(el, 'meeting-return')).toBeNull();
+      expect(q(el, 'meeting-review-card')).not.toBeNull();
+    });
+
+    describe('Mark applied on a whole-minutes suggestion (P220)', () => {
+      const WHOLE = { id: 's-w', round: 1, agendaItemId: null, author: { id: 'u-3', name: 'Dr. Sara' }, text: 'Add the date.', status: 'OPEN' as const, reply: null, createdAt: '2027-03-19T08:00:00.000Z', decidedAt: null };
+      const withWhole = () => {
+        const m = inReview({ applySuggestions: true });
+        return { ...m, review: { ...m.review, suggestions: [WHOLE] } };
+      };
+      let reads: number;
+      function open() {
+        reads = 0;
+        minutesRead = () => {
+          reads++;
+          return of(withWhole());
+        };
+        const made = create();
+        reads = 0;
+        return made;
+      }
+      const press = (el: HTMLElement) => el.querySelector<HTMLElement>('[data-suggestion-apply="s-w"] button')!.click();
+
+      it('a second press while one is in flight sends nothing more', () => {
+        const answerOf = new Subject<void>();
+        applySuggestion.and.returnValue(answerOf);
+        const { c, fixture } = open();
+        c.applyWhole(WHOLE);
+        c.applyWhole(WHOLE);
+        fixture.detectChanges();
+        expect(applySuggestion).toHaveBeenCalledTimes(1);
+        answerOf.next();
+        answerOf.complete();
+        expect(reads).toBe(1);
+      });
+
+      it('DECIDED after a lost answer reads as applied: no error, and the minutes are read again', () => {
+        applySuggestion.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+        const { el, fixture } = open();
+        press(el);
+        fixture.detectChanges();
+        expect(q(el, 'meeting-review-action-retry')).not.toBeNull();
+        applySuggestion.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_SUGGESTION_DECIDED' } })));
+        el.querySelector<HTMLElement>('[data-testid="meeting-review-action-retry"] button')!.click();
+        fixture.detectChanges();
+        expect(q(el, 'meeting-review-action-error')).toBeNull();
+        expect(reads).toBe(1);
+      });
+
+      it('the server not reached: its own sentence (nothing was edited) and Retry', () => {
+        applySuggestion.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+        const { el, fixture } = open();
+        press(el);
+        fixture.detectChanges();
+        const line = q(el, 'meeting-review-action-error')?.textContent ?? '';
+        expect(line).toContain(en.meeting.review.markFailed);
+        expect(line).not.toContain('Your edit was saved');
+        expect(q(el, 'meeting-review-action-retry')).not.toBeNull();
+      });
+
+      it('a server error with no code: the sentence and no Retry', () => {
+        applySuggestion.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        const { el, fixture } = open();
+        press(el);
+        fixture.detectChanges();
+        expect(q(el, 'meeting-review-action-error')?.textContent).toContain(en.meeting.review.markFailed);
+        expect(q(el, 'meeting-review-action-retry')).toBeNull();
+        expect(q(el, 'meeting-review-action-reload')).toBeNull();
+      });
+
+      it('a stale refusal offers Reload, which reads the meeting again', () => {
+        applySuggestion.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MEETING_SUGGESTION_NOT_FOUND' } })));
+        const { el, fixture } = open();
+        press(el);
+        fixture.detectChanges();
+        expect(q(el, 'meeting-review-action-error')?.textContent).toContain(en.meeting.refusal.suggestionNotFound);
+        expect(q(el, 'meeting-review-action-retry')).toBeNull();
+        const before = gets;
+        el.querySelector<HTMLElement>('[data-testid="meeting-review-action-reload"] button')!.click();
+        fixture.detectChanges();
+        expect(gets).toBe(before + 1);
+      });
     });
   });
 });

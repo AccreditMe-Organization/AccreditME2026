@@ -13,6 +13,7 @@ import {
   type MeetingMinutesDto,
   type MeetingMinutesItemDto,
   type MeetingOpenActionsDto,
+  type MeetingSuggestionDto,
 } from '../../services/meeting.service';
 import { meetingNeedsReload, meetingRefusalKey } from '../../meeting-refusal';
 import { MeetingAgendaItemDialogComponent } from '../meeting-agenda-item-dialog/meeting-agenda-item-dialog.component';
@@ -101,6 +102,11 @@ import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-ite
                   [canWrite]="minutes()!.may.recordMinutes"
                   (minutesChange)="minutesChange.emit($event)"
                   (raiseAction)="raiseAction.emit({ id: im.id, order: im.order, title: im.title })"
+                  [suggestions]="suggestionsOf(im.id)"
+                  [canApply]="minutes()!.may.applySuggestions"
+                  (decline)="declineSuggestion.emit($event)"
+                  (applied)="suggestionApplied.emit()"
+                  (reload)="reload.emit()"
                 />
               }
             </div>
@@ -195,6 +201,9 @@ export class MeetingAgendaPanelComponent {
   readonly minutesChange = output<MeetingMinutesDto>();
   /** "Raise action item" on an item: the page opens the dialog. */
   readonly raiseAction = output<{ id: string; order: number; title: string }>();
+  /** PR 7c-1 — Decline… on an item's suggestion, and a suggestion applied. */
+  readonly declineSuggestion = output<MeetingSuggestionDto>();
+  readonly suggestionApplied = output<void>();
 
   /** A read the page made after a write failed (the files or the invitees): said here, with Retry. */
   readonly readError = input<string | null>(null);
@@ -229,6 +238,13 @@ export class MeetingAgendaPanelComponent {
     const sum = this.items().reduce((n, i) => n + (i.durationMinutes ?? 0), 0);
     return this.format.count('meeting.minutesPlanned', total, { planned: this.format.number(sum) });
   });
+
+  /** This item's suggestions in the current review round. */
+  suggestionsOf(itemId: string): MeetingSuggestionDto[] {
+    const m = this.minutes();
+    if (!m) return [];
+    return m.review.suggestions.filter((s) => s.agendaItemId === itemId && s.round === m.review.round);
+  }
 
   minutesOf(itemId: string): MeetingMinutesItemDto | null {
     return this.minutes()?.items.find((i) => i.id === itemId) ?? null;

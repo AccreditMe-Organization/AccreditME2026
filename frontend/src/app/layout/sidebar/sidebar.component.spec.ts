@@ -448,11 +448,12 @@ describe('SidebarComponent (ACC-79)', () => {
     let awaiting: WritableSignal<Loadable<AwaitingAnswer>>;
     let calls: string[];
 
-    const ready = (stagesTotal: number, changes: number): Loadable<AwaitingAnswer> => ({
+    const ready = (stagesTotal: number, changes: number, reviews = 0): Loadable<AwaitingAnswer> => ({
       state: 'ready',
       value: {
         stages: { total: stagesTotal, rows: [], oldestSince: null },
         changes: Array.from({ length: changes }, (_, i) => ({ id: `cr-${i}` })) as unknown as AwaitingAnswer['changes'],
+        reviews: Array.from({ length: reviews }, (_, i) => ({ meetingId: `m-${i}`, title: 'Meeting', reviewBy: null, since: '2027-03-19T08:00:00.000Z' })),
       },
     });
 
@@ -523,6 +524,12 @@ describe('SidebarComponent (ACC-79)', () => {
       expect(srText(el)).toBe('3 items waiting');
       set(ready(1, 0));
       expect(srText(el)).toBe('1 item waiting');
+    });
+
+    it('ACC-316 PR 7c-2 — minutes to review count too, as Home counts them', () => {
+      const el = renderAwaiting();
+      set(ready(2, 1, 2));
+      expect(srText(el)).toBe('5 items waiting');
     });
 
     // ACC-290 — the collapsed dot has its own tokens: .am-rail-dot, never the

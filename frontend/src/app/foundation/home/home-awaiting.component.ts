@@ -4,26 +4,13 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../core/formatting';
 import { LanguageService } from '../../core/services/language.service';
 import { CappedPanelComponent, CappedPanelState } from '../../shared/components/capped-panel/capped-panel.component';
-import { recordPageLink } from '../../shared/utils/record-link.util';
-import { MyWorkCountsService, panelState } from './my-work-counts.service';
+import { AwaitingRow, AwaitingWords, changeRow, compareAwaiting, reviewRow, stageRow } from '../awaiting/awaiting-rows';
+import { MyWorkCountsService, awaitingTotal, panelState } from './my-work-counts.service';
 
 /** How many rows the panel shows. */
 export const AWAITING_ROWS = 5;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export interface AwaitingRow {
-  id: string;
-  kind: 'stage' | 'change';
-  /** When it began waiting: entering the stage, or a change request's Submit. */
-  since: string;
-  title: string;
-  meta: string;
-  /** "3 days waiting": how long, from `since`. */
-  waiting: string;
-  /** The record's page; null for a record with no page yet, named without a link. */
-  link: string[] | null;
-}
+export type { AwaitingRow } from '../awaiting/awaiting-rows';
 
 /**
  * Home's "Awaiting my action": RECORDS to approve or return (Task Screens §10).
@@ -35,6 +22,11 @@ export interface AwaitingRow {
  * - **Change requests** under review that this person may decide (ACC-240),
  *   asked of everyone while the committees module is open, because the server
  *   decides who may decide (ACC-283 PR 2).
+ * - **Minutes to review** (ACC-316 PR 7c-2): meetings this person was present
+ *   for and hasn't answered this round, while the meetings module is open.
+ *
+ * Rows are worded by the Awaiting page's own builders (awaiting-rows.ts), so a
+ * row reads the same in both places.
  *
  * ACC-279 — on am-capped-panel, always shown (Ahmad, Q9): with nothing waiting
  * it says so, and a failed read says THAT, with Retry. Until ACC-279 the card
@@ -108,57 +100,30 @@ export class HomeAwaitingComponent {
     const answer = this.counts.awaiting();
     if (answer.state !== 'ready') return [];
     const now = new Date();
-    const stageRows = answer.value.stages.rows.map((r): AwaitingRow => ({
-      id: r.instanceStageId,
-      kind: 'stage',
-      since: r.since,
-      title: this.language.bilingual(r.record.nameEn, r.record.nameAr),
-      meta: this.translate.instant('home.awaitingStageMeta', {
-        type: this.translate.instant(`workflow.objectTypeName.${r.record.type}`),
-        stage: this.language.bilingual(r.stage.nameEn, r.stage.nameAr),
-        position: this.format.number(r.stage.position),
-        count: this.format.number(r.stage.stageCount),
-      }),
-      waiting: this.waiting(r.since, now),
-      link: recordPageLink(r.record.type, r.record.id),
-    }));
-    const changeRows = answer.value.changes.map((r): AwaitingRow => {
-      const since = r.submittedAt ?? r.createdAt;
-      return {
-        id: r.id,
-        kind: 'change',
-        since,
-        title: this.translate.instant('home.awaitingChange', {
-          n: this.format.number(r.number),
-          committee: this.language.bilingual(r.committeeNameEn, r.committeeNameAr),
-        }),
-        meta: this.translate.instant('home.awaitingChangeMeta', { name: r.requestedBy.name }),
-        waiting: this.waiting(since, now),
-        link: ['/committees', r.committeeId, 'change-requests', r.id],
-      };
-    });
-    return [...stageRows, ...changeRows].sort((a, b) => a.since.localeCompare(b.since) || a.id.localeCompare(b.id));
+    const w = this.words();
+    return [
+      ...answer.value.stages.rows.map((r) => stageRow(r, w, now)),
+      ...answer.value.changes.map((r) => changeRow(r, w, now)),
+      ...answer.value.reviews.map((r) => reviewRow(r, w, now)),
+    ].sort(compareAwaiting);
   });
 
   readonly shown = computed(() => this.rows().slice(0, AWAITING_ROWS));
 
-  /** The server's stage total (past five) plus every change request read. */
+  /** The server's stage total (past five), every change request and every minutes to review. */
   readonly count = computed(() => {
     const answer = this.counts.awaiting();
-    return answer.state === 'ready' ? answer.value.stages.total + answer.value.changes.length : 0;
+    return answer.state === 'ready' ? awaitingTotal(answer.value) : 0;
   });
 
-  /** "3 days waiting"; under a day, "waiting since today". Wording, not an SLA. */
-  private waiting(since: string, now: Date): string {
-    const ms = now.getTime() - new Date(since).getTime();
-    return ms < DAY_MS
-      ? this.translate.instant('home.waitingToday')
-      : // Both forms, as Setup health's ages: English reads the duration ("3 days
-        // waiting"), Arabic the relative form, which takes the genitive after its
-        // preposition (ACC-94).
-        this.translate.instant('home.waitingFor', {
-          duration: this.format.duration(Math.floor(ms / DAY_MS) * DAY_MS),
-          relative: this.format.relative(since, now),
-        });
+  private words(): AwaitingWords {
+    return {
+      t: (key, params) => this.translate.instant(key, params),
+      bilingual: (en, ar) => this.language.bilingual(en, ar),
+      number: (n) => this.format.number(n),
+      duration: (ms) => this.format.duration(ms),
+      relative: (since, now) => this.format.relative(since, now),
+      day: (iso) => this.format.date(`${iso}T12:00:00.000Z`),
+    };
   }
 }

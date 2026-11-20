@@ -1,6 +1,6 @@
 import type { WorkflowAwaitingRowDto } from '../workflow/services/workflow.service';
 import type { ChangeRequestDto } from '../committees/change-requests/change-request.service';
-import { AwaitingRow, AwaitingWords, changeRow, compareAwaiting, mergeAwaiting, stageRow, waitingText } from './awaiting-rows';
+import { AwaitingRow, AwaitingWords, changeRow, compareAwaiting, mergeAwaiting, reviewRow, stageRow, waitingText } from './awaiting-rows';
 
 // ACC-120 — the rows of "Awaiting my action" and the one order they share, as
 // pure functions, so the page and (later) Home's panel build them the same way.
@@ -11,6 +11,7 @@ const words: AwaitingWords = {
   number: (n) => String(n),
   duration: (ms) => `${ms / 86_400_000}d`,
   relative: () => 'rel',
+  day: (iso) => `day(${iso})`,
 };
 const NOW = new Date('2026-11-09T09:00:00.000Z');
 
@@ -116,6 +117,27 @@ describe('awaiting rows (ACC-120)', () => {
 
     it('nothing loaded yet: no change request shows until stages are known', () => {
       expect(mergeAwaiting([], [row('c-1', '2026-10-01T00:00:00.000Z', 'change')], false)).toEqual([]);
+    });
+  });
+
+  // ACC-316 PR 7c-2 — minutes to review: the meeting, its review date, and the
+  // meeting's page; waiting since it entered review.
+  describe('reviewRow', () => {
+    it('names the meeting, the review date, and links to the meeting', () => {
+      const r = reviewRow({ meetingId: 'm-1', title: 'Infection Control · March', reviewBy: '2027-03-25', since: '2026-11-06T09:00:00.000Z' }, words, NOW);
+      expect(r).toEqual({
+        id: 'm-1',
+        kind: 'review',
+        since: '2026-11-06T09:00:00.000Z',
+        title: 'Infection Control · March',
+        meta: 'home.awaitingReviewMeta{"day":"day(2027-03-25)"}',
+        waiting: waitingText('2026-11-06T09:00:00.000Z', words, NOW),
+        link: ['/meetings', 'm-1'],
+      });
+    });
+
+    it('with no review date, says so without one', () => {
+      expect(reviewRow({ meetingId: 'm-1', title: 'M', reviewBy: null, since: '2026-11-09T08:00:00.000Z' }, words, NOW).meta).toBe('home.awaitingReviewMetaNoDate');
     });
   });
 });

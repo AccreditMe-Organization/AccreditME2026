@@ -16,7 +16,7 @@ import { HomeBriefingComponent } from './home-briefing.component';
 import { HomeMyCommitteesComponent } from './home-my-committees.component';
 import { HomeMyTasksComponent } from './home-my-tasks.component';
 import { HomeTileComponent } from './home-tile.component';
-import { MyWorkCountsService } from './my-work-counts.service';
+import { MyWorkCountsService, awaitingTotal } from './my-work-counts.service';
 
 /** The decision line's two reads: requests to decide, and the viewer's own rejected tasks. */
 type DecisionState = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; requests: number; rejected: number };
@@ -229,9 +229,9 @@ export class HomeComponent implements OnInit {
     this.translate.currentLang();
     const answer = this.counts.awaiting();
     if (answer.state !== 'ready') return { state: answer.state, value: '', meta: null };
-    const { stages, changes } = answer.value;
-    const total = stages.total + changes.length;
-    const times = [stages.oldestSince, ...changes.map((c) => c.submittedAt ?? c.createdAt)]
+    const { stages, changes, reviews } = answer.value;
+    const total = awaitingTotal(answer.value);
+    const times = [stages.oldestSince, ...changes.map((c) => c.submittedAt ?? c.createdAt), ...reviews.map((r) => r.since)]
       .filter((t): t is string => !!t)
       .map((t) => new Date(t).getTime());
     let meta: string | null = null;

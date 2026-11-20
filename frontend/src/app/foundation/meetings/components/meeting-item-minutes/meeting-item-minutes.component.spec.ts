@@ -3,13 +3,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { AmConfirmService, type AmConfirmOptions } from '../../../../shared/components/confirm/am-confirm.service';
 import { aMinutes, aMinutesItem } from '../../meeting-fixtures.testing';
-import { MeetingService, type MeetingMinutesItemDto } from '../../services/meeting.service';
+import { MeetingService, type MeetingMinutesDto, type MeetingMinutesItemDto } from '../../services/meeting.service';
 import { MeetingItemMinutesComponent } from './meeting-item-minutes.component';
 
 // ACC-316 PR 7b — one item's minutes: the discussion, decisions with votes (all
@@ -26,6 +26,7 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
       updateDecision: jasmine.createSpy('updateDecision').and.returnValue(of(aMinutes())),
       removeDecision: jasmine.createSpy('removeDecision').and.returnValue(of(aMinutes())),
       removeAction: jasmine.createSpy('removeAction').and.returnValue(of(aMinutes())),
+      applySuggestion: jasmine.createSpy('applySuggestion').and.returnValue(of(undefined)),
     };
     asked = [];
     TestBed.configureTestingModule({
@@ -219,6 +220,144 @@ describe('MeetingItemMinutesComponent (ACC-316 PR 7b)', () => {
       el.querySelector<HTMLElement>('[data-decision-save] button')!.click();
       fixture.detectChanges();
       expect(el.querySelector('[data-item-minutes-error]')?.textContent?.trim()).toBe('6 votes, but only 4 present members.');
+    });
+  });
+
+  describe('suggestions and Edit to apply (PR 7c-1)', () => {
+    const SUGG = { id: 's-1', round: 1, agendaItemId: 'i-1', author: { id: 'u-3', name: 'Dr. Sara' }, text: 'Name room 5.', status: 'OPEN' as const, reply: null, createdAt: '2027-03-19T08:00:00.000Z', decidedAt: null };
+    function inReview(canApply: boolean) {
+      const made = create(aMinutesItem({ discussion: 'Room 3 is closed.' }), false);
+      made.fixture.componentRef.setInput('suggestions', [SUGG]);
+      made.fixture.componentRef.setInput('canApply', canApply);
+      made.fixture.detectChanges();
+      return made;
+    }
+
+    it("a reader sees the suggestion and no action, and the item's text stays read-only", () => {
+      const { el } = inReview(false);
+      expect(el.querySelector('[data-suggestion="s-1"]')?.textContent).toContain('Name room 5.');
+      expect(el.querySelector('[data-suggestion-edit="s-1"]')).toBeNull();
+      expect(el.querySelector('[data-item-discussion]')).toBeNull();
+    });
+
+    /** Edit to apply, type, save: the discussion write, then (on success) the apply. */
+    async function editAndSave(made: ReturnType<typeof inReview>) {
+      const { el, fixture } = made;
+      el.querySelector<HTMLElement>('[data-suggestion-edit="s-1"] button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      type(el.querySelector<HTMLTextAreaElement>('[data-item-discussion]')!, 'Room 3 is closed; patients go to room 5.');
+      fixture.detectChanges();
+      el.querySelector<HTMLElement>('[data-item-discussion-save] button')!.click();
+      fixture.detectChanges();
+    }
+
+    it('Edit to apply: apply is not sent until the discussion write has answered (P220)', async () => {
+      const made = inReview(true);
+      const applied = jasmine.createSpy('applied');
+      made.c.applied.subscribe(applied);
+      const write = new Subject<MeetingMinutesDto>();
+      svc['saveDiscussion']!.and.returnValue(write);
+      await editAndSave(made);
+      expect(svc['saveDiscussion']).toHaveBeenCalledTimes(1);
+      expect(svc['applySuggestion']).not.toHaveBeenCalled();
+      write.next(aMinutes());
+      write.complete();
+      expect(svc['applySuggestion']).toHaveBeenCalledOnceWith('m-1', 's-1');
+      expect(applied).toHaveBeenCalledTimes(1);
+    });
+
+    it('a write that fails applies nothing', async () => {
+      const made = inReview(true);
+      svc['saveDiscussion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'STAGE_ACTION_NOT_ALLOWED' } })));
+      await editAndSave(made);
+      expect(svc['applySuggestion']).not.toHaveBeenCalled();
+    });
+
+    it('a second press while the apply is in flight sends nothing more (P220)', async () => {
+      const made = inReview(true);
+      const answer = new Subject<void>();
+      svc['applySuggestion']!.and.returnValue(answer);
+      await editAndSave(made);
+      made.c.applyNow('s-1');
+      made.c.applyNow('s-1');
+      expect(svc['applySuggestion']).toHaveBeenCalledTimes(1);
+      answer.next();
+      answer.complete();
+      made.c.applyNow('s-1');
+      expect(svc['applySuggestion']).toHaveBeenCalledTimes(2);
+    });
+
+    it('DECIDED after a lost answer reads as applied: no error, and the page reads the minutes again (P220)', async () => {
+      const made = inReview(true);
+      const applied = jasmine.createSpy('applied');
+      made.c.applied.subscribe(applied);
+      // The first apply reached the server, but its answer was lost.
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      await editAndSave(made);
+      expect(made.el.querySelector('[data-apply-retry]')).not.toBeNull();
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEETING_SUGGESTION_DECIDED' } })));
+      made.el.querySelector<HTMLElement>('[data-apply-retry] button')!.click();
+      made.fixture.detectChanges();
+      expect(made.el.querySelector('[data-apply-error]')).toBeNull();
+      expect(made.el.querySelector('[data-suggestion-applying]')).toBeNull();
+      expect(applied).toHaveBeenCalledTimes(1);
+    });
+
+    it('the server not reached: the line says the edit was saved, and Retry applies it alone', async () => {
+      const made = inReview(true);
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      await editAndSave(made);
+      const { el, fixture } = made;
+      expect(el.querySelector('[data-apply-error]')?.textContent).toContain('Your edit was saved');
+      svc['applySuggestion']!.and.returnValue(of(undefined));
+      el.querySelector<HTMLElement>('[data-apply-retry] button')!.click();
+      fixture.detectChanges();
+      expect(svc['saveDiscussion']).toHaveBeenCalledTimes(1);
+      expect(svc['applySuggestion']).toHaveBeenCalledTimes(2);
+      expect(el.querySelector('[data-apply-error]')).toBeNull();
+    });
+
+    it('a server error with no code: the sentence, and no Retry (sending it again would fail again)', async () => {
+      const made = inReview(true);
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await editAndSave(made);
+      expect(made.el.querySelector('[data-apply-error]')?.textContent).toContain('Your edit was saved');
+      expect(made.el.querySelector('[data-apply-retry]')).toBeNull();
+      expect(made.el.querySelector('[data-apply-reload]')).toBeNull();
+    });
+
+    it('a stale refusal says so and offers Reload, which stops applying and asks the page to read the meeting', async () => {
+      const made = inReview(true);
+      const reload = jasmine.createSpy('reload');
+      made.c.reload.subscribe(reload);
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MEETING_SUGGESTION_NOT_FOUND' } })));
+      await editAndSave(made);
+      expect(made.el.querySelector('[data-apply-error]')?.textContent).toContain('This suggestion is no longer there');
+      expect(made.el.querySelector('[data-apply-retry]')).toBeNull();
+      made.el.querySelector<HTMLElement>('[data-apply-reload] button')!.click();
+      made.fixture.detectChanges();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(made.el.querySelector('[data-apply-error]')).toBeNull();
+      expect(made.el.querySelector('[data-suggestion-applying]')).toBeNull();
+    });
+
+    it('any other refusal is said from its code, with nothing to press', async () => {
+      const made = inReview(true);
+      svc['applySuggestion']!.and.returnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'MEETING_NOT_RECORDER' } })));
+      await editAndSave(made);
+      const line = made.el.querySelector('[data-apply-error]')?.textContent ?? '';
+      expect(line).toContain(en.meeting.refusal.notRecorder);
+      expect(made.el.querySelector('[data-apply-retry]')).toBeNull();
+      expect(made.el.querySelector('[data-apply-reload]')).toBeNull();
+    });
+
+    it('Decline… asks the page', () => {
+      const { el, c } = inReview(true);
+      const decline = jasmine.createSpy('decline');
+      c.decline.subscribe(decline);
+      el.querySelector<HTMLElement>('[data-suggestion-decline="s-1"] button')!.click();
+      expect(decline.calls.mostRecent().args[0].id).toBe('s-1');
     });
   });
 });

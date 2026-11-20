@@ -151,6 +151,54 @@ export class RescheduleMeetingDto {
   scope?: (typeof MEETING_EDIT_SCOPES)[number];
 }
 
+/**
+ * PR 8-be (P236, Q2) — POST /meetings/:id/scope-preview: what "this and all
+ * later" WOULD do, for the scope confirm. The same fields as the edit or the
+ * reschedule (a reschedule's reason isn't needed: nothing is written or sent).
+ */
+export const MEETING_SCOPE_CHANGES = ['EDIT', 'RESCHEDULE'] as const;
+
+export class MeetingScopePreviewDto {
+  @IsIn(MEETING_SCOPE_CHANGES)
+  change!: (typeof MEETING_SCOPE_CHANGES)[number];
+
+  /** The new time, for a reschedule (required then). */
+  @ValidateIf((o: MeetingScopePreviewDto) => o.change === 'RESCHEDULE')
+  @IsISO8601({ strict: true })
+  scheduledAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  typeValueId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  durationMinutes?: number;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(300)
+  location?: string | null;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsUrl(URL_OPTIONS)
+  @MaxLength(2000)
+  meetingUrl?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  unitQuorum?: number | null;
+}
+
 /** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
 export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits'] as const;
 export type MeetingListView = (typeof MEETING_LIST_VIEWS)[number];
@@ -323,6 +371,39 @@ export class CreateAgendaItemDto {
   standing?: boolean;
 }
 
+/**
+ * ACC-323 — what the editor saw, for the fields it changes: each one's value as
+ * the dialog loaded it. A field here whose stored value differs now is a stale
+ * save, refused MEETING_AGENDA_CHANGED with nothing written. Values as stored:
+ * the presenter by its attendee id (guests are attendees too; null is none),
+ * the duration as a number, the description null and empty alike (trimmed).
+ */
+export class AgendaItemExpectedDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  title?: string;
+
+  @IsOptional()
+  @Transform(trimToNull)
+  @IsString()
+  @MaxLength(4000)
+  description?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  durationMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  presenterAttendeeId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  standing?: boolean;
+}
+
 /** Every field optional; `presenter: null` clears the presenter. */
 export class UpdateAgendaItemDto {
   @IsOptional()
@@ -351,6 +432,15 @@ export class UpdateAgendaItemDto {
   @IsOptional()
   @IsBoolean()
   standing?: boolean;
+
+  /**
+   * ACC-323 — optional: with none sent, the save behaves as before (so either
+   * side may deploy first). A field absent from it is not compared.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgendaItemExpectedDto)
+  expected?: AgendaItemExpectedDto;
 }
 
 /** The agenda's new order: every item's id, once. */

@@ -13,6 +13,20 @@ import { AppShellComponent } from './layout/app-shell/app-shell.component';
 // none of these repeat `canActivate: [authGuard]` individually anymore
 // (ACC-13 — previously each did, before the shell existed to hold it once).
 export const routes: Routes = [
+  // ACC-316 PR 7d-1 — the approved minutes on A4: a page of its own, OUTSIDE the
+  // shell, so neither the screen nor the paper carries the rail or top bar. It
+  // must come first: the shell's '' would otherwise be tried before it. Behind
+  // sign-in. permissionGuard checks no module here, as on /meetings/:id: who may
+  // print is the server's minutes read (approved minutes, to whoever may read
+  // them), and anyone else gets the page's not-found or not-approved state.
+  {
+    path: 'meetings/:id/print',
+    canActivate: [authGuard, permissionGuard],
+    loadComponent: () =>
+      import('./foundation/meetings/components/meeting-print/meeting-print.component').then(
+        (m) => m.MeetingPrintComponent,
+      ),
+  },
   {
     path: '',
     component: AppShellComponent,

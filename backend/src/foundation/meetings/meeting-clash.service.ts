@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
-import { meetingMemberSql, meetingOversightUnitIds, meetingOverseenSql } from '../../common/services/meeting-membership';
+import { meetingMayOpenSql, meetingOpener } from '../../common/services/meeting-membership';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import type { MeetingOwner } from '../workflow/meeting-authority';
 import { expectedMembers } from './invitees/meeting-invitee-sync.service';
@@ -15,8 +14,8 @@ import type { IMeetingClash } from './interfaces/meeting.interface';
 /** A series' cap: the most times one check takes. */
 // ACC-316 PR 5 — a series' most meetings (weekly for twelve months, both ends included).
 export const CLASH_TIMES_CAP = 53;
-/** A meeting saved before durations were required is taken as an hour. */
-const DEFAULT_MINUTES = 60;
+/** A meeting saved before durations were required is taken as an hour (here and in the scope preview). */
+export const DEFAULT_MINUTES = 60;
 /** The longest a meeting may last (ScheduleMeetingDto): how far before a time another meeting may start and still overlap it. */
 const MAX_MINUTES = 1440;
 
@@ -67,9 +66,7 @@ export class MeetingClashService {
     // index narrows the meetings before any overlap is computed.
     const windowFrom = new Date(Math.min(...starts.map((s) => Date.parse(s))) - MAX_MINUTES * 60_000).toISOString();
     const windowTo = new Date(Math.max(...ends.map((e) => Date.parse(e)))).toISOString();
-    const seesAll = viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW);
-    const oversight = seesAll ? [] : [...(await meetingOversightUnitIds(this.prisma, organizationId, viewer.id, now))];
-    const mayOpen = seesAll ? Prisma.sql`TRUE` : Prisma.sql`(${meetingMemberSql('m', viewer.id)} OR ${meetingOverseenSql('m', oversight)})`;
+    const mayOpen = meetingMayOpenSql('m', await meetingOpener(this.prisma, organizationId, viewer, now));
 
     // The stored instants are UTC in timestamp columns: the ISO strings cast to timestamp read as UTC.
     const [rows, users] = await Promise.all([

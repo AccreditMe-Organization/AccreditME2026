@@ -7,11 +7,18 @@ import { TextareaModule } from 'primeng/textarea';
 import { Observable } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
 import { refusalCode } from '../../../../core/http/refusal';
 import { MinutesWriteOrder } from '../../minutes-write-order';
 import { HttpErrorResponse } from '@angular/common/http';
-import { MeetingService, type MeetingDecisionDto, type MeetingDecisionRequest, type MeetingMinutesDto, type MeetingMinutesItemDto } from '../../services/meeting.service';
+import {
+  MeetingService,
+  type MeetingDecisionDto,
+  type MeetingDecisionRequest,
+  type MeetingMinutesDto,
+  type MeetingMinutesItemDto,
+  type MeetingSuggestionDto,
+} from '../../services/meeting.service';
 
 interface DecisionDraft {
   /** The decision edited, or null for a new one. */
@@ -48,7 +55,7 @@ interface DecisionDraft {
       <div class="am-im__cols grid gap-3">
         <div class="flex min-w-0 flex-col gap-1">
           <span class="am-im__label">{{ 'meeting.minutes.discussion' | translate }}</span>
-          @if (canWrite()) {
+          @if (canEdit()) {
             <textarea
               pTextarea
               rows="3"
@@ -85,7 +92,7 @@ interface DecisionDraft {
                 @if (d.takenWithoutQuorum) {
                   <span class="am-im__noquorum self-start" data-decision-no-quorum>{{ 'meeting.minutes.withoutQuorum' | translate }}</span>
                 }
-                @if (canWrite()) {
+                @if (canEdit()) {
                   <span class="flex gap-1">
                     <p-button size="small" [text]="true" [label]="'common.edit' | translate" [attr.data-decision-edit]="d.id" (onClick)="editDecision(d)" />
                     <p-button size="small" [text]="true" severity="danger" [label]="'common.remove' | translate" [attr.data-decision-remove]="d.id" (onClick)="removeDecision(d)" />
@@ -94,13 +101,13 @@ interface DecisionDraft {
               </div>
             }
           } @empty {
-            @if (!canWrite()) {
+            @if (!canEdit()) {
               <p class="m-0 text-[13px] text-[var(--am-ink-500)]">{{ 'meeting.minutes.noDecisions' | translate }}</p>
             }
           }
           @if (draft() && draft()!.id === null) {
             <ng-container *ngTemplateOutlet="decisionForm" />
-          } @else if (canWrite() && !draft()) {
+          } @else if (canEdit() && !draft()) {
             <p-button class="self-start" size="small" [text]="true" icon="pi pi-plus" [label]="'meeting.minutes.addDecision' | translate" data-decision-add (onClick)="newDecision()" />
           }
         </div>
@@ -125,6 +132,42 @@ interface DecisionDraft {
       </div>
       @if (error()) {
         <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-item-minutes-error>{{ error()!.key | translate: error()!.params }}</p>
+      }
+
+      <!-- PR 7c-1 — this item's suggestions in the review round. -->
+      @for (s of suggestions(); track s.id) {
+        <div class="am-im__sugg flex flex-col gap-1" [attr.data-suggestion]="s.id">
+          <span class="text-meta text-[var(--am-ink-500)]">{{ 'meeting.review.from' | translate: { name: s.author.name } }}</span>
+          <span class="whitespace-pre-line text-[13px]" dir="auto">{{ s.text }}</span>
+          @if (s.status !== 'OPEN') {
+            <span class="text-meta">{{ ('meeting.review.status.' + s.status) | translate }}</span>
+            @if (s.reply) {
+              <span class="text-meta text-[var(--am-ink-500)]" dir="auto">{{ 'meeting.review.reply' | translate: { reply: s.reply } }}</span>
+            }
+          } @else if (canApply()) {
+            @if (applying() === s.id) {
+              <p class="m-0 flex flex-wrap items-center gap-2 text-meta" data-suggestion-applying>
+                {{ 'meeting.review.applyingHint' | translate }}
+                <p-button size="small" [text]="true" severity="secondary" [label]="'common.cancel' | translate" (onClick)="applying.set(null)" />
+              </p>
+            } @else {
+              <span class="flex gap-1">
+                <p-button size="small" [text]="true" [label]="'meeting.review.editToApply' | translate" [attr.data-suggestion-edit]="s.id" (onClick)="startApplying(s)" />
+                <p-button size="small" [text]="true" severity="secondary" [label]="'meeting.review.decline' | translate" [attr.data-suggestion-decline]="s.id" (onClick)="decline.emit(s)" />
+              </span>
+            }
+          }
+        </div>
+      }
+      @if (applyFailed(); as f) {
+        <p class="m-0 flex flex-wrap items-center gap-2 text-meta text-[var(--am-danger-ink)]" role="alert" data-apply-error>
+          {{ f.failure.key | translate }}
+          @if (f.failure.offer === 'retry') {
+            <p-button size="small" [text]="true" [label]="'common.retry' | translate" [loading]="applyInFlight() !== null" data-apply-retry (onClick)="applyNow(f.id)" />
+          } @else if (f.failure.offer === 'reload') {
+            <p-button size="small" [text]="true" [label]="'meeting.agenda.reload' | translate" data-apply-reload (onClick)="reloadAfterApply()" />
+          }
+        </p>
       }
     </div>
 
@@ -187,6 +230,11 @@ interface DecisionDraft {
         color: var(--am-ink-700);
         background: var(--am-surface);
       }
+      .am-im__sugg {
+        padding: var(--am-space-8);
+        border-inline-start: 3px solid var(--am-warning-border);
+        background: var(--am-warning-bg);
+      }
       .am-im__vote {
         inline-size: calc(var(--am-space-40) + var(--am-space-16));
         min-block-size: var(--am-control-height);
@@ -211,6 +259,29 @@ export class MeetingItemMinutesComponent {
   readonly minutesChange = output<MeetingMinutesDto>();
   /** "Raise action item": the page opens the dialog for this item. */
   readonly raiseAction = output<void>();
+  /** PR 7c-1 — this item's suggestions in the current round. */
+  readonly suggestions = input<MeetingSuggestionDto[]>([]);
+  /** Whoever may apply suggestions (the minutes read's `may.applySuggestions`). */
+  readonly canApply = input(false);
+  /** Decline… on a suggestion: the page opens the dialog. */
+  readonly decline = output<MeetingSuggestionDto>();
+  /** A suggestion was applied: the page reads the minutes again. */
+  readonly applied = output<void>();
+  /** A stale refusal's Reload: the page reads the meeting again. */
+  readonly reload = output<void>();
+
+  /**
+   * The suggestion being applied ("Edit to apply"): the item's editors open, and
+   * the next minutes write that succeeds marks it applied (P212: the write
+   * first, apply only after it). If apply fails, Retry applies it alone — only
+   * when the server could not be reached; a stale refusal offers Reload, and any
+   * other is said from its code (P220).
+   */
+  readonly applying = signal<string | null>(null);
+  /** The apply request in flight: a second press waits for it (P220). */
+  readonly applyInFlight = signal<string | null>(null);
+  readonly applyFailed = signal<{ id: string; failure: MeetingFailure } | null>(null);
+  readonly canEdit = computed(() => this.canWrite() || (this.canApply() && this.applying() !== null));
 
   readonly voteFields = [
     { key: 'for' as const, label: 'meeting.minutes.votesFor' },
@@ -252,6 +323,48 @@ export class MeetingItemMinutesComponent {
         else this.discussion.set(stored);
       });
     });
+  }
+
+  startApplying(s: MeetingSuggestionDto): void {
+    this.applyFailed.set(null);
+    this.applying.set(s.id);
+  }
+
+  /**
+   * Mark the suggestion applied: after its edit was saved, or again on Retry.
+   * Safe to press twice (one request at a time) and after a lost answer: the
+   * server's MEETING_SUGGESTION_DECIDED means an earlier press already applied
+   * it, so it reads as applied and the page reads the minutes again (P220).
+   */
+  applyNow(suggestionId: string): void {
+    if (this.applyInFlight() !== null) return;
+    this.applyFailed.set(null);
+    this.applyInFlight.set(suggestionId);
+    this.meetings.applySuggestion(this.meetingId(), suggestionId).subscribe({
+      next: () => this.appliedNow(suggestionId),
+      error: (err: unknown) => {
+        if (refusalCode(err) === 'MEETING_SUGGESTION_DECIDED') {
+          this.appliedNow(suggestionId);
+          return;
+        }
+        this.applyInFlight.set(null);
+        this.applyFailed.set({ id: suggestionId, failure: meetingFailure(err, 'meeting.review.applyFailed', 'meeting.review.applyFailed') });
+      },
+    });
+  }
+
+  private appliedNow(suggestionId: string): void {
+    this.applyInFlight.set(null);
+    this.applyFailed.set(null);
+    if (this.applying() === suggestionId) this.applying.set(null);
+    this.applied.emit();
+  }
+
+  /** Reload after a stale apply refusal: stop applying, and the page reads the meeting again. */
+  reloadAfterApply(): void {
+    this.applying.set(null);
+    this.applyFailed.set(null);
+    this.reload.emit();
   }
 
   /** Reload: the box takes the stored discussion, dropping what was typed. */
@@ -352,6 +465,9 @@ export class MeetingItemMinutesComponent {
         this.busy.set(null);
         done?.();
         if (this.order.answered(seq)) this.minutesChange.emit(minutes);
+        // The edit that applies a suggestion is saved: now mark it applied.
+        const applying = this.applying();
+        if (applying && kind !== 'remove') this.applyNow(applying);
       },
       error: (err: unknown) => {
         this.order.failed(seq);

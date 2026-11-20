@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * list (Record Tasks Panel §1).
  *
  * The due label leads the second line and is never cut: "⚠ 4 days overdue ·
- * 8 Oct 2026", "⏸ On hold to 20 Oct 2026 · due 27 Oct 2026", "✓ Completed
+ * 8 Oct 2026", "⏸ On hold to 20 Oct 2026 · Due 27 Oct 2026", "✓ Completed
  * 2 Oct 2026". Overdue and On hold always carry a symbol AND words, never
  * colour alone. Dates go through the formatting layer (ACC-94); a span of time
  * is a duration, never a plural object.
@@ -107,9 +107,43 @@ export class TaskRowText {
     return null;
   }
 
+  /**
+   * CC-338 — line 2's status word, or null where line 2 already starts with the
+   * hold part: a held task's due label is "⏸ On hold to … · due …", so "On hold"
+   * again only pushes the rest into the ellipsis. The one rule for every line 2:
+   * the record panel, a person's panel and the list's phone cards.
+   */
+  lineStatus(row: ITaskRecordRowDto): string | null {
+    return row.status === 'ON_HOLD' ? null : this.translate.instant(this.statusKey(row));
+  }
+
   /** Line 2 after the due label: "{who} · {status} · {fact}". Only this part is cut. */
   tail(row: ITaskRecordRowDto): string {
-    return [this.who(row), this.translate.instant(this.statusKey(row)), this.fact(row)].filter((p) => !!p).join(' · ');
+    return [this.who(row), this.lineStatus(row), this.fact(row)].filter((p) => !!p).join(' · ');
+  }
+
+  /**
+   * ACC-216 — line 2 on a PERSON's Tasks panel, after the due label:
+   * "{status} · {fact} · {record}". The person is on every row, so the record takes
+   * the "who" place, LAST (CC-331): the line can't wrap in the fixed body, so on a
+   * phone the ellipsis falls on the record's name, never on the status. The panel
+   * puts the whole line in the title attribute.
+   */
+  personTail(row: ITaskRecordRowDto): string {
+    return [this.lineStatus(row), this.fact(row), this.recordLabel(row)].filter((p) => !!p).join(' · ');
+  }
+
+  /**
+   * The task's record as the server named it: its name only when the server sent one
+   * (the viewer may open the record), else the record type's word; null with no record.
+   */
+  recordLabel(row: ITaskRecordRowDto): string | null {
+    const record = row.record;
+    if (!record) return null;
+    if (record.nameEn) return this.language.bilingual(record.nameEn, record.nameAr);
+    const key = `taskList.recordType.${record.type}`;
+    const word = this.translate.instant(key);
+    return word === key ? this.translate.instant('taskList.recordType.OTHER') : word;
   }
 
   requirementKey(row: ITaskRecordRowDto): string | null {

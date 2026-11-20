@@ -6,7 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { catchError, filter, interval, map, of, startWith, switchMap } from 'rxjs';
 import { normalizePath } from '../../core/navigation/nav-location';
 import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
-import { MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
+import { MyWorkCountsService, awaitingTotal } from '../../foundation/home/my-work-counts.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { AuthService } from '../../core/services/auth.service';
@@ -399,7 +399,7 @@ export class SidebarComponent {
   private awaitingBadge(): RailBadge | null {
     const answer = this.myWork.awaiting();
     if (answer.state !== 'ready') return null;
-    const count = answer.value.stages.total + answer.value.changes.length;
+    const count = awaitingTotal(answer.value);
     if (count === 0) return null;
     return { count, alert: false, sentence: this.format.count('shell.awaitingItems', count) };
   }

@@ -167,6 +167,17 @@ describe('HomeComponent (ACC-279)', () => {
       expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('1');
     });
 
+    // ACC-316 PR 7c-2 — minutes to review count, and their wait counts toward the oldest.
+    it('Awaiting me counts minutes to review, and the oldest age includes them', () => {
+      build({
+        awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })]),
+        changes: [],
+        reviews: [{ meetingId: 'm-7', title: 'Infection Control · March', reviewBy: null, since: '2026-11-01T06:00:00.000Z' }],
+      });
+      expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('2');
+      expect(q('home-tile-awaiting-meta')!.textContent!.trim()).toBe('oldest 5 days');
+    });
+
     it('Awaiting me fails as a whole when either half fails: a partial count is a wrong count', () => {
       build({ permissions: ['committees:approve'], awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
       expect(q('home-tile-awaiting-failed')).not.toBeNull();

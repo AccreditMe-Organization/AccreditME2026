@@ -8,7 +8,8 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
 import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
 import { MyWorkCountsService } from '../home/my-work-counts.service';
 import { WorkflowAwaitingRowDto, WorkflowService } from '../workflow/services/workflow.service';
-import { AwaitingRow, AwaitingWords, changeRow, mergeAwaiting, stageRow } from './awaiting-rows';
+import { AwaitingRow, AwaitingWords, changeRow, mergeAwaiting, reviewRow, stageRow } from './awaiting-rows';
+import type { MeetingAwaitingMeDto } from '../meetings/services/meeting.service';
 
 /** Stage rows asked for per page (the server allows 1–50). */
 export const AWAITING_PAGE = 50;
@@ -139,6 +140,8 @@ export class AwaitingPageComponent {
   private readonly stageRows = signal<WorkflowAwaitingRowDto[]>([]);
   private readonly stageTotal = signal(0);
   private readonly changes = signal<ChangeRequestDto[]>([]);
+  /** ACC-316 PR 7c-2 — minutes to review, read all at once like the change requests. */
+  private readonly reviews = signal<MeetingAwaitingMeDto['review']>([]);
 
   private request?: Subscription;
   private moreRequest?: Subscription;
@@ -147,7 +150,7 @@ export class AwaitingPageComponent {
   readonly stagesRemain = computed(() => this.stageRows().length < this.stageTotal());
 
   /** Everything waiting: the stage total, plus every change request read. */
-  readonly count = computed(() => this.stageTotal() + this.changes().length);
+  readonly count = computed(() => this.stageTotal() + this.changes().length + this.reviews().length);
   readonly countText = computed(() => {
     this.translate.currentLang();
     return this.format.number(this.count());
@@ -159,7 +162,7 @@ export class AwaitingPageComponent {
     const w = this.words();
     return mergeAwaiting(
       this.stageRows().map((r) => stageRow(r, w, now)),
-      this.changes().map((r) => changeRow(r, w, now)),
+      [...this.changes().map((r) => changeRow(r, w, now)), ...this.reviews().map((r) => reviewRow(r, w, now))],
       !this.stagesRemain(),
     );
   });
@@ -179,11 +182,16 @@ export class AwaitingPageComponent {
     this.state.set('loading');
     this.more.set('idle');
     const changes$ = this.myWork.committeesOpen() ? this.changeRequests.awaitingDecision() : of<ChangeRequestDto[]>([]);
-    this.request = forkJoin({ stages: this.workflows.getAwaitingMe({ skip: 0, take: AWAITING_PAGE }), changes: changes$ }).subscribe({
-      next: ({ stages, changes }) => {
+    this.request = forkJoin({
+      stages: this.workflows.getAwaitingMe({ skip: 0, take: AWAITING_PAGE }),
+      changes: changes$,
+      reviews: this.myWork.meetingReviews(),
+    }).subscribe({
+      next: ({ stages, changes, reviews }) => {
         this.stageRows.set(stages.rows);
         this.stageTotal.set(stages.total);
         this.changes.set(changes);
+        this.reviews.set(reviews);
         this.state.set('ready');
       },
       error: () => this.state.set('error'),
@@ -214,6 +222,7 @@ export class AwaitingPageComponent {
       number: (n) => this.format.number(n),
       duration: (ms) => this.format.duration(ms),
       relative: (since, now) => this.format.relative(since, now),
+      day: (iso) => this.format.date(`${iso}T12:00:00.000Z`),
     };
   }
 }

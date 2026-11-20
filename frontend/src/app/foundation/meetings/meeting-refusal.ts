@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { refusalCode } from '../../core/http/refusal';
 
 /**
@@ -45,6 +46,13 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_OPEN_ACTION_NOT_FOUND: 'meeting.refusal.openActionNotFound',
   MEETING_ATTENDANCE_INCOMPLETE: 'meeting.refusal.attendanceIncomplete',
   MEETING_REVIEW_DATE_INVALID: 'meeting.refusal.reviewDateInvalid',
+  // PR 7c-1 — the review.
+  MEETING_NOT_REVIEWER: 'meeting.refusal.notReviewer',
+  MEETING_REVIEW_SUGGESTED: 'meeting.refusal.reviewSuggested',
+  MEETING_SUGGESTION_NOT_FOUND: 'meeting.refusal.suggestionNotFound',
+  MEETING_SUGGESTION_DECIDED: 'meeting.refusal.suggestionDecided',
+  MEETING_SUGGESTION_TEXT_REQUIRED: 'meeting.refusal.suggestionTextRequired',
+  MEETING_SUGGESTION_REPLY_REQUIRED: 'meeting.refusal.suggestionReplyRequired',
   MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
 };
 
@@ -55,13 +63,48 @@ export function meetingRefusalKey(err: unknown): string | null {
 }
 
 /**
- * P198 — the refusals that mean the agenda on screen is no longer the server's:
+ * P198 — the refusals that mean what is on screen is no longer the server's:
  * the screen offers Reload (the page reads the meeting again), never Retry,
- * which would send the same stale request.
+ * which would send the same stale request. P220 added the meeting's own
+ * staleness and the review's: a suggestion gone, or already decided.
  */
-const RELOAD_CODES: ReadonlySet<string> = new Set(['MEETING_AGENDA_ITEM_NOT_FOUND', 'MEETING_AGENDA_ORDER_MISMATCH', 'MEETING_AGENDA_CHANGED']);
+const RELOAD_CODES: ReadonlySet<string> = new Set([
+  'MEETING_AGENDA_ITEM_NOT_FOUND',
+  'MEETING_AGENDA_ORDER_MISMATCH',
+  'MEETING_AGENDA_CHANGED',
+  'MEETING_CHANGED',
+  'MEETING_SUGGESTION_NOT_FOUND',
+  'MEETING_SUGGESTION_DECIDED',
+  // P227 — "No corrections" pressed on a banner that predates the person's own suggestion.
+  'MEETING_REVIEW_SUGGESTED',
+]);
 
 export function meetingNeedsReload(err: unknown): boolean {
   const code = refusalCode(err);
   return !!code && RELOAD_CODES.has(code);
+}
+
+/** The server could not be reached, or timed out: the one case that offers Retry (Design System rule 5.5). */
+const UNREACHABLE: ReadonlySet<number> = new Set([0, 408, 502, 503, 504]);
+
+export function meetingUnreachable(err: unknown): boolean {
+  return err instanceof HttpErrorResponse && UNREACHABLE.has(err.status);
+}
+
+/** What a failed write says, and the one control it offers. */
+export interface MeetingFailure {
+  key: string;
+  offer: 'retry' | 'reload' | null;
+}
+
+/**
+ * P220 — a failed write said from its code: a stale refusal offers Reload; an
+ * unreachable server or a timeout offers Retry with `unreachableKey`; any other
+ * refusal its own sentence, and no code at all `fallbackKey`, with nothing to
+ * press (sending it again would be refused again).
+ */
+export function meetingFailure(err: unknown, unreachableKey: string, fallbackKey: string): MeetingFailure {
+  if (meetingNeedsReload(err)) return { key: meetingRefusalKey(err) ?? fallbackKey, offer: 'reload' };
+  if (meetingUnreachable(err)) return { key: unreachableKey, offer: 'retry' };
+  return { key: meetingRefusalKey(err) ?? fallbackKey, offer: null };
 }

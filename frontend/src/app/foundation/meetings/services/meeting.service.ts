@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
+import { MyWorkEvents } from '../../../core/my-work/my-work-events';
 import { environment } from '../../../../environments/environment';
 import type { IFileDownload } from '../../../shared/files/files.service';
 
@@ -150,6 +151,21 @@ export interface AgendaItemRequest {
   standing?: boolean;
 }
 
+/**
+ * ACC-323 — an edit's view of the fields it changes, as the dialog loaded them:
+ * the server refuses the save (MEETING_AGENDA_CHANGED) when one of them holds
+ * something else now. The presenter by its attendee id, null for none.
+ */
+export interface AgendaItemExpected {
+  title?: string;
+  description?: string | null;
+  durationMinutes?: number | null;
+  presenterAttendeeId?: string | null;
+}
+
+/** An edit: only the changed fields, and what this person saw of them. */
+export type AgendaItemUpdate = Partial<AgendaItemRequest> & { expected?: AgendaItemExpected };
+
 export interface MeetingClashDto {
   startsAt: string;
   people: { userId: string; name: string; meetings: { id: string | null; title: string | null; startsAt: string; durationMinutes: number }[] }[];
@@ -163,7 +179,8 @@ export interface MeetingGuestCandidatesDto {
 }
 
 export interface MeetingAwaitingMeDto {
-  review: { meetingId: string; title: string; reviewBy: string | null }[];
+  /** `since`: when the meeting entered its current stage, Home's order (PR 7c-2). */
+  review: { meetingId: string; title: string; reviewBy: string | null; since: string }[];
   answer: { meetingId: string; title: string; scheduledAt: string }[];
 }
 
@@ -236,6 +253,20 @@ export interface MeetingOpenActionsDto {
   rows: MeetingOpenActionRowDto[];
 }
 
+/** A correction a present member suggested in a review round (PR 7c-1). */
+export interface MeetingSuggestionDto {
+  id: string;
+  round: number;
+  /** The agenda item it is about, or null for the minutes as a whole. */
+  agendaItemId: string | null;
+  author: { id: string; name: string };
+  text: string;
+  status: 'OPEN' | 'APPLIED' | 'DECLINED';
+  reply: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 export interface MeetingMinutesDto {
   phase: MinutesPhase;
   attendance: MeetingAttendanceRowDto[];
@@ -248,7 +279,7 @@ export interface MeetingMinutesDto {
     datePassed: boolean;
     closed: boolean;
     reviewers: { userId: string; name: string; answered: boolean }[];
-    suggestions: unknown[];
+    suggestions: MeetingSuggestionDto[];
     changes: { round: number; agendaItemId: string | null; what: string }[];
     mine: 'NO_CORRECTIONS' | 'SUGGESTED' | null;
   };
@@ -261,6 +292,8 @@ export interface MeetingMinutesDto {
     defaultReviewBy: string;
   } | null;
   approvedAt: string | null;
+  /** PR 7d-1 — who approved, named even after they leave, with the seat they held then (null for a unit meeting's approver). */
+  approvedBy: { id: string; name: string; seat: { id: string; labelEn: string; labelAr: string | null } | null } | null;
   may: {
     recordAttendance: boolean;
     recordMinutes: boolean;
@@ -288,6 +321,8 @@ export interface MeetingActionRequest {
 @Injectable({ providedIn: 'root' })
 export class MeetingService {
   private readonly http = inject(HttpClient);
+  /** PR 7c-2 — a write that changes what waits on someone tells Home and the rail (ACC-279). */
+  private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/meetings`;
 
   list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
@@ -332,7 +367,7 @@ export class MeetingService {
     return this.http.post<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda`, body);
   }
 
-  updateAgendaItem(id: string, itemId: string, body: Partial<AgendaItemRequest>): Observable<MeetingAgendaItemDto[]> {
+  updateAgendaItem(id: string, itemId: string, body: AgendaItemUpdate): Observable<MeetingAgendaItemDto[]> {
     return this.http.patch<MeetingAgendaItemDto[]>(`${this.base}/${id}/agenda/${itemId}`, body);
   }
 
@@ -441,8 +476,31 @@ export class MeetingService {
     return this.http.put<MeetingMinutesDto>(`${this.base}/${id}/open-actions/${taskId}/note`, { note });
   }
 
+  // ── Review (PR 7c-1): these writes answer with nothing; the page reads the minutes again ──
+
+  noCorrections(id: string): Observable<void> {
+    return this.http.put<void>(`${this.base}/${id}/review/no-corrections`, {}).pipe(tap(() => this.myWork.changed()));
+  }
+
+  suggest(id: string, body: { agendaItemId: string | null; text: string }): Observable<{ id: string }> {
+    return this.http.post<{ id: string }>(`${this.base}/${id}/review/suggestions`, body).pipe(tap(() => this.myWork.changed()));
+  }
+
+  applySuggestion(id: string, suggestionId: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/review/suggestions/${suggestionId}/apply`, {});
+  }
+
+  declineSuggestion(id: string, suggestionId: string, reply: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/review/suggestions/${suggestionId}/decline`, { reply });
+  }
+
+  /** Return for Correction: back to Minutes Draft, with an optional reason the present members read. */
+  returnMinutes(id: string, reason: string | null): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/return`, { reason }).pipe(tap(() => this.myWork.changed()));
+  }
+
   /** The app's move into Minutes Review; `reviewBy` (yyyy-MM-dd) only when the person changed the default. */
   distribute(id: string, reviewBy?: string): Observable<void> {
-    return this.http.post<void>(`${this.base}/${id}/distribute`, reviewBy ? { reviewBy } : {});
+    return this.http.post<void>(`${this.base}/${id}/distribute`, reviewBy ? { reviewBy } : {}).pipe(tap(() => this.myWork.changed()));
   }
 }

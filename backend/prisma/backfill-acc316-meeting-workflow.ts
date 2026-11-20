@@ -101,6 +101,21 @@ export interface BackfillResult {
   refusedCustomers: string[];
 }
 
+/**
+ * Whether a stage's stored assignees already are the seed's entries, kind by
+ * kind in the seed's order. Sorted by `order` HERE, never trusting the order
+ * rows were read in: Postgres guarantees none without ORDER BY, and on CI
+ * (18 Nov) Minutes Review's two entries came back second-first, so a second
+ * dry run called them configured. Pure, so the spec can hand it reversed rows.
+ */
+export function whoIsAlreadyTheSeeds(
+  assignees: readonly { kind: string; order: number }[],
+  entries: readonly { kind: string }[],
+): boolean {
+  const stored = [...assignees].sort((a, b) => a.order - b.order);
+  return stored.length === entries.length && stored.every((a, i) => a.kind === entries[i]?.kind);
+}
+
 type Db = Pick<
   PrismaService,
   'workflowTemplate' | 'workflowStage' | 'workflowTransition' | 'workflowStageAssignee' | 'workflowStageRecordAction' | 'workflowActionLog' | 'workflowApproval'
@@ -130,9 +145,9 @@ export async function planOrg(db: Db, organizationId: string): Promise<Pick<OrgP
               whoMode: true,
               flags: true,
               recordActions: { select: { actionKey: true } },
-              // By `order`: the "already the seed's" check compares entries by position,
-              // and with no order Postgres returns them as they sit on disk.
-              assignees: { orderBy: { order: 'asc' }, select: { kind: true, isStartingAssignment: true } },
+              // `order` is read so whoIsAlreadyTheSeeds() can sort by it: Postgres
+              // returns rows as they sit on disk unless asked, and the check is positional.
+              assignees: { select: { kind: true, order: true, isStartingAssignment: true } },
               transitionsFrom: { select: { id: true, toStageId: true, labelEn: true, labelAr: true, mover: true, kind: true } },
             },
           },
@@ -183,7 +198,7 @@ export async function planOrg(db: Db, organizationId: string): Promise<Pick<OrgP
           ? stage.whoMode === 'ANY_ONE' && stage.assignees.length === 1 && stage.assignees[0]!.kind === 'CREATOR'
           : key === 'minutes_review' && stage.assignees.every((a) => a.isStartingAssignment);
         const entries = s.who.entries;
-        const already = stage.assignees.length === entries.length && stage.assignees.every((a, i) => a.kind === entries[i]?.kind);
+        const already = whoIsAlreadyTheSeeds(stage.assignees, entries);
         if (oldSeed) {
           out.ops.push({ op: 'setWho', stageId: stage.id, stageKey: key });
           out.changes.push(`${stage.nameEn}: who works it`);

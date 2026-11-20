@@ -11,7 +11,7 @@ import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { WorkflowService, type WorkflowInstanceDto, type WorkflowMoveDto } from '../../../workflow/services/workflow.service';
-import { WorkflowTransitionActionsComponent, type MoveConfirmCopy } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
+import { WorkflowTransitionActionsComponent, type MoveBlock, type MoveConfirmCopy } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   MEETING_STAGE_FLAG,
@@ -23,9 +23,11 @@ import {
   type MeetingFilesDto,
   type MeetingMinutesDto,
   type MeetingOpenActionsDto,
+  type MeetingSuggestionDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
-import { meetingRefusalKey } from '../../meeting-refusal';
+import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
 import { MeetingAddGuestDialogComponent } from '../meeting-add-guest-dialog/meeting-add-guest-dialog.component';
 import { MeetingAgendaPanelComponent } from '../meeting-agenda-panel/meeting-agenda-panel.component';
@@ -35,6 +37,12 @@ import { MeetingAttendanceComponent } from '../meeting-attendance/meeting-attend
 import { MeetingActionDialogComponent } from '../meeting-action-dialog/meeting-action-dialog.component';
 import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/meeting-distribute-dialog.component';
 import { MinutesWriteOrder } from '../../minutes-write-order';
+import { MeetingReviewBannerComponent } from '../meeting-review-banner/meeting-review-banner.component';
+import { MeetingReviewCardComponent } from '../meeting-review-card/meeting-review-card.component';
+import { MeetingSuggestDialogComponent } from '../meeting-suggest-dialog/meeting-suggest-dialog.component';
+import { MeetingDeclineDialogComponent } from '../meeting-decline-dialog/meeting-decline-dialog.component';
+import { MeetingReturnDialogComponent } from '../meeting-return-dialog/meeting-return-dialog.component';
+import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../meeting-cant-approve-dialog/meeting-cant-approve-dialog.component';
 
 /**
  * ACC-316 PR 6 — one meeting's page, through Agenda Issued (plan §5; Meeting
@@ -64,6 +72,12 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
     MeetingAttendanceComponent,
     MeetingActionDialogComponent,
     MeetingDistributeDialogComponent,
+    MeetingReviewBannerComponent,
+    MeetingReviewCardComponent,
+    MeetingSuggestDialogComponent,
+    MeetingDeclineDialogComponent,
+    MeetingReturnDialogComponent,
+    MeetingCantApproveDialogComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -79,7 +93,7 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
         <p-button size="small" severity="secondary" [label]="'common.retry' | translate" (onClick)="load()" />
       </section>
     } @else if (meeting(); as m) {
-      <div class="flex flex-col gap-4" data-testid="meeting-page">
+      <div class="am-mp flex flex-col gap-4" data-testid="meeting-page">
         <!-- Header -->
         <section class="flex flex-wrap items-start justify-between gap-3">
           <div class="flex min-w-0 flex-col gap-1">
@@ -103,12 +117,25 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
             @if (minutes()?.may?.distribute) {
               <p-button size="small" [label]="'meeting.distribute.open' | translate" data-testid="meeting-distribute" (onClick)="distributeOpen.set(true)" />
             }
+            <!-- PR 7d-1 — the approved minutes on A4; never a draft (P229: the header only). -->
+            @if (minutes()?.phase === 'approved') {
+              <a
+                class="p-button p-button-sm p-button-secondary am-print-link"
+                [routerLink]="['/meetings', m.id, 'print']"
+                data-testid="meeting-print-minutes"
+              ><i class="pi pi-print" aria-hidden="true"></i><span>{{ 'meeting.print.open' | translate }}</span></a>
+            }
+            @if (minutes()?.may?.returnForCorrection) {
+              <p-button size="small" severity="secondary" [label]="'meeting.return.open' | translate" data-testid="meeting-return" (onClick)="returnOpen.set(true)" />
+            }
             @if (instance(); as inst) {
               <app-workflow-transition-actions
                 [instance]="inst"
                 [recordLabel]="m.title"
                 [stageLabel]="stage()"
                 [confirmFor]="confirmFor"
+                [explains]="approvalBlocks"
+                (why)="cantApprove.set($event)"
                 (transitioned)="onMoved($event)"
               />
             }
@@ -178,51 +205,32 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
           </section>
         }
 
-        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
-          <div class="flex min-w-0 flex-col gap-3">
-            <!-- The agenda, its editor and its papers (PR 7). -->
-            <am-meeting-agenda-panel
-              [meeting]="m"
-              [items]="agenda()"
-              [attendees]="attendees()"
-              [papers]="files().papers"
-              [canManage]="m.may.manageAgenda"
-              (itemsChange)="onAgendaChange($event)"
-              (filesChanged)="loadFiles()"
-              [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
-              (retryRead)="retryRead()"
-              (reload)="load()"
-              [minutes]="minutes()"
-              [openActions]="openActions()"
-              (minutesChange)="minutes.set($event)"
-              (raiseAction)="actionItem.set($event)"
-            />
-            <!-- General attachments: absent while empty for someone who may not add one. -->
-            @if (m.may.manageAgenda || files().attachments.length > 0) {
-              <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-attachments">
-                <h2 class="m-0 flex items-center gap-2 text-[15px] font-semibold">
-                  {{ 'meeting.files.attachments' | translate }}
-                  <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(files().attachments.length) }}</span>
-                </h2>
-                <am-meeting-file-list
-                  [meetingId]="m.id"
-                  [files]="files().attachments"
-                  [canManage]="m.may.manageAgenda"
-                  addLabel="meeting.files.addAttachment"
-                  [contextLabel]="m.title"
-                  testId="meeting-attachment-list"
-                  (changed)="loadFiles()"
-                />
-              </section>
-            }
-          </div>
+        <!-- PR 7c-1 — the review banner, for a present member while corrections are taken (may.review). -->
+        @if (minutes(); as mm) {
+          <am-meeting-review-banner [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (suggest)="suggestOpen.set(true)" (answered)="afterReview()" (reload)="load()" />
+        }
 
+        <div class="am-mp__grid grid gap-3" data-testid="meeting-grid">
+          <!-- PR 7d-2 (P233) — the side column comes FIRST in the DOM, so the phone
+               order (side cards above the agenda) is also the tab order (WCAG 2.4.3).
+               On a wider page, grid placement keeps the agenda at inline-start. -->
           @if (minutes(); as mm) {
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
-            <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+            <div class="am-mp__side flex min-w-0 flex-col gap-3" data-testid="meeting-side">
+              <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+              <am-meeting-review-card
+                [minutes]="mm"
+                [failure]="wholeFailure()?.failure ?? null"
+                [applying]="wholeApplying()"
+                (apply)="applyWhole($event)"
+                (decline)="declining.set($event)"
+                (retry)="retryWhole()"
+                (reload)="load()"
+              />
+            </div>
           } @else {
           <!-- Invitees -->
-          <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
+          <section class="am-mp__side flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-invitees">
             <h2 class="m-0 flex items-center justify-between gap-2 text-[15px] font-semibold">
               <span>{{ 'meeting.invitees.title' | translate }}</span>
               @if (canManageGuests()) {
@@ -271,6 +279,46 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
             }
           </section>
           }
+
+          <div class="am-mp__main flex min-w-0 flex-col gap-3" data-testid="meeting-main">
+            <!-- The agenda, its editor and its papers (PR 7). -->
+            <am-meeting-agenda-panel
+              [meeting]="m"
+              [items]="agenda()"
+              [attendees]="attendees()"
+              [papers]="files().papers"
+              [canManage]="m.may.manageAgenda"
+              (itemsChange)="onAgendaChange($event)"
+              (filesChanged)="loadFiles()"
+              [readError]="readFailed() ? readErrorKey[readFailed()!] : null"
+              (retryRead)="retryRead()"
+              (reload)="load()"
+              [minutes]="minutes()"
+              [openActions]="openActions()"
+              (minutesChange)="minutes.set($event)"
+              (raiseAction)="actionItem.set($event)"
+              (declineSuggestion)="declining.set($event)"
+              (suggestionApplied)="afterReview()"
+            />
+            <!-- General attachments: absent while empty for someone who may not add one. -->
+            @if (m.may.manageAgenda || files().attachments.length > 0) {
+              <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-attachments">
+                <h2 class="m-0 flex items-center gap-2 text-[15px] font-semibold">
+                  {{ 'meeting.files.attachments' | translate }}
+                  <span class="text-meta text-[var(--am-ink-500)]">{{ format.number(files().attachments.length) }}</span>
+                </h2>
+                <am-meeting-file-list
+                  [meetingId]="m.id"
+                  [files]="files().attachments"
+                  [canManage]="m.may.manageAgenda"
+                  addLabel="meeting.files.addAttachment"
+                  [contextLabel]="m.title"
+                  testId="meeting-attachment-list"
+                  (changed)="loadFiles()"
+                />
+              </section>
+            }
+          </div>
         </div>
       </div>
 
@@ -293,10 +341,82 @@ import { MinutesWriteOrder } from '../../minutes-write-order';
         (distributed)="load()"
         (refreshMinutes)="refreshMinutes()"
       />
+      <app-meeting-suggest-dialog
+        [visible]="suggestOpen()"
+        (visibleChange)="suggestOpen.set($event)"
+        [meetingId]="m.id"
+        [items]="minutes()?.items ?? []"
+        (sent)="afterReview()"
+        (reload)="load()"
+      />
+      <app-meeting-decline-dialog
+        [visible]="declining() !== null"
+        (visibleChange)="$event ? null : declining.set(null)"
+        [meetingId]="m.id"
+        [suggestion]="declining()"
+        [itemOrder]="declineItemOrder()"
+        (declined)="afterReview()"
+        (reload)="load()"
+      />
+      <app-meeting-cant-approve-dialog
+        [visible]="cantApprove() !== null"
+        (visibleChange)="$event ? null : cantApprove.set(null)"
+        [refusal]="cantApprove()"
+        [context]="m.title + ' · ' + stage()"
+      />
+      <app-meeting-return-dialog
+        [visible]="returnOpen()"
+        (visibleChange)="returnOpen.set($event)"
+        [meetingId]="m.id"
+        [context]="m.title"
+        [minutes]="minutes()"
+        (returned)="load()"
+        (reload)="load()"
+      />
     }
   `,
   styles: [
     `
+      /*
+       * PR 7d-2 — the phone (artboard 14), as a CONTAINER query on the page's own
+       * column, so the rule follows the space the page has (and a 390px layout
+       * spec can measure it). Below two 300px cards side by side, the page is
+       * one column: the side column's cards (attendance, the review card, the
+       * invitees) come above the agenda, and every button is at least 44px tall
+       * (44 x 44 for an icon-only one), in this page and the panels inside it.
+       * The side column is first in the DOM (the phone's order is the tab
+       * order); on a wider page grid placement puts the agenda at inline-start.
+       */
+      .am-mp {
+        container: meeting-page / inline-size;
+      }
+      .am-mp__grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      .am-mp__main {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .am-mp__side {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      @container meeting-page (max-width: 611.98px) {
+        .am-mp__grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .am-mp__main,
+        .am-mp__side {
+          grid-column: 1;
+          grid-row: auto;
+        }
+        .am-mp ::ng-deep .p-button {
+          min-block-size: 44px;
+        }
+        .am-mp ::ng-deep .p-button.p-button-icon-only {
+          min-inline-size: 44px;
+        }
+      }
       .am-segmented {
         display: inline-flex;
         align-self: flex-start;
@@ -360,6 +480,23 @@ export class MeetingPageComponent {
   /** The agenda item "Raise action item" was pressed on, while its dialog is open. */
   readonly actionItem = signal<{ id: string; order: number; title: string } | null>(null);
   readonly distributeOpen = signal(false);
+  // PR 7c-1 — the review.
+  readonly suggestOpen = signal(false);
+  readonly declining = signal<MeetingSuggestionDto | null>(null);
+  readonly returnOpen = signal(false);
+  // PR 7c-2 — Approve Minutes held by what its precondition names.
+  readonly approvalBlocks = MEETING_APPROVAL_BLOCKS;
+  /** "Why?" on Approve Minutes, or a press refused for one of those codes. */
+  readonly cantApprove = signal<{ move: WorkflowMoveDto; blockedBy: MoveBlock } | null>(null);
+  /** The whole-minutes suggestion being marked applied, while the request is in flight. */
+  readonly wholeApplying = signal<string | null>(null);
+  /** How the last whole-minutes Mark applied failed, with the suggestion to retry. */
+  readonly wholeFailure = signal<{ suggestion: MeetingSuggestionDto; failure: MeetingFailure } | null>(null);
+  /** The place of the item the suggestion being declined is about. */
+  readonly declineItemOrder = computed(() => {
+    const s = this.declining();
+    return s?.agendaItemId ? (this.minutes()?.items.find((i) => i.id === s.agendaItemId)?.order ?? null) : null;
+  });
   readonly guestOpen = signal(false);
   readonly answering = signal<MeetingAnswer | null>(null);
   readonly answerError = signal<string | null>(null);
@@ -481,6 +618,44 @@ export class MeetingPageComponent {
     });
   }
 
+  /** A review answer, suggestion, apply or decline: the minutes are read again. */
+  afterReview(): void {
+    this.wholeFailure.set(null);
+    this.refreshMinutes();
+  }
+
+  /**
+   * Mark applied on a suggestion about the minutes as a whole: there is no item
+   * to edit. One request at a time; MEETING_SUGGESTION_DECIDED means an earlier
+   * press (or a lost answer) already applied it, so it reads as applied (P220).
+   * A failure is said from its code (Retry only when the server could not be
+   * reached), never as "Your edit was saved", since nothing was edited.
+   */
+  applyWhole(s: MeetingSuggestionDto): void {
+    if (this.wholeApplying() !== null) return;
+    this.wholeFailure.set(null);
+    this.wholeApplying.set(s.id);
+    this.meetings.applySuggestion(this.id, s.id).subscribe({
+      next: () => {
+        this.wholeApplying.set(null);
+        this.afterReview();
+      },
+      error: (err: unknown) => {
+        this.wholeApplying.set(null);
+        if (refusalCode(err) === 'MEETING_SUGGESTION_DECIDED') {
+          this.afterReview();
+          return;
+        }
+        this.wholeFailure.set({ suggestion: s, failure: meetingFailure(err, 'meeting.review.markFailed', 'meeting.review.markFailed') });
+      },
+    });
+  }
+
+  retryWhole(): void {
+    const f = this.wholeFailure();
+    if (f) this.applyWhole(f.suggestion);
+  }
+
   /** The minutes read again (attendance opens at the start time, without a reload). */
   refreshMinutes(): void {
     this.optional(this.meetings.minutes(this.id), 'minutes').subscribe((m) => {
@@ -535,6 +710,10 @@ export class MeetingPageComponent {
         keepKey: 'meeting.cancel.keep',
         danger: true,
       };
+    }
+    // PR 7c-2 — Approve Minutes: the minutes become final and the action items tasks.
+    if ((move.toStageFlags ?? []).includes(MEETING_STAGE_FLAG.MINUTES_FINAL)) {
+      return { titleKey: 'meeting.approve.title', leadKey: 'meeting.approve.lead', confirmKey: 'meeting.approve.confirm', keepKey: 'meeting.approve.keep', danger: false };
     }
     if ((move.toStageFlags ?? []).includes(MEETING_STAGE_FLAG.AGENDA_ISSUED)) {
       return { titleKey: 'meeting.issue.title', leadKey: 'meeting.issue.lead', confirmKey: 'meeting.issue.confirm', keepKey: 'meeting.issue.keep', danger: false };

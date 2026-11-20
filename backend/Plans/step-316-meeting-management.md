@@ -1663,12 +1663,49 @@ them together with their resolver.
          write; attendance taps queued; typed discussion kept; votes checked on
          the client; votes above the members present hold Distribute (one
          readiness check); "nothing to show" is `mayRead: false` both ways.
+   - **PR 7c-1 as built (P212, 20 Nov):** SYSTEM-REFERENCE §18.18. The banner,
+     the Review card, Suggest a correction, suggestions on their items with
+     Edit to apply (the write first, then apply, Retry for apply alone) and
+     Decline (the reply required on the server too,
+     `MEETING_SUGGESTION_REPLY_REQUIRED`), Return for Correction. Approval,
+     "Can't move yet" (one blocker at a time; all of them is ACC-326) and Home's
+     review rows are 7c-2.
+     - **After lane B's review (P220):** marking applied is safe to press twice
+       and after a lost answer (`MEETING_SUGGESTION_DECIDED` reads as applied);
+       an apply failure is said from its code (Retry only when unreachable,
+       Reload when stale, else its own sentence); `MEETING_CHANGED` and the two
+       suggestion codes offer Reload everywhere in the review; "No corrections"
+       only before any answer; Return's refusal in the footer; Decline keeps its
+       quote while closing; Suggest has no `about` input (no per-item Suggest
+       is drawn).
+   - **PR 7c-2 as built (P226, 20 Nov):** SYSTEM-REFERENCE §18.19. Approve
+     Minutes held by its `blockedBy`, disabled with "Why?", opening "Can't move
+     to Minutes Approved yet" (one blocker, said from its code; six lines then
+     "and n more"); the Approve confirm; minutes to review counted on Home, the
+     rail and `/awaiting` from one helper (`awaitingTotal()`), each row with
+     `since` (the stage entry, a correlated subquery: the read stays 2 queries);
+     the review writes and Distribute tell `MyWorkEvents`. Nothing on the
+     per-request path.
    - **PR 7c, review and approval:** the review banner (No corrections /
      Suggest a correction), suggestions applied or declined, the Review card,
      Return for Correction, Approve Minutes with "Can't move to Minutes
      Approved yet" from `blockedBy`, and Home's Awaiting rows.
    - **PR 7d, print and phone:** the approved minutes on A4, and the phone
      (390) pass over every meeting screen.
+     - **Answers to the slice plan (P229, 20 Nov):** (1) Print minutes is a
+       button in the page header, approved minutes only, no row menu; (2) no
+       sheet mode in 7d: each meeting dialog is checked to fit at 390, and
+       sheets are raised separately (they change `EditDialogComponent` for the
+       whole app); (3) Hijri on print follows the reader's preference (ACC-94
+       D4); (4) artboard 16 (clash warnings) and the Repeat step go to the PRs
+       that build those screens; (5) no phone-only print layout: the button
+       stays at every width; (6) no task status on the print. `approvedBy` is
+       read with the minutes, organisation-scoped, with the seat held at
+       approval from the membership ledger (else the current seat).
+     - **7d-1 as built:** SYSTEM-REFERENCE §18.20. **7d-2 as built:** §18.21,
+       the phone by container queries: the meeting page's side cards above the
+       agenda and 44px buttons, the banner's answers full-width with the
+       primary first, and `/meetings` as cards.
    - **Live after 7d:** the whole single meeting, to approved minutes and tasks.
 8. **PR 8: screens, part 3, series.**
    - Step 2 Repeat with its preview, the series line and view, the scope
