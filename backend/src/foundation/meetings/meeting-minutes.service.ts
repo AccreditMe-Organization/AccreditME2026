@@ -98,6 +98,10 @@ export class MeetingMinutesService {
     });
     if (!meeting) throw new MeetingRefusal('MEETING_MINUTES_NOT_OPEN');
     const round = meeting.reviewRound;
+    // PR 7d-1 (P230) — the approver is named only while the minutes ARE approved:
+    // the seeded Minutes Approved is final, but a tenant may add a move out of
+    // it, and the stamp would then outlive the approval.
+    const approval = phase === 'approved' && meeting.minutesApprovedAt && meeting.approvedBy ? { at: meeting.minutesApprovedAt, by: meeting.approvedBy } : null;
     const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked, approverSeat] = await Promise.all([
       this.prisma.meetingAttendee.findMany({
         where: { organizationId, meetingId: id },
@@ -155,9 +159,7 @@ export class MeetingMinutesService {
       this.openActions(this.prisma, id, organizationId),
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
       writing ? distributeBlockedBy(this.prisma, id, organizationId) : Promise.resolve(null),
-      meeting.minutesApprovedAt && meeting.approvedBy && meeting.committeeId
-        ? approverSeatAt(this.prisma, organizationId, meeting.committeeId, meeting.approvedBy.id, meeting.minutesApprovedAt)
-        : Promise.resolve(null),
+      approval && meeting.committeeId ? approverSeatAt(this.prisma, organizationId, meeting.committeeId, approval.by.id, approval.at) : Promise.resolve(null),
     ]);
 
     const quorum = quorumLine(
@@ -230,10 +232,7 @@ export class MeetingMinutesService {
       approvedAt: meeting.minutesApprovedAt,
       // PR 7d-1 — who approved, for the print's approval line: their name even
       // if they have since left or been deactivated, and the seat they held then.
-      approvedBy:
-        meeting.minutesApprovedAt && meeting.approvedBy
-          ? { id: meeting.approvedBy.id, name: meeting.approvedBy.name, seat: approverSeat }
-          : null,
+      approvedBy: approval ? { id: approval.by.id, name: approval.by.name, seat: approverSeat } : null,
       may: {
         recordAttendance: recorder && meeting.scheduledAt <= now && rules.actions[MEETING_ACTIONS.RECORD_ATTENDANCE] === true,
         recordMinutes: recorder && rules.actions[MEETING_ACTIONS.RECORD_MINUTES] === true,
@@ -683,12 +682,22 @@ export async function minutesAudit(
 /**
  * PR 7d-1 — the seat the approver held on the committee when the minutes were
  * approved, read from the membership ledger: the newest event recorded at or
- * before approval (a LEFT event means no seat). With no event that early (a
- * membership older than the ledger), their current seat. Null when neither
- * exists: the approval line then names them without a seat. Organisation-scoped
- * throughout; at most three indexed reads, and only for approved minutes.
+ * before approval (a LEFT event means no seat).
+ *
+ * - **`createdAt`, not `effectiveDate`:** the ledger is read by when a change was
+ *   RECORDED, because `effectiveDate` may be back- or forward-dated (an add can
+ *   name a past or future start), and what the record said at approval is what
+ *   was recorded by then.
+ * - **Ties** (two events recorded in the same millisecond) are broken by id,
+ *   descending, so the answer is the same on every read.
+ * - **No event that early** (a membership older than the ledger): their current
+ *   seat. That can name a seat they have since left, the best the record has.
+ *
+ * Null when neither exists: the approval line then names them without a seat.
+ * Organisation-scoped throughout; at most three indexed reads, and only for
+ * approved minutes.
  */
-async function approverSeatAt(
+export async function approverSeatAt(
   prisma: PrismaService,
   organizationId: string,
   committeeId: string,
