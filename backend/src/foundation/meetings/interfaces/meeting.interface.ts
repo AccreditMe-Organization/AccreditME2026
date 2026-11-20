@@ -23,6 +23,12 @@ export interface IMeetingListItem {
   meetingUrl: string | null;
   owner: IMeetingOwner;
   stage: IMeetingStage;
+  /**
+   * PR 8b (P240) — the whole series view only: where the meeting's latest
+   * reschedule moved it from (its own MeetingReschedule row, the one the
+   * meeting page reads); null if it never moved. Absent on the other views.
+   */
+  movedFrom?: Date | null;
 }
 
 export interface IMeetingList {
@@ -62,6 +68,11 @@ export interface IMeeting extends IMeetingListItem {
     /** The nearest meetings either side, not cancelled and open to this viewer; else null. */
     previousId: string | null;
     nextId: string | null;
+    /** PR 8b (P239) — when those two meetings start, for the links' labels. */
+    previousAt: Date | null;
+    nextAt: Date | null;
+    /** PR 8b — an ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
+    endedAfter: number | null;
   } | null;
 }
 

@@ -5671,7 +5671,11 @@
       },
       "ownerFilter": "اجتماعات {{owner}}",
       "oneOwner": "لجنة أو وحدة واحدة",
-      "clearOwner": "عرض كل الاجتماعات"
+      "clearOwner": "عرض كل الاجتماعات",
+      "seriesTitle": "السلسلة كاملة · {{owner}}",
+      "oneSeries": "سلسلة اجتماعات",
+      "seriesOrder": "مرتبة حسب التاريخ، الأقدم أولًا.",
+      "movedFrom": "أُعيدت جدولته من {{date}}"
     },
     "page": {
       "loading": "جارٍ تحميل الاجتماع…",
@@ -5684,7 +5688,8 @@
       "unit": "الوحدة",
       "quorum": "النصاب {{n}}",
       "where": "المكان",
-      "organiser": "المنظِّم"
+      "organiser": "المنظِّم",
+      "series": "السلسلة"
     },
     "answer": {
       "title": "ردّك على الدعوة",
@@ -6085,6 +6090,44 @@
       "vote": "التصويت: {{for}} مع · {{against}} ضد · {{abstain}} امتناع",
       "actionItems": "الإجراءات",
       "actionLine": "{{title}} · {{owner}} · الاستحقاق {{date}}"
+    },
+    "series": {
+      "every": {
+        "WEEK_1": "كل أسبوع",
+        "WEEK_2": "كل أسبوعين",
+        "MONTH_1": "كل شهر",
+        "MONTH_3": "كل 3 أشهر",
+        "MONTH_6": "كل 6 أشهر",
+        "MONTH_12": "كل 12 شهرًا"
+      },
+      "on": {
+        "WEEKDAY": "{{every}} يوم {{weekday}}",
+        "DAY_OF_MONTH": "{{every}} في اليوم {{day}}",
+        "ORDINAL_WEEKDAY": "{{every}}، {{weekday}} {{which}}"
+      },
+      "ordinal": {
+        "FIRST": "الأول",
+        "SECOND": "الثاني",
+        "THIRD": "الثالث",
+        "FOURTH": "الرابع",
+        "LAST": "الأخير"
+      },
+      "weekday": {
+        "1": "الاثنين",
+        "2": "الثلاثاء",
+        "3": "الأربعاء",
+        "4": "الخميس",
+        "5": "الجمعة",
+        "6": "السبت",
+        "7": "الأحد"
+      },
+      "line": "{{pattern}} · {{n}} من {{total}}",
+      "ended": "{{every}} · انتهت بعد {{n}} من {{total}}",
+      "whole": "السلسلة كاملة",
+      "previousGlyph": "‹",
+      "nextGlyph": "›",
+      "previous": "الاجتماع السابق، {{date}}",
+      "next": "الاجتماع التالي، {{date}}"
     }
   }
 }

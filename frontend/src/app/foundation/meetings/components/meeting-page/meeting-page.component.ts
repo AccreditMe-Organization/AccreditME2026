@@ -26,6 +26,7 @@ import {
   type MeetingSuggestionDto,
 } from '../../services/meeting.service';
 import { isCancelled, ownerGlyph, ownerLink, ownerName, stageName } from '../../meeting-display';
+import { seriesLine } from '../../meeting-series-text';
 import { type MeetingFailure, meetingFailure, meetingRefusalKey } from '../../meeting-refusal';
 import { refusalCode } from '../../../../core/http/refusal';
 import { MeetingRescheduleDialogComponent } from '../meeting-reschedule-dialog/meeting-reschedule-dialog.component';
@@ -165,6 +166,46 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             <span class="text-meta text-[var(--am-ink-500)]">{{ 'meeting.page.organiser' | translate }}</span>
             <span class="truncate">{{ m.organizer.name }}</span>
           </div>
+          <!--
+            PR 8b — the series (Meeting Screens' header): the pattern and where
+            this meeting sits, then previous and next as links, named by their
+            dates, ONLY where the server names them (never worked out here), and
+            the whole series.
+          -->
+          @if (m.series; as s) {
+            <div class="flex min-w-0 flex-col" data-testid="meeting-series">
+              <span class="text-meta text-[var(--am-ink-500)]">{{ 'meeting.page.series' | translate }}</span>
+              <bdi data-testid="meeting-series-line">{{ seriesText() }}</bdi>
+              <span class="flex flex-wrap items-baseline gap-x-3 text-meta">
+                @if (s.previousId && s.previousAt) {
+                  <a
+                    class="text-[var(--am-blue-primary)]"
+                    [routerLink]="['/meetings', s.previousId]"
+                    [attr.aria-label]="'meeting.series.previous' | translate: { date: format.date(s.previousAt) }"
+                    data-testid="meeting-series-previous"
+                    ><span aria-hidden="true">{{ 'meeting.series.previousGlyph' | translate }} </span><bdi>{{ format.date(s.previousAt) }}</bdi></a
+                  >
+                }
+                <a
+                  class="text-[var(--am-blue-primary)]"
+                  routerLink="/meetings"
+                  [queryParams]="{ seriesId: s.id }"
+                  [state]="{ series: s, ownerName: owner() }"
+                  data-testid="meeting-series-whole"
+                  >{{ 'meeting.series.whole' | translate }}</a
+                >
+                @if (s.nextId && s.nextAt) {
+                  <a
+                    class="text-[var(--am-blue-primary)]"
+                    [routerLink]="['/meetings', s.nextId]"
+                    [attr.aria-label]="'meeting.series.next' | translate: { date: format.date(s.nextAt) }"
+                    data-testid="meeting-series-next"
+                    ><bdi>{{ format.date(s.nextAt) }}</bdi><span aria-hidden="true"> {{ 'meeting.series.nextGlyph' | translate }}</span></a
+                  >
+                }
+              </span>
+            </div>
+          }
         </section>
 
         <!-- The viewer's own answer to the invitation (undrawn, plan §5). -->
@@ -511,6 +552,11 @@ export class MeetingPageComponent {
   readonly owner = computed(() => (this.meeting() ? ownerName(this.meeting()!.owner, this.language) : ''));
   readonly glyph = computed(() => (this.meeting() ? ownerGlyph(this.meeting()!.owner) : ''));
   readonly ownerLink = computed(() => (this.meeting() ? ownerLink(this.meeting()!.owner) : []));
+  /** PR 8b — "Every month, the 4th Thursday · 4 of 12" (meeting-series-text.ts, the one place it is worded). */
+  readonly seriesText = computed(() => {
+    const s = this.meeting()?.series;
+    return s ? seriesLine(s, this.translate, this.format) : '';
+  });
   readonly typeLabel = computed(() => {
     const t = this.meeting()?.type;
     return t ? this.language.bilingual(t.labelEn, t.labelAr) : '—';

@@ -6,6 +6,7 @@ import { MEETINGS_PERMISSIONS } from '../../common/constants/permissions';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import {
   meetingInviteeSql,
+  meetingMayOpenSql,
   meetingMemberSql,
   meetingOversightUnitIds,
   meetingOverseenSql,
@@ -33,6 +34,8 @@ export type { MeetingViewer } from './meeting-access';
 
 const NOT_FOUND = MEETING_NOT_FOUND;
 const PAGE = 25;
+/** PR 8b (P240) — the whole series view's hard cap: a series' most meetings (weekly for twelve months, CLASH_TIMES_CAP). */
+export const SERIES_LIST_CAP = 53;
 const MEETING_TYPE = 'meeting_type';
 
 /** The fields an edit may change, in the order the audit names them. */
@@ -198,7 +201,8 @@ export class MeetingsService {
         committee: { select: { id: true, nameEn: true, nameAr: true, orgUnitId: true, quorumCount: true } },
         orgUnit: { select: { id: true, nameEn: true, nameAr: true } },
         organizer: { select: { id: true, name: true } },
-        reschedules: { orderBy: { createdAt: 'desc' }, take: 1, select: { fromAt: true, reason: true, createdAt: true } },
+        // The latest reschedule; a createdAt tie broken by id, as the series view reads it (P243).
+        reschedules: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, select: { fromAt: true, reason: true, createdAt: true } },
         seriesIndex: true,
         series: {
           select: {
@@ -225,7 +229,9 @@ export class MeetingsService {
       committeeTypeValues(this.prisma, organizationId, [meeting.typeValueId], MEETING_TYPE),
       isMeetingKindMember(this.prisma, organizationId, owner, 'MEETING_SCHEDULERS', viewer.id, now),
       this.prisma.meetingAttendee.findFirst({ where: { organizationId, meetingId: id, userId: viewer.id }, select: { answer: true, answerNote: true } }),
-      meeting.series ? this.seriesNeighbours(meeting.series.id, id, organizationId, viewer, now) : Promise.resolve({ previousId: null, nextId: null }),
+      meeting.series
+        ? this.seriesNeighbours(meeting.series.id, id, meeting.series.endedAt !== null, organizationId, viewer, now)
+        : Promise.resolve({ previousId: null, previousAt: null, nextId: null, nextAt: null, endedAfter: null }),
     ]);
     // ACC-316 PR 3b — the answers' summary, only for whoever may edit the meeting.
     const answers = scheduler ? await meetingAnswerSummary(this.prisma, id, organizationId, meeting.committee?.quorumCount ?? meeting.unitQuorum ?? null) : null;
@@ -269,6 +275,10 @@ export class MeetingsService {
             count: meeting.series.count,
             previousId: neighbours.previousId,
             nextId: neighbours.nextId,
+            // PR 8b (P239) — the links' dates, and where an ended series stopped.
+            previousAt: neighbours.previousAt,
+            nextAt: neighbours.nextAt,
+            endedAfter: neighbours.endedAfter,
           }
         : null,
     };
@@ -282,29 +292,45 @@ export class MeetingsService {
    * (`MeetingAccess.openable()`, canSee()'s rule batched, never a second copy),
    * and the nearest on each side picked in memory: a fixed number of queries
    * whatever the series' size (P237).
+   *
+   * PR 8b (P239) — from the same rows, with no further query: each link's date
+   * (the header names it, "‹ 27 Aug 2026"), and for an ENDED series the place
+   * of its last meeting not cancelled ("ended after 4 of 12"; 0 when every one
+   * was cancelled), null while it runs. That is a fact about the series, like
+   * its total, so it counts meetings this viewer can't open; it names none.
    */
   private async seriesNeighbours(
     seriesId: string,
     id: string,
+    ended: boolean,
     organizationId: string,
     viewer: MeetingViewer,
     now: Date,
-  ): Promise<{ previousId: string | null; nextId: string | null }> {
+  ): Promise<{ previousId: string | null; previousAt: Date | null; nextId: string | null; nextAt: Date | null; endedAfter: number | null }> {
     const rows = await this.prisma.meeting.findMany({
       where: { organizationId, seriesId },
       orderBy: [{ seriesIndex: 'asc' }, { scheduledAt: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+      select: { id: true, seriesIndex: true, scheduledAt: true },
     });
     const at = rows.findIndex((r) => r.id === id);
-    if (at < 0) return { previousId: null, nextId: null };
+    if (at < 0) return { previousId: null, previousAt: null, nextId: null, nextAt: null, endedAfter: null };
     const others = rows.filter((r) => r.id !== id).map((r) => r.id);
     const [rules, open] = await Promise.all([
-      this.stageRules.stageRulesFor(organizationId, 'MEETING', others),
+      this.stageRules.stageRulesFor(organizationId, 'MEETING', rows.map((r) => r.id)),
       this.access.openable(others, organizationId, viewer, now),
     ]);
-    const nearest = (candidates: { id: string }[]): string | null =>
-      candidates.find((c) => !rules.get(c.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED) && open.has(c.id))?.id ?? null;
-    return { previousId: nearest(rows.slice(0, at).reverse()), nextId: nearest(rows.slice(at + 1)) };
+    const live = (r: { id: string }) => !rules.get(r.id)?.flags.includes(STAGE_FLAG.MEETING_CANCELLED);
+    const nearest = (candidates: typeof rows) => candidates.find((c) => live(c) && open.has(c.id)) ?? null;
+    const previous = nearest(rows.slice(0, at).reverse());
+    const next = nearest(rows.slice(at + 1));
+    const held = rows.filter(live).map((r) => r.seriesIndex ?? 0);
+    return {
+      previousId: previous?.id ?? null,
+      previousAt: previous?.scheduledAt ?? null,
+      nextId: next?.id ?? null,
+      nextAt: next?.scheduledAt ?? null,
+      endedAfter: ended ? (held.length > 0 ? Math.max(...held) : 0) : null,
+    };
   }
 
   private ownerOf(m: {
@@ -344,7 +370,8 @@ export class MeetingsService {
     const oversight = [...(await meetingOversightUnitIds(this.prisma, organizationId, viewer.id, now))];
     const member = meetingMemberSql('m', viewer.id);
     const overseen = meetingOverseenSql('m', oversight);
-    const visible = seesAll ? Prisma.sql`TRUE` : Prisma.sql`(${member} OR ${overseen})`;
+    // P240 — who may open a meeting: the parent rule's one SQL form (meeting-membership.ts), never a copy.
+    const visible = meetingMayOpenSql('m', { viewerId: viewer.id, seesAll, oversight });
 
     let where: Prisma.Sql;
     let order: Prisma.Sql;
@@ -374,6 +401,12 @@ export class MeetingsService {
         where = Prisma.sql`${overseen} AND NOT ${member}`;
         order = Prisma.sql`m."scheduledAt" DESC, m.id DESC`;
         break;
+      case 'series':
+        // PR 8b (P240) — the whole series: every meeting of it this viewer may
+        // open, past and future, cancelled ones included, by date.
+        where = visible;
+        order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
+        break;
     }
     const owner = dto.committeeId
       ? Prisma.sql`m."committeeId" = ${dto.committeeId}`
@@ -386,15 +419,20 @@ export class MeetingsService {
     const search = term ? Prisma.sql`m.title ILIKE ${'%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%'}` : Prisma.sql`TRUE`;
     const base = Prisma.sql`m."organizationId" = ${organizationId} AND ${where} AND ${owner} AND ${series} AND ${search}`;
 
+    // The whole series is one answer, never paged: at most SERIES_LIST_CAP meetings (a series' most).
+    const series_ = view === 'series';
+    const [limit, offset] = series_ ? [SERIES_LIST_CAP, 0] : [dto.take ?? PAGE, dto.skip ?? 0];
     const [rows, counts] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT m.id FROM "Meeting" m WHERE ${base}
         ORDER BY ${order}
-        LIMIT ${dto.take ?? PAGE} OFFSET ${dto.skip ?? 0}`,
+        LIMIT ${limit} OFFSET ${offset}`,
       this.prisma.$queryRaw<{ total: bigint }[]>`SELECT count(*)::bigint AS total FROM "Meeting" m WHERE ${base}`,
     ]);
     const ids = rows.map((r) => r.id);
-    return { items: await this.listItems(ids, organizationId), total: Number(counts[0]?.total ?? 0), canSeeAll: seesAll };
+    // The series view is one capped answer: its total is what it lists (P243), never the uncapped count.
+    const total = series_ ? ids.length : Number(counts[0]?.total ?? 0);
+    return { items: await this.listItems(ids, organizationId, series_), total, canSeeAll: seesAll };
   }
 
   /**
@@ -421,9 +459,9 @@ export class MeetingsService {
   }
 
   /** The page's rows, in the order given: one read of the meetings, one of their stages. */
-  private async listItems(ids: string[], organizationId: string): Promise<IMeetingListItem[]> {
+  private async listItems(ids: string[], organizationId: string, withReschedule = false): Promise<IMeetingListItem[]> {
     if (ids.length === 0) return [];
-    const [meetings, rules] = await Promise.all([
+    const [meetings, rules, moved] = await Promise.all([
       this.prisma.meeting.findMany({
         where: { id: { in: ids }, organizationId },
         select: {
@@ -438,7 +476,17 @@ export class MeetingsService {
         },
       }),
       this.stageRules.stageRulesFor(organizationId, 'MEETING', ids),
+      // PR 8b — the series view's "Rescheduled from …": each meeting's latest stored reschedule, one batch.
+      withReschedule
+        ? this.prisma.meetingReschedule.findMany({
+            where: { organizationId, meetingId: { in: ids } },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            distinct: ['meetingId'],
+            select: { meetingId: true, fromAt: true },
+          })
+        : Promise.resolve([]),
     ]);
+    const fromAt = new Map(moved.map((r) => [r.meetingId, r.fromAt]));
     const byId = new Map(meetings.map((m) => [m.id, m]));
     return ids.flatMap((id) => {
       const m = byId.get(id);
@@ -454,6 +502,7 @@ export class MeetingsService {
           meetingUrl: m.meetingUrl,
           owner: this.ownerOf(m),
           stage: { id: r?.stageId ?? null, nameEn: r?.stageNameEn ?? null, nameAr: r?.stageNameAr ?? null, flags: r?.flags ?? [] },
+          ...(withReschedule && { movedFrom: fromAt.get(id) ?? null }),
         },
       ];
     });

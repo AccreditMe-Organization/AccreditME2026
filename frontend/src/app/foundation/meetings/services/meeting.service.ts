@@ -18,7 +18,7 @@ function fileBody(file: File): FormData {
  * worked out here.
  */
 
-export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits';
+export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits' | 'series';
 export type MeetingAttendeeKind = 'MEMBER' | 'ORG_GUEST' | 'OUTSIDE_GUEST';
 export type MeetingAnswer = 'ATTENDING' | 'CANT_ATTEND';
 
@@ -52,6 +52,8 @@ export interface MeetingListItemDto {
   meetingUrl: string | null;
   owner: MeetingOwnerDto;
   stage: MeetingStageDto;
+  /** PR 8b — the whole series view only: where the meeting's latest reschedule moved it from. */
+  movedFrom?: string | null;
 }
 
 export interface MeetingListDto {
@@ -71,6 +73,38 @@ export interface MeetingAnswerSummaryDto {
   belowQuorum: boolean;
 }
 
+/** ACC-316 PR 5 — a series' pattern, as the server stores it (SERIES_EVERY, SERIES_ON, SERIES_ORDINAL in meeting.dto.ts). */
+export type MeetingSeriesEvery = 'WEEK_1' | 'WEEK_2' | 'MONTH_1' | 'MONTH_3' | 'MONTH_6' | 'MONTH_12';
+export type MeetingSeriesOnKind = 'WEEKDAY' | 'DAY_OF_MONTH' | 'ORDINAL_WEEKDAY';
+export type MeetingSeriesOrdinal = 'FIRST' | 'SECOND' | 'THIRD' | 'FOURTH' | 'LAST';
+
+/** What the readback is built from: how often, and on which day (weekday 1 Monday … 7 Sunday). */
+export interface MeetingSeriesPattern {
+  every: MeetingSeriesEvery;
+  on: { kind: MeetingSeriesOnKind; weekday: number | null; dayOfMonth: number | null; ordinal: MeetingSeriesOrdinal | null };
+}
+
+/**
+ * The series a meeting belongs to (GET /meetings/:id, PR 5, 8-be, 8b). The
+ * neighbours are the server's: the nearest meetings either side that aren't
+ * cancelled and that this viewer may open, else null; never worked out here.
+ */
+export interface MeetingSeriesDto extends MeetingSeriesPattern {
+  id: string;
+  index: number;
+  total: number;
+  ended: boolean;
+  firstDate: string;
+  endsOn: string | null;
+  count: number | null;
+  previousId: string | null;
+  previousAt: string | null;
+  nextId: string | null;
+  nextAt: string | null;
+  /** An ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
+  endedAfter: number | null;
+}
+
 export interface MeetingDto extends MeetingListItemDto {
   type: { id: string; labelEn: string; labelAr: string | null } | null;
   unitQuorum: number | null;
@@ -80,6 +114,8 @@ export interface MeetingDto extends MeetingListItemDto {
   may: { edit: boolean; reschedule: boolean; manageGuests: boolean; manageAgenda: boolean; answer: boolean };
   answers: MeetingAnswerSummaryDto | null;
   myAnswer: { answer: MeetingAnswer | null; note: string | null } | null;
+  /** Null for a meeting outside a series. */
+  series: MeetingSeriesDto | null;
 }
 
 export interface MeetingAttendeeDto {
@@ -325,7 +361,7 @@ export class MeetingService {
   private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/meetings`;
 
-  list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
+  list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; seriesId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
     let params = new HttpParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '') params = params.set(k, String(v));
     return this.http.get<MeetingListDto>(this.base, { params });

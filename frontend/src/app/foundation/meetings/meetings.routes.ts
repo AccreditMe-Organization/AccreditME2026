@@ -15,6 +15,7 @@ export const MEETING_ROUTES: Routes = [
   {
     path: ':id',
     canActivate: [permissionGuard],
-    loadComponent: () => import('./components/meeting-page/meeting-page.component').then((m) => m.MeetingPageComponent),
+    // PR 8b — through the host, so a series' previous and next (same route, another id) open a new page.
+    loadComponent: () => import('./components/meeting-page/meeting-page-host.component').then((m) => m.MeetingPageHostComponent),
   },
 ];
