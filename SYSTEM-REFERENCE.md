@@ -18247,3 +18247,42 @@ when they fail), as the workflow moves already do; Approve is a workflow move.
 **Cost:** Home's awaiting read is one more request while the Meetings module is
 open: `GET /meetings/awaiting-me`, 2 queries. Nothing is added to the
 per-request path (no guard, interceptor or middleware), and nothing polls.
+
+### 18.20 The screens, part 2e: the approved minutes on A4 (PR 7d-1)
+
+Plan §3.11, design artboard 13. The answers to the 7d slice plan (P229):
+
+- **`/meetings/:id/print`**, a route OUTSIDE the app shell (`app.routes.ts`,
+  first, behind `authGuard` and `permissionGuard`'s meetings module rule), so
+  neither the screen nor the paper carries the rail or top bar. On screen it has
+  a small bar (Back to the meeting, Print), hidden when printing. A browser
+  print page: there is no PDF.
+- **Approved minutes only.** Before Minutes Approved the page says so and prints
+  nothing; a refusal to open the minutes (`MEETING_MINUTES_NOT_OPEN`) reads the
+  same, and a meeting the reader may not see is the meeting page's not-found.
+  Who may print is exactly who may read the approved minutes (the minutes
+  read's own rule).
+- **Print minutes** is a button in the meeting page's header, shown once the
+  minutes are approved, at every width (no row menu, no phone-only layout).
+- **On the page:** the organisation (`tenantName`), the committee or unit, the
+  title, when (start to end) and where; attendance in five groups (members
+  present, with apologies and absent, then the organisation guests and outside
+  guests who came, an outside guest with their organisation, role and an
+  outlined mark); the quorum line, with guests not counted; each item's
+  discussion, decisions, vote, "Taken without quorum" and action items (owner
+  and due date, no task status); the approval line, at the top and again at the
+  end.
+- **The approval line** reads the minutes read's `approvedBy`: the approver's
+  name, even after they leave the committee or are deactivated, and the seat
+  they held at approval, from the membership ledger (the newest event recorded
+  at or before `minutesApprovedAt`; a LEFT event means no seat), falling back to
+  their current seat where the ledger has nothing that early, and no seat for a
+  unit meeting. Read with the minutes, under the minutes read's access check,
+  organisation-scoped; at most three indexed reads, only for approved minutes.
+- **The print stylesheet:** `@page { size: A4 portrait; margin: 18mm }`, black
+  on white, marks as outlined text, items kept whole across pages, and the page
+  number in a margin box as "1 / 3" (`counter(pages)`, Chrome/Edge 131+; no
+  number below that, plan §8). The number is language-neutral because a margin
+  box's text can't be translated.
+- **Dates** go through the formatting layer, so Hijri follows the reader's
+  preference (ACC-94 D4), as the screen does.

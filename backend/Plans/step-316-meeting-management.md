@@ -1692,6 +1692,17 @@ them together with their resolver.
      Approved yet" from `blockedBy`, and Home's Awaiting rows.
    - **PR 7d, print and phone:** the approved minutes on A4, and the phone
      (390) pass over every meeting screen.
+     - **Answers to the slice plan (P229, 20 Nov):** (1) Print minutes is a
+       button in the page header, approved minutes only, no row menu; (2) no
+       sheet mode in 7d: each meeting dialog is checked to fit at 390, and
+       sheets are raised separately (they change `EditDialogComponent` for the
+       whole app); (3) Hijri on print follows the reader's preference (ACC-94
+       D4); (4) artboard 16 (clash warnings) and the Repeat step go to the PRs
+       that build those screens; (5) no phone-only print layout: the button
+       stays at every width; (6) no task status on the print. `approvedBy` is
+       read with the minutes, organisation-scoped, with the seat held at
+       approval from the membership ledger (else the current seat).
+     - **7d-1 as built:** SYSTEM-REFERENCE §18.20. **7d-2:** the phone pass.
    - **Live after 7d:** the whole single meeting, to approved minutes and tasks.
 8. **PR 8: screens, part 3, series.**
    - Step 2 Repeat with its preview, the series line and view, the scope
