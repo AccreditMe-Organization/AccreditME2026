@@ -657,6 +657,110 @@ describe("A meeting's minutes and review against a real database (ACC-316 PR 4)"
     });
   });
 
+  // PR 7d-1 — the print's approval line: who approved, named even after they
+  // leave, with the seat they held at approval.
+  describe('approvedBy (the approval line)', () => {
+    const approveNow = async (w: World) => {
+      const m = await inReview(w);
+      for (const name of ['chair', 'secretary', 'member']) await review.noCorrections(m.id, w.orgId, as(w, name));
+      await workflow.triggerTransition(m.instanceId, { transitionId: (await approveMove(m.instanceId)).id }, w.orgId, w.people['chair']!, []);
+      return m;
+    };
+    const read = (w: World, id: string) => minutes.getMinutes(id, w.orgId, as(w, 'viewer', [MEETINGS_PERMISSIONS.VIEW]));
+    const seatLabel = async (key: string) => (await prisma.lookupValue.findFirstOrThrow({ where: { id: seat[key]! } })).labelEn;
+
+    it('is null before approval', async () => {
+      const m = await inReview(a);
+      expect((await minutes.getMinutes(m.id, a.orgId, as(a, 'chair'))).approvedBy).toBeNull();
+    });
+
+    it('names the approver with their seat; with no ledger that early, the current seat', async () => {
+      const m = await approveNow(a);
+      expect((await read(a, m.id)).approvedBy).toEqual({ id: a.people['chair'], name: 'chair', seat: expect.objectContaining({ id: seat['chairman'], labelEn: await seatLabel('chairman') }) });
+    });
+
+    it('the seat held at approval, from the ledger, though the seat changed since', async () => {
+      const w = await world();
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['chairman']!, action: 'JOINED', effectiveDate: new Date(), createdAt: new Date(Date.now() - DAY) },
+      });
+      const m = await approveNow(w);
+      // Reseated after approval: the line keeps the seat held then.
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['chair']! }, data: { roleValueId: seat['member']! } });
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['member']!, action: 'ROLE_CHANGED', effectiveDate: new Date(), createdAt: new Date(Date.now() + 1000) },
+      });
+      expect((await read(w, m.id)).approvedBy?.seat?.id).toBe(seat['chairman']);
+    });
+
+    it('an approver who has since left the committee and been deactivated is still named, with the seat held then', async () => {
+      const w = await world();
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['chairman']!, action: 'JOINED', effectiveDate: new Date(), createdAt: new Date(Date.now() - DAY) },
+      });
+      const m = await approveNow(w);
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['chair']! }, data: { leftAt: new Date(), isActive: false } });
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['chairman']!, action: 'LEFT', effectiveDate: new Date(), createdAt: new Date(Date.now() + 1000) },
+      });
+      await prisma.user.update({ where: { id: w.people['chair']! }, data: { status: 'INACTIVE' } });
+      const line = (await read(w, m.id)).approvedBy;
+      expect(line).toEqual({ id: w.people['chair'], name: 'chair', seat: expect.objectContaining({ id: seat['chairman'] }) });
+    });
+
+    const joined = (w: World, key: string, at: Date, action: 'JOINED' | 'LEFT' | 'ROLE_CHANGED' = 'JOINED', id?: string) =>
+      prisma.committeeMembershipEvent.create({
+        data: { ...(id ? { id } : {}), organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat[key]!, action, effectiveDate: at, createdAt: at },
+      });
+
+    it('the newest event at or before approval is LEFT: no seat, the name still given (P230)', async () => {
+      const w = await world();
+      await joined(w, 'chairman', new Date(Date.now() - DAY));
+      await joined(w, 'chairman', new Date(Date.now() - 60_000), 'LEFT');
+      const m = await approveNow(w);
+      expect((await read(w, m.id)).approvedBy).toEqual({ id: w.people['chair'], name: 'chair', seat: null });
+    });
+
+    it('two events recorded in the same instant: the tie is broken by id, the higher one (P230)', async () => {
+      const w = await world();
+      const at = new Date(Date.now() - DAY);
+      await joined(w, 'member', at, 'JOINED', `tie-a-${w.orgId}`);
+      await joined(w, 'secretary', at, 'ROLE_CHANGED', `tie-z-${w.orgId}`);
+      const m = await approveNow(w);
+      expect((await read(w, m.id)).approvedBy?.seat?.id).toBe(seat['secretary']);
+    });
+
+    it("a unit meeting's approver has no seat (P230)", async () => {
+      const w = await world();
+      const m = await approveNow(w);
+      await prisma.meeting.update({ where: { id: m.id }, data: { committeeId: null, orgUnitId: w.unitId } });
+      expect((await read(w, m.id)).approvedBy).toEqual({ id: w.people['chair'], name: 'chair', seat: null });
+    });
+
+    it('a stamp that outlives the approval (a move out of Minutes Approved) names nobody (P230)', async () => {
+      const w = await world();
+      const m = await approveNow(w);
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
+      const review = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'minutes_review' } });
+      await prisma.workflowInstance.update({ where: { id: m.instanceId }, data: { currentStageId: review.id } });
+      expect((await prisma.meeting.findFirstOrThrow({ where: { id: m.id } })).minutesApprovedAt).not.toBeNull();
+      expect((await minutes.getMinutes(m.id, w.orgId, as(w, 'chair'))).approvedBy).toBeNull();
+    });
+
+    it("another organisation's ledger row for the same committee and person is never read", async () => {
+      const w = await world();
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['chairman']!, action: 'JOINED', effectiveDate: new Date(), createdAt: new Date(Date.now() - 2 * DAY) },
+      });
+      // A corrupt row filed under organisation b, newer than the real one and before approval.
+      await prisma.committeeMembershipEvent.create({
+        data: { organizationId: b.orgId, committeeId: w.committeeId, userId: w.people['chair']!, roleValueId: seat['member']!, action: 'ROLE_CHANGED', effectiveDate: new Date(), createdAt: new Date(Date.now() - DAY) },
+      });
+      const m = await approveNow(w);
+      expect((await read(w, m.id)).approvedBy?.seat?.id).toBe(seat['chairman']);
+    });
+  });
+
   describe('Return for Correction (the app move)', () => {
     it("by whoever records the minutes, outside the review's pool: the reason kept, the round closed, the present members told", async () => {
       const m = await inReview(a);

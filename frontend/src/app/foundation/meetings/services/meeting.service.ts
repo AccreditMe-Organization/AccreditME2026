@@ -292,6 +292,8 @@ export interface MeetingMinutesDto {
     defaultReviewBy: string;
   } | null;
   approvedAt: string | null;
+  /** PR 7d-1 — who approved, named even after they leave, with the seat they held then (null for a unit meeting's approver). */
+  approvedBy: { id: string; name: string; seat: { id: string; labelEn: string; labelAr: string | null } | null } | null;
   may: {
     recordAttendance: boolean;
     recordMinutes: boolean;

@@ -117,6 +117,14 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             @if (minutes()?.may?.distribute) {
               <p-button size="small" [label]="'meeting.distribute.open' | translate" data-testid="meeting-distribute" (onClick)="distributeOpen.set(true)" />
             }
+            <!-- PR 7d-1 — the approved minutes on A4; never a draft (P229: the header only). -->
+            @if (minutes()?.phase === 'approved') {
+              <a
+                class="p-button p-button-sm p-button-secondary am-print-link"
+                [routerLink]="['/meetings', m.id, 'print']"
+                data-testid="meeting-print-minutes"
+              ><i class="pi pi-print" aria-hidden="true"></i><span>{{ 'meeting.print.open' | translate }}</span></a>
+            }
             @if (minutes()?.may?.returnForCorrection) {
               <p-button size="small" severity="secondary" [label]="'meeting.return.open' | translate" data-testid="meeting-return" (onClick)="returnOpen.set(true)" />
             }
