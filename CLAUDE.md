@@ -1227,6 +1227,7 @@ POST /auth/reset-password/lookup   30 / min per address (ACC-188)
 POST /tasks/draft                 10 / min per signed-in USER (ACC-197)
 POST /tasks/assignment/workload-hint
                                   20 / min per signed-in USER (ACC-199)
+POST /meetings/:id/ai/minutes     10 / min per signed-in USER (ACC-322)
 GET  /health                      not limited — the only exemption
 ```
 
@@ -1282,9 +1283,11 @@ GET  /health                      not limited — the only exemption
   only limit. File upload now exists (ACC-177) and is covered by the global
   per-user limit; there is no upload-specific tier. The AI-specific tiers are
   `POST /tasks/draft` (`perUser()`, ACC-197) — a draft is the first AI call an
-  ordinary user can repeat — and `POST /tasks/assignment/workload-hint`
-  (ACC-199). The summary and the briefing have none —
-  each is made once per file or per press, behind a claim row.
+  ordinary user can repeat — `POST /tasks/assignment/workload-hint`
+  (ACC-199), and `POST /meetings/:id/ai/minutes` (`RATE_LIMITS.meetingAi`,
+  ACC-322; its later Meetings AI presses share it). The summary and the
+  briefing have none — each is made once per file or per press, behind a claim
+  row.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 
@@ -1877,12 +1880,14 @@ Platform Admin configures:
 
 AI credit costs per feature (platform admin adjustable):
 
-**Only four of these are rows, and they are seeded, not hand-set (ACC-194,
+**Only five of these are rows, and they are seeded, not hand-set (ACC-194,
 Ahmad, 12 Oct):** `task_description_drafting` 2, `document_summary` 15 (input
 capped at 30,000 tokens, ACC-193), `morning_briefing` 5 **per on-demand run**,
 restricted to al-nakheel for demos (a tenant admin presses a button, ACC-198 —
-never a schedule, never per user per day), and `workload_balancing` 1, a press
-of "Suggest someone", open to every organisation with AI (ACC-199). They arrive through
+never a schedule, never per user per day), `workload_balancing` 1, a press
+of "Suggest someone", open to every organisation with AI (ACC-199), and
+`minutes_drafting` 8, a press of Draft minutes with its action items, open to
+every organisation with AI (ACC-322, Ahmad, 20 Nov). They arrive through
 `npm run seed:ai-feature-costs` after the deploy, which never overwrites an
 edited row. Everything else below is a price list for features that do not
 exist; a feature is callable only when it is in `foundation/ai/ai.config.ts`
@@ -1902,7 +1907,7 @@ MEDIUM (5-20 credits):
   capa_suggestion: 5
   morning_briefing: 5                 ← seeded; per on-demand run, al-nakheel only
   document_summary: 15                ← seeded (ACC-194, for ACC-193)
-  minutes_drafting: 8
+  minutes_drafting: 8                 ← seeded (ACC-322), per press, actions included
   committee_health_report: 10
   evidence_suggestion_per_element: 2
   tor_drafting: 10
@@ -5321,6 +5326,62 @@ SYSTEM-REFERENCE.md §3.18.1. Plan and Ahmad's answers (19 Nov):
   from the rules the save refuses by, never a copy; an app-move line for every
   review-stage move (`REVIEW_STAGE_MOVE_KEY`).
 - **No migration.** The screens are PR 3b.
+
+## Key Architecture Decisions (ACC-322)
+
+Meetings AI. PR 1: Draft minutes, with the action items, backend only. Full
+mechanism: SYSTEM-REFERENCE.md §17.12. Plan, Ahmad's answers (20 Nov, all five
+as recommended) and the PR order: `backend/Plans/step-322-meetings-ai.md`.
+Briefly:
+
+- **WHOEVER RECORDS THE MINUTES DRAFTS THEM, IN MINUTES DRAFT, NEVER AFTER A
+  RETURN (M9).** Anyone else is refused `MEETING_NOT_RECORDER`, after the
+  meeting's own 404. A stage that doesn't allow it is
+  `MEETING_AI_NOT_OFFERED`, naming the stage. The rough notes have the same
+  gate, and only their writer reads them (M3).
+- **NO NAME REACHES THE MODEL AS WRITTEN.** `meeting-ai-names.ts` is the one
+  place, used on every customer text sent:
+  - invitees' names and their own name words become labels (`[P1]`);
+  - an outside guest's words are ALWAYS replaced;
+  - active people's full names become labels, and emails become `[email]`.
+
+  The model answers with labels; owners are mapped back exactly. An outside
+  guest is never an owner (M7).
+- **A PRESS IS REFUSED BEFORE ANY CREDIT** for these:
+  - no notes;
+  - nothing left to draft (M8);
+  - too long (20,000 tokens);
+  - a run already in progress (one claim per meeting).
+
+  An unusable or all-"nothing" answer is refunded by the gateway's
+  `accept()`. A meeting that moved on during the call saves nothing and stays
+  charged.
+- **SUGGESTIONS ARE STORED UNTIL DECIDED, THEN DELETED.**
+  - **The record after Accept** is the minutes and ONE audit row with
+    `aiDraft`.
+  - **Accept writes through `MeetingMinutesService.applyAiDraft()`,** so the
+    minutes keep one owner. It replaces each part it carries (M5) and applies
+    at most once (`MEETING_AI_SUGGESTION_GONE`).
+- **M6: `applyAiDraft()` is the ONE writer that keeps votes above the members
+  present** (`checkVotes(…, { abovePresent: 'keep' })`). The ordinary decision
+  write still refuses them, and Distribute holds the minutes until they are
+  corrected. Never pass `keep` anywhere else.
+- **THE ACTION-ITEM RULES ARE ONE FUNCTION:** `actionItemFields()` and
+  `assertActionOwner()`. `addActionItem()` and an AI accept both call them.
+- **DISTRIBUTE AND CANCEL END THE ROWS, INSIDE THEIR MOVES.**
+  - **Distribute** deletes the undecided suggestions and the notes, and
+    records `aiDiscarded`. The minutes read's `distribute.aiUndecided` names
+    the count in the confirm (M2) and never holds Distribute.
+  - **A cancelled meeting** loses every suggestion and every note.
+- **`aiFeaturesAvailability()` answers several features in two queries.** A
+  page with several AI features asks once.
+- **8 credits, open to every organisation with AI** (Ahmad, 20 Nov), seeded
+  AFTER the deploy (`npm run seed:ai-feature-costs`). The live proof follows
+  the seed, on al-nakheel, and credits used stay used (ACC-236). Thinking
+  against the 16,000 output budget is measured there.
+- **One additive migration** (`acc322_meetings_ai`): two enums, three tables,
+  and two nullable `AgendaItem` source columns for PR 3. It runs in the
+  pre-deploy step.
 
 ## Open / Deferred Items
 
