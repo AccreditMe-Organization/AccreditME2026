@@ -13,9 +13,10 @@ import { MeetingService } from '../../services/meeting.service';
 import { MeetingListComponent } from './meeting-list.component';
 
 // ACC-316 PR 8b — the whole series (/meetings?seriesId=, from a meeting's
-// "Whole series"): the series' Upcoming and Past from the server, headed by its
-// owner and pattern, carried by the link or else read from its first meeting,
-// and a cancelled meeting reads Cancelled (A9).
+// "Whole series"): ONE list by date from the server (view=series, P240), headed
+// by its owner and pattern, carried by the link or else read from its first
+// meeting; a cancelled meeting reads Cancelled (A9), and a moved one says where
+// it came from.
 describe('MeetingListComponent — the whole series (ACC-316 PR 8b)', () => {
   const cancelled = { id: 'm-3', title: 'P&T · June 2027', scheduledAt: '2027-06-24T10:30:00Z', durationMinutes: 90, location: null, meetingUrl: null, stage: { id: 's-c', nameEn: 'Cancelled', nameAr: 'ملغى', flags: ['MEETING_CANCELLED'] }, owner: { kind: 'COMMITTEE', id: 'c-1', nameEn: 'Pharmacy and Therapeutics Committee', nameAr: 'لجنة الصيدلة والعلاجات' } };
   let list: jasmine.Spy;
@@ -50,13 +51,25 @@ describe('MeetingListComponent — the whole series (ACC-316 PR 8b)', () => {
   const firstPage = (c: MeetingListComponent, scope?: string) => firstValueFrom(c.source({ page: 1, pageSize: 25, scope } as Parameters<typeof c.source>[0]));
   const text = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? null;
 
-  it("asks the server for the series' meetings, Upcoming then Past, and nothing else", async () => {
-    const { c } = create({ series: aSeries(), ownerName: 'Pharmacy and Therapeutics Committee' });
-    expect(c.scopes().map((s) => s.key)).toEqual(['upcoming', 'past']);
-    await firstPage(c);
-    expect(list).toHaveBeenCalledWith({ view: 'upcoming', q: undefined, seriesId: 'series-1', skip: 0, take: 25 });
-    await firstPage(c, 'past');
-    expect(list).toHaveBeenCalledWith({ view: 'past', q: undefined, seriesId: 'series-1', skip: 0, take: 25 });
+  it("asks the server for the whole series in one answer (view=series), with no views to switch between", async () => {
+    const { c, el, fixture } = create({ series: aSeries(), ownerName: 'Pharmacy and Therapeutics Committee' });
+    expect(c.scopes()).toEqual([]);
+    const page = await firstPage(c);
+    expect(list).toHaveBeenCalledOnceWith({ view: 'series', seriesId: 'series-1', q: undefined });
+    expect(page).toEqual(jasmine.objectContaining({ data: [cancelled], total: 1, page: 1 }));
+    fixture.detectChanges();
+    expect(text(el, 'meeting-list-order')).toBe('Sorted by date, earliest first.');
+  });
+
+  it('a moved meeting says where it was moved from; one never moved says nothing', async () => {
+    const moved = { ...cancelled, id: 'm-2', title: 'P&T · May 2027', stage: { id: 's-p', nameEn: 'Planned', nameAr: 'مجدول', flags: [] }, movedFrom: '2027-05-20T10:30:00Z' };
+    const { el, fixture } = create({ series: aSeries(), ownerName: 'Pharmacy and Therapeutics Committee' }, [moved, { ...cancelled, movedFrom: null }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const note = (id: string) => el.querySelector(`[data-meeting-row="${id}"] [data-meeting-moved-from]`)?.textContent?.trim() ?? null;
+    expect(note('m-2')).toBe('Rescheduled from 20 May 2027');
+    expect(note('m-3')).toBeNull();
   });
 
   it('heads the list with the owner and pattern the link carried, and reads no meeting for them', async () => {
@@ -71,7 +84,7 @@ describe('MeetingListComponent — the whole series (ACC-316 PR 8b)', () => {
   it('opened from a shared link (no state): names the owner from the first row and reads the pattern from that meeting, once', async () => {
     const { c, el, fixture } = create(null);
     await firstPage(c);
-    await firstPage(c, 'past');
+    await firstPage(c);
     fixture.detectChanges();
     expect(get).toHaveBeenCalledOnceWith('m-3');
     expect(text(el, 'meeting-list-series-title')).toBe('Whole series · Pharmacy and Therapeutics Committee');

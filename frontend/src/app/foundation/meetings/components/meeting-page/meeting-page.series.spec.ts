@@ -88,11 +88,20 @@ describe('Meeting page — the series (ACC-316 PR 8b)', () => {
     expect(links).toEqual(['meeting-series-previous', 'meeting-series-whole', 'meeting-series-next']);
   });
 
-  it('in Arabic: the line, and the arrows pointing the reading way', () => {
+  it('in Arabic: the line, and the SAME arrow characters as English, which the browser mirrors in RTL (P240)', () => {
+    // U+2039 and U+203A are Bidi_Mirrored: at dir=rtl the browser draws each
+    // one flipped, so a hand-swapped Arabic glyph would point "previous" the
+    // wrong way. The translations must carry the same characters.
+    expect(ar.meeting.series.previousGlyph).toBe(en.meeting.series.previousGlyph);
+    expect(ar.meeting.series.nextGlyph).toBe(en.meeting.series.nextGlyph);
+    expect(en.meeting.series.previousGlyph).toBe('\u2039');
+    expect(en.meeting.series.nextGlyph).toBe('\u203A');
     const { el } = create('ar');
     expect(q(el, 'meeting-series-line')!.textContent!.trim()).toBe('كل شهر، الخميس الرابع · 4 من 12');
-    expect(q(el, 'meeting-series-previous')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('› 25 فبراير 2027');
-    expect(q(el, 'meeting-series-next')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('22 أبريل 2027 ‹');
+    // The line is isolated, so an English committee name never reorders it.
+    expect(q(el, 'meeting-series-line')!.tagName).toBe('BDI');
+    expect(q(el, 'meeting-series-previous')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('\u2039 25 فبراير 2027');
+    expect(q(el, 'meeting-series-next')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('22 أبريل 2027 \u203A');
   });
 
   it('shows previous and next only where the server names them, never working one out', () => {
