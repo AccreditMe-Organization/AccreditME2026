@@ -888,7 +888,7 @@
       "initialMoved": "{{stage}} is no longer the starting stage.",
       "openStage": "Open {{name}}",
       "protectedTitle": "Protected workflow",
-      "protectedBody": "AccreditMe keeps this workflow working: you can rename its stages and set their deadlines, but not change what they allow or mean."
+      "protectedBody": "AccreditMe keeps this workflow working: you can rename its stages, set their deadlines and add review stages before the decision. What the stages allow or mean can't be changed."
     },
     "recordActionHint": {
       "COMMITTEE": {
@@ -1194,10 +1194,10 @@
       "initialAndFinal": "A stage can't be both the starting stage and a final stage.",
       "stageHasTransitions": "This stage still has transitions into or out of it. Remove them first.",
       "stageInUse": "Records have entered this stage, so it can't be removed. You can rename it.",
-      "reviewStageLimit": "A change request can have at most 9 review stages.",
-      "reviewStagePosition": "A review stage goes after Draft or after another review stage.",
+      "reviewStageLimit": "A change request can go through up to 9 review stages.",
+      "reviewStagePosition": "That position isn't available any more. Reload and choose where it goes again.",
       "reviewStageAnyOne": "A review stage is decided by any one of its people.",
-      "reviewStageNoCreator": "A review stage can't be given to whoever raised the request: nobody decides their own change request.",
+      "reviewStageNoCreator": "Nobody reviews their own request, so this choice isn't offered.",
       "actionInUse": "This action has run, so it can't be removed. You can turn it off instead.",
       "transitionInUse": "This transition has been used, so it can't be removed. You can rename it.",
       "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
@@ -1212,9 +1212,9 @@
         "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",
         "DEACTIVATE": "The committee change request workflow cannot be switched off: changes to approved committees depend on it.",
         "CHANGE_TYPE": "A workflow cannot be changed to or from the committee change request type.",
-        "ADD_STAGE": "Only review stages can be added to the committee change request workflow, after a request is drafted and before it is decided. You can rename its other stages and set their deadlines.",
+        "ADD_STAGE": "Only review stages can be added to the committee change request workflow. They go before the stage that decides the request.",
         "REMOVE_STAGE": "This stage is part of how a committee change request is decided, so it cannot be deleted.",
-        "STAGE_FIELD": "In the committee change request workflow only a stage's names, description and deadline can be changed.",
+        "STAGE_FIELD": "In the committee change request workflow, only a stage's names, description and deadline can be changed, and the people of a review stage.",
         "TRANSITION": "The moves of a committee change request are fixed, so they cannot be added, changed or removed.",
         "STAGE_TASKS": "Tasks cannot be added to the committee change request workflow's stages: its moves are made by the request itself."
       },
@@ -1227,7 +1227,7 @@
       "userNotInPosition": "That person no longer holds this position here. Choose again.",
       "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives.",
       "committeeQuorumNotSet": "Set a quorum of at least 1 before submitting this committee for approval.",
-      "templateProtected": "The committee change request workflow is fixed: you can rename its stages and set their deadlines, and nothing else."
+      "templateProtected": "The committee change request workflow is fixed: you can rename its stages, set their deadlines and add review stages, and nothing else."
     },
     "confirmRemoveActionHeader": "Remove the “{{type}}” action?",
     "removeActionNamed": "Remove the {{type}} action",
@@ -1372,7 +1372,21 @@
       "confirm": "Confirm"
     },
     "why": "Why?",
-    "whyNamed": "Why {{move}} isn't available yet"
+    "whyNamed": "Why {{move}} isn't available yet",
+    "reviewStage": {
+      "add": "Add review stage",
+      "chip": "Review stage",
+      "nameArOptional": "Name (Arabic) · optional",
+      "descriptionOptional": "Description · optional",
+      "slaOptional": "SLA (working hours) · optional",
+      "goesAfter": "Goes after",
+      "goesAfterHelp": "Review stages run in order, before the stage that decides the request.",
+      "goesAfterFixed": "To move it, remove it and add it again. That's possible only while no request has entered it.",
+      "anyOne": "Any one of them decides. Nobody decides on their own request.",
+      "readers": "Only people who can open the committee can decide.",
+      "removeStage": "Remove stage",
+      "removeBody": "Requests will go from {{prev}} straight to {{next}}."
+    }
   },
   "notification": {
     "openRecord": "Open record",
@@ -1609,7 +1623,8 @@
         "bodyPhone": "{{name}} · {{date}}",
         "view": "View request",
         "error": "Couldn't check for an open change request.",
-        "partial": "A change request is open."
+        "partial": "A change request is open.",
+        "review_stage": "Change request {{n}} is in {{stage}}: {{fields}}"
       },
       "panel": {
         "title": "Change requests",
@@ -1717,7 +1732,8 @@
         "error": "Couldn't load this change request.",
         "notFound": "Change request not found",
         "notFoundBody": "It may have been removed, or the link is wrong.",
-        "backToCommittee": "Back to the committee"
+        "backToCommittee": "Back to the committee",
+        "waitingStage": "Waiting for {{stage}} since {{date}}. You can withdraw it until it's decided."
       },
       "action": {
         "submit": "Submit for review",
@@ -1732,7 +1748,9 @@
         "context": "Change request {{n}} · {{committee}}",
         "changedText": "{{field}}: changed",
         "task": "A task to revise the terms of reference will be created for {{name}}.",
-        "button": "Approve"
+        "button": "Approve",
+        "reviewHeader": "Approve and send it on to {{next}}?",
+        "reviewNote": "Nothing is applied yet. The changes apply only when {{decision}} approves them."
       },
       "return": {
         "header": "Return for changes",
@@ -2531,7 +2549,6 @@
   "home": {
     "awaiting": "Awaiting my action",
     "awaitingChange": "Change request {{n}} · {{committee}}",
-    "awaitingChangeMeta": "From {{name}}",
     "allMyTasks": "All my tasks",
     "awaitingStageMeta": "{{type}} · {{stage}} {{position}}/{{count}}",
     "decisionFailed": "— waiting for your decision",
@@ -2607,7 +2624,8 @@
       "note": "Each line is a live condition, not a message. It clears by itself at the next hourly check once the setup is fixed. There is nothing to dismiss."
     },
     "awaitingReviewMeta": "Minutes to review · by {{day}}",
-    "awaitingReviewMetaNoDate": "Minutes to review"
+    "awaitingReviewMetaNoDate": "Minutes to review",
+    "awaitingChangeMetaStage": "From {{name}} · {{stage}}"
   },
   "list": {
     "noResults": "No matching results",
@@ -3415,6 +3433,10 @@
           "one": "{{count}} committee matches",
           "other": "{{count}} committees match"
         }
+      },
+      "reviewStageLimit": {
+        "one": "A change request can go through up to {{count}} review stage.",
+        "other": "A change request can go through up to {{count}} review stages."
       }
     },
     "home": {
