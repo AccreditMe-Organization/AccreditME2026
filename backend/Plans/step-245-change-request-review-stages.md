@@ -405,7 +405,12 @@ Built from the accepted drawings (Workflow Setup §3 and §13, Committee Changes
 - **The committee's banner:** "Change request {n} is in {stage}: {fields}", with the body `bodyUnderReview` (Q8). It names the requester, never a reviewer.
 - **The Change requests panel:** Status is the stage's name; who and when reads "submitted".
 - **Home:** every change request row reads "From {name} · {stage}" (`home.awaitingChangeMetaStage`). Under review shows by its status word.
-- **The Approve confirm's review variant:** PENDING (see the report on P264: the server names neither {next} nor {decision} for a reviewer).
+- **The Approve confirm's review variant (P266):** "Approve and send it on to {next}?" with "Nothing is applied yet. The changes apply only when {decision} approves them.", the same change list, no task line, the Approve button.
+  - **The server names both** (an additive backend change in this PR): `awaitingDecisionBy.REVIEW_STAGE` gains `next` (the target of the stage's single app ADVANCE, found as `triggerSystemAdvance()` finds it, never the next by order) and `decision` (the template's deciding stage, by `AWAITING_DECISION_KEYS`). Either is null when the template does not say.
+  - **Read in `nameSteps()`'s existing wave:** its stage read widened to the template's stages (at most 6 + 9), and one transition read added beside it. Never a query per request.
+  - **Query counts:** the awaiting list for a reviewer with one request, 16 before and 17 after; one request read (`getOne`) in a review stage by a chain decider, 14 before and 15 after. Unchanged when no request stands in a review stage. Both pinned in `committee-change-request.db-spec.ts`.
+  - **In the last review stage** `next` and `decision` are both Under review: "Approve and send it on to Under review? Nothing is applied yet. The changes apply only when Under review approves them." In Arabic: «اعتماد الطلب وإرساله إلى «قيد المراجعة»؟» and «لم يُطبَّق شيء بعد. ولا تُطبَّق التغييرات إلا عند اعتمادها في «قيد المراجعة».»
+  - **An API from before PR 3b** sends neither field (Vercel and Railway deploy apart): the confirm keeps the plain Approve wording (`reviewStepsOf()` returns null unless both are present).
 
 **Measured** (the real theme, font and translations; `stage-editor-panel.review.layout.spec.ts`), with three review stages on the strip:
 
@@ -414,6 +419,7 @@ Built from the accepted drawings (Workflow Setup §3 and §13, Committee Changes
 | Panel, adding (page panel, uncapped) | 662 | 678 | 1170 | 1191 |
 | Panel, editing (page panel, uncapped) | 700 | 737 | 1276 | 1274 |
 | Remove stage confirm, body (cap 420) | 41 (room 379) | 44 (room 376) | 41 (room 379) | 44 (room 376) |
+| Approve in a review stage, six changes, body (cap 420; `change-request-dialogs.layout.spec.ts`) | 267 (room 153) | 292 (room 128) | 277 (room 143) | 304 (room 116) |
 
 Nothing inside the panel scrolls at either width, nothing passes the page's edge, and only the strip scrolls sideways, in its own frame.
 
@@ -437,3 +443,7 @@ Nothing inside the panel scrolls at either width, nothing passes the page's edge
   - a removal refusal titled as a failed save;
   - the limit said without the server's max.
 - **The layout:** without `autoResize` the layout spec goes red on the scrolling textarea.
+- **The Approve confirm (P266):**
+  - `next` always the deciding stage (backend): the two-review-stage database spec goes red;
+  - `reviewStepsOf()` accepting a missing field: the older-API spec goes red;
+  - `approve()` ignoring the steps: both review-wording specs go red.

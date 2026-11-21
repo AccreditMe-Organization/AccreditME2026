@@ -7034,7 +7034,7 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
   `awaitingDecisionGate()`: the chain's three arms plus "a submitted request's
   newest instance in an added stage here". Pinned query counts: 1 with nothing
   in an added stage; 4 for a non-reviewer while something is (no request read);
-  16 for a reviewer with one request; 14 for a chain decider; 21 for a chain
+  17 for a reviewer with one request (16 before PR 3b); 14 for a chain decider; 21 for a chain
   decider whose request is on the second page. Every
   organisation predicate in both queries is held load-bearing by gate-named
   specs on corrupt cross-organisation rows. Home's counts read the same API;
@@ -7102,6 +7102,17 @@ Plan, Ahmad's answers (19 Nov) and what PR 1 built:
     - the requester's "Waiting for {stage} since {date}" (the open visit);
     - the committee's banner and Change requests panel;
     - Home's "From {name} · {stage}", on every change request row.
+  - **A reviewer's Approve confirm** says where Approve sends the request and
+    which stage decides, with no task line, from two fields PR 3b added:
+    - `awaitingDecisionBy.REVIEW_STAGE.next`: the target of the stage's single
+      app ADVANCE, as `triggerSystemAdvance()` finds it (never the next by
+      order); Under review from the last review stage;
+    - `.decision`: the template's deciding stage (`AWAITING_DECISION_KEYS`);
+    - either is null when the template does not say. Both are read in
+      `nameSteps()`'s one wave: its stage read covers the template's stages,
+      and one transition read is added (one query per list or read, never per
+      request; a request read in a review stage is 15 queries, 14 before);
+    - with either missing (an API from before PR 3b), the plain Approve wording.
   - **Never shown:** a reviewer's name.
 - **No migration.**
 
