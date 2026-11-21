@@ -18,6 +18,7 @@ import { minutesPhase } from '../meeting-minutes-rules';
 import { NameTable, type NameSource } from './meeting-ai-names';
 import {
   ITEMS_PER_CALL,
+  draftPartsOf,
   dueInstant,
   minutesInputTokens,
   minutesPrompt,
@@ -129,6 +130,7 @@ export class MeetingAiService {
       presentMembers: 0,
       suggestions: { minutes: [], actions: [] },
       undecided: 0,
+      leftToDraft: 0,
     };
     // Nobody but whoever records the minutes sees a trigger, a suggestion, the notes or a count; and only while they are a draft.
     if (!recorder || !gate.draft) return empty;
@@ -141,7 +143,7 @@ export class MeetingAiService {
         select: { id: true, agendaItemId: true, kind: true, order: true, language: true, payload: true },
         orderBy: [{ order: 'asc' }, { id: 'asc' }],
       }),
-      this.prisma.meetingAiRun.findFirst({ where: { organizationId, meetingId: id, kind: 'MINUTES' }, select: { claimedAt: true } }),
+      this.prisma.meetingAiRun.findFirst({ where: { organizationId, meetingId: id, kind: 'MINUTES' }, select: { claimedAt: true, lastDoneAt: true } }),
       this.prisma.meetingAttendee.count({ where: { organizationId, meetingId: id, kind: 'MEMBER', attendance: 'PRESENT' } }),
       this.prisma.agendaItem.findMany({
         where: { organizationId, meetingId: id },
@@ -188,6 +190,18 @@ export class MeetingAiService {
       presentMembers: present,
       suggestions: { minutes, actions },
       undecided: rows.length,
+      // M8, from the rows already read: no query of its own (PR 2 hides the trigger at 0).
+      leftToDraft: items.filter(
+        (item) =>
+          draftPartsOf(
+            { discussion: item.discussion, decisions: item._count.decisions },
+            {
+              minutes: rows.some((r) => r.agendaItemId === item.id && r.kind === 'ITEM_MINUTES'),
+              actions: rows.some((r) => r.agendaItemId === item.id && r.kind === 'ACTION_ITEM'),
+            },
+            !run?.lastDoneAt,
+          ) !== null,
+      ).length,
     };
   }
 
@@ -434,12 +448,11 @@ export class MeetingAiService {
     const has = (itemId: string, kind: 'ITEM_MINUTES' | 'ACTION_ITEM') => undecided.some((u) => u.agendaItemId === itemId && u.kind === kind);
     const out: DraftTarget[] = [];
     for (const item of items) {
-      let parts: DraftParts | null;
-      if (first) parts = 'both';
-      else {
-        const minutes = (!item.discussion && item._count.decisions === 0) || has(item.id, 'ITEM_MINUTES');
-        parts = minutes ? 'both' : has(item.id, 'ACTION_ITEM') ? 'actions' : null;
-      }
+      const parts: DraftParts | null = draftPartsOf(
+        { discussion: item.discussion, decisions: item._count.decisions },
+        { minutes: has(item.id, 'ITEM_MINUTES'), actions: has(item.id, 'ACTION_ITEM') },
+        first,
+      );
       if (!parts) continue;
       out.push({
         label: `A${out.length + 1}`,

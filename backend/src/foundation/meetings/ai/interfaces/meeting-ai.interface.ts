@@ -71,6 +71,12 @@ export interface IMeetingAi {
   };
   /** Undecided minutes and action suggestions: the header's count, and Distribute's (M2). */
   undecided: number;
+  /**
+   * PR 2 — the agenda items a Draft minutes press would still draft (M8,
+   * `draftPartsOf()`), all of them, before the six-a-call limit. At 0 the
+   * screen shows no trigger (the press would be MEETING_AI_NOTHING_TO_DRAFT).
+   */
+  leftToDraft: number;
 }
 
 /** Accept answers both reads: the minutes as written, and what is left to decide. */
