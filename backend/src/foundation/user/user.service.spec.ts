@@ -58,6 +58,16 @@ const ORG_B = 'org-b';
 // ACC-83 — this spec passed actor ids as literals; the new blocks name one.
 const ACTOR = 'admin-1';
 
+/** ACC-159 — the refusal body's code, so the screens can say it in words. */
+async function refusalCodeOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (err) {
+    return (err as { getResponse?: () => unknown }).getResponse?.() as unknown;
+  }
+  throw new Error('expected a refusal');
+}
+
 describe('UserService', () => {
   // ACC-158 — invite() builds an absolute link, which needs the base domain.
   // Set for every test and restored after, so no spec depends on the
@@ -1606,6 +1616,7 @@ describe('UserService', () => {
       await expect(
         service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-1', managerId: 'manager-1' }, ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
+      expect(await refusalCodeOf(service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-1', managerId: 'manager-1' }, ORG_A, 'actor-1'))).toMatchObject({ code: 'SEAT_LIMIT_REACHED' });
     });
 
     it('throws ConflictException when a user with this email already exists in the tenant', async () => {
@@ -1640,6 +1651,7 @@ describe('UserService', () => {
           'actor-1',
         ),
       ).rejects.toThrow(ConflictException);
+      expect(await refusalCodeOf(service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-inactive', managerId: 'manager-1' }, ORG_A, 'actor-1'))).toMatchObject({ code: 'POSITION_INACTIVE' });
       expect(mockPrisma.user.create).not.toHaveBeenCalled();
     });
 
@@ -2148,6 +2160,7 @@ describe('UserService', () => {
           'actor-1',
         ),
       ).rejects.toThrow(ConflictException);
+      expect(await refusalCodeOf(service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1', managerId: 'manager-1' }, ORG_A, 'actor-1'))).toMatchObject({ code: 'POSITION_ALREADY_HELD' });
     });
 
     it('allows assigning a single-assignee position when the target unit has no existing holder', async () => {
@@ -2281,6 +2294,7 @@ describe('UserService', () => {
           'actor-1',
         ),
       ).rejects.toThrow(ConflictException);
+      expect(await refusalCodeOf(service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-head-other', primaryOrgUnitId: 'unit-1', managerId: 'manager-1' }, ORG_A, 'actor-1'))).toMatchObject({ code: 'UNIT_ALREADY_HAS_HEAD' });
       expect(mockOrgPositionService.hasAnyHeadConferringHolder).toHaveBeenCalledWith('unit-1', ORG_A, null);
     });
 

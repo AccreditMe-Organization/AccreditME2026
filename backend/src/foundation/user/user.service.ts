@@ -73,7 +73,15 @@ import { RoleInactiveException } from '../roles/role-active';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 import { buildTenantUrl } from '../../common/config/app-url.config';
-import { InvitationNotPendingException, PlacementField, UseTransferException } from './user-refusal';
+import {
+  InvitationNotPendingException,
+  PlacementField,
+  PositionAlreadyHeldException,
+  PositionInactiveException,
+  SeatLimitReachedException,
+  UnitAlreadyHasHeadException,
+  UseTransferException,
+} from './user-refusal';
 import { holdsSeatWhere, seatPosition, SeatPosition } from '../../common/services/seat-holders';
 
 // ACC-159 — two days (Ahmad, 1 Oct): the link sets a password, so it must not
@@ -891,13 +899,14 @@ export class UserService {
    * "full" means — the tenant could reactivate past a limit that blocks inviting.
    *
    * ACC-159 — an invitation past its expiry holds no seat: the count is
-   * seatPosition() (common/services/seat-holders.ts), the one rule, one query.
+   * seatPosition() (common/services/seat-holders.ts), the one rule: two reads
+   * in parallel, the limit and the count.
    */
   private async assertSeatAvailable(organizationId: string): Promise<void> {
     const seats = await seatPosition(this.prisma, organizationId, new Date());
     if (!seats) throw new NotFoundException('Organization not found');
     if (seats.occupied >= seats.maxUsers) {
-      throw new ConflictException('This plan has reached its full-user seat limit');
+      throw new SeatLimitReachedException();
     }
   }
 
@@ -1149,7 +1158,8 @@ export class UserService {
 
   /**
    * ACC-159 — the seats in use and the limit, for the invite form (users:invite,
-   * on the route). The same count assertSeatAvailable() refuses by, one query.
+   * on the route). The same count assertSeatAvailable() refuses by: two reads
+   * in parallel, the limit and the count.
    */
   async getSeatPosition(organizationId: string): Promise<SeatPosition> {
     const seats = await seatPosition(this.prisma, organizationId, new Date());
@@ -1467,7 +1477,7 @@ export class UserService {
     // that already has a real, currently-active holder, so this can never
     // legitimately fire during one.
     if (!position.isActive) {
-      throw new ConflictException('This position is inactive and cannot be assigned');
+      throw new PositionInactiveException();
     }
     // ACC-154 — a head position grants its role to whoever holds it
     // (syncHeadAuthorityRoleGrant), and a deactivated role is never given out
@@ -1534,7 +1544,7 @@ export class UserService {
       },
     });
     if (existingHolders >= 1) {
-      throw new ConflictException('This position already has an active holder in this org unit');
+      throw new PositionAlreadyHeldException();
     }
   }
 
@@ -1576,7 +1586,7 @@ export class UserService {
       excludeUserId,
     );
     if (hasAnyHeadHolder) {
-      throw new ConflictException('This org unit already has an active Head-position holder');
+      throw new UnitAlreadyHasHeadException();
     }
   }
 
