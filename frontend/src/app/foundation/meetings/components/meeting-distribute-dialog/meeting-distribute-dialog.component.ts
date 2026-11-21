@@ -32,6 +32,10 @@ function isoDay(day: Date): string {
  *
  * While attendance is incomplete the dialog says who is missing and offers no
  * Distribute (the server refuses it, `MEETING_ATTENDANCE_INCOMPLETE`).
+ *
+ * ACC-322 (M2): undecided AI suggestions are named in one line ("3 AI
+ * suggestions undecided will be discarded") and never hold Distribute; the
+ * server discards them, and the rough notes, in the same move.
  */
 @Component({
   selector: 'app-meeting-distribute-dialog',
@@ -73,6 +77,12 @@ function isoDay(day: Date): string {
             </span>
           </div>
           <p class="m-0 text-meta text-[var(--am-ink-500)]" data-testid="distribute-reviewers">{{ reviewers() }}</p>
+          <!-- ACC-322 (M2) — undecided AI suggestions never hold Distribute: they are said, then discarded with the notes. -->
+          @if (aiUndecided() > 0) {
+            <p class="m-0 text-meta font-medium text-[var(--am-warning-ink)]" data-testid="distribute-ai-undecided">
+              <span aria-hidden="true">✦ </span>{{ format.count('meeting.aiDiscardedOnDistribute', aiUndecided()) }}
+            </p>
+          }
           @if (error()) {
             <p class="m-0 text-meta text-[var(--am-danger-ink)]" role="alert" data-testid="distribute-error">{{ error()! | translate }}</p>
           }
@@ -125,6 +135,9 @@ export class MeetingDistributeDialogComponent {
   /** The earliest review date: the day after today, on the tenant's calendar. */
   readonly minDay = signal(this.tomorrow());
   private chosen = false;
+
+  /** ACC-322 (M2) — the undecided AI suggestions Distribute discards: the minutes read's count. */
+  readonly aiUndecided = computed(() => this.minutes()?.distribute?.aiUndecided ?? 0);
 
   /** What holds Distribute: attendance not recorded, or votes above the members present (the server's one check). */
   readonly blocked = computed(() => this.minutes()?.distribute?.blockedBy ?? null);

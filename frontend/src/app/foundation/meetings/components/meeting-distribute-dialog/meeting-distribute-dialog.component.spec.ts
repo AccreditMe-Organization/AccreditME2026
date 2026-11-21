@@ -19,7 +19,7 @@ describe('MeetingDistributeDialogComponent (ACC-316 PR 7b)', () => {
   let distribute: jasmine.Spy;
   const READY = aMinutes({
     attendance: [anAttendanceRow({ attendance: 'PRESENT' }), anAttendanceRow({ attendeeId: 'a-2', userId: 'u-2', name: 'Huda', attendance: 'PRESENT' }), anAttendanceRow({ attendeeId: 'a-3', userId: 'u-3', name: 'Saad', attendance: 'ABSENT' })],
-    distribute: { ready: true, blockedBy: null, defaultReviewBy: '2027-03-25' },
+    distribute: { ready: true, blockedBy: null, defaultReviewBy: '2027-03-25', aiUndecided: 0 },
   });
 
   function create(minutes: MeetingMinutesDto = READY) {
@@ -71,6 +71,20 @@ describe('MeetingDistributeDialogComponent (ACC-316 PR 7b)', () => {
     expect(c.blocked()).not.toBeNull();
   });
 
+  // ACC-322 (M2) — undecided AI suggestions are named, never hold Distribute.
+  it('names the undecided AI suggestions Distribute discards, and still offers Distribute', () => {
+    const { fixture } = create({ ...READY, distribute: { ...READY.distribute!, aiUndecided: 3 } });
+    fixture.detectChanges();
+    expect(document.querySelector('[data-testid="distribute-ai-undecided"]')?.textContent).toContain('3 AI suggestions undecided will be discarded.');
+    expect(document.querySelector('[data-testid="distribute-submit"]')).not.toBeNull();
+  });
+
+  it('with none undecided, no AI line', () => {
+    const { fixture } = create();
+    fixture.detectChanges();
+    expect(document.querySelector('[data-testid="distribute-ai-undecided"]')).toBeNull();
+  });
+
   it('a refusal is said from its code', () => {
     const { c } = create();
     distribute.and.returnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'MEETING_REVIEW_DATE_INVALID' } })));
@@ -80,7 +94,7 @@ describe('MeetingDistributeDialogComponent (ACC-316 PR 7b)', () => {
 
   it('votes above the members present hold Distribute, naming the item and its numbers (P206)', () => {
     const { fixture } = create(
-      aMinutes({ distribute: { ready: false, blockedBy: { code: 'MEETING_VOTES_EXCEED_PRESENT', items: [{ agendaItemId: 'i-1', title: 'Hand hygiene', total: 6, present: 4 }] }, defaultReviewBy: '2027-03-25' } }),
+      aMinutes({ distribute: { ready: false, blockedBy: { code: 'MEETING_VOTES_EXCEED_PRESENT', items: [{ agendaItemId: 'i-1', title: 'Hand hygiene', total: 6, present: 4 }] }, defaultReviewBy: '2027-03-25', aiUndecided: 0 } }),
     );
     fixture.detectChanges();
     expect(document.querySelector('[data-testid="distribute-votes-above"]')?.textContent).toContain('Hand hygiene: 6 votes, 4 present members');
