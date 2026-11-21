@@ -2956,6 +2956,12 @@
     "denied": "You can't see this organization's AI credits. That needs permission to view the organization's settings.",
     "errorLoad": "The AI credits couldn't be loaded."
   },
+  "moduleRefusal": {
+    "notEnabled": "The {{module}} module isn't available to your organization.",
+    "notEnabledUnnamed": "This module isn't available to your organization.",
+    "readOnly": "The {{module}} module is read-only on your organization's plan, so this change can't be made.",
+    "readOnlyUnnamed": "This module is read-only on your organization's plan, so this change can't be made."
+  },
   "plural": {
     "tasks": {
       "sections": {

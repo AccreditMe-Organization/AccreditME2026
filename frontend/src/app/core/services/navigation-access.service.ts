@@ -178,8 +178,9 @@ export class NavigationAccessService {
   // on Starter) is readable with its write controls ABSENT — and an Upgrade to
   // edit button in their place, never a disabled control with no explanation.
   //
-  // UX only, like every other method here. The backend must enforce READ_ONLY
-  // itself; see SYSTEM-REFERENCE §1.8 on ModuleGuard, which does not yet.
+  // UX only, like every other method here: it hides write affordances. The
+  // backend enforces READ_ONLY itself since ACC-102 — a 'write' route carrying
+  // @RequiresModule is refused 403 MODULE_READ_ONLY (SYSTEM-REFERENCE §1.8).
   canWriteModule(moduleKey: string): boolean {
     return this.moduleAccess(moduleKey) === 'FULL';
   }
