@@ -373,7 +373,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                item's own module, as Home asks, ACC-279). Closed, the panel
                stays the placeholder it was. -->
           @if (meetingsOpen()) {
-            <app-meetings-panel [owner]="{ kind: 'COMMITTEE', id: c.id, name: displayName(c) }" />
+            <app-meetings-panel [owner]="{ kind: 'COMMITTEE', id: c.id, name: displayName(c), frequency: c.meetingFrequency }" />
           } @else {
             <am-capped-panel
               [heading]="'committee.meetings' | translate"

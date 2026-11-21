@@ -33,7 +33,7 @@ describe('MeetingScheduleDialogComponent (ACC-316 PR 6)', () => {
         provideFormatTesting(),
         providePrimeNG({}),
         ConfirmationService,
-        { provide: MeetingService, useValue: { formChoices: () => formChoices(), schedule } },
+        { provide: MeetingService, useValue: { formChoices: () => formChoices(), schedule, clashes: () => of([{ startsAt: '', invitees: 3, people: [] }]) } },
       ],
     });
     loadTranslationsForTest({ en, ar });

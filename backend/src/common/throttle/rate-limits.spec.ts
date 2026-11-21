@@ -38,6 +38,7 @@ describe('rate limits (ACC-129)', () => {
       // ACC-197 — per signed-in user.
       taskDraft: { limit: 10, ttl: MINUTE },
       workloadHint: { limit: 20, ttl: MINUTE },
+      meetingAi: { limit: 10, ttl: MINUTE },
     });
   });
 

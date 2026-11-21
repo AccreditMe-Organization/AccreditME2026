@@ -2943,6 +2943,7 @@
       "morning_briefing": "Briefings on Home",
       "task_description_drafting": "Task drafts",
       "workload_balancing": "Assignee suggestions",
+      "minutes_drafting": "Minutes drafts",
       "unknown": "Another AI feature"
     },
     "plan": {
@@ -3746,6 +3747,50 @@
           "one": "Approved by {{who}} on {{date}}, after review by the {{count}} present member.",
           "other": "Approved by {{who}} on {{date}}, after review by the {{count}} present members."
         }
+      },
+      "clashPeople": {
+        "one": "{{count}} of {{total}} invitees has another meeting then",
+        "other": "{{count}} of {{total}} invitees have another meeting then"
+      },
+      "standingItems": {
+        "one": "{{count}} item",
+        "other": "{{count}} items"
+      },
+      "laterDates": {
+        "one": "{{count}} later date",
+        "other": "{{count}} later dates"
+      },
+      "datesMoved": {
+        "one": "{{count}} moved",
+        "other": "{{count}} moved"
+      },
+      "datesClash": {
+        "one": "{{count}} has a clash",
+        "other": "{{count}} have a clash"
+      },
+      "scheduleMeetings": {
+        "one": "Schedule {{count}} meeting",
+        "other": "Schedule {{count}} meetings"
+      },
+      "seriesDates": {
+        "one": "{{count}} date",
+        "other": "{{count}} dates"
+      },
+      "meetingsClash": {
+        "one": "{{count}} of the {{total}} meetings has a clash",
+        "other": "{{count}} of the {{total}} meetings have a clash"
+      },
+      "scopeMeetings": {
+        "one": "{{count}} meeting, {{range}}",
+        "other": "{{count}} meetings, {{range}}"
+      },
+      "keptMore": {
+        "one": "and {{count}} more kept its own edit",
+        "other": "and {{count}} more kept their own edits"
+      },
+      "endSeriesFailed": {
+        "one": "{{count}} meeting couldn't be cancelled. End series again to finish.",
+        "other": "{{count}} meetings couldn't be cancelled. End series again to finish."
       }
     }
   },
@@ -4955,7 +5000,11 @@
       },
       "ownerFilter": "Meetings of {{owner}}",
       "oneOwner": "one committee or unit",
-      "clearOwner": "Show all meetings"
+      "clearOwner": "Show all meetings",
+      "seriesTitle": "Whole series · {{owner}}",
+      "oneSeries": "one series",
+      "seriesOrder": "Sorted by date, earliest first.",
+      "movedFrom": "Rescheduled from {{date}}"
     },
     "page": {
       "loading": "Loading the meeting…",
@@ -4968,7 +5017,8 @@
       "unit": "Unit",
       "quorum": "Quorum {{n}}",
       "where": "Where",
-      "organiser": "Organiser"
+      "organiser": "Organiser",
+      "series": "Series"
     },
     "answer": {
       "title": "Your answer to the invitation",
@@ -5162,7 +5212,8 @@
       "lead": "It stays in the list as Cancelled, with your reason. Everyone invited is told.",
       "hint": "Sent to invitees with the cancellation",
       "confirm": "Cancel Meeting",
-      "keep": "Keep meeting"
+      "keep": "Keep meeting",
+      "onlyThis": "Only this meeting"
     },
     "issue": {
       "title": "Issue Agenda?",
@@ -5178,7 +5229,8 @@
       "reasonHint": "Sent to invitees with the new date",
       "reasonRequired": "Give a reason: the invitees read it.",
       "submit": "Reschedule",
-      "error": "The meeting couldn't be rescheduled."
+      "error": "The meeting couldn't be rescheduled.",
+      "next": "Next"
     },
     "schedule": {
       "title": "Schedule meeting",
@@ -5198,7 +5250,9 @@
       "error": "The meeting couldn't be scheduled.",
       "quorumNumber": "Give a whole number, 1 or more, or leave it empty.",
       "typesError": "The meeting types couldn't be loaded.",
-      "maybeScheduled": "It may have been scheduled. Check the list before trying again."
+      "maybeScheduled": "It may have been scheduled. Check the list before trying again.",
+      "next": "Next: repeats",
+      "maybeScheduledSeries": "We couldn't tell whether the series was scheduled. Close, and check the committee's meetings before trying again."
     },
     "when": {
       "back": "← Back to details",
@@ -5293,7 +5347,15 @@
       "openActionNotFound": "That action is no longer open from the last meeting.",
       "attendanceIncomplete": "Record attendance for everyone first.",
       "reviewDateInvalid": "Choose a review date after today.",
-      "presenterNotFound": "That person is no longer available to present."
+      "presenterNotFound": "That person is no longer available to present.",
+      "seriesPatternInvalid": "Choose a day the repeat can use: a weekday for weekly, or a day or a weekday of the month for monthly.",
+      "seriesEndRequired": "Give an end date or a number of meetings.",
+      "seriesTooLong": "A series ends at most 12 months ahead.",
+      "seriesEmpty": "The repeat makes no meeting before its end.",
+      "seriesTimeInvalid": "Give the time as hours and minutes.",
+      "notInSeries": "This meeting isn't part of a series any more.",
+      "seriesNotFound": "This series doesn't exist any more.",
+      "seriesCannotCancel": "You can't cancel some of this series' meetings, so the series wasn't ended."
     },
     "agendaItem": {
       "addTitle": "Add agenda item",
@@ -5369,6 +5431,166 @@
       "vote": "Vote: {{for}} for · {{against}} against · {{abstain}} abstain",
       "actionItems": "Action items",
       "actionLine": "{{title}} · {{owner}} · due {{date}}"
+    },
+    "series": {
+      "every": {
+        "WEEK_1": "Every week",
+        "WEEK_2": "Every 2 weeks",
+        "MONTH_1": "Every month",
+        "MONTH_3": "Every 3 months",
+        "MONTH_6": "Every 6 months",
+        "MONTH_12": "Every 12 months"
+      },
+      "on": {
+        "WEEKDAY": "{{every}} on {{weekday}}",
+        "DAY_OF_MONTH": "{{every}} on day {{day}}",
+        "ORDINAL_WEEKDAY": "{{every}}, the {{which}} {{weekday}}"
+      },
+      "ordinal": {
+        "FIRST": "1st",
+        "SECOND": "2nd",
+        "THIRD": "3rd",
+        "FOURTH": "4th",
+        "LAST": "last"
+      },
+      "weekday": {
+        "1": "Monday",
+        "2": "Tuesday",
+        "3": "Wednesday",
+        "4": "Thursday",
+        "5": "Friday",
+        "6": "Saturday",
+        "7": "Sunday"
+      },
+      "line": "{{pattern}} · {{n}} of {{total}}",
+      "ended": "{{every}} · ended after {{n}} of {{total}}",
+      "whole": "Whole series",
+      "previousGlyph": "‹",
+      "nextGlyph": "›",
+      "previous": "Previous meeting, {{date}}",
+      "next": "Next meeting, {{date}}",
+      "everyChoice": {
+        "WEEK_1": "1 week",
+        "WEEK_2": "2 weeks",
+        "MONTH_1": "1 month",
+        "MONTH_3": "3 months",
+        "MONTH_6": "6 months",
+        "MONTH_12": "12 months"
+      }
+    },
+    "clash": {
+      "another": "another meeting",
+      "showWho": "Show who",
+      "hide": "Hide",
+      "backToDetails": "← Back to details",
+      "rechecks": "Change either and the list rechecks at once",
+      "showWhich": "Show which",
+      "personHas": "{{name}} has another meeting then",
+      "rowsLabel": "Other meetings at that time"
+    },
+    "repeat": {
+      "repeats": "Repeats",
+      "once": "Doesn't repeat",
+      "repeatsOn": "Repeats",
+      "every": "Every",
+      "on": "On",
+      "onDay": "Day",
+      "onThe": "The",
+      "day": "Day",
+      "which": "Which",
+      "weekday": "Weekday",
+      "ends": "Ends",
+      "endsOn": "On a date",
+      "endsAfter": "After",
+      "count": "Number of meetings",
+      "countRequired": "Give the number of meetings.",
+      "countRange": "Between 1 and 53 meetings.",
+      "endDate": "Last date",
+      "pickDate": "Choose a date",
+      "standing": "Standing agenda",
+      "standingAdd": "None · Add…",
+      "standingEdit": "{{items}} · Edit…",
+      "standingHelp": "Items on every meeting of the series. A presenter who isn't invited is added as a guest.",
+      "standingNone": "No standing items yet.",
+      "standingFull": "At most {{n}} standing items.",
+      "itemTitle": "Item {{n}} title",
+      "itemTitlePlaceholder": "Title",
+      "itemDuration": "Item {{n}} duration",
+      "noDuration": "No set time",
+      "noPresenter": "Presenter…",
+      "removeItem": "Remove item {{n}}",
+      "addItem": "Add item",
+      "presenterTitle": "Choose a presenter",
+      "backToRepeat": "← Back to repeat",
+      "ahead": "Up to 12 months ahead",
+      "fromFrequency": "From the committee's frequency, {{frequency}} → every {{every}} · up to 12 months ahead",
+      "lastDayInShort": "the last day in shorter months",
+      "listJoin": ", ",
+      "nextDates": "Next dates and their titles",
+      "datesLoading": "Working out the dates…",
+      "datesError": "Couldn't work out the dates.",
+      "showAll": "Show all",
+      "allDates": "← All dates",
+      "moved": "Moved",
+      "noDay": "No day {{day}} · last day",
+      "clash": "Clash",
+      "clashOn": "Clash on {{date}}: show who",
+      "firstMeeting": "first meeting {{when}}"
+    },
+    "edit": {
+      "open": "Edit details…",
+      "title": "Edit details",
+      "save": "Save",
+      "next": "Next",
+      "error": "The meeting couldn't be saved."
+    },
+    "scope": {
+      "title": "Which meetings change?",
+      "lead": "Past meetings never change. Choose what this change applies to.",
+      "thisOnly": "This meeting only",
+      "thisAndLater": "This and all later meetings",
+      "thisOnlyMoves": "{{date}} moves to {{to}}",
+      "thisOnlyEdit": "{{date}} only",
+      "working": "Working out which meetings…",
+      "laterUnknown": "Couldn't work out which meetings",
+      "laterNone": "No later meeting changes",
+      "previewError": "Couldn't work out which meetings change.",
+      "position": "{{index}} of {{total}}",
+      "newTime": "new time {{when}}",
+      "kept": "Kept its own edit: {{date}} ({{what}})",
+      "keptJoin": ", ",
+      "keptField": {
+        "scheduledAt": "its own time, {{time}}",
+        "typeValueId": "its own type",
+        "durationMinutes": "its own duration",
+        "location": "its own place",
+        "meetingUrl": "its own link",
+        "unitQuorum": "its own quorum"
+      },
+      "apply": "Apply"
+    },
+    "endSeries": {
+      "open": "End series…",
+      "title": {
+        "WEEK_1": "End the weekly series?",
+        "WEEK_2": "End the fortnightly series?",
+        "MONTH_1": "End the monthly series?",
+        "MONTH_3": "End the quarterly series?",
+        "MONTH_6": "End the six-monthly series?",
+        "MONTH_12": "End the yearly series?"
+      },
+      "held": "{{held}} of {{total}} held",
+      "lead": "Meetings after the last one are cancelled and everyone invited is told, with your reason. Held meetings stay as they are.",
+      "last": "Last meeting",
+      "cancelled": "Cancelled",
+      "none": "None",
+      "previewError": "Couldn't work out which meetings would be cancelled.",
+      "reason": "Reason",
+      "reasonHint": "Sent to invitees with each cancellation",
+      "reasonRequired": "Give a reason.",
+      "keep": "Keep series",
+      "confirm": "End series",
+      "error": "The series wasn't ended. Try again."
     }
   }
 }

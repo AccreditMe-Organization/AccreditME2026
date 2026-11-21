@@ -23,6 +23,12 @@ export interface IMeetingListItem {
   meetingUrl: string | null;
   owner: IMeetingOwner;
   stage: IMeetingStage;
+  /**
+   * PR 8b (P240) — the whole series view only: where the meeting's latest
+   * reschedule moved it from (its own MeetingReschedule row, the one the
+   * meeting page reads); null if it never moved. Absent on the other views.
+   */
+  movedFrom?: Date | null;
 }
 
 export interface IMeetingList {
@@ -62,7 +68,25 @@ export interface IMeeting extends IMeetingListItem {
     /** The nearest meetings either side, not cancelled and open to this viewer; else null. */
     previousId: string | null;
     nextId: string | null;
+    /** PR 8b (P239) — when those two meetings start, for the links' labels. */
+    previousAt: Date | null;
+    nextAt: Date | null;
+    /** PR 8b — an ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
+    endedAfter: number | null;
+    /** PR 8d — whether this viewer may end the series: who may schedule for its owner, while it runs. */
+    mayEnd: boolean;
   } | null;
+}
+
+/** PR 8d — End series' confirm: what End would keep and cancel, before it runs. */
+export interface IMeetingEndSeriesPreview {
+  /** The last meeting the series keeps; null when none is left open to keep. */
+  last: { id: string; startsAt: Date } | null;
+  /** The meetings End would cancel, in order. */
+  cancelled: { id: string; startsAt: Date }[];
+  /** Meetings that have started and weren't cancelled. */
+  held: number;
+  total: number;
 }
 
 /** ACC-316 PR 5 — one date of a series, as it would be (or was) placed. */
@@ -165,6 +189,8 @@ export interface IMeetingAgendaItem {
 export interface IMeetingClash {
   /** The time checked, as sent. */
   startsAt: string;
+  /** PR 8a — how many people were checked (the "11" in "2 of 11 invitees"), the same at every time. */
+  invitees: number;
   people: {
     userId: string;
     name: string;
@@ -274,7 +300,7 @@ export interface IMeetingMinutes {
   items: IMeetingMinutesItem[];
   openActions: IMeetingOpenAction[];
   review: IMeetingReview;
-  /** Distribute Minutes: ready, or why not (ACC-322 adds its undecided count here). */
+  /** Distribute Minutes: ready, or why not, and the undecided AI suggestions it will discard. */
   distribute: {
     ready: boolean;
     /** What holds Distribute: attendance first, then votes above the members present (P206). */
@@ -284,6 +310,8 @@ export interface IMeetingMinutes {
       | null;
     /** yyyy-MM-dd: the review date when none is chosen (PR 7b). */
     defaultReviewBy: string;
+    /** ACC-322 (M2) — undecided AI minutes and action suggestions, named in the confirm and discarded. Never holds Distribute. */
+    aiUndecided: number;
   } | null;
   approvedAt: Date | null;
   /**

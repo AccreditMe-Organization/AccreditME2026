@@ -1277,6 +1277,10 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(asChair[1]!.people).toEqual([]);
       expect(asChair[2]!.people).toEqual([]);
       expect(asChair[3]!.people).toEqual([]);
+      // PR 8a — how many were checked ("3 of 11 invitees"): the committee's active members, at every time, a clash or not.
+      const members = await prisma.committeeMember.count({ where: { committeeId: w.committeeId, organizationId: w.orgId, isActive: true } });
+      expect(members).toBeGreaterThan(0);
+      expect(asChair.map((c) => c.invitees)).toEqual([members, members, members, members]);
 
       // Root's head schedules a Ward meeting for wardPerson, who is also invited to the committee meeting:
       // the committee meeting is above Ward, so its title is withheld from them.
@@ -1288,6 +1292,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         now,
       );
       expect(asWard[0]!.people[0]!.meetings[0]!.title).toBe('Monthly review'); // Root's head oversees it
+      expect(asWard[0]!.invitees).toBe(1); // only the person named
       // Editing the meeting itself leaves its own time out.
       expect((await clashes.check({ meetingId: busy.id, times: [times[0]!] } as never, w.orgId, as(w, 'chair'), now))[0]!.people).toEqual([]);
 
@@ -1297,7 +1302,32 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['wardPerson']!] } as never, w.orgId, as(w, 'chair'), now))).toBe('OK');
-      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+      // PR 8c (R5-5) — Add a guest's own question: with a meetingId, a person Add a guest may choose (ACTIVE
+      // here) may be named, at the meeting's OWN stored start and duration and nothing else (P254).
+      const own = { startsAt: at(5, 9).toISOString(), durationMinutes: 60 };
+      const outsiderBusy = await clashes.check({ meetingId: busy.id, times: [own], userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now);
+      expect(outsiderBusy).toEqual([{ startsAt: own.startsAt, invitees: 1, people: [] }]);
+      // Any other time reads their diary: refused, whether another start, another duration, or one more time beside the own.
+      const guestAt = (t: { startsAt: string; durationMinutes: number }[]) =>
+        code(clashes.check({ meetingId: busy.id, times: t, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now));
+      expect(await guestAt([{ startsAt: at(6, 9).toISOString(), durationMinutes: 60 }])).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      expect(await guestAt([{ startsAt: own.startsAt, durationMinutes: 30 }])).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      expect(await guestAt([own, { startsAt: at(5, 14).toISOString(), durationMinutes: 60 }])).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      expect(await guestAt(times)).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      // A member or invitee is still checked at any time (Reschedule's line), as before.
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['member']!] } as never, w.orgId, as(w, 'chair'), now))).toBe('OK');
+      // Only by whoever may write the meeting (a member asks nothing),
+      expect(await code(clashes.check({ meetingId: busy.id, times: [own], userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      // (a new meeting still checks the owner's members only: above),
+      // never someone inactive, even at the meeting's own time,
+      const gone = (await prisma.user.create({ data: { organizationId: w.orgId, email: `gone-${randomUUID()}@example.test`, name: 'Gone', status: 'INACTIVE' } })).id;
+      expect(await code(clashes.check({ meetingId: busy.id, times: [own], userIds: [gone] } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_PERSON_NOT_INVITEE');
+      // and never another organisation's person, even beside one who may be named: indistinguishable from an invented id.
+      const theirs = (await world()).people['outsider']!;
+      expect(await code(clashes.check({ meetingId: busy.id, times: [own], userIds: [w.people['outsider']!, theirs] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+        'MEETING_CLASH_PERSON_NOT_INVITEE',
+      );
+      expect(await code(clashes.check({ meetingId: busy.id, times: [own], userIds: [randomUUID()] } as never, w.orgId, as(w, 'chair'), now))).toBe(
         'MEETING_CLASH_PERSON_NOT_INVITEE',
       );
       expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');

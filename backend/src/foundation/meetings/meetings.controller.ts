@@ -35,8 +35,10 @@ import {
   CheckMeetingClashesDto,
   CreateMeetingSeriesDto,
   EndMeetingSeriesDto,
+  EndMeetingSeriesPreviewDto,
   GuestCandidatesQueryDto,
   MayScheduleQueryDto,
+  PresenterCandidatesQueryDto,
   CreateAgendaItemDto,
   ListMeetingsDto,
   MeetingScopePreviewDto,
@@ -56,6 +58,7 @@ import type {
   IMeetingFile,
   IMeetingFiles,
   IMeetingList,
+  IMeetingEndSeriesPreview,
   IMeetingScopePreview,
   IMeetingScopeResult,
   IMeetingSeriesPreview,
@@ -108,6 +111,19 @@ export class MeetingsController {
     return this.series.create(dto, tenantId, { id: userId, permissions });
   }
 
+  /** PR 8d — End series' confirm: what End would keep and cancel, writing nothing. */
+  @Post('series/:seriesId/end/preview')
+  @HttpCode(HttpStatus.OK)
+  endSeriesPreview(
+    @Param('seriesId') seriesId: string,
+    @Body() dto: EndMeetingSeriesPreviewDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingEndSeriesPreview> {
+    return this.series.endPreview(seriesId, dto, tenantId, { id: userId, permissions });
+  }
+
   @Post('series/:seriesId/end')
   @HttpCode(HttpStatus.OK)
   endSeries(
@@ -152,6 +168,17 @@ export class MeetingsController {
   @Get('awaiting-me')
   awaitingMe(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMeetingAwaitingMe> {
     return this.review.awaitingMe(tenantId, userId);
+  }
+
+  /** PR 8a (Q5) — a standing agenda item's presenter search, for a series not yet made. Before ':id'. */
+  @Get('presenter-candidates')
+  presenterCandidates(
+    @Query() query: PresenterCandidatesQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMeetingGuestCandidates> {
+    return this.series.presenterCandidates(query, tenantId, { id: userId, permissions });
   }
 
   /** ACC-316 PR 6 — whether Schedule meeting is offered for this owner. Before ':id'. */

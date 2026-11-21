@@ -1711,6 +1711,171 @@ them together with their resolver.
    - Step 2 Repeat with its preview, the series line and view, the scope
      confirm, End series.
    - **Live after:** series.
+   - **PR 8 slice plan (P235, 20 Nov).** Read against §3.2, §3.10,
+     SYSTEM-REFERENCE §18.14 (the series backend as built) and the design's
+     artboards 3, 10–11, 16 and their notes (A8, A9, R4-1, R5). Nothing is
+     built yet. Each slice is reviewable alone and lands in this order.
+     **Every dialog below is measured at the 420 body cap at 1280 and on a 390
+     phone, in English and Arabic, as the PR 7 dialogs are.** Phones get
+     dialogs that fit at 390, not sheets (P229).
+
+     - **8a: Schedule, step 2 (Repeat), with its preview and clashes.**
+       - **Screens:**
+         - step 1 keeps Schedule (a one-off) and gains "Next: repeats";
+         - the clash line under Starts ("2 of 11 invitees have another meeting
+           then · Show who"), whose rows swap in for the step's body, with
+           Starts and Duration kept so a change rechecks at once (artboard 16);
+         - step 2: Repeats, Every, On (Day / The + Which + Weekday), the
+           readback line, Ends (On a date / After n), the standing agenda
+           line, and "Next dates and their titles" with the Moved, "No 31st ·
+           last day" and Clash chips. A tapped Clash chip swaps the dates for
+           that date's rows ("← All dates");
+         - the button reads "Schedule n meetings".
+       - **Reads:** `POST /meetings/clashes` (step 1), `POST
+         /meetings/series/preview` (step 2: dates, moves and clashes in one
+         read), and `POST /meetings/series` (create). The committee's
+         `meetingFrequency` seeds Every (Q6).
+       - **Measures:** step 1 with the clash line collapsed and with Show who
+         (the design: 375 / 402 and 219 / 240); step 2 with both examples (402
+         and 378); the Clash chip tapped (358 / 386). The tightest is step 2,
+         Example 1 in Arabic (402 of 420).
+     - **8b: The series on the meeting page, and the whole series.**
+       - **Screens:** the header's series line ("Every month, the 4th
+         Thursday · 4 of 12", with previous and next as links and "Whole
+         series"); `/meetings?seriesId=` listing the series with its header,
+         a cancelled meeting shown as Cancelled (A9).
+       - **Reads:** `GET /meetings/:id` (its `series`, extended, Q1) and `GET
+         /meetings?seriesId=` (built, PR 5).
+       - **Measures:** the header at 1280 and 390, both languages (no dialog).
+     - **8c: Which meetings change (edit and reschedule in a series).**
+       - **Screens:**
+         - Reschedule gains the clash line and rows in place (artboard 10–11,
+           416 of 420 in Arabic: the tightest dialog of the PR);
+         - in a series, Reschedule's button reads Next, and the scope confirm
+           follows: "This meeting only" / "This and all later meetings", the
+           range ("8 meetings, 22 Oct 2026 → 27 May 2027"), the kept line, and
+           "2 of the 8 meetings have a clash · Show which" (192, 334 expanded);
+         - **an Edit details dialog** (type, duration, place, link, quorum),
+           which doesn't exist yet: `PATCH /meetings/:id` is built but only
+           Reschedule has a screen (Q3). It asks the same scope.
+       - **Reads:** `POST /meetings/:id/reschedule` and `PATCH /meetings/:id`
+         (both with `scope`, built), `POST /meetings/clashes`, and a NEW
+         scope preview (Q2).
+       - **Measures:** Reschedule with its rows; the scope confirm collapsed and
+         expanded; Edit details.
+       - **As built (P253, 20 Nov):** SYSTEM-REFERENCE §18.24. The clash check
+         gained one widening for Add a guest (§18.11): with a `meetingId`, a
+         person Add a guest may choose may be named, at the meeting's own
+         stored time only (P254). A refused scope preview never applies "this
+         and all later" (P254). Subject stays out of Edit details (P254: Q3's
+         list stands). Edit details sends only
+         the fields that changed and doesn't offer the subject. The scope
+         confirm shows one kept line then "and n more", and clash rows shown in
+         place scroll inside two and a half rows: both measured, to keep 20px
+         under the cap. The tightest is Reschedule with six people in Arabic,
+         390 of 420.
+     - **8d: End series, and cancelling one meeting of a series.**
+       - **Screens:** "End the monthly series?" (Last meeting, Cancelled n,
+         Keep series / End series; 94 / 104), and Cancel Meeting's context
+         reading "Only this meeting" for a series meeting.
+       - **Reads:** `POST /meetings/series/:seriesId/end` (built), and the
+         series list for the count.
+       - **Measures:** both confirms.
+       - **As built (P255, 20 Nov):** SYSTEM-REFERENCE §18.25. End series
+         takes `lastMeetingId` (Q4), omitted the next meeting held, so a call
+         without it now keeps that one. The confirm's count is a new read-only
+         preview of End's own plan (`POST /meetings/series/:seriesId/end/
+         preview`), not the series list: the list can't tell which meetings
+         are still open. The confirm adds the Reason End requires (not drawn),
+         five rows so a realistic reason keeps a line to spare on any font
+         (P256). Measured: 293 / 299 (319 at 390 in Arabic), a refused plan
+         341 / 331, the tightest.
+         The read's series gained `mayEnd`. No migration.
+     - **Not in PR 8:** the Outlook rows and the Outlook failure line
+       (ACC-293); the list's row ⋯ menu and "Review" next step (B3, R3-9);
+       sheets (P229).
+
+     **Questions** (numbered; [T] technical, lane B decides; [A] changes what a
+     person sees or can do, Ahmad decides). Each has my recommendation.
+
+     1. **[T] The series line needs more than the read gives.** `MeetingDto.series`
+        is `{ id, index, total, every, ended }`: no `on` for the readback, no
+        previous or next meeting. *Recommendation:* extend it additively with
+        `on`, `firstDate`, `endsOn`/`count`, and `previousId`/`nextId` (one
+        indexed read of the series' meeting ids in order, only for a series
+        meeting).
+        **Decided by lane B (P236): yes. Built in PR 8-be (#388), with previousAt, nextAt and endedAfter added in 8b (#389, P240).**
+     2. **[T] The scope confirm needs to know, before Apply, what "this and all
+        later" would do:** the range, the meetings it reaches, what each kept,
+        and each one's new time for its clashes. Today that's only computed
+        inside the write (`scope.kept` comes back after). The new times can't
+        be worked out on the screen: they move off non-working days and the
+        owner's own meetings. *Recommendation:* `POST
+        /meetings/:id/scope-preview` with the same body as the edit or the
+        reschedule. It runs the write's own placement code read-only and
+        answers `{ meetings: [{ id, title, startsAt }], kept: [...], clashes:
+        [...] }`, organisation-scoped, under the same who-may-ask as the
+        write. No migration.
+        **Decided by lane B (P236): yes. Built in PR 8-be (#388): the write's own placement code, no write, no lock.**
+     3. **[A] There's no screen to edit a meeting's details** (type, duration,
+        place, link, quorum). The design's scope confirm is "Edit or reschedule
+        in a series", and `PATCH /meetings/:id` is built, but only Reschedule
+        has a screen. *Recommendation:* build Edit details in 8c, as Schedule
+        step 1's fields without Starts, offered on `may.edit`, and asking the
+        scope in a series.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     4. **[A] End series has no "Last meeting" choice.** The design ("Meetings
+        after the one you choose are cancelled", Last meeting 22 Oct 2026)
+        lets the person pick where the series stops. The built endpoint
+        cancels every later meeting that hasn't started. *Recommendation:* add
+        an optional `lastMeetingId` (the series keeps that meeting and those
+        before it), defaulting to the next meeting held. So "End series" from
+        a meeting's page means "after this one", as drawn.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     5. **[A] The standing agenda's "Edit…" in step 2 isn't drawn.**
+        *Recommendation:* a swap view in step 2 (as Show who is), listing the
+        items with title, presenter and duration, with Add and Remove, at most
+        10 items. A presenter not yet invited becomes a guest, as built. The
+        line reads "n items · Edit…", and "None · Add…" when empty.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     6. **[T] Every's starting value** comes from the committee's
+        `meetingFrequency`: WEEKLY → every week, MONTHLY → every month,
+        QUARTERLY → 3 months, BIANNUAL → 6 months, ANNUAL → 12 months.
+        AS_NEEDED, and a unit (which has no frequency), start on "Doesn't
+        repeat". *Recommendation:* that map, in one place on the screen, with
+        the design's line "From the committee's frequency, Quarterly → every 3
+        months".
+        **Decided by lane B (P236): yes, one mapping in one place.**
+     7. **[A] A long series' preview.** A weekly series has up to 53 dates;
+        the design shows five and "+7 more dates" in the context line.
+        *Recommendation:* the first five, then a line "n later dates · m moved
+        · k have a clash · Show all", which swaps in the whole list (it
+        scrolls inside itself). A Moved or Clash date beyond the fifth is then
+        never hidden without a count.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     8. **[A] R5-4: the scope confirm with "This meeting only" chosen.**
+        *Recommendation (the design's):* Reschedule's per-person line and rows
+        for that one meeting.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     9. **[A] R5-5: Add a guest when the guest has a clash.** *Recommendation
+        (the design's):* the same line for that person. The clash endpoint
+        already takes `userIds`. It's a small part of 8c.
+        **Answered by Ahmad, 20 Nov: as recommended.**
+     10. **[A] R5-7: the warning anywhere else.** *Recommendation (the
+         design's):* nowhere else in v1, not on the meeting page and not in
+         notices.
+         **Answered by Ahmad, 20 Nov: as recommended.**
+     11. **[A] The series line after End series.** Not drawn.
+         *Recommendation:* "Every month · ended after 4 of 12", with Whole
+         series still a link.
+         **Answered by Ahmad, 20 Nov: as recommended. Built in 8b (#389).**
+     12. **[T] Already decided by the backend, recorded so they aren't
+         reopened:**
+         - R5-1: back-to-back isn't a clash;
+         - R5-2: the same series counts;
+         - R4-1: a moved meeting keeps the pattern's month in its title;
+         - an outside guest is never checked.
+         **Recorded by lane B (P236).**
 9. **PR 9: contract.**
    - Drop `Meeting.status`, `Meeting.minutesText`, `AgendaItem.presenter` and
      `Task.meetingId`, after nothing reads them.

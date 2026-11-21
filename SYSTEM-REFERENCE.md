@@ -17275,6 +17275,163 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
 
+### 17.12 Meetings AI — Draft minutes, with the action items (ACC-322 PR 1)
+
+Plan, Ahmad's answers (20 Nov, §6) and the PR order:
+`backend/Plans/step-322-meetings-ai.md`. Code: `foundation/meetings/ai/`, and
+`MeetingMinutesService.applyAiDraft()`. Backend only: the screens are PR 2.
+Suggest agenda items (PR 3) and the absent-member summary (PR 5) are not
+built.
+
+- **Who and where.**
+  - **Who:** whoever records the minutes (`MEETING_RECORDERS`). Anyone else
+    gets `MEETING_NOT_RECORDER`, after the meeting's own visibility check (the
+    identical 404).
+  - **Where:** the minutes are a draft, the stage allows `record_minutes`, and
+    the meeting was never returned (`reviewRound === 0`, M9).
+  - **Otherwise** `MEETING_AI_NOT_OFFERED`, with the stage's names.
+  - `PUT …/ai/notes` has the same gate.
+- **Routes:**
+
+  | route | what |
+  |---|---|
+  | `GET /meetings/:id/ai` | One read |
+  | `PUT /meetings/:id/ai/notes` | Saves the rough notes |
+  | `POST /meetings/:id/ai/minutes` | Draft minutes: 8 credits, `RATE_LIMITS.meetingAi` (10 a minute per user) |
+  | `POST /meetings/:id/ai/suggestions/:sid/accept` | Accept a suggestion |
+  | `POST /meetings/:id/ai/suggestions/:sid/discard` | Discard a suggestion |
+
+  None carries `@Permissions`.
+- **The read** (`IMeetingAi`):
+  - **`minutes`:** `{ may, available, creditCost, running }`. Availability
+    comes from `aiFeaturesAvailability()`, the batched form: one organisation
+    read and one feature read, whatever the number of keys.
+  - **Also returned:** the viewer's own notes, the members present, the
+    undecided suggestions, and the undecided count.
+  - **Anyone who does not record the minutes**, and anyone at all outside
+    the draft phase, gets the flags with `may: false` and no content. There
+    is no error.
+- **Stored** (migration `acc322_meetings_ai`, additive):
+  - **`MeetingAiNotes`:** one row per writer, read only by that writer (M3).
+  - **`MeetingAiSuggestion`:** UNDECIDED suggestions only. Accept and Discard
+    delete the row.
+  - **`MeetingAiRun`:** the one-run claim and the last finished run.
+  - **The new `AgendaItem` columns** `sourceTaskId` and
+    `sourceChangeRequestId` are written by PR 3.
+- **A press**, in order. Steps 1–5 happen before any credit is reserved:
+  1. The person and the gate.
+  2. The writer's notes, else `MEETING_AI_NO_NOTES`. The notes are capped at
+     18,000 characters by the DTO.
+  3. The items to draft, by part (M8), else `MEETING_AI_NOTHING_TO_DRAFT`:
+     - the first press (no finished run yet) drafts every item, both parts;
+     - after that, an item's minutes are drafted when it has no discussion
+       and no decision, or still has an undecided minutes suggestion;
+     - its actions are drafted when it has an undecided action suggestion,
+       or when its minutes are being drafted;
+     - at most 6 items a call.
+  4. **Names are replaced, then the input is counted**
+     (`meeting-ai-names.ts`):
+     - every invitee's full name, and each name word of three or more letters
+       that only one invitee has, becomes a label (`[P1]`);
+     - an outside guest's name words are always replaced;
+     - every ACTIVE person's full name is replaced. Each press reads every
+       ACTIVE person in the organisation for this. The read is bounded by the
+       seat limit (`Organization.maxUsers` counts ACTIVE + INVITED), so it has
+       a hard cap (the performance rule);
+     - every email becomes `[email]`;
+     - Arabic is normalised, and honorifics stay outside the label.
+
+     If the input is over 20,000 tokens (`estimateTokens`), the press is
+     refused with `MEETING_AI_TOO_LONG`.
+  5. **One run per meeting**, claimed by `INSERT … ON CONFLICT`, else
+     `MEETING_AI_IN_PROGRESS`. The claim is released on every exit.
+     - **It goes stale 6 minutes after it was taken.** That is
+       `MEETING_AI_CLAIM_STALE_MS`, the feature's call timeout plus 60 s, so a
+       live run never looks stale.
+     - **The release logs ids and the error's name only**, never its message.
+  6. **The gateway, with `accept()`.** The call may take **300 s**
+     (`AI_FEATURES.minutes_drafting.timeoutMs`, P249).
+     - The gateway passes a feature's own `timeoutMs` to the provider. A
+       feature that sets none keeps the provider's 120 s
+       (`AI_DEFAULT_TIMEOUT_MS`).
+     - At 120 s, the largest answer (about 11,300 tokens plus thinking) would
+       need over 130 tokens a second.
+
+     Refunded through `accept()`:
+     - an empty, cut-short or unparseable answer;
+     - an answer naming no item we sent;
+     - an all-"nothing" answer, which is also refused
+       `MEETING_AI_NOTHING_SUGGESTED`.
+  7. **The save:** ONE transaction under the minutes' lock order (the instance
+     FOR SHARE, then the meeting row FOR UPDATE).
+     - It re-checks the stage and M9, and the person before the transaction.
+     - A meeting that moved on saves nothing and stays charged
+       (`MEETING_CHANGED`).
+     - Draft again replaces only the undecided suggestions of the parts it
+       drafted.
+- **The answer** (`minutes-draft-answer.ts`) is JSON that refers to items by
+  label (`A1`–`A6`) and to people by label.
+  - **Caps:** a discussion of 1,200 characters; at most 3 decisions of 300
+    each; at most 4 actions of 140 each.
+  - **Votes** are copied only with all three counts (M6), and never changed.
+  - **Owners come from labels, exactly:**
+    - an outside guest gives an empty owner with the reason `OUTSIDE_GUEST`
+      (M7);
+    - an inactive person, or a name the notes give without a label, gives
+      `NO_MATCH` with the name (Ahmad's line, §6 answer 4).
+  - **Due dates** are the model's day in the organisation's zone. With no
+    time, the end of that day's working hours. A past day is `DATE_PASSED`.
+  - **Names are written back into every text**, so the suggestion reads as
+    written.
+- **Accept** goes through `MeetingMinutesService.applyAiDraft()`. That is one
+  minutes write, in the same frame as every other: whoever records the
+  minutes, `record_minutes` only (MinutesNeed `aiDraft`), and one audit row
+  with `aiDraft: { kind, interactionId }`.
+  - Its first step deletes the suggestion under the meeting row's lock, so it
+    applies at most once (`MEETING_AI_SUGGESTION_GONE`).
+  - **A minutes suggestion replaces each part it carries (M5):** the
+    discussion, and the item's decisions as a whole.
+  - **Votes skip only the total-versus-present refusal**
+    (`checkVotes(…, { abovePresent: 'keep' })`, M6). The ordinary decision
+    write still refuses them, and Distribute's readiness check holds the
+    minutes until they are corrected.
+  - **An action** passes `actionItemFields()` and `assertActionOwner()`, the
+    rules `addActionItem()` also uses. The body may supply the title, owner
+    and due date from the inline Edit row.
+- **When the rows end:**
+  - **Distribute's `inTx`** deletes the undecided minutes and action
+    suggestions and every note. Its audit row records `aiDiscarded`.
+  - **What keeps a run's save from landing after a delete is the INSTANCE
+    lock.** The move holds the meeting's workflow instance FOR UPDATE until it
+    commits. A save takes it FOR SHARE first, so it waits, re-checks the stage
+    and saves nothing. The cancelled effect takes no meeting-row lock and needs
+    none.
+  - **The minutes read's `distribute.aiUndecided`** is the count named in
+    the confirm (M2). It never holds Distribute.
+  - **The cancelled effect** deletes every suggestion and every note.
+- **The log keeps no customer text.** Its description is ids and counts
+  ("Meeting … minutes draft, 1 item(s), notes 312 characters").
+- **Mutation-checked** (each turns its spec red):
+  - the M9 check;
+  - the M6 skip;
+  - the outside-guest owner;
+  - the Distribute delete;
+  - the cancel delete;
+  - the writer-only notes read;
+  - the past-date rule;
+  - the batched availability;
+  - and, in P249, the provider using the request's timeout, the 120 s
+    default, the gateway passing a feature's timeout on, and the stale window
+    longer than the timeout.
+- **For PR 2:**
+  - **Never write the saved notes back into the box while someone types.**
+    The notes DTO trims, so writing the saved value back would eat a trailing
+    space.
+  - **The screen's request for Draft minutes waits longer than 300 s.** On a
+    client timeout, the screen reads `GET …/ai` and shows `running` or the
+    saved suggestions, never Retry. Giving up earlier would say "timed out"
+    while the server finishes the run and charges for it.
+
 ---
 
 ## 18. Meetings — One Meeting's Record (ACC-316 PR 3a, 3b, 4, 5, 6)
@@ -17621,6 +17778,17 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   else the owner's members.
 - **Only the owner's members and this meeting's invitees** may be checked; a
   sent `userIds` naming anyone else is 400 `MEETING_CLASH_PERSON_NOT_INVITEE`.
+  **One widening (PR 8c, R5-5), for Add a guest's own question and nothing
+  more:** with a `meetingId`, a person Add a guest may choose (ACTIVE in this
+  organisation) may also be named, ONLY when every time sent is the meeting's
+  own stored start and duration. Any other time with such a person is that
+  same 400 (P254): it would read their busy times across the calendar. The
+  asker has already passed `writing()`, the same gate as Add a guest and its
+  search, which lists those very people. Someone inactive, another
+  organisation's person or an invented id is still that 400, and a new meeting
+  (no `meetingId`) still checks the owner's members only. The meeting's time
+  and the person count are read in one query, only when a name isn't a member
+  or invitee.
 - **What counts:** for each time and person, the other meetings they are an
   invitee of, not cancelled (by the `MEETING_CANCELLED` flag), whose time
   STRICTLY overlaps. Back-to-back is not a clash, and the same series counts.
@@ -17632,6 +17800,9 @@ optional `userIds`, and up to 52 `times` (`startsAt`, `durationMinutes`).
   anyone else gets that endpoint's refusal. The other meeting's id and title are
   given only if the asker may open it (both null: "another meeting").
 - **One query** for every time and person.
+- **How many were checked (PR 8a):** each answer carries `invitees`, the number
+  of people checked, the same at every time: the "11" in Schedule's "2 of 11
+  invitees have another meeting then".
 - **Refusals:** `MEETING_CLASH_OWNER_REQUIRED` 400, `MEETING_CLASH_TOO_MANY_TIMES`
   400, `MEETING_OWNER_NOT_FOUND` 404.
 
@@ -17839,6 +18010,17 @@ with `schedule()`).
   weekly, from the day held. Each is the meeting's own.
 - **`POST /meetings/series/preview`** gives the dates and their clashes, in one
   batched query (`MeetingClashService`, cap 53), and writes nothing.
+- **A standing agenda holds at most ten items** (`MEETING_STANDING_AGENDA_MAX`,
+  Ahmad, 20 Nov, PR 8 Q5): what step 2's editor offers.
+- **A standing item's presenter search (PR 8a, Q5):** `GET
+  /meetings/presenter-candidates?committeeId|orgUnitId&q&skip&take` finds anyone
+  ACTIVE in the organisation (one not invited becomes a guest of each meeting,
+  as built): name, unit and position, never an email, paged at most 50. It is
+  asked only by whoever may schedule for that owner, by the schedule's own
+  answer (`maySchedule()`); anyone else is `MEETING_NOT_ALLOWED`, another
+  organisation's owner `MEETING_OWNER_NOT_FOUND`. It and Add a guest's search
+  are ONE function, `searchOrgPeople()` (meeting-people.service.ts); Add a
+  guest's leaves out people already invited.
 - **The start is the wall-clock time in the organisation's zone** on each day
   (`set({ hour, minute })`), so a clock change never moves a meeting by an hour.
 - **`POST /meetings/series`:**
@@ -17877,6 +18059,23 @@ with `schedule()`).
     The invitees of each are told after the commit.
   - an edit sends no notice, as a single meeting's edit sends none.
 - **End series (`POST /meetings/series/:seriesId/end`, with a reason):**
+  - **where it stops (PR 8d, Q4):** an optional `lastMeetingId`. The series
+    keeps that meeting and those before it; every LATER meeting still in
+    Planned or Agenda Issued (its stage allows Reschedule) is cancelled.
+    Omitted, the last is the next meeting held: the first of the open ones,
+    so a call without it no longer cancels that one (before 8d it cancelled
+    every later open meeting). A meeting of another series, another
+    organisation's or an invented id is 400 `MEETING_NOT_IN_SERIES`, and
+    nothing is written. One plan (`endPlan()`), three queries whatever the
+    series' size, read by End and its preview alike;
+  - **its preview (PR 8d):** `POST /meetings/series/:seriesId/end/preview`,
+    the same body without the reason, answers that plan read-only: `last`
+    (`{ id, startsAt }` or null when nothing is left open to keep),
+    `cancelled` (each `{ id, startsAt }`, in order), `held` (started and not
+    cancelled) and `total`. No write, no lock. Same who-may-ask as End (whoever
+    may schedule for the owner, else `MEETING_NOT_ALLOWED`; another
+    organisation's series `MEETING_SERIES_NOT_FOUND`); the pool check is End's
+    own, at the write;
   - first, the caller must be in the pool of every later open meeting's stage
     (Cancel Meeting is a person's move, both its stages this organisation's);
     otherwise 403
@@ -17897,7 +18096,14 @@ with `schedule()`).
   their stages and who may open them, each in one batch, and the nearest on each
   side picked in memory: **a fixed number of queries whatever the series' size**
   (P237; a db-spec counts a series of 3 and of 30), and only for a series
-  meeting.
+  meeting. From the same rows, with no further query (PR 8b, P239):
+  `previousAt` / `nextAt`, when those two start (the header names the links by
+  their dates), and `endedAfter`: for an ended series, the place of its last
+  meeting not cancelled (0 if every one was), null while it runs. That is a
+  fact about the series, like its total, so it counts meetings this viewer
+  can't open, and names none. And `mayEnd` (PR 8d): whoever may schedule for
+  the owner, while the series runs (no query: the read's own scheduler
+  check).
 - **Who may open many meetings, in one query (P237):**
   `MeetingAccess.openable(ids)` is `canSee()`'s rule batched, built from
   `meeting-membership.ts`'s `meetingOpener()` (the viewer's side, read once: no
@@ -18398,3 +18604,247 @@ they follow the space the page has, and a 390px layout spec can measure them
   `meeting-page.phone.layout.spec.ts`, `meeting-list.phone.layout.spec.ts`
   and `meetings-panel.phone.layout.spec.ts` (the shared capped frame Home's
   rows use).
+
+### 18.22 The screens, part 3a: the series on the meeting page (PR 8b)
+
+Plan PR 8 slice 8b (P235, P239, P240), Meeting Screens' header and A9.
+
+- **One place words a series: `meeting-series-text.ts`.** The pattern
+  mapping (every value of `every`, `on.kind` and `ordinal` the server stores,
+  and the weekdays 1 Monday … 7 Sunday, as Luxon numbers them) with the key
+  each reads by, `seriesPattern()` ("Every month, the 4th Thursday"),
+  `seriesLine()` (the header's "… · 4 of 12") and `seriesSummary()` (the
+  series view's line). Schedule's step 2 (Repeat, PR 8a) reads the same
+  lists and functions, never a second copy. Numbers through the format layer.
+  Every's numbers ("Every 2 weeks") are fixed by its list, so they are fixed
+  strings, never counted ones.
+- **After End series** both lines read "Every month · ended after 4 of 12"
+  (Q11, the recommendation), from one key pair, `meeting.series.ended`, and
+  the read's `endedAfter` (§18.14).
+- **The meeting page's Series cell**, in the facts grid beside the
+  committee, the place and the organiser (under them on a phone): the line,
+  then previous and next as links named by their dates ("‹ 25 Feb 2027",
+  each with an accessible name saying which way), shown ONLY where the read
+  names them, and "Whole series". The screen never works out a neighbour.
+  The arrows are U+2039 and U+203A in BOTH languages: both are
+  Bidi_Mirrored, so at dir=rtl the browser draws each flipped and Arabic's
+  previous points right (checked once in Chromium, P240). A spec pins
+  ar.json's glyphs equal to en.json's, because a hand swap would point them
+  the wrong way. The line and the dates are isolated (`bdi`).
+- **`/meetings/:id` is `MeetingPageHostComponent`**, which builds the page
+  inside a block keyed by the id: a series link opens the same route with
+  another id, which Angular would otherwise reuse with the first meeting's
+  state. The page itself is unchanged.
+- **The whole series: `/meetings?seriesId=`**, ONE list by date, as drawn
+  (P240): `GET /meetings?view=series&seriesId=` answers every meeting of the
+  series the viewer may open (`meetingMayOpenSql()`, the parent rule's one SQL
+  form, which the visible views now read: mine, upcoming, past and series;
+  minutes, all and subunits have rules of their own), past and future,
+  cancelled ones included, scoped by organisation, by date, in one answer
+  capped at `SERIES_LIST_CAP` (53, a series' most), with the rule in the WHERE
+  before the LIMIT, never paged; its `total` is what it lists. `seriesId` is
+  required, and not empty, with it; with any other view an empty one is
+  ignored, as it always was. No views to switch between, no pager, and the
+  server's order is drawn as it is; the order line reads "Sorted by date,
+  earliest first." It is headed "Whole series · {owner}" and the
+  series' line: from the link's navigation state (the series and its owner,
+  only when its id is this series'), else the owner from the first row and the
+  line from that meeting's read, once. A cancelled meeting reads Cancelled,
+  struck through (A9).
+- **The rows' notes, only from stored data.** "Rescheduled from 20 May 2027"
+  is the meeting's latest `MeetingReschedule` row (`movedFrom`, one batched
+  read, on this view only; latest by `createdAt`, a tie broken by id): the
+  reschedule the meeting page's own "Rescheduled from" reads, by the same
+  order. **Not built:** the drawing's "Its own time, 10:00"
+  (that a later "this and all later" reschedule skipped this meeting is not
+  stored as such) and the cancelled meeting's reason (it is the Cancel move's
+  comment, not on the meeting or series rows). Neither is rebuilt from the
+  audit log.
+- **Measured** at 1280 and 390 in both languages
+  (`meeting-page.series.layout.spec.ts`): in the facts row at 1280 and one
+  column on the phone, the line drawn whole, the links previous → whole →
+  next in the reading direction, and nothing wider than the page.
+
+### 18.23 The screens, part 3b: Schedule step 2, Repeat (PR 8a)
+
+Plan PR 8 slice 8a (P235, P245), Meeting Screens round 5 (artboards 3 and
+16), Ahmad's answers of 20 Nov (Q5, Q7, Q8–Q10) and lane B's (Q6).
+
+- **Step 1** keeps Schedule (one meeting) and gains "Next: repeats"; the
+  footer says "Step 1 of 2" (`common.stepOf`). Once Starts and Duration are
+  set, the **clash line** sits in the Starts block, 2px under it: "2 of 11
+  invitees have another meeting then · Show who" (`POST /meetings/clashes`,
+  asked again as either changes, the latest answer wins). A warning, never a
+  gate: Schedule and Next stay offered; no clash, no line. **Show who** swaps
+  the rows in for the body (each person, then each other meeting's title, or
+  "another meeting" when the asker may not open it, and its time), with Starts
+  and Duration kept so a change rechecks at once.
+- **`am-meeting-clash`** (`components/meeting-clash/`) draws the line and the
+  rows; 8c's Reschedule and Add a guest reuse it. Counted with
+  `plural.meeting.clashPeople` (English agrees with the clashing count;
+  Arabic says «من المدعوين», which needs no agreement with either).
+- **Step 2, Repeat** (`am-meeting-repeat-step`, kept alive across Back and
+  Next, so its choices stay):
+  - Repeats (Doesn't repeat / Repeats, `am-meeting-segmented`, a radio group
+    whose arrows move and choose in the reading direction);
+  - Every starts from the committee's frequency (Q6, `meeting-series-text.ts`'s
+    `SERIES_EVERY_FROM_FREQUENCY`, the ONE mapping); As needed and a unit start
+    on Doesn't repeat. The committee page passes its `meetingFrequency` to the
+    Meetings panel;
+  - On: a weekday for weeks; for months Day or The [1st–4th, last] [weekday],
+    seeded from the first meeting's day each time step 2 opens (the dialog
+    counts each Next; no timer). The readback is `seriesPattern()`, plus "the
+    last day in shorter months" past day 28 and, every 3 or 6 months, the
+    pattern's months from the preview (`FormatService.month()`, new);
+  - Ends: On a date (a calendar that swaps in) or After n (1–53, starting at
+    about a year for the Every chosen); its error is said in the row's line;
+  - the standing agenda: "n items · Edit…" / "None · Add…", its editor
+    swapping in (Q5): title, presenter, duration, at most ten (the eleventh is
+    refused, and the limit is said). A presenter is picked from
+    `presenter-candidates` in `am-list-dialog`, its own layer above the
+    dialog. An item with no title is dropped on the way back;
+  - Next dates: the server's preview (`POST /meetings/series/preview`, asked
+    again as the choices settle), never worked out here: one line per date
+    (the date, its title cut with the whole in a tooltip, then Moved, "No day
+    31 · last day" and Clash). After five, "n later dates · m moved · k have a
+    clash · Show all" (Q7), which swaps in the whole list (it scrolls inside
+    itself). A Clash chip swaps in that date's people ("← All dates").
+- **The buttons:** Back, and "Schedule n meetings" from the preview's own
+  count (`plural.meeting.scheduleMeetings`), or Schedule when it doesn't
+  repeat. A series opens its first meeting. A press whose outcome is unknown
+  never offers a plain retry (step 1's rule).
+- **The series refusals** (`MEETING_SERIES_PATTERN_INVALID`,
+  `_END_REQUIRED`, `_TOO_LONG`, `_EMPTY`, `_TIME_INVALID`) are said from their
+  codes, with Retry, where the dates would be.
+- **Measured** at 1280 and 390 in both languages
+  (`meeting-schedule-repeat.layout.spec.ts`), each body 20px under the cap:
+  step 1 with the clash line (383 / 395) and Show who (261 / 278); step 2,
+  every 3 months on the last Thursday (356 / 376), every month on day 31 with
+  twelve dates (378 / 400), the Clash chip (144–177), Show all (335 / 340),
+  ten standing items (378–396) and the end date (271 / 275). The tightest is
+  Example 2 in Arabic, 400 of 420. Fitting it took: one line per date, 8px
+  between rows, Repeats' label beside its control, the count's error in its
+  row's line, and shorter Arabic labels (Weekday «اليوم», as drawn; the count
+  «العدد»).
+
+### 18.24 The screens, part 3c: which meetings change (PR 8c)
+
+Plan PR 8 slice 8c (P235, P245, P253), Meeting Screens round 5 (artboards
+10–11 and 16), Ahmad's answers of 20 Nov (Q3, Q8, Q9, Q10).
+
+- **"Which meetings change?"** (`app-meeting-scope-dialog`, a 420 confirm),
+  asked after Reschedule's or Edit details' Next for a series meeting:
+  - it says first that past meetings never change, then two choices, "This
+    meeting only" (chosen when it opens) and "This and all later meetings";
+  - **this meeting only:** "22 Oct 2026 moves to 10:30" (a reschedule; the
+    date too when the day changes), or "22 Oct 2026 only" (an edit), and
+    Reschedule's per-person clash line for that one meeting (R5-4, Q8),
+    asked of `POST /meetings/clashes` only when the change moves time (a new
+    start or a new duration);
+  - **this and all later:** the range the SERVER works out, "8 meetings,
+    22 Oct 2026 → 27 May 2027" (`POST /meetings/:id/scope-preview`, PR 8-be),
+    never worked out on the screen, since times move off non-working days and
+    the owner's own meetings. While it is asked the line says so; pressing
+    Apply then waits for it and applies when it arrives, so "this and later"
+    is never applied blind. A lost preview offers Retry (and Apply asks again,
+    then applies); a refused one is said from its code, with no Retry, and
+    Apply does nothing for "this and all later" while it stands (P254). "This
+    meeting only" still applies;
+  - **kept:** "Kept its own edit: 26 Nov 2026 (its own time, 10:00)", the
+    fields in words ("its own place, its own link"); one line, then "and n
+    more kept their own edits" (`plural.meeting.keptMore`);
+  - **its clash line:** "2 of the 8 meetings have a clash · Show which"
+    (`plural.meeting.meetingsClash`), each row the date, then who and their
+    other meeting, and its time. A warning: Apply stays enabled;
+  - it writes nothing. Apply hands the scope to the dialog that opened it,
+    which sends the write with `scope` and closes both; a refusal of that
+    write is said in the confirm, from its code.
+- **Reschedule** gains the clash line in place under the new time, asked again
+  as the day or time changes (the latest answer wins, the meeting's own
+  duration), with "Show who" / "Hide" showing the rows in place (artboards
+  10–11). In a series its button reads Next, and nothing is written before
+  Apply.
+- **Edit details** (`app-meeting-edit-dialog`, Q3), on the page header beside
+  Reschedule, offered on the server's `may.edit`: Schedule's step 1 fields
+  without Starts (type, duration, place, link, and a unit meeting's quorum),
+  filled from the meeting, its types loaded when it opens (the meeting's own
+  type stays a choice if it was deactivated). Only the fields that changed are
+  sent (`PATCH /meetings/:id`), so a later meeting's own edit of another field
+  is never overwritten; nothing changed closes it with no write. The subject
+  isn't offered: a series titles its own meetings, and "this and all later"
+  never carries a title (§18.14). In a series its button reads Next.
+- **Add a guest** (R5-5, Q9): once a person is chosen, "Dr. Huda Zahrani has
+  another meeting then · Show which", their meetings as rows (the clash check
+  naming that person at the meeting's own time, §18.11's widening). The latest choice wins; an outside
+  guest is never checked. A warning: Add stays enabled.
+- **Nowhere else in v1** (Q10): not on the meeting page and not in notices.
+- **`am-meeting-clash`** gained three opt-in forms: `person` (one person, the
+  line names them, each row one of their meetings), `perMeeting` with
+  `meetingTotal` (one row per clash, its date first), and `capped` (rows shown
+  in place scroll inside two and a half rows, `max-block-size: 8rem`, a
+  focusable region named "Other meetings at that time").
+- **Measured** at 1280 and 390 in both languages, each body 20px under the cap:
+  - Reschedule: opened 218 / 234, the clash line 240 / 258, two rows in place
+    337 / 363, six people (the list scrolls) 372 / 390. That last one is the
+    tightest of the PR, 390 of 420 in Arabic; at three rows' height (9.5rem)
+    it was 414, which is why the list holds two and a half;
+  - the scope confirm: "This meeting only" with a kept line 213 / 208, its
+    rows 263 / 262; "This and all later" 213 / 208, two rows 310 / 313; three
+    kept and six rows 375 / 372 (with two kept lines shown it was 429 / 432,
+    which is why one shows); a refused preview 180 / 172;
+  - Edit details: 177 / 183, committee or unit, with no place, long values or
+    refused (the refusal sits in the footer);
+  - Add a guest: a person with a clash 171 / 183 (209 at 390 in English), six
+    meetings shown 303 / 315 (341 at 390 in English).
+
+### 18.25 The screens, part 3d: End series, and cancelling one meeting (PR 8d)
+
+Plan PR 8 slice 8d (P235, P245, P255), Meeting Screens' End the series and
+Cancel Meeting, Ahmad's answer of 20 Nov (Q4).
+
+- **End series…** is on a series meeting's page header, beside Reschedule,
+  on the read's `series.mayEnd`, and never on a cancelled meeting. From a
+  meeting's page it means "after this one" (Q4): the meeting on screen is the
+  last one the series keeps.
+- **"End the monthly series?"** (`app-meeting-end-series-dialog`, a 420
+  confirm), titled by how often it repeats ("weekly", "fortnightly",
+  "monthly", "quarterly", "six-monthly", "yearly"), its context the owner and
+  "4 of 12 held":
+  - "Meetings after the last one are cancelled and everyone invited is told,
+    with your reason. Held meetings stay as they are.";
+  - **Last meeting** and **Cancelled** ("7 meetings, 26 Nov 2026 → 27 May
+    2027", `plural.meeting.scopeMeetings`, or "None"), from End's preview
+    (§18.14), never worked out on the screen: which later meetings are still
+    open is their stages' rule. The plan said the series list for the count;
+    the list can't tell an open meeting from one past Agenda Issued, so the
+    preview is the write's own plan instead;
+  - **Reason**, required: the built endpoint sends it with each cancellation.
+    The drawing has no field for it (94 / 104 is the sentence and the pairs);
+  - **End is never pressed blind** (P254's rule for the scope confirm):
+    pressed while the plan loads, it waits and ends when it arrives; a lost
+    plan offers Retry, and End asks again, then ends; a refused one is said
+    from its code, with no Retry, and End does nothing. **Never disabled:** an
+    empty reason shows its error and moves focus to it;
+  - End sends `lastMeetingId` (this meeting) and the reason. All cancelled: it
+    closes and the page reads the meeting again (the series line then reads
+    "ended after n of N", §18.22). **Some not cancelled** (`failed`): it stays
+    open, says "2 meetings couldn't be cancelled. End series again to finish."
+    (`plural.meeting.endSeriesFailed`), asks the plan again, and the page reads
+    the meeting again only when it closes (ACC-55's contract). A refusal is
+    said from its code (`MEETING_SERIES_CANNOT_CANCEL`,
+    `MEETING_SERIES_NOT_FOUND`, `MEETING_NOT_IN_SERIES`), the dialog open.
+- **Cancel Meeting** names the meeting in its context line, "Pharmacy and
+  Therapeutics Committee · 22 Oct 2026, 10:00", and for a series meeting adds
+  "· Only this meeting" (the series goes on). `MoveConfirmCopy` gained an
+  optional `context`, already in the reader's words; other records give none.
+- **Measured** at 1280 and 390 in both languages, each body 20px under the cap:
+  - End series: empty, with its error, a realistic reason and the 500-character
+    limit (only the field scrolls) 293 / 299 (319 at 390 in Arabic); a refused
+    plan 341 / 331 (the tightest, 341 of 420 in English). **The reason field
+    has five rows** (P256): at three, CI's Linux fonts wrapped the realistic
+    English reason to four lines at 390 and the field scrolled (content 100,
+    box 79), though it fit on Windows. The layout spec now asserts that reason
+    leaves at least one line to spare in both languages and both widths, so a
+    smaller field fails locally too, not only on CI's fonts;
+  - Cancel Meeting in a series, with its context line: 157 / 171 (178 at 390
+    in English); the context line never runs sideways.

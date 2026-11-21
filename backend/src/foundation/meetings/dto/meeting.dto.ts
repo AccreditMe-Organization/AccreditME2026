@@ -14,8 +14,12 @@ import {
   Max,
   MaxLength,
   Min,
+  Validate,
   ValidateIf,
   ValidateNested,
+  ValidatorConstraint,
+  type ValidationArguments,
+  type ValidatorConstraintInterface,
 } from 'class-validator';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
@@ -199,8 +203,25 @@ export class MeetingScopePreviewDto {
   unitQuorum?: number | null;
 }
 
-/** The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov). */
-export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits'] as const;
+/** `view=series` names its series: a non-empty seriesId. Any other view asks nothing of it. */
+@ValidatorConstraint({ name: 'seriesIdForSeriesView' })
+class SeriesIdForSeriesView implements ValidatorConstraintInterface {
+  validate(value: unknown, args: ValidationArguments): boolean {
+    if ((args.object as ListMeetingsDto).view !== 'series') return true;
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  defaultMessage(): string {
+    return 'seriesId is required with view=series';
+  }
+}
+
+/**
+ * The list's saved views (Design 1), and "Sub-units' meetings" (Ahmad, 18 Nov).
+ * PR 8b (P240): `series`, one series' meetings (seriesId required), the whole
+ * series view.
+ */
+export const MEETING_LIST_VIEWS = ['mine', 'upcoming', 'past', 'minutes', 'all', 'subunits', 'series'] as const;
 export type MeetingListView = (typeof MEETING_LIST_VIEWS)[number];
 
 export class ListMeetingsDto {
@@ -208,9 +229,14 @@ export class ListMeetingsDto {
   @IsIn(MEETING_LIST_VIEWS)
   view?: MeetingListView;
 
-  /** ACC-316 PR 5 — one series' meetings (the series view). */
-  @IsOptional()
+  /**
+   * ACC-316 PR 5 — one series' meetings. Required, and not empty, with
+   * `view=series` (PR 8b); with any other view it is optional, and an empty one
+   * is ignored as it always was (P243).
+   */
+  @ValidateIf((o: ListMeetingsDto) => o.view === 'series' || o.seriesId !== undefined)
   @IsString()
+  @Validate(SeriesIdForSeriesView)
   seriesId?: string;
 
   /** ACC-316 PR 6 — the list's search: the title contains it (case-insensitive). */
@@ -300,6 +326,19 @@ export class GuestCandidatesQueryDto {
   @Min(1)
   @Max(50)
   take?: number;
+}
+
+/** PR 8a (Q5) — a standing item's presenter search, for a series not yet made: its owner, then a name. */
+export class PresenterCandidatesQueryDto extends GuestCandidatesQueryDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  committeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  orgUnitId?: string;
 }
 
 /** ACC-316 PR 6 — may this person schedule for this committee or unit. */
@@ -661,6 +700,8 @@ export class DecideSuggestionDto {
 export const SERIES_EVERY = ['WEEK_1', 'WEEK_2', 'MONTH_1', 'MONTH_3', 'MONTH_6', 'MONTH_12'] as const;
 export const SERIES_ON = ['WEEKDAY', 'DAY_OF_MONTH', 'ORDINAL_WEEKDAY'] as const;
 export const SERIES_ORDINAL = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'LAST'] as const;
+/** PR 8a (Q5) — a series' most standing agenda items. */
+export const MEETING_STANDING_AGENDA_MAX = 10;
 
 export class StandingAgendaItemDto {
   @IsString()
@@ -775,15 +816,28 @@ export class CreateMeetingSeriesDto {
   @Max(53)
   count?: number | null;
 
+  /** At most ten items (Ahmad, 20 Nov, PR 8 Q5): what step 2's editor offers. */
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(MEETING_STANDING_AGENDA_MAX)
   @ValidateNested({ each: true })
   @Type(() => StandingAgendaItemDto)
   standingAgenda?: StandingAgendaItemDto[];
 }
 
-export class EndMeetingSeriesDto {
+export class EndMeetingSeriesPreviewDto {
+  /**
+   * PR 8d (Q4) — the last meeting the series keeps: it and those before it
+   * stay, every later open one is cancelled. Omitted: the next meeting held.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  lastMeetingId?: string;
+}
+
+export class EndMeetingSeriesDto extends EndMeetingSeriesPreviewDto {
   /** Sent to everyone invited to each meeting cancelled. */
   @IsString()
   @IsNotEmpty()

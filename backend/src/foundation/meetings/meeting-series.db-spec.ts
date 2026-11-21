@@ -48,7 +48,7 @@ import { applyWorkflowSeed } from '../workflow/workflow-seed-apply';
 import { writeStartingAssignments } from '../workflow/workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { copyDefaultSeatActions } from '../committees/seat-actions';
-import { MeetingsService } from './meetings.service';
+import { MeetingsService, SERIES_LIST_CAP } from './meetings.service';
 import { MeetingClashService } from './meeting-clash.service';
 import { MeetingSeriesService } from './meeting-series.service';
 import { MeetingAccess, type MeetingViewer } from './meeting-access';
@@ -348,21 +348,104 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
   });
 
   describe('end series', () => {
-    it('cancels every later open meeting with the reason, leaves a past one alone, and can run again', async () => {
+    it('cancels every open meeting after the last one kept, with the reason, leaves a past one alone, and can run again', async () => {
       const r = await series.create(weekly(a, { weekday: 0 + 7, firstDate: nextWeekday(a, 7) }), a.orgId, as(a, 'chair'));
-      // The first already happened.
+      // The first already happened, and is the last one the series keeps.
       await prisma.meeting.update({ where: { id: r.meetingIds[0]! }, data: { scheduledAt: new Date(Date.now() - 86_400_000) } });
-      expect(await code(series.end(r.seriesId, { reason: 'Merged into the quality committee' }, a.orgId, as(a, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      const last = { lastMeetingId: r.meetingIds[0]! };
+      expect(await code(series.end(r.seriesId, { reason: 'Merged into the quality committee', ...last }, a.orgId, as(a, 'member')))).toBe('MEETING_NOT_ALLOWED');
 
-      const res = await series.end(r.seriesId, { reason: 'Merged into the quality committee' }, a.orgId, as(a, 'chair'));
+      const res = await series.end(r.seriesId, { reason: 'Merged into the quality committee', ...last }, a.orgId, as(a, 'chair'));
       expect(res).toEqual({ cancelled: r.meetingIds.slice(1), failed: [] });
       expect(await stageKey(r.meetingIds[0]!)).toBe('planned');
       for (const id of r.meetingIds.slice(1)) expect(await stageKey(id)).toBe('cancelled');
       const row = await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } });
       expect(row.endedAt).not.toBeNull();
       expect(row.endReason).toBe('Merged into the quality committee');
-      expect(await series.end(r.seriesId, { reason: 'Again' }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [], failed: [] });
+      expect(await series.end(r.seriesId, { reason: 'Again', ...last }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [], failed: [] });
       expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endReason).toBe('Merged into the quality committee');
+    });
+
+    it('with no last meeting named, the series keeps the next meeting held and cancels the rest (Q4)', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, ...rest] = r.meetingIds;
+      expect(await series.end(r.seriesId, { reason: 'Merged' }, w.orgId, as(w, 'chair'))).toEqual({ cancelled: rest, failed: [] });
+      expect(await stageKey(first!)).toBe('planned');
+      for (const id of rest) expect(await stageKey(id)).toBe('cancelled');
+      expect((await meetings.getForViewer(first!, w.orgId, as(w, 'chair'))).series!.endedAfter).toBe(1);
+    });
+
+    it('the last meeting named keeps it and those before it: only the later ones are cancelled', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third, fourth] = r.meetingIds;
+      expect(await series.end(r.seriesId, { reason: 'Merged', lastMeetingId: third! }, w.orgId, as(w, 'chair'))).toEqual({ cancelled: [fourth], failed: [] });
+      for (const id of [first, second, third]) expect(await stageKey(id!)).toBe('planned');
+      expect(await stageKey(fourth!)).toBe('cancelled');
+    });
+
+    it("a last meeting that isn't this series' is refused, and nothing is written", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2), count: 2 }), w.orgId, as(w, 'chair'));
+      const other = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3), count: 1 }), w.orgId, as(w, 'chair'));
+      const theirs = await series.create(weekly(b, { weekday: 3, firstDate: nextWeekday(b, 3), count: 1 }), b.orgId, as(b, 'chair'));
+      const audits = () => prisma.auditLog.count({ where: { objectType: 'MeetingSeries', objectId: r.seriesId } });
+      const before = await audits();
+      for (const lastMeetingId of [other.meetingIds[0]!, theirs.meetingIds[0]!, 'invented']) {
+        expect(await code(series.end(r.seriesId, { reason: 'x', lastMeetingId }, w.orgId, as(w, 'chair')))).toBe('MEETING_NOT_IN_SERIES');
+        expect(await code(series.endPreview(r.seriesId, { lastMeetingId }, w.orgId, as(w, 'chair')))).toBe('MEETING_NOT_IN_SERIES');
+      }
+      for (const id of r.meetingIds) expect(await stageKey(id)).toBe('planned');
+      expect(await audits()).toBe(before);
+      expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).toBeNull();
+    });
+  });
+
+  describe('end series preview (PR 8d)', () => {
+    it("names what End would keep and cancel, and End then does exactly that; it writes nothing", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2), count: 5 }), w.orgId, as(w, 'chair'));
+      const [first, second, third, fourth, fifth] = r.meetingIds;
+      // The first was held; the second was held and cancelled; the third is cancelled ahead of time.
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
+      const cancelledStage = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'cancelled' } });
+      await prisma.meeting.update({ where: { id: first! }, data: { scheduledAt: new Date(Date.now() - 2 * 86_400_000) } });
+      await prisma.meeting.update({ where: { id: second! }, data: { scheduledAt: new Date(Date.now() - 86_400_000) } });
+      await prisma.workflowInstance.updateMany({ where: { objectType: 'MEETING', objectId: { in: [second!, third!] } }, data: { currentStageId: cancelledStage.id } });
+      const at = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.getTime()]));
+      const audits = () => prisma.auditLog.count({ where: { organizationId: w.orgId } });
+      const before = await audits();
+
+      // No last named: the next meeting held is the fourth (the third is cancelled).
+      const preview = await series.endPreview(r.seriesId, {}, w.orgId, as(w, 'chair'));
+      expect(preview.last?.id).toBe(fourth);
+      expect(preview.last?.startsAt.getTime()).toBe(at[fourth!]);
+      expect(preview.cancelled.map((m) => [m.id, m.startsAt.getTime()])).toEqual([[fifth, at[fifth!]]]);
+      expect([preview.held, preview.total]).toEqual([1, 5]);
+      // A past meeting named: every open one after it.
+      expect((await series.endPreview(r.seriesId, { lastMeetingId: first! }, w.orgId, as(w, 'chair'))).cancelled.map((m) => m.id)).toEqual([fourth, fifth]);
+      expect(await audits()).toBe(before);
+      for (const id of [fourth, fifth]) expect(await stageKey(id!)).toBe('planned');
+
+      const ended = await series.end(r.seriesId, { reason: 'Merged' }, w.orgId, as(w, 'chair'));
+      expect(ended.cancelled).toEqual(preview.cancelled.map((m) => m.id));
+    });
+
+    it('is for whoever may schedule for the owner: a member is refused', async () => {
+      const r = await series.create(weekly(a, { weekday: 2, firstDate: nextWeekday(a, 2), count: 2 }), a.orgId, as(a, 'chair'));
+      expect(await code(series.endPreview(r.seriesId, {}, a.orgId, as(a, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(series.endPreview('invented', {}, a.orgId, as(a, 'chair')))).toBe('MEETING_SERIES_NOT_FOUND');
+    });
+
+    it("the read says who may end the series: the scheduler while it runs, never a member, nobody once it's ended", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2), count: 2 }), w.orgId, as(w, 'chair'));
+      const first = r.meetingIds[0]!;
+      expect((await meetings.getForViewer(first, w.orgId, as(w, 'chair'))).series!.mayEnd).toBe(true);
+      expect((await meetings.getForViewer(first, w.orgId, as(w, 'member'))).series!.mayEnd).toBe(false);
+      await series.end(r.seriesId, { reason: 'Merged' }, w.orgId, as(w, 'chair'));
+      expect((await meetings.getForViewer(first, w.orgId, as(w, 'chair'))).series!.mayEnd).toBe(false);
     });
   });
 
@@ -392,14 +475,15 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       await prisma.workflowStageAssignee.create({ data: { organizationId: c.orgId, stageId: planned.id, order: 1, kind: 'SPECIFIC_USER', userId: c.people['admin']! } });
       const audits = () => prisma.auditLog.count({ where: { objectType: 'MeetingSeries', objectId: r.seriesId, action: 'UPDATE' } });
 
-      expect(await outcome(series.end(r.seriesId, { reason: 'Stop' }, c.orgId, as(c, 'chair')))).toMatchObject({ code: 'MEETING_SERIES_CANNOT_CANCEL', meetings: r.meetingIds });
+      // The first is the next held, so it is kept (Q4); the second is the one the Chair can't cancel.
+      expect(await outcome(series.end(r.seriesId, { reason: 'Stop' }, c.orgId, as(c, 'chair')))).toMatchObject({ code: 'MEETING_SERIES_CANNOT_CANCEL', meetings: [r.meetingIds[1]] });
       for (const id of r.meetingIds) expect(await stageKey(id)).toBe('planned');
       expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).toBeNull();
       expect(await audits()).toBe(0);
     });
 
     it('a partial failure leaves the series open; a re-run finishes it; a run on an ended series writes nothing', async () => {
-      const r = await series.create(weekly(a, { weekday: 4, firstDate: nextWeekday(a, 4), count: 3 }), a.orgId, as(a, 'chair'));
+      const r = await series.create(weekly(a, { weekday: 4, firstDate: nextWeekday(a, 4), count: 4 }), a.orgId, as(a, 'chair'));
       let calls = 0;
       const flaky = withWorkflow({
         triggerTransition: (...args: Parameters<WorkflowService['triggerTransition']>) => {
@@ -408,12 +492,13 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
           return workflow.triggerTransition(...args);
         },
       });
+      // The first is kept (the next held, Q4); of the other three, the middle one fails.
       const first = await flaky.end(r.seriesId, { reason: 'Merged' }, a.orgId, as(a, 'chair'));
-      expect(first.failed).toEqual([r.meetingIds[1]]);
-      expect(first.cancelled).toEqual([r.meetingIds[0], r.meetingIds[2]]);
+      expect(first.failed).toEqual([r.meetingIds[2]]);
+      expect(first.cancelled).toEqual([r.meetingIds[1], r.meetingIds[3]]);
       expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).toBeNull();
 
-      expect(await series.end(r.seriesId, { reason: 'Merged' }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [r.meetingIds[1]], failed: [] });
+      expect(await series.end(r.seriesId, { reason: 'Merged' }, a.orgId, as(a, 'chair'))).toEqual({ cancelled: [r.meetingIds[2]], failed: [] });
       expect((await prisma.meetingSeries.findFirstOrThrow({ where: { id: r.seriesId } })).endedAt).not.toBeNull();
       const audits = () => prisma.auditLog.count({ where: { objectType: 'MeetingSeries', objectId: r.seriesId, action: 'UPDATE' } });
       const before = await audits();
@@ -504,6 +589,33 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       expect(s).toMatchObject({ id: r.seriesId, index: 2, total: 4, every: 'WEEK_1', ended: false, count: 4, endsOn: null, previousId: first, nextId: third });
       expect(s.on).toEqual({ kind: 'WEEKDAY', weekday: 2, dayOfMonth: null, ordinal: null });
       expect(s.firstDate).toBe(nextWeekday(w, 2));
+    });
+
+    it("names the neighbours' dates, and endedAfter is null while the series runs (P239)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third] = r.meetingIds;
+      const at = Object.fromEntries((await seriesMeetings(r.seriesId)).map((m) => [m.id, m.scheduledAt.toISOString()]));
+      const s = (await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!;
+      expect([s.previousAt?.toISOString(), s.nextAt?.toISOString(), s.endedAfter]).toEqual([at[first!], at[third!], null]);
+      // The first meeting has no previous one: no date either.
+      const f = (await meetings.getForViewer(first!, w.orgId, as(w, 'chair'))).series!;
+      expect([f.previousId, f.previousAt]).toEqual([null, null]);
+    });
+
+    it('an ended series says where it stopped: the place of its last meeting not cancelled (P239)', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third, fourth] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // Ended between the second and the third meeting: the third and fourth are cancelled.
+      const ended = await series.end(r.seriesId, { reason: 'Merged into the weekly round', lastMeetingId: second! }, w.orgId, as(w, 'chair'), new Date(rows[1]!.scheduledAt.getTime() + 3_600_000));
+      expect([...ended.cancelled].sort()).toEqual([third, fourth].sort());
+      for (const id of [first, second, third]) {
+        const s = (await meetings.getForViewer(id!, w.orgId, as(w, 'chair'))).series!;
+        expect([id, s.ended, s.endedAfter, s.total]).toEqual([id, true, 2, 4]);
+      }
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'chair'))).series!.nextId).toBeNull();
     });
 
     it('previous and next skip a cancelled meeting', async () => {
@@ -597,6 +709,151 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       } finally {
         await client.$disconnect();
       }
+    });
+  });
+
+  describe("a standing item's presenter search (PR 8a, Q5)", () => {
+    it('whoever may schedule for the owner finds anyone active in the organisation, by name, never their email', async () => {
+      const w = await world();
+      const all = await series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'chair'));
+      const names = all.items.map((p) => p.name);
+      // Members and the rest of the organisation alike: one not yet invited becomes a guest.
+      for (const name of ['chair', 'member', 'outsider', 'presenter']) expect(names).toContain(name);
+      expect(all.total).toBe(Object.keys(w.people).length);
+      expect(Object.keys(all.items[0]!).sort()).toEqual(['id', 'name', 'position', 'unit']);
+      const found = await series.presenterCandidates({ committeeId: w.committeeId, q: 'outs' }, w.orgId, as(w, 'chair'));
+      expect([found.items.map((p) => p.name), found.matching]).toEqual([['outsider'], 1]);
+      // An inactive person is never offered.
+      await prisma.user.update({ where: { id: w.people['presenter']! }, data: { status: 'INACTIVE' } });
+      expect((await series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'chair'))).items.map((p) => p.name)).not.toContain('presenter');
+    });
+
+    it("someone who may not schedule for the owner is refused, as Schedule refuses them", async () => {
+      const w = await world();
+      expect(await code(series.presenterCandidates({ committeeId: w.committeeId }, w.orgId, as(w, 'member')))).toBe('MEETING_NOT_ALLOWED');
+      expect(await code(series.presenterCandidates({}, w.orgId, as(w, 'chair')))).toBe('MEETING_OWNER_REQUIRED');
+    });
+
+    itEnforcesTenantIsolation("another organisation's committee is an owner that isn't there", async () => {
+      expect(await code(series.presenterCandidates({ committeeId: a.committeeId }, b.orgId, as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW])))).toBe('MEETING_OWNER_NOT_FOUND');
+    });
+  });
+
+  describe('the whole series view (view=series, P240)', () => {
+    const cancel = async (w: World, meetingId: string) => {
+      const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
+      const cancelled = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'cancelled' } });
+      await prisma.workflowInstance.updateMany({ where: { objectType: 'MEETING', objectId: meetingId }, data: { currentStageId: cancelled.id } });
+    };
+
+    it('every meeting of the series, by date, a cancelled one included as Cancelled, with where a moved one came from', async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 2, firstDate: nextWeekday(w, 2) }), w.orgId, as(w, 'chair'));
+      const [first, second, third, fourth] = r.meetingIds;
+      const rows = await seriesMeetings(r.seriesId);
+      // The second moved past the third: the list follows the dates, not the series' order.
+      const from = rows[1]!.scheduledAt;
+      await meetings.reschedule(second!, { scheduledAt: new Date(rows[2]!.scheduledAt.getTime() + 3_600_000).toISOString(), reason: 'Room clash' }, w.orgId, as(w, 'chair'));
+      await cancel(w, fourth!);
+
+      const list = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'member'));
+      expect(list.items.map((m) => m.id)).toEqual([first, third, second, fourth]);
+      expect(list.total).toBe(4);
+      const dates = list.items.map((m) => m.scheduledAt.getTime());
+      expect(dates).toEqual([...dates].sort((x, y) => x - y));
+      expect(list.items.find((m) => m.id === fourth)!.stage.flags).toContain('MEETING_CANCELLED');
+      expect(list.items.map((m) => [m.id, m.movedFrom?.toISOString() ?? null])).toEqual([
+        [first, null],
+        [third, null],
+        [second, from.toISOString()],
+        [fourth, null],
+      ]);
+      // Another view carries no note.
+      const upcoming = await meetings.list({ view: 'upcoming', seriesId: r.seriesId }, w.orgId, as(w, 'member'));
+      expect(upcoming.items.every((m) => !('movedFrom' in m))).toBe(true);
+    });
+
+    it("a meeting the viewer can't open is absent: a guest invited to one sees that one", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { weekday: 3, firstDate: nextWeekday(w, 3) }), w.orgId, as(w, 'chair'));
+      const [, second] = r.meetingIds;
+      await prisma.meetingAttendee.create({ data: { organizationId: w.orgId, meetingId: second!, kind: 'ORG_GUEST', userId: w.people['outsider']!, invitedAt: new Date() } });
+      const asGuest = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'outsider'));
+      expect([asGuest.items.map((m) => m.id), asGuest.total]).toEqual([[second], 1]);
+      // Non-vacuity: a member sees the whole series.
+      expect((await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'member'))).total).toBe(4);
+    });
+
+    it(`the answer is never more than SERIES_LIST_CAP (${SERIES_LIST_CAP}) meetings, past the list's own page size`, async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { count: 2, weekday: 4, firstDate: nextWeekday(w, 4) }), w.orgId, as(w, 'chair'));
+      const first = (await seriesMeetings(r.seriesId))[0]!;
+      // Rows straight into the series, past what create allows, to reach the cap.
+      await prisma.meeting.createMany({
+        data: Array.from({ length: SERIES_LIST_CAP }, (_, i) => ({
+          organizationId: w.orgId,
+          organizerId: w.people['chair']!,
+          title: `Extra ${i}`,
+          typeValueId: meetingType,
+          scheduledAt: new Date(first.scheduledAt.getTime() + (i + 2) * 7 * 86_400_000),
+          durationMinutes: 60,
+          committeeId: w.committeeId,
+          seriesId: r.seriesId,
+          seriesIndex: i + 3,
+        })),
+      });
+      const list = await meetings.list({ view: 'series', seriesId: r.seriesId, take: 10 }, w.orgId, as(w, 'chair', [MEETINGS_PERMISSIONS.VIEW]));
+      // The cap, not `take` (10) and not the page size (25): one answer of exactly the cap.
+      expect(list.items.length).toBe(SERIES_LIST_CAP);
+      // Its total is what it lists, never the uncapped count (P243).
+      expect(list.total).toBe(SERIES_LIST_CAP);
+      expect(list.items[0]!.id).toBe(first.id);
+      // Non-vacuity: the series really holds more than the cap.
+      expect(await prisma.meeting.count({ where: { seriesId: r.seriesId } })).toBe(SERIES_LIST_CAP + 2);
+
+      // 3 (P243) — the cap with visibility: someone without meetings:view, invited
+      // to the 2nd, the 54th and the 55th by date, sees exactly those, by date.
+      // The rule is in the WHERE before the LIMIT, so the two past the cap are there.
+      const byDate = await prisma.meeting.findMany({ where: { seriesId: r.seriesId }, orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }], select: { id: true } });
+      const invited = [byDate[1]!.id, byDate[53]!.id, byDate[54]!.id];
+      await prisma.meetingAttendee.createMany({
+        data: invited.map((meetingId) => ({ organizationId: w.orgId, meetingId, kind: 'ORG_GUEST' as const, userId: w.people['outsider']!, invitedAt: new Date() })),
+      });
+      const asGuest = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'outsider'));
+      expect([asGuest.items.map((m) => m.id), asGuest.total]).toEqual([invited, 3]);
+    });
+
+    it("a moved meeting's note is its LATEST reschedule, and a tie on the time is broken by id, as the meeting page reads it (P243)", async () => {
+      const w = await world();
+      const r = await series.create(weekly(w, { count: 2, weekday: 1, firstDate: nextWeekday(w, 1) }), w.orgId, as(w, 'chair'));
+      const [first, second] = r.meetingIds;
+      const at = (await prisma.meeting.findFirstOrThrow({ where: { id: first! } })).scheduledAt;
+      const day = (n: number) => new Date(at.getTime() - n * 86_400_000);
+      const row = (id: string, fromAt: Date, createdAt: Date, meetingId = first!) => ({
+        id, organizationId: w.orgId, meetingId, fromAt, toAt: at, reason: 'x', scope: 'THIS_ONLY' as const, actorId: w.people['chair']!, createdAt,
+      });
+      const t1 = new Date('2026-01-01T08:00:00.000Z');
+      const t2 = new Date('2026-01-02T08:00:00.000Z');
+      // Two reschedules of the first: the newer one is the note.
+      await prisma.meetingReschedule.createMany({ data: [row(`${first}-old`, day(2), t1), row(`${first}-new`, day(1), t2)] });
+      // Two of the second at the SAME moment: the larger id is the note.
+      await prisma.meetingReschedule.createMany({ data: [row(`${second}-a`, day(5), t2, second!), row(`${second}-b`, day(4), t2, second!)] });
+
+      const list = await meetings.list({ view: 'series', seriesId: r.seriesId }, w.orgId, as(w, 'member'));
+      const note = (id: string) => list.items.find((m) => m.id === id)!.movedFrom?.toISOString();
+      expect(note(first!)).toBe(day(1).toISOString());
+      expect(note(second!)).toBe(day(4).toISOString());
+      // The meeting page reads the same one.
+      expect((await meetings.getForViewer(first!, w.orgId, as(w, 'member'))).rescheduledFrom?.fromAt.toISOString()).toBe(day(1).toISOString());
+      expect((await meetings.getForViewer(second!, w.orgId, as(w, 'member'))).rescheduledFrom?.fromAt.toISOString()).toBe(day(4).toISOString());
+    });
+
+    itEnforcesTenantIsolation("another organisation's series lists nothing", async () => {
+      const r = await series.create(weekly(a, { count: 2, weekday: 3, firstDate: nextWeekday(a, 3) }), a.orgId, as(a, 'chair'));
+      const theirs = await meetings.list({ view: 'series', seriesId: r.seriesId }, b.orgId, as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]));
+      expect([theirs.items, theirs.total]).toEqual([[], 0]);
+      // Non-vacuity: the series is there for its own organisation.
+      expect((await meetings.list({ view: 'series', seriesId: r.seriesId }, a.orgId, as(a, 'chair', [MEETINGS_PERMISSIONS.VIEW]))).total).toBe(2);
     });
   });
 
@@ -741,7 +998,8 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
   describe('another organisation', () => {
     itEnforcesTenantIsolation("End series never presses a move into another organisation's stage", async () => {
       const e = await world();
-      const r = await series.create(weekly(e, { count: 1 }), e.orgId, as(e, 'chair'));
+      // Two meetings: the first is kept (Q4), the second is the one End would cancel.
+      const r = await series.create(weekly(e, { count: 2 }), e.orgId, as(e, 'chair'));
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: e.orgId, objectType: 'MEETING', isDefault: true } });
       const planned = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'planned' } });
       // This organisation's own Cancel Meeting is gone; a corrupt move leads from its Planned into another organisation's Cancelled.
@@ -753,13 +1011,14 @@ describe('A meeting series against a real database (ACC-316 PR 5)', () => {
       await prisma.workflowTransition.create({ data: { fromStageId: planned.id, toStageId: theirCancelled.id, labelEn: 'Cancel', labelAr: 'إلغاء', mover: 'PERSON', kind: 'EXIT' } });
 
       expect(await code(series.end(r.seriesId, { reason: 'x' }, e.orgId, as(e, 'chair')))).toBe('MEETING_SERIES_CANNOT_CANCEL');
-      expect(await stageKey(r.meetingIds[0]!)).toBe('planned');
+      for (const id of r.meetingIds) expect(await stageKey(id)).toBe('planned');
     });
 
     itEnforcesTenantIsolation("a series and its meetings are out of another organisation's reach", async () => {
       const r = await series.create(weekly(a, { count: 2, weekday: 1, firstDate: nextWeekday(a, 1) }), a.orgId, as(a, 'chair'));
       const other = as(b, 'chair', [MEETINGS_PERMISSIONS.VIEW]);
       expect(await code(series.end(r.seriesId, { reason: 'x' }, b.orgId, other))).toBe('MEETING_SERIES_NOT_FOUND');
+      expect(await code(series.endPreview(r.seriesId, {}, b.orgId, other))).toBe('MEETING_SERIES_NOT_FOUND');
       // Another organisation's committee is no owner of a series made here.
       expect(await code(series.preview(weekly(a, { count: 1 }), b.orgId, other))).toBe('MEETING_OWNER_NOT_FOUND');
       expect(await code(series.create(weekly(a, { count: 1 }), b.orgId, other))).toBe('MEETING_OWNER_NOT_FOUND');

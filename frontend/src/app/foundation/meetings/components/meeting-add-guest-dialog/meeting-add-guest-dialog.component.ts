@@ -1,17 +1,18 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { Observable } from 'rxjs';
+import { Observable, Subscription, catchError, of } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
 import { SimpleListComponent, type SimpleListPage, type SimpleListQuery } from '../../../../shared/components/simple-list/simple-list.component';
-import { MEETING_STAGE_FLAG, MeetingService, type MeetingDto, type MeetingGuestCandidatesDto } from '../../services/meeting.service';
+import { MEETING_STAGE_FLAG, MeetingService, type MeetingClashDto, type MeetingDto, type MeetingGuestCandidatesDto } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
+import { MeetingClashComponent } from '../meeting-clash/meeting-clash.component';
 
 type Candidate = MeetingGuestCandidatesDto['items'][number];
 type GuestKind = 'person' | 'outside';
@@ -23,11 +24,15 @@ type GuestKind = 'person' | 'outside';
  * the agenda is issued (the stage's AGENDA_ISSUED flag) the server invites the
  * guest at once, and the button and the sentence say so. There is no "Presents
  * item" field: PR 7 sets a presenter from the agenda item's own Presenter field.
+ *
+ * PR 8c (R5-5, Q9) — once a person is chosen, the same clash line for them at
+ * the meeting's time ("Dr. Huda Zahrani has another meeting then · Show
+ * which"). A warning only: Add stays enabled. An outside guest is never checked.
  */
 @Component({
   selector: 'app-meeting-add-guest-dialog',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, ButtonModule, InputTextModule, EditDialogComponent, FieldComponent, ListDialogComponent, SimpleListComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, ButtonModule, InputTextModule, EditDialogComponent, FieldComponent, ListDialogComponent, SimpleListComponent, MeetingClashComponent],
   template: `
     <ng-template #bodyTpl>
       <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
@@ -49,6 +54,16 @@ type GuestKind = 'person' | 'outside';
               <p-button type="button" severity="secondary" icon="pi pi-search" [ariaLabel]="'meeting.guest.search' | translate" (onClick)="pickerOpen.set(true)" />
             </div>
           </am-field>
+          @if (clash()?.people?.length) {
+            <am-meeting-clash
+              [clash]="clash()"
+              [person]="true"
+              [toggleLabel]="(showWhich() ? 'meeting.clash.hide' : 'meeting.clash.showWhich') | translate"
+              [showRows]="showWhich()"
+              [capped]="true"
+              (toggled)="showWhich.set(!showWhich())"
+            />
+          }
         } @else {
           <p class="m-0 text-meta text-[var(--am-ink-500)]">{{ 'meeting.guest.outsideHelp' | translate }}</p>
           <div class="grid gap-3" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
@@ -133,6 +148,10 @@ export class MeetingAddGuestDialogComponent {
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly showErrors = signal(false);
+  /** PR 8c — the chosen person's clash at the meeting's time (null until one is chosen, or when they're free). */
+  readonly clash = signal<MeetingClashDto | null>(null);
+  readonly showWhich = signal(false);
+  private clashRead = new Subscription();
   /** Issued: the server invites the guest at once (the stage's AGENDA_ISSUED flag). */
   readonly issued = computed(() => this.meeting()?.stage.flags.includes(MEETING_STAGE_FLAG.AGENDA_ISSUED) ?? false);
   private readonly personInput = viewChild<ElementRef<HTMLInputElement>>('personInput');
@@ -156,18 +175,42 @@ export class MeetingAddGuestDialogComponent {
   constructor() {
     effect(() => {
       if (this.visible()) {
-        this.setKind('person');
-        this.form.reset({ userId: '', outsideName: '', outsideEmail: '', outsideOrganisation: '', outsideRole: '' });
-        this.picked.set(null);
-        this.error.set(null);
-        this.showErrors.set(false);
+        // Untracked: setKind() reads the chosen person, and a pick must never re-run this reset.
+        untracked(() => {
+          this.picked.set(null);
+          this.clearClash();
+          this.setKind('person');
+          this.form.reset({ userId: '', outsideName: '', outsideEmail: '', outsideOrganisation: '', outsideRole: '' });
+          this.error.set(null);
+          this.showErrors.set(false);
+        });
       }
     });
+  }
+
+  private clearClash(): void {
+    this.clashRead.unsubscribe();
+    this.clash.set(null);
+    this.showWhich.set(false);
+  }
+
+  /** The chosen person's clash at the meeting's time; the latest choice wins, and a failed check says nothing. */
+  private checkClash(userId: string): void {
+    const m = this.meeting();
+    this.clearClash();
+    if (!m) return;
+    this.clashRead = this.meetings
+      .clashes({ meetingId: m.id, userIds: [userId], times: [{ startsAt: m.scheduledAt, durationMinutes: m.durationMinutes ?? 60 }] })
+      .pipe(catchError(() => of([] as MeetingClashDto[])))
+      .subscribe((r) => this.clash.set(r[0] ?? null));
   }
 
   /** The required fields follow the kind: a person, or a name and an email. */
   setKind(kind: GuestKind): void {
     this.kind.set(kind);
+    // An outside guest is never checked; back on a person, their line returns.
+    if (kind === 'outside') this.clearClash();
+    else if (this.picked()) this.checkClash(this.picked()!.id);
     const c = this.form.controls;
     c.userId.setValidators(kind === 'person' ? Validators.required : null);
     c.outsideName.setValidators(kind === 'outside' ? Validators.required : null);
@@ -189,6 +232,7 @@ export class MeetingAddGuestDialogComponent {
     this.form.controls.userId.setValue(c.id);
     this.form.markAsDirty();
     this.pickerOpen.set(false);
+    this.checkClash(c.id);
   }
 
   submit(): void {

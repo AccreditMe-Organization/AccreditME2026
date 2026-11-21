@@ -32,8 +32,32 @@ import type {
 import type { IMeetingMinutes, IMeetingOpenAction, IMeetingOpenActions } from './interfaces/meeting.interface';
 import { TaskAdmissionService } from '../task/task-admission.service';
 
-/** What a minutes write needs its stage to allow. */
-type MinutesNeed = 'attendance' | 'minutes' | 'actions' | 'actionDates';
+/**
+ * What a minutes write needs its stage to allow. `aiDraft` (ACC-322): an
+ * accepted AI suggestion, only where the minutes are written freely
+ * (`record_minutes`, Minutes Draft), never as a review change.
+ */
+type MinutesNeed = 'attendance' | 'minutes' | 'actions' | 'actionDates' | 'aiDraft';
+
+/**
+ * ACC-322 — an accepted AI suggestion, written by applyAiDraft() in ONE
+ * transaction. A minutes suggestion replaces each part it carries (M5): the
+ * discussion when it has one, the item's decisions when it has any.
+ */
+export type AiDraftWrite =
+  | {
+      kind: 'ITEM_MINUTES';
+      agendaItemId: string;
+      discussion: string | null;
+      decisions: readonly { text: string; votes: { for: number; against: number; abstain: number } | null }[];
+    }
+  | { kind: 'ACTION_ITEM'; agendaItemId: string; title: string | null; ownerUserId: string | null; dueAt: string | null };
+
+/** What the audit records of an accepted AI draft (plan step-322 §2): never its text. */
+export interface AiDraftMark {
+  kind: 'ITEM_MINUTES' | 'ACTION_ITEM';
+  interactionId: string | null;
+}
 
 /** What the write is doing, for its review change ("Changed during review: item 2, decision"). */
 type ReviewChange = 'DISCUSSION' | 'DECISION' | 'ACTION_DATE';
@@ -102,7 +126,7 @@ export class MeetingMinutesService {
     // the seeded Minutes Approved is final, but a tenant may add a move out of
     // it, and the stamp would then outlive the approval.
     const approval = phase === 'approved' && meeting.minutesApprovedAt && meeting.approvedBy ? { at: meeting.minutesApprovedAt, by: meeting.approvedBy } : null;
-    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked, approverSeat] = await Promise.all([
+    const [attendees, items, suggestions, changes, people, zone, openActions, pool, blocked, approverSeat, aiUndecided] = await Promise.all([
       this.prisma.meetingAttendee.findMany({
         where: { organizationId, meetingId: id },
         select: {
@@ -160,6 +184,8 @@ export class MeetingMinutesService {
       phase === 'review' || phase === 'draft' ? this.workflow.currentStagePool('MEETING', id, organizationId) : Promise.resolve(null),
       writing ? distributeBlockedBy(this.prisma, id, organizationId) : Promise.resolve(null),
       approval && meeting.committeeId ? approverSeatAt(this.prisma, organizationId, meeting.committeeId, approval.by.id, approval.at) : Promise.resolve(null),
+      // ACC-322 (M2) — the undecided AI suggestions Distribute will discard.
+      writing ? countUndecidedMinutesAi(this.prisma, id, organizationId) : Promise.resolve(0),
     ]);
 
     const quorum = quorumLine(
@@ -227,6 +253,8 @@ export class MeetingMinutesService {
             blockedBy: blocked,
             // PR 7b — the review date Distribute uses when none is chosen (the screen offers it).
             defaultReviewBy: (await reviewDayDefaults(this.calendar, organizationId, now)).defaultDay,
+            // ACC-322 (M2) — named in the Distribute confirm, then discarded. Never holds Distribute.
+            aiUndecided,
           }
         : null,
       approvedAt: meeting.minutesApprovedAt,
@@ -489,10 +517,9 @@ export class MeetingMinutesService {
 
   /** A draft action item: what, owner (a person in the organisation, never an outside guest) and a future due date. */
   async addActionItem(id: string, itemId: string, dto: CreateActionItemDto, organizationId: string, viewer: MeetingViewer, now: Date = new Date()): Promise<IMeetingMinutes> {
-    const title = requireText(dto.title, 'MEETING_ACTION_TITLE_REQUIRED');
-    const dueAt = futureDue(dto.dueAt, now);
+    const { title, dueAt } = actionItemFields(dto.title, dto.dueAt, now);
     await this.write(id, organizationId, viewer, now, 'actions', async (tx) => {
-      await this.assertOwner(tx, dto.ownerUserId, organizationId);
+      await assertActionOwner(tx, dto.ownerUserId, organizationId);
       await lockAgendaItem(tx, id, itemId, organizationId);
       const row = await tx.meetingActionItem.create({
         data: { organizationId, meetingId: id, agendaItemId: itemId, title, ownerUserId: dto.ownerUserId, dueAt, createdById: viewer.id },
@@ -516,7 +543,7 @@ export class MeetingMinutesService {
     const title = dto.title === undefined ? undefined : requireText(dto.title, 'MEETING_ACTION_TITLE_REQUIRED');
     const dueAt = dto.dueAt === undefined ? undefined : futureDue(dto.dueAt, now);
     await this.write(id, organizationId, viewer, now, onlyDate ? 'actionDates' : 'actions', async (tx, ctx) => {
-      if (dto.ownerUserId !== undefined) await this.assertOwner(tx, dto.ownerUserId, organizationId);
+      if (dto.ownerUserId !== undefined) await assertActionOwner(tx, dto.ownerUserId, organizationId);
       const existing = await tx.meetingActionItem.findFirst({
         where: { id: actionId, organizationId, meetingId: id },
         select: { id: true, agendaItemId: true, taskId: true },
@@ -542,9 +569,74 @@ export class MeetingMinutesService {
     return this.getMinutes(id, organizationId, viewer, now);
   }
 
-  private async assertOwner(tx: EngineTx, userId: string, organizationId: string): Promise<void> {
-    const owner = await tx.user.findFirst({ where: { id: userId, organizationId, status: 'ACTIVE' }, select: { id: true } });
-    if (!owner) throw new MeetingRefusal('MEETING_PERSON_NOT_FOUND');
+  // ── An accepted AI draft (ACC-322) ──────────────────────────────────────────
+
+  /**
+   * ACC-322 — an accepted AI suggestion, as ONE minutes write: the same frame
+   * as every write here (whoever records the minutes; the instance FOR SHARE,
+   * the meeting row FOR UPDATE, then the agenda item), only where the stage
+   * allows `record_minutes`, and ONE audit row naming `aiDraft`.
+   *
+   * `take(tx)` runs first under the meeting row's lock: it removes the
+   * suggestion, and refuses when someone else decided it or Draft again
+   * replaced it, so a suggestion is applied at most once.
+   *
+   * - **A minutes suggestion replaces each part it carries (M5)**: the
+   *   discussion, and the item's decisions as a whole. Votes keep checkVotes()'s
+   *   all-three-or-none rule and SKIP its total-versus-present refusal (M6):
+   *   counts are copied as the notes state them, and Distribute's readiness
+   *   check holds the minutes until they are corrected.
+   * - **An action suggestion** passes the rules addActionItem() applies
+   *   (actionItemFields(), assertActionOwner()): a title, an ACTIVE person as
+   *   owner, a due date in the future. It becomes an ordinary draft action item.
+   */
+  async applyAiDraft(
+    id: string,
+    draft: AiDraftWrite,
+    mark: AiDraftMark,
+    take: (tx: EngineTx) => Promise<void>,
+    organizationId: string,
+    viewer: MeetingViewer,
+    now: Date = new Date(),
+  ): Promise<IMeetingMinutes> {
+    const action = draft.kind === 'ACTION_ITEM' ? { ...actionItemFields(draft.title, draft.dueAt, now), ownerUserId: draft.ownerUserId } : null;
+    await this.write(id, organizationId, viewer, now, 'aiDraft', async (tx) => {
+      await take(tx);
+      if (draft.kind === 'ITEM_MINUTES') {
+        await lockAgendaItem(tx, id, draft.agendaItemId, organizationId);
+        if (draft.discussion !== null) await tx.agendaItem.update({ where: { id: draft.agendaItemId }, data: { discussion: draft.discussion } });
+        let decisions = 0;
+        if (draft.decisions.length > 0) {
+          await tx.meetingDecision.deleteMany({ where: { organizationId, meetingId: id, agendaItemId: draft.agendaItemId } });
+          for (const [i, d] of draft.decisions.entries()) {
+            const votes = await checkVotes(
+              tx,
+              id,
+              organizationId,
+              { votesFor: d.votes?.for ?? null, votesAgainst: d.votes?.against ?? null, votesAbstain: d.votes?.abstain ?? null },
+              { abovePresent: 'keep' },
+            );
+            await tx.meetingDecision.create({ data: { organizationId, meetingId: id, agendaItemId: draft.agendaItemId, order: i + 1, text: d.text, ...votes } });
+          }
+          decisions = draft.decisions.length;
+        }
+        await minutesAudit(tx, organizationId, viewer.id, id, {
+          agendaItemId: draft.agendaItemId,
+          ...(draft.discussion !== null && { discussion: 'set' }),
+          ...(decisions > 0 && { decisions }),
+          aiDraft: mark,
+        });
+        return;
+      }
+      await assertActionOwner(tx, action!.ownerUserId, organizationId);
+      await lockAgendaItem(tx, id, draft.agendaItemId, organizationId);
+      const row = await tx.meetingActionItem.create({
+        data: { organizationId, meetingId: id, agendaItemId: draft.agendaItemId, title: action!.title, ownerUserId: action!.ownerUserId!, dueAt: action!.dueAt, createdById: viewer.id },
+        select: { id: true },
+      });
+      await minutesAudit(tx, organizationId, viewer.id, id, { actionItemId: row.id, created: true, ownerUserId: action!.ownerUserId, dueAt: action!.dueAt, aiDraft: mark });
+    });
+    return this.getMinutes(id, organizationId, viewer, now);
   }
 
   // ── Open actions from the last meeting ──────────────────────────────────────
@@ -616,6 +708,7 @@ function assertWriteAllowed(rules: StageRules, need: MinutesNeed): boolean {
     throw new WorkflowRefusalException('STAGE_ACTION_NOT_ALLOWED', { action, stageNameEn: rules.stageNameEn, stageNameAr: rules.stageNameAr });
   };
   if (need === 'attendance') return allows(MEETING_ACTIONS.RECORD_ATTENDANCE) ? false : refuse(MEETING_ACTIONS.RECORD_ATTENDANCE);
+  if (need === 'aiDraft') return allows(MEETING_ACTIONS.RECORD_MINUTES) ? false : refuse(MEETING_ACTIONS.RECORD_MINUTES);
   if (allows(MEETING_ACTIONS.RECORD_MINUTES)) return false;
   if (need === 'minutes' && allows(MEETING_ACTIONS.APPLY_SUGGESTIONS)) return true;
   if (need === 'actionDates' && allows(MEETING_ACTIONS.CHANGE_ACTION_DATES)) return true;
@@ -633,17 +726,25 @@ async function lockAgendaItem(tx: EngineTx, meetingId: string, itemId: string, o
  * The vote check (plan §3.5): all three counts or none, and their sum no more
  * than the MEMBERS recorded present. Read under the meeting row's lock, so an
  * attendance change cannot slip between the count and the write.
+ *
+ * ACC-322 (M6) — an accepted AI draft passes `abovePresent: 'keep'`: the
+ * all-three-or-none rule still holds, the total-versus-present refusal is
+ * skipped (counts are copied as the notes state them), and Distribute's
+ * readiness check holds the minutes until they are corrected. The only caller
+ * that passes it is applyAiDraft().
  */
 async function checkVotes(
   tx: EngineTx,
   meetingId: string,
   organizationId: string,
   dto: Pick<DecisionDto, 'votesFor' | 'votesAgainst' | 'votesAbstain'>,
+  options: { abovePresent: 'refuse' | 'keep' } = { abovePresent: 'refuse' },
 ): Promise<{ votesFor: number | null; votesAgainst: number | null; votesAbstain: number | null }> {
   const counts = [dto.votesFor, dto.votesAgainst, dto.votesAbstain];
   const given = counts.filter((c) => c !== undefined && c !== null);
   if (given.length === 0) return { votesFor: null, votesAgainst: null, votesAbstain: null };
   if (given.length !== 3) throw new MeetingRefusal('MEETING_VOTES_PARTIAL');
+  if (options.abovePresent === 'keep') return { votesFor: dto.votesFor!, votesAgainst: dto.votesAgainst!, votesAbstain: dto.votesAbstain! };
   const present = await tx.meetingAttendee.count({ where: { organizationId, meetingId, kind: 'MEMBER', attendance: 'PRESENT' } });
   const total = dto.votesFor! + dto.votesAgainst! + dto.votesAbstain!;
   if (total > present) throw new MeetingRefusal('MEETING_VOTES_EXCEED_PRESENT', { present, total });
@@ -656,16 +757,38 @@ function requireText(text: string | null | undefined, code: 'MEETING_DECISION_TE
 }
 
 /** An action item's due date: an instant in the future. */
-function futureDue(dueAt: string, now: Date): Date {
-  const at = new Date(dueAt);
+function futureDue(dueAt: string | null | undefined, now: Date): Date {
+  const at = new Date(dueAt ?? NaN);
   if (Number.isNaN(at.getTime()) || at <= now) throw new MeetingRefusal('MEETING_ACTION_DUE_IN_PAST');
   return at;
 }
 
 /**
+ * ACC-322 — THE action-item rules, which addActionItem() and an accepted AI
+ * action both apply: a title, and a due date in the future. The owner, who
+ * must be an ACTIVE person in the organisation, is assertActionOwner(), read
+ * inside the write's transaction.
+ */
+export function actionItemFields(title: string | null | undefined, dueAt: string | null | undefined, now: Date): { title: string; dueAt: Date } {
+  return { title: requireText(title, 'MEETING_ACTION_TITLE_REQUIRED'), dueAt: futureDue(dueAt, now) };
+}
+
+/** An action item's owner: a person in the organisation, ACTIVE, never an outside guest (who is no user). */
+export async function assertActionOwner(tx: Pick<EngineTx, 'user'>, userId: string | null | undefined, organizationId: string): Promise<void> {
+  const owner = userId ? await tx.user.findFirst({ where: { id: userId, organizationId, status: 'ACTIVE' }, select: { id: true } }) : null;
+  if (!owner) throw new MeetingRefusal('MEETING_PERSON_NOT_FOUND');
+}
+
+/** ACC-322 (M2) — the undecided AI minutes and action suggestions on a meeting. */
+export function countUndecidedMinutesAi(client: Pick<PrismaService, 'meetingAiSuggestion'>, meetingId: string, organizationId: string): Promise<number> {
+  return client.meetingAiSuggestion.count({ where: { organizationId, meetingId, kind: { in: ['ITEM_MINUTES', 'ACTION_ITEM'] } } });
+}
+
+/**
  * ONE Meeting audit row per minutes write (plan §6a): fields and ids, never
- * the text. ACC-322 adds `aiDraft` to `after` when an accepted AI draft is
- * verified against the AI log (ACC-197's shape); the history reads it.
+ * the text. ACC-322: an accepted AI draft adds `aiDraft: { kind,
+ * interactionId }`, proved by construction (the suggestion row was written by
+ * our code from a charged call); the history reads it.
  */
 export async function minutesAudit(
   tx: Pick<EngineTx, 'auditLog'>,

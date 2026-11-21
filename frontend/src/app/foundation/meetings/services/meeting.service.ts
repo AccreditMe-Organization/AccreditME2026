@@ -18,7 +18,7 @@ function fileBody(file: File): FormData {
  * worked out here.
  */
 
-export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits';
+export type MeetingListView = 'mine' | 'upcoming' | 'past' | 'minutes' | 'all' | 'subunits' | 'series';
 export type MeetingAttendeeKind = 'MEMBER' | 'ORG_GUEST' | 'OUTSIDE_GUEST';
 export type MeetingAnswer = 'ATTENDING' | 'CANT_ATTEND';
 
@@ -52,6 +52,8 @@ export interface MeetingListItemDto {
   meetingUrl: string | null;
   owner: MeetingOwnerDto;
   stage: MeetingStageDto;
+  /** PR 8b — the whole series view only: where the meeting's latest reschedule moved it from. */
+  movedFrom?: string | null;
 }
 
 export interface MeetingListDto {
@@ -71,6 +73,51 @@ export interface MeetingAnswerSummaryDto {
   belowQuorum: boolean;
 }
 
+/** ACC-316 PR 5 — a series' pattern, as the server stores it (SERIES_EVERY, SERIES_ON, SERIES_ORDINAL in meeting.dto.ts). */
+export type MeetingSeriesEvery = 'WEEK_1' | 'WEEK_2' | 'MONTH_1' | 'MONTH_3' | 'MONTH_6' | 'MONTH_12';
+export type MeetingSeriesOnKind = 'WEEKDAY' | 'DAY_OF_MONTH' | 'ORDINAL_WEEKDAY';
+export type MeetingSeriesOrdinal = 'FIRST' | 'SECOND' | 'THIRD' | 'FOURTH' | 'LAST';
+
+/** What the readback is built from: how often, and on which day (weekday 1 Monday … 7 Sunday). */
+export interface MeetingSeriesPattern {
+  every: MeetingSeriesEvery;
+  on: { kind: MeetingSeriesOnKind; weekday: number | null; dayOfMonth: number | null; ordinal: MeetingSeriesOrdinal | null };
+}
+
+/**
+ * The series a meeting belongs to (GET /meetings/:id, PR 5, 8-be, 8b). The
+ * neighbours are the server's: the nearest meetings either side that aren't
+ * cancelled and that this viewer may open, else null; never worked out here.
+ */
+export interface MeetingSeriesDto extends MeetingSeriesPattern {
+  id: string;
+  index: number;
+  total: number;
+  ended: boolean;
+  firstDate: string;
+  endsOn: string | null;
+  count: number | null;
+  previousId: string | null;
+  previousAt: string | null;
+  nextId: string | null;
+  nextAt: string | null;
+  /** An ended series: the place of its last meeting not cancelled (0 if none); null while it runs. */
+  endedAfter: number | null;
+  /** PR 8d — whether this viewer may end the series (who may schedule for its owner, while it runs). */
+  mayEnd: boolean;
+}
+
+/** PR 8d — End series' confirm, from the server's own plan (POST /meetings/series/:id/end/preview). */
+export interface MeetingEndSeriesPreviewDto {
+  /** The last meeting the series keeps; null when none is left open to keep. */
+  last: { id: string; startsAt: string } | null;
+  /** The meetings End would cancel, in order. */
+  cancelled: { id: string; startsAt: string }[];
+  /** Meetings that have started and weren't cancelled. */
+  held: number;
+  total: number;
+}
+
 export interface MeetingDto extends MeetingListItemDto {
   type: { id: string; labelEn: string; labelAr: string | null } | null;
   unitQuorum: number | null;
@@ -80,6 +127,8 @@ export interface MeetingDto extends MeetingListItemDto {
   may: { edit: boolean; reschedule: boolean; manageGuests: boolean; manageAgenda: boolean; answer: boolean };
   answers: MeetingAnswerSummaryDto | null;
   myAnswer: { answer: MeetingAnswer | null; note: string | null } | null;
+  /** Null for a meeting outside a series. */
+  series: MeetingSeriesDto | null;
 }
 
 export interface MeetingAttendeeDto {
@@ -133,11 +182,45 @@ export interface ScheduleMeetingRequest {
   unitQuorum?: number | null;
 }
 
+/** PR 8c — a series meeting's write: this one only (the server's default), or this one and every later one. */
+export type MeetingEditScope = 'THIS_ONLY' | 'THIS_AND_LATER';
+
 export interface RescheduleMeetingRequest {
   scheduledAt: string;
   reason: string;
   expectedUpdatedAt?: string;
+  scope?: MeetingEditScope;
 }
+
+/** PR 8c (Q3) — Edit details: the fields Schedule's step 1 has, without Starts. Only what changed is sent. */
+export interface UpdateMeetingRequest {
+  typeValueId?: string;
+  durationMinutes?: number;
+  location?: string | null;
+  meetingUrl?: string | null;
+  unitQuorum?: number | null;
+  expectedUpdatedAt?: string;
+  scope?: MeetingEditScope;
+}
+
+/** The field names a series meeting keeps as its own (`kept[].fields`), as the server names them. */
+export type MeetingSeriesField = 'scheduledAt' | 'typeValueId' | 'durationMinutes' | 'location' | 'meetingUrl' | 'unitQuorum';
+
+/**
+ * PR 8c — what "this and all later" WOULD do (POST /meetings/:id/scope-preview,
+ * PR 8-be): the meetings it reaches at their times as they'd be (in time
+ * order); those that keep a field as their own; the clashes at the new times
+ * (only times with one, matched to a meeting by `startsAt`).
+ */
+export interface MeetingScopePreviewDto {
+  meetings: { id: string; title: string; startsAt: string; durationMinutes: number }[];
+  kept: { meetingId: string; title: string; fields: MeetingSeriesField[]; startsAt: string }[];
+  clashes: MeetingClashDto[];
+}
+
+export type MeetingScopePreviewRequest =
+  | ({ change: 'RESCHEDULE'; scheduledAt: string } & Omit<UpdateMeetingRequest, 'expectedUpdatedAt' | 'scope'>)
+  | ({ change: 'EDIT' } & Omit<UpdateMeetingRequest, 'expectedUpdatedAt' | 'scope'>);
 
 export type AddGuestRequest =
   | { userId: string }
@@ -168,7 +251,54 @@ export type AgendaItemUpdate = Partial<AgendaItemRequest> & { expected?: AgendaI
 
 export interface MeetingClashDto {
   startsAt: string;
+  /** PR 8a — how many people were checked: the "11" in "2 of 11 invitees". */
+  invitees: number;
   people: { userId: string; name: string; meetings: { id: string | null; title: string | null; startsAt: string; durationMinutes: number }[] }[];
+}
+
+/**
+ * PR 8a — a series as Schedule's step 2 sends it (POST /meetings/series/preview
+ * and POST /meetings/series): the subject, the time and the pattern; exactly
+ * one of `endsOn` and `count`; at most ten standing items (Q5).
+ */
+export interface MeetingSeriesRequest {
+  committeeId?: string;
+  orgUnitId?: string;
+  subject: string;
+  typeValueId: string;
+  /** HH:mm in the organisation's zone. */
+  startTime: string;
+  durationMinutes: number;
+  location?: string | null;
+  meetingUrl?: string | null;
+  unitQuorum?: number | null;
+  every: MeetingSeriesEvery;
+  onKind: MeetingSeriesOnKind;
+  weekday?: number | null;
+  dayOfMonth?: number | null;
+  ordinal?: MeetingSeriesOrdinal | null;
+  /** yyyy-MM-dd. */
+  firstDate: string;
+  endsOn?: string | null;
+  count?: number | null;
+  standingAgenda?: { title: string; presenterUserId?: string | null; durationMinutes?: number | null }[];
+}
+
+/** One date of the series as it would be placed, with the title its meeting will get. */
+export interface MeetingSeriesDateDto {
+  index: number;
+  /** yyyy-MM-dd: the pattern's day, and the day it is held (moved off a day that isn't free). */
+  patternDay: string;
+  day: string;
+  startsAt: string;
+  title: string;
+  moved: 'NOT_WORKING_DAY' | 'OWNER_MEETS' | null;
+}
+
+export interface MeetingSeriesPreviewDto {
+  dates: MeetingSeriesDateDto[];
+  /** One per date, in the same order. */
+  clashes: MeetingClashDto[];
 }
 
 /** Add a guest's person search: never an email. */
@@ -325,7 +455,7 @@ export class MeetingService {
   private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/meetings`;
 
-  list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
+  list(query: { view?: MeetingListView; q?: string; committeeId?: string; orgUnitId?: string; seriesId?: string; skip?: number; take?: number }): Observable<MeetingListDto> {
     let params = new HttpParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '') params = params.set(k, String(v));
     return this.http.get<MeetingListDto>(this.base, { params });
@@ -341,6 +471,26 @@ export class MeetingService {
 
   reschedule(id: string, body: RescheduleMeetingRequest): Observable<MeetingDto> {
     return this.http.post<MeetingDto>(`${this.base}/${id}/reschedule`, body);
+  }
+
+  /** PR 8c — Edit details (PATCH /meetings/:id). */
+  update(id: string, body: UpdateMeetingRequest): Observable<MeetingDto> {
+    return this.http.patch<MeetingDto>(`${this.base}/${id}`, body);
+  }
+
+  /** PR 8d — End series' confirm: what End would keep and cancel. Writes nothing. */
+  endSeriesPreview(seriesId: string, body: { lastMeetingId?: string }): Observable<MeetingEndSeriesPreviewDto> {
+    return this.http.post<MeetingEndSeriesPreviewDto>(`${this.base}/series/${seriesId}/end/preview`, body);
+  }
+
+  /** PR 8d — End series: the series keeps `lastMeetingId` and those before it (Q4). */
+  endSeries(seriesId: string, body: { reason: string; lastMeetingId?: string }): Observable<{ cancelled: string[]; failed: string[] }> {
+    return this.http.post<{ cancelled: string[]; failed: string[] }>(`${this.base}/series/${seriesId}/end`, body);
+  }
+
+  /** PR 8c — the scope confirm's read: what "this and all later" would do. Writes nothing. */
+  scopePreview(id: string, body: MeetingScopePreviewRequest): Observable<MeetingScopePreviewDto> {
+    return this.http.post<MeetingScopePreviewDto>(`${this.base}/${id}/scope-preview`, body);
   }
 
   attendees(id: string): Observable<MeetingAttendeeDto[]> {
@@ -407,7 +557,7 @@ export class MeetingService {
     return this.http.get<IFileDownload>(`${this.base}/${id}/files/${fileId}/download`);
   }
 
-  clashes(body: { meetingId?: string; committeeId?: string; orgUnitId?: string; times: { startsAt: string; durationMinutes: number }[] }): Observable<MeetingClashDto[]> {
+  clashes(body: { meetingId?: string; committeeId?: string; orgUnitId?: string; userIds?: string[]; times: { startsAt: string; durationMinutes: number }[] }): Observable<MeetingClashDto[]> {
     return this.http.post<MeetingClashDto[]>(`${this.base}/clashes`, body);
   }
 
@@ -422,6 +572,22 @@ export class MeetingService {
     if (owner.committeeId) params = params.set('committeeId', owner.committeeId);
     if (owner.orgUnitId) params = params.set('orgUnitId', owner.orgUnitId);
     return this.http.get<{ may: boolean }>(`${this.base}/may-schedule`, { params });
+  }
+
+  /** PR 8a — what a series would make: its dates, moves and clashes, writing nothing. */
+  seriesPreview(body: MeetingSeriesRequest): Observable<MeetingSeriesPreviewDto> {
+    return this.http.post<MeetingSeriesPreviewDto>(`${this.base}/series/preview`, body);
+  }
+
+  createSeries(body: MeetingSeriesRequest): Observable<{ seriesId: string; meetingIds: string[] }> {
+    return this.http.post<{ seriesId: string; meetingIds: string[] }>(`${this.base}/series`, body);
+  }
+
+  /** PR 8a (Q5) — a standing item's presenter, for a series not yet made: anyone active, by name. */
+  presenterCandidates(owner: { committeeId?: string; orgUnitId?: string }, query: { q?: string; skip?: number; take?: number }): Observable<MeetingGuestCandidatesDto> {
+    let params = new HttpParams();
+    for (const [k, v] of Object.entries({ ...owner, ...query })) if (v !== undefined && v !== null && v !== '') params = params.set(k, String(v));
+    return this.http.get<MeetingGuestCandidatesDto>(`${this.base}/presenter-candidates`, { params });
   }
 
   guestCandidates(id: string, query: { q?: string; skip?: number; take?: number }): Observable<MeetingGuestCandidatesDto> {

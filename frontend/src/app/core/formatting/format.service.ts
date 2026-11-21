@@ -381,6 +381,19 @@ export class FormatService {
   }
 
   /**
+   * ACC-316 PR 8a — a month's name, "March" or "Mar", for a series' readback
+   * ("Every 3 months, the last Thursday · Dec, Mar, Jun, Sep"). In the UI language
+   * and the tenant's zone, for weekday()'s reason: built anywhere else, it would
+   * read the browser's zone and could name the wrong month at its edge.
+   */
+  month(value: DateInput, style: 'long' | 'short' = 'long'): string {
+    const at = toDate(value);
+    if (!at) return EMPTY_VALUE;
+    const { language, timeZone } = this.snapshot();
+    return this.parts(at, language, { timeZone, calendar: 'gregory', month: style }).month ?? EMPTY_VALUE;
+  }
+
+  /**
    * A full date with its weekday, for an accessible announcement (ACC-96):
    * "Tuesday 22 September 2026".
    *

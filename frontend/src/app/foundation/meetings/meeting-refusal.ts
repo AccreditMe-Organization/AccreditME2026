@@ -54,6 +54,17 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   MEETING_SUGGESTION_TEXT_REQUIRED: 'meeting.refusal.suggestionTextRequired',
   MEETING_SUGGESTION_REPLY_REQUIRED: 'meeting.refusal.suggestionReplyRequired',
   MEETING_PRESENTER_NOT_FOUND: 'meeting.refusal.presenterNotFound',
+  // PR 8a — a series (Schedule, step 2).
+  MEETING_SERIES_PATTERN_INVALID: 'meeting.refusal.seriesPatternInvalid',
+  MEETING_SERIES_END_REQUIRED: 'meeting.refusal.seriesEndRequired',
+  MEETING_SERIES_TOO_LONG: 'meeting.refusal.seriesTooLong',
+  MEETING_SERIES_EMPTY: 'meeting.refusal.seriesEmpty',
+  MEETING_SERIES_TIME_INVALID: 'meeting.refusal.seriesTimeInvalid',
+  // PR 8c — the scope confirm (a meeting no longer in its series).
+  MEETING_NOT_IN_SERIES: 'meeting.refusal.notInSeries',
+  // PR 8d — End series.
+  MEETING_SERIES_NOT_FOUND: 'meeting.refusal.seriesNotFound',
+  MEETING_SERIES_CANNOT_CANCEL: 'meeting.refusal.seriesCannotCancel',
 };
 
 /** The translation key for a meeting refusal, or null when the error carries no code this file knows. */
