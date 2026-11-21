@@ -2,12 +2,10 @@
 //
 // A pure function, deliberately, and kept outside TenantService. Two callers
 // need exactly this answer and must never disagree about it: the entitlements
-// endpoint the frontend shell reads, and ModuleGuard, which today reads the
-// same `settings.modules` boolean directly and ignores plan tiers. ModuleGuard
-// has no consumers yet (no controller carries @RequiresModule), so nothing is
-// inconsistent today — but the first functional module that ships behind it
-// should resolve through this function too, or the rail will show a module as
-// read-only while the API lets it be written. See SYSTEM-REFERENCE §1.
+// endpoint the frontend shell reads, and ModuleGuard, which since ACC-102
+// decides every @RequiresModule route through it — so the rail cannot show a
+// module as read-only while the API lets it be written. See SYSTEM-REFERENCE
+// §1.8.
 
 export type ModuleAccessLevel = 'FULL' | 'READ_ONLY' | 'NONE';
 
