@@ -50,6 +50,9 @@ export type ChangeRequestLabelsDto = Record<string, { en: string; ar: string | n
  * ACC-283 PR 2 — who decides an open request now, by step, never a person.
  * ACC-245 PR 2 — `REVIEW_STAGE`: an added review stage, named by the stage (the
  * server names it for every reader). Null while the request awaits no decision.
+ * PR 3b — `next` (where its Approve sends the request) and `decision` (the deciding
+ * stage). OPTIONAL: an API from before PR 3b sends neither, and the screens then
+ * use the plain wording.
  */
 export type AwaitingDecisionByDto =
   | {
@@ -58,7 +61,12 @@ export type AwaitingDecisionByDto =
       seats: { id: string; labelEn: string; labelAr: string | null }[];
     }
   | { kind: 'UNIT_HEAD'; unit: { id: string; nameEn: string; nameAr: string | null } }
-  | { kind: 'REVIEW_STAGE'; stage: { id: string; nameEn: string; nameAr: string | null } };
+  | {
+      kind: 'REVIEW_STAGE';
+      stage: { id: string; nameEn: string; nameAr: string | null };
+      next?: { id: string; nameEn: string; nameAr: string | null } | null;
+      decision?: { id: string; nameEn: string; nameAr: string | null } | null;
+    };
 
 export interface ChangeRequestDto {
   id: string;

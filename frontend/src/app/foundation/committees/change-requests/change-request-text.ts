@@ -78,6 +78,18 @@ export function isUnreachable(err: unknown): boolean {
  * names it (`awaitingDecisionBy` REVIEW_STAGE); null anywhere else. A review
  * stage has no key, so this — never `status` — is how a screen knows one.
  */
+/**
+ * ACC-245 PR 3b — a review stage's two onward names, for its Approve confirm: the
+ * stage its Approve sends the request to, and the stage that decides. Null unless
+ * BOTH are present (an older API sends neither).
+ */
+export function reviewStepsOf(
+  r: Pick<ChangeRequestDto, 'awaitingDecisionBy'> | null | undefined,
+): { next: { nameEn: string; nameAr: string | null }; decision: { nameEn: string; nameAr: string | null } } | null {
+  const by = r?.awaitingDecisionBy;
+  return by?.kind === 'REVIEW_STAGE' && by.next && by.decision ? { next: by.next, decision: by.decision } : null;
+}
+
 export function reviewStageOf(r: Pick<ChangeRequestDto, 'awaitingDecisionBy'> | null | undefined): { id: string; nameEn: string; nameAr: string | null } | null {
   const by = r?.awaitingDecisionBy;
   return by?.kind === 'REVIEW_STAGE' ? by.stage : null;

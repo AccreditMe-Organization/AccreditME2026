@@ -247,6 +247,57 @@ describe('Change request in an added review stage (ACC-245 PR 3b)', () => {
       expect(el.querySelector('[data-testid="crp-withdraw"]')).toBeNull();
     });
 
+    describe("a reviewer's Approve confirm (P266)", () => {
+      const QUALITY = { id: 'st-quality', nameEn: 'Quality review', nameAr: 'مراجعة الجودة' };
+      const UNDER = { id: 'st-under', nameEn: 'Under review', nameAr: 'قيد المراجعة' };
+      const asReviewer = (by: ChangeRequestDto['awaitingDecisionBy']) => {
+        me = 'u-omar';
+        request = IN_LEGAL({ awaitingDecisionBy: by, actions: { edit: false, submit: false, withdraw: false, approve: true, return: true, reject: true } });
+      };
+      const pressApprove = () => {
+        const fixture = TestBed.createComponent(CommitteeChangeRequestPageComponent);
+        fixture.detectChanges();
+        fixture.detectChanges();
+        fixture.componentInstance.approve();
+        expect(asked.length).toBe(1);
+        return asked[0]!;
+      };
+
+      it('says where Approve sends it and which stage decides, lists the changes, and has no task line', () => {
+        asReviewer({ kind: 'REVIEW_STAGE', stage: LEGAL, next: QUALITY, decision: UNDER });
+        const o = pressApprove();
+        expect(o.header).toBe('Approve and send it on to Quality review?');
+        expect(o.message).toBe('Nothing is applied yet. The changes apply only when Under review approves them.');
+        expect(o.message).not.toContain('task');
+        expect(o.details?.length).toBe(1);
+        expect(o.acceptLabel).toBe('Approve');
+      });
+
+      it('the last review stage: next and decision are the same stage, and both languages still read right', () => {
+        asReviewer({ kind: 'REVIEW_STAGE', stage: LEGAL, next: UNDER, decision: UNDER });
+        const en = pressApprove();
+        expect(en.header).toBe('Approve and send it on to Under review?');
+        expect(en.message).toBe('Nothing is applied yet. The changes apply only when Under review approves them.');
+        asked = [];
+        TestBed.inject(TranslateService).use('ar');
+        const ar = pressApprove();
+        expect(ar.header).toBe('اعتماد الطلب وإرساله إلى «قيد المراجعة»؟');
+        expect(ar.message).toBe('لم يُطبَّق شيء بعد. ولا تُطبَّق التغييرات إلا عند اعتمادها في «قيد المراجعة».');
+        expect(ar.acceptLabel).toBe('اعتماد');
+      });
+
+      it('an API from before PR 3b names neither stage: the plain Approve wording, unchanged', () => {
+        asReviewer({ kind: 'REVIEW_STAGE', stage: LEGAL });
+        const o = pressApprove();
+        expect(o.header).toBe('Approve and apply this change?');
+        expect(o.message).toContain('A task to revise the terms of reference will be created for');
+        // Only one of the two: still the plain wording.
+        asked = [];
+        asReviewer({ kind: 'REVIEW_STAGE', stage: LEGAL, next: QUALITY });
+        expect(pressApprove().header).toBe('Approve and apply this change?');
+      });
+    });
+
     it('a committee changed since Submit is marked, as Under review marks it', () => {
       live = { ...LIVE, quorumCount: 4 };
       const el = render();

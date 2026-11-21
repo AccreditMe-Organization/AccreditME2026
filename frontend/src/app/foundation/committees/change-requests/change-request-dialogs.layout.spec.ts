@@ -108,7 +108,12 @@ describe('Change request dialogs — layout, measured (ACC-240)', () => {
     fixture?.destroy();
   });
 
-  async function open(language: 'en' | 'ar', changes: ChangeValues, actions: Partial<ChangeRequestDto['actions']>): Promise<HTMLElement> {
+  async function open(
+    language: 'en' | 'ar',
+    changes: ChangeValues,
+    actions: Partial<ChangeRequestDto['actions']>,
+    over: Partial<ChangeRequestDto> = {},
+  ): Promise<HTMLElement> {
     TestBed.resetTestingModule();
     fakePhone(false);
     request = REQUEST({
@@ -117,6 +122,7 @@ describe('Change request dialogs — layout, measured (ACC-240)', () => {
       labels: LABELS,
       requestedBy: { id: 'u-nora', name: 'Dr. Nora bint Abdulrahman Al-Otaibi' },
       actions: { edit: false, submit: false, withdraw: false, approve: false, return: false, reject: false, ...actions },
+      ...over,
     });
     decide = () => of(request);
     TestBed.configureTestingModule({
@@ -233,6 +239,27 @@ describe('Change request dialogs — layout, measured (ACC-240)', () => {
           // Non-vacuity: the details really are listed.
           expect(frame.querySelectorAll('[data-testid="confirm-details"] li').length).withContext('details listed').toBe(lines);
           check(label, language, body, frame, 420);
+        }, 20_000);
+      }
+
+      // ACC-245 PR 3b (P266) — a review stage's Approve: the longest list, the longest
+      // stage name it can send the request to, at 420 and at a 390 phone's width.
+      for (const [label, width] of [['1280', 420], ['390', 390]] as const) {
+        it(`Approve in a review stage, six changes, at ${label}`, async () => {
+          const next = { id: 'st-2', nameEn: 'Clinical governance and patient safety review', nameAr: 'مراجعة الحوكمة السريرية وسلامة المرضى' };
+          const decision = { id: 'st-u', nameEn: 'Under review', nameAr: 'قيد المراجعة' };
+          const root = await open(language, SIX, { approve: true, return: true, reject: true }, {
+            status: null,
+            awaitingDecisionBy: { kind: 'REVIEW_STAGE', stage: { id: 'st-1', nameEn: 'Legal review', nameAr: 'المراجعة القانونية' }, next, decision },
+          });
+          press(root, 'crp-approve');
+          const { body, frame } = await confirmBody();
+          if (width === 390) frame.style.width = '390px';
+          await still(frame);
+          // Non-vacuity: the review wording, and the details listed.
+          expect(frame.textContent).toContain(language === 'en' ? next.nameEn : next.nameAr);
+          expect(frame.querySelectorAll('[data-testid="confirm-details"] li').length).withContext('details listed').toBe(6);
+          check(`Approve in a review stage at ${label}`, language, body, frame, width);
         }, 20_000);
       }
 

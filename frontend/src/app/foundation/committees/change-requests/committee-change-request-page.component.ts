@@ -16,7 +16,7 @@ import { WorkflowInstanceDto, WorkflowService, WorkflowStageHistoryDto } from '.
 import { CommitteeDetailDto, CommitteeService } from '../services/committee.service';
 import { ChangeRequestDecision, ChangeRequestDecisionDialogComponent } from './change-request-decision-dialog.component';
 import { ChangeRequestChangesComponent, ChangeRow } from './change-request-changes.component';
-import { APPROVE_LIST_MAX, ChangeRequestText, ImpactLineText, changedFields, reviewStageOf } from './change-request-text';
+import { APPROVE_LIST_MAX, ChangeRequestText, ImpactLineText, changedFields, reviewStageOf, reviewStepsOf } from './change-request-text';
 import { ChangeField, ChangeRequestDto, ChangeRequestLabelsDto, ChangeRequestPreviewDto, ChangeRequestService, ChangeValue } from './change-request.service';
 import { injectIsPhone } from './phone';
 
@@ -523,10 +523,19 @@ export class CommitteeChangeRequestPageComponent implements OnDestroy {
       fields.length > APPROVE_LIST_MAX
         ? [this.text.fieldListCapped(fields, APPROVE_LIST_MAX)]
         : fields.map((f) => this.text.span(f, live[f] ?? null, r.changes[f] ?? null, labels));
+    // ACC-245 PR 3b — in an added review stage, Approve sends the request on and
+    // applies nothing: say where it goes and which stage decides, with no task line.
+    // An API from before PR 3b names neither: the plain wording, unchanged.
+    const steps = reviewStepsOf(r);
+    const name = (s: { nameEn: string; nameAr: string | null }) => this.language.bilingual(s.nameEn, s.nameAr);
     this.confirm.ask({
       tone: 'neutral',
-      header: this.translate.instant(fields.length === 1 ? 'committee.changeRequest.approve.headerOne' : 'committee.changeRequest.approve.header'),
-      message: this.translate.instant('committee.changeRequest.approve.task', { name: r.requestedBy.name }),
+      header: steps
+        ? this.translate.instant('committee.changeRequest.approve.reviewHeader', { next: name(steps.next) })
+        : this.translate.instant(fields.length === 1 ? 'committee.changeRequest.approve.headerOne' : 'committee.changeRequest.approve.header'),
+      message: steps
+        ? this.translate.instant('committee.changeRequest.approve.reviewNote', { decision: name(steps.decision) })
+        : this.translate.instant('committee.changeRequest.approve.task', { name: r.requestedBy.name }),
       details,
       acceptLabel: this.translate.instant('committee.changeRequest.approve.button'),
       accept: () => this.run('approve', () => this.service.approve(this.requestId), () => this.approve()),
