@@ -977,15 +977,53 @@ deliberately distinct: `[]` is a real plan granting nothing and does
 name (verified to fail when changed). Assigning the seeded tenants to
 a Plan is a pricing decision, deliberately kept out of ACC-79.
 
-**⚠ `ModuleGuard` does not use this yet.** `common/guards/module.guard.ts`
-reads `settings.modules[key] === true` directly and ignores plan tiers
-entirely. It has **zero consumers** — no controller carries
-`@RequiresModule()` — so nothing disagrees today. But the first
-functional module shipped behind it unchanged would appear read-only in
-the rail while its API accepted writes. The resolver is a pure function
-outside `TenantService` precisely so the guard can adopt it; do that
-before the first `@RequiresModule()` lands, and give `READ_ONLY` a
-meaning for write routes at the same time.
+**`ModuleGuard` decides by this rule (ACC-102).** The API enforces the
+same three states the rail shows, so a module cannot read as read-only in
+the rail while its API accepts writes. Until ACC-102 the guard read
+`settings.modules[key] === true` alone, ignored the plan, and nothing
+registered it.
+
+* **`@RequiresModule(key, mode)`** (`common/decorators/requires-module.decorator.ts`),
+  where `mode` is `'read'` or `'write'` and is REQUIRED: stated per handler,
+  never inferred from the HTTP method (a search POST is a read).
+* **Registered by the decorator, per route.** It applies the metadata AND
+  `UseGuards(ModuleGuard)`. Nest runs a route's guards after its
+  controller's, so the guard always follows the class-level `TenantGuard`,
+  and a decorated route cannot forget it. It is not an `APP_GUARD` (a global
+  guard runs before `TenantGuard`, with no tenant yet), and a controller must
+  not list it in `@UseGuards` as well (it would run twice). A decorated route
+  with no tenant on the request is a 500, never a guess.
+* **One query per gated request**, the organisation's `settings` joined to its
+  own plan's `PlanModule` rows (one `$queryRaw` statement, the caller's
+  organisation id its only bound value, so no other organisation's plan can
+  be read). **A route with no `@RequiresModule` makes none.** `TenantGuard`'s
+  read is not reused: it reads the user and the organisation's status, not
+  settings or the plan, and adding them there would cost every request. This
+  query is Ahmad's named exception (20 Nov) to the performance rule, for
+  `@RequiresModule` routes only.
+* **Refusals are 403 with a code, never named as a permission**
+  (`common/guards/module-refusal.exception.ts`):
+  * `MODULE_NOT_ENABLED { module }` when the module is not switched on, or the
+    plan grants `NONE` or does not mention it;
+  * `MODULE_READ_ONLY { module }` for a `'write'` route on a `READ_ONLY`
+    module. A `'read'` route on `READ_ONLY` is allowed.
+* **No plan:** `NULL_PLAN_FALLBACK_ACCESS` decides, exactly as for the rail.
+* **The platform organisation is not special-cased**: it gets whatever its own
+  settings and plan say. With no module switched on there, a gated route is
+  `MODULE_NOT_ENABLED`; platform administrators work through `/platform`
+  routes, which are never decorated.
+* **The screens** say both codes from the code, in both languages, naming the
+  module by its rail label: `moduleRefusalInterceptor` puts the sentence into
+  the error's `message` (`core/http/module-refusal.ts`), so every screen using
+  `extractErrorMessage()` says it unchanged; the body keeps `code` and
+  `module`. With no rail item for the module, the sentence says "this module".
+* **Proved by** `module.guard.spec.ts`, a real Nest app with a test controller
+  behind a stand-in `TenantGuard`; making the guard read the bare boolean
+  again turns the `MODULE_READ_ONLY` spec red.
+* **Decorates no handler yet.** Meetings is the first module to be gated, in
+  its own change; each organisation that uses it needs
+  `settings.modules.meetings` switched on first, or every gated route answers
+  `MODULE_NOT_ENABLED`.
 
 ### 1.9 Parent Visibility — Who May See a Child Record (ACC-101)
 

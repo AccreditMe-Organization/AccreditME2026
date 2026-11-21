@@ -5390,6 +5390,31 @@ Briefly:
   and two nullable `AgendaItem` source columns for PR 3. It runs in the
   pre-deploy step.
 
+## Key Architecture Decisions (ACC-102)
+
+The API enforces module entitlements, including read-only. Full mechanism:
+SYSTEM-REFERENCE.md §1.8. Briefly:
+
+- **`ModuleGuard` DECIDES THROUGH `resolveModuleEntitlements()`, THE RAIL'S
+  OWN RULE**, never the bare `settings.modules` boolean. Absent or `NONE` is
+  403 `MODULE_NOT_ENABLED { module }`; a `'write'` on `READ_ONLY` is 403
+  `MODULE_READ_ONLY { module }`. Never named as a permission.
+- **`@RequiresModule(key, mode)`: the mode is REQUIRED**, `'read'` or
+  `'write'`, stated per handler, never inferred from the HTTP method.
+- **THE DECORATOR REGISTERS THE GUARD on its route**, so it runs after the
+  controller's `TenantGuard` and cannot be forgotten. Never add ModuleGuard to
+  a controller's `@UseGuards` too, and never make it an `APP_GUARD`.
+- **One query per gated request; none on an undecorated route.** Ahmad (20
+  Nov): reading the organisation's plan once per request is a named exception
+  to the performance rule, for routes carrying `@RequiresModule` only.
+- **The platform organisation is not special-cased.** No plan:
+  `NULL_PLAN_FALLBACK_ACCESS` decides, as for the rail.
+- **The screens say both codes** through `moduleRefusalInterceptor`, naming
+  the module by its rail label, in both languages.
+- **This change decorates no handler.** Meetings is gated in its own change,
+  after each organisation using it has the module switched on.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
