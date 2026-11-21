@@ -200,7 +200,7 @@ interface PanelRefusal {
                    the server's reviewStages.after; fixed once it exists (Q6). -->
               @if (stageSig()) {
                 <am-field [label]="'workflow.reviewStage.goesAfter' | translate" [readonly]="true" [readonlyText]="goesAfterText()"
-                  [hint]="'workflow.reviewStage.goesAfterFixed' | translate" data-goes-after />
+                  [hint]="'workflow.reviewStage.goesAfterFixed' | translate" data-goes-after></am-field>
 
               } @else {
                 <am-field [label]="'workflow.reviewStage.goesAfter' | translate" [control]="form.controls.goesAfter" inputId="sep-goesAfter"
