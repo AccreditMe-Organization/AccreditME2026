@@ -46,7 +46,6 @@ export function pageView(overrides: {
       workflowInstanceId: null,
       workflowInstanceStageId: null,
       isMandatory: false,
-      meetingId: null,
       createdById: 'creator-1',
       status: 'IN_PROGRESS',
       priority: 'HIGH',

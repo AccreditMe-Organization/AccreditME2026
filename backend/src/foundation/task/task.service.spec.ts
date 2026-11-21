@@ -46,7 +46,6 @@ const BASE_TASK = {
   sourceId: 'doc-1',
   sourceStageId: null,
   workflowInstanceId: null,
-  meetingId: null,
   createdById: ACTOR,
   status: 'PENDING',
   priority: 'MEDIUM',

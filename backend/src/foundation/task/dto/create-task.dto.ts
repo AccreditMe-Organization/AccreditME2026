@@ -102,10 +102,6 @@ export class CreateTaskDto {
   @IsNotEmpty()
   sourceId!: string;
 
-  @IsString()
-  @IsOptional()
-  meetingId?: string;
-
   // Named people — the workflow engine's path, and every task before
   // ACC-167. Optional since ACC-167: the task form sends `assignTo` instead.
   // Sending both is refused (400) by the service rather than one silently
