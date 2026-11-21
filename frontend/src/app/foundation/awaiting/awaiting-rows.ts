@@ -2,6 +2,7 @@ import { recordPageLink } from '../../shared/utils/record-link.util';
 import type { WorkflowAwaitingRowDto } from '../workflow/services/workflow.service';
 import type { ChangeRequestDto } from '../committees/change-requests/change-request.service';
 import type { MeetingAwaitingMeDto } from '../meetings/services/meeting.service';
+import { reviewStageOf, statusWordKey } from '../committees/change-requests/change-request-text';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,15 +53,21 @@ export function stageRow(r: WorkflowAwaitingRowDto, w: AwaitingWords, now: Date)
   };
 }
 
-/** A committee change request to decide: "Change request n · committee", "From name". */
+/**
+ * A committee change request to decide: "Change request n · committee", then
+ * "From name · stage" (ACC-245 PR 3b): an added review stage by its own name,
+ * Under review by its status word, on every row, as other records show theirs.
+ */
 export function changeRow(r: ChangeRequestDto, w: AwaitingWords, now: Date): AwaitingRow {
   const since = r.submittedAt ?? r.createdAt;
+  const review = reviewStageOf(r);
+  const stage = review ? w.bilingual(review.nameEn, review.nameAr) : w.t(statusWordKey(r.status));
   return {
     id: r.id,
     kind: 'change',
     since,
     title: w.t('home.awaitingChange', { n: w.number(r.number), committee: w.bilingual(r.committeeNameEn, r.committeeNameAr) }),
-    meta: w.t('home.awaitingChangeMeta', { name: r.requestedBy.name }),
+    meta: w.t('home.awaitingChangeMetaStage', { name: r.requestedBy.name, stage }),
     waiting: waitingText(since, w, now),
     link: ['/committees', r.committeeId, 'change-requests', r.id],
   };

@@ -36,6 +36,22 @@ export interface WorkflowTemplateDto {
   // who must meet (PR 5-be). Served, never copied here.
   assigneeKinds?: StageAssigneeKind[];
   whoRules?: WhoRulesDto;
+  // ACC-245 PR 3a — on the protected committee change request template only:
+  // whether one more review stage fits, where one may go, and who may decide
+  // one. From the rules the server's add refuses by; absent elsewhere.
+  reviewStages?: ReviewStagesDto;
+}
+
+/** ACC-245 — the template read's `reviewStages` (review-stages.ts, reviewStagesRead()). */
+export interface ReviewStagesDto {
+  /** The add would fit: fewer than `max`, and room in the order. */
+  canAdd: boolean;
+  max: number;
+  count: number;
+  /** Where a new review stage may go: after Draft, or after a review stage, in order. */
+  after: { id: string; nameEn: string; nameAr: string | null }[];
+  /** How a review stage's people decide, and the kinds it may name. */
+  who: { modes: StageWhoMode[]; assigneeKinds: StageAssigneeKind[] };
 }
 
 // ── ACC-271 — who works a stage ─────────────────────────────────────────────
@@ -165,6 +181,10 @@ export interface WorkflowStageDto {
   // ACC-57 (Q1) — on a stage save that ticked Initial: the stage(s) that
   // stopped being the starting stage. Absent otherwise.
   startingStageMovedFrom?: { id: string; nameEn: string; nameAr: string | null }[];
+  // ACC-245 — an added review stage of the protected change request template,
+  // and the fields a save may change on it (the server's set).
+  reviewStage?: boolean;
+  editableFields?: string[];
 }
 
 export interface WorkflowTransitionDto {
@@ -306,9 +326,14 @@ export interface CreateWorkflowStageDto {
   // ACC-271 — who works the stage. Sent when the stage editor changed it, and
   // always when adding a stage.
   who?: StageWhoWriteDto;
+  // ACC-245 — adding a review stage: the stage it goes after (Draft's id or a
+  // review stage's, from `reviewStages.after`). Create only; the server sets the order.
+  reviewAfterStageId?: string;
 }
 
-export type UpdateWorkflowStageDto = Partial<CreateWorkflowStageDto>;
+// ACC-245 — where a review stage goes is a create-only choice (an update that
+// sends it is the server's 400).
+export type UpdateWorkflowStageDto = Partial<Omit<CreateWorkflowStageDto, 'reviewAfterStageId'>>;
 
 // ACC-271 PR 5b — a save names the move, never who may press it: the stage
 // says that. No trigger, role, person, permission or validator is sent, so an

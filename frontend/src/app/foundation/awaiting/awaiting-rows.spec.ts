@@ -64,14 +64,30 @@ describe('awaiting rows (ACC-120)', () => {
     expect(r.link).toBeNull();
   });
 
-  it('a change request: "Change request n · committee", "From name", since Submit (else creation), linked to its page', () => {
-    const r = changeRow(changeDto('cr-1', '2026-11-09T08:00:00.000Z'), words, NOW);
+  it('a change request: "Change request n · committee", "From name · stage", since Submit (else creation), linked to its page', () => {
+    const r = changeRow({ ...changeDto('cr-1', '2026-11-09T08:00:00.000Z'), status: 'under_review' }, words, NOW);
     expect(r.title).toBe('home.awaitingChange{"n":"7","committee":"Infection Control"}');
-    expect(r.meta).toBe('home.awaitingChangeMeta{"name":"Sara Ali"}');
+    // ACC-245 PR 3b — the stage on every row: Under review by its status word.
+    expect(r.meta).toBe('home.awaitingChangeMetaStage{"name":"Sara Ali","stage":"committee.changeRequest.status.under_review"}');
     expect(r.since).toBe('2026-11-09T08:00:00.000Z');
     expect(r.waiting).toBe('home.waitingToday');
     expect(r.link).toEqual(['/committees', 'c-1', 'change-requests', 'cr-1']);
     expect(changeRow(changeDto('cr-2', null, '2026-10-01T00:00:00.000Z'), words, NOW).since).toBe('2026-10-01T00:00:00.000Z');
+  });
+
+  // ACC-245 PR 3b — a request in an added review stage: the stage's own name, as
+  // the server names it (awaitingDecisionBy), never a reviewer.
+  it('a change request in an added review stage: "From name · {the stage}"', () => {
+    const r = changeRow(
+      {
+        ...changeDto('cr-3', '2026-11-09T08:00:00.000Z'),
+        status: null,
+        awaitingDecisionBy: { kind: 'REVIEW_STAGE', stage: { id: 'st-legal', nameEn: 'Legal review', nameAr: 'المراجعة القانونية' } },
+      },
+      words,
+      NOW,
+    );
+    expect(r.meta).toBe('home.awaitingChangeMetaStage{"name":"Sara Ali","stage":"Legal review"}');
   });
 
   it('under a day reads "waiting since today"', () => {

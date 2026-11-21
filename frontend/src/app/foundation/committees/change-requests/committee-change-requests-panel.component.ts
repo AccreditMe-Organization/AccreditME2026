@@ -5,7 +5,7 @@ import { FormatService } from '../../../core/formatting';
 import { CappedPanelComponent, CAPPED_PANEL_ROWS } from '../../../shared/components/capped-panel/capped-panel.component';
 import { ListDialogComponent } from '../../../shared/components/list-dialog/list-dialog.component';
 import { SimpleListComponent, SimpleListQuery } from '../../../shared/components/simple-list/simple-list.component';
-import { ChangeRequestText, changedFields } from './change-request-text';
+import { ChangeRequestText, changedFields, reviewStageOf } from './change-request-text';
 import { ChangeRequestDto, ChangeRequestService } from './change-request.service';
 
 type PanelState = 'loading' | 'error' | 'ready';
@@ -42,7 +42,7 @@ type PanelState = 'loading' | 'error' | 'ready';
         <li class="am-cp-row" [attr.data-cr-row]="r.id">
           <span class="am-cp-l1">
             <a class="am-ccr__name am-cp-cut" [routerLink]="link(r)" [title]="rowTitle(r)">{{ rowTitle(r) }}</a>
-            <span class="am-ccr__status" [attr.data-status]="r.status">{{ text.status(r.status) }}</span>
+            <span class="am-ccr__status" [attr.data-status]="text.toneOf(r)">{{ text.stageOf(r) }}</span>
           </span>
           <span class="am-cp-l2"><span class="am-cp-cut">{{ meta(r) }}</span></span>
         </li>
@@ -52,7 +52,7 @@ type PanelState = 'loading' | 'error' | 'ready';
     <ng-template #crCells let-r let-phone="phone">
       <a class="am-ccr__name am-cp-cut" [routerLink]="link(r)">{{ 'committee.changeRequest.page.eyebrow' | translate: { n: format.number(r.number) } }}</a>
       <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="fields(r)">{{ fields(r) }}</span>
-      <span class="am-cp-cut text-[var(--am-ink-700)]">{{ text.status(r.status) }}</span>
+      <span class="am-cp-cut text-[var(--am-ink-700)]" data-cr-status>{{ text.stageOf(r) }}</span>
       <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="r.requestedBy.name">{{ r.requestedBy.name }}</span>
       <span class="text-[var(--am-ink-700)] whitespace-nowrap">{{ format.date(r.createdAt) }}</span>
     </ng-template>
@@ -164,6 +164,8 @@ export class CommitteeChangeRequestsPanelComponent {
     this.translate.currentLang();
     const t = (key: string, params: Record<string, string>) => this.translate.instant(`committee.changeRequest.panel.${key}`, params);
     const name = r.requestedBy.name;
+    // ACC-245 PR 3b — a request in an added review stage was submitted, as one Under review.
+    if (reviewStageOf(r)) return t('metaSubmitted', { name, date: this.format.date(r.submittedAt) });
     switch (r.status) {
       case 'draft':
         return t('metaStarted', { name, date: this.format.date(r.createdAt) });

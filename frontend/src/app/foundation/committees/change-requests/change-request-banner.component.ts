@@ -2,7 +2,7 @@ import { Component, computed, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../../core/formatting';
-import { ChangeRequestText, changedFields } from './change-request-text';
+import { ChangeRequestText, changedFields, reviewStageOf } from './change-request-text';
 import { ChangeRequestDto } from './change-request.service';
 import { injectIsPhone } from './phone';
 
@@ -20,7 +20,9 @@ export type ChangeRequestBannerState = 'loading' | 'error' | 'ready';
  *   a request naming no field this screen knows: "A change request is open." ·
  *   View request (Partial)
  *
- * Every word follows the request's stage KEY, never a name.
+ * Every word follows the request's stage KEY, never a name — except in an
+ * added review stage (ACC-245), which has no key: the title names the stage as
+ * the server names it (`awaitingDecisionBy`), and the body is Under review's.
  */
 @Component({
   selector: 'am-change-request-banner',
@@ -79,8 +81,14 @@ export class ChangeRequestBannerComponent {
     this.translate.currentLang();
     const r = this.request();
     if (!r) return '';
+    const fields = this.text.fieldList(this.fields());
+    // ACC-245 PR 3b — in an added review stage the title names the stage (the
+    // body stays bodyUnderReview: it names the requester, never a reviewer).
+    if (reviewStageOf(r)) {
+      return this.translate.instant('committee.changeRequest.banner.review_stage', { n: this.format.number(r.number), stage: this.text.stageOf(r), fields });
+    }
     const key = r.status === 'under_review' || r.status === 'draft' || r.status === 'returned' ? r.status : 'unknown';
-    return this.translate.instant(`committee.changeRequest.banner.${key}`, { n: this.format.number(r.number), fields: this.text.fieldList(this.fields()) });
+    return this.translate.instant(`committee.changeRequest.banner.${key}`, { n: this.format.number(r.number), fields });
   });
 
   readonly body = computed(() => {

@@ -367,7 +367,7 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     await setup({ template: PROTECTED, stage: REQUEST_STAGE });
     expect(text('[data-protected-banner] .am-sep__banner-title')).toBe('Protected workflow');
     expect(text('[data-protected-banner] .am-sep__banner-body')).toBe(
-      'AccreditMe keeps this workflow working: you can rename its stages and set their deadlines, but not change what they allow or mean.',
+      "AccreditMe keeps this workflow working: you can rename its stages, set their deadlines and add review stages before the decision. What the stages allow or mean can't be changed.",
     );
     // The meanings: ✓ and –, no box to press.
     expect(el().querySelectorAll('[data-section="meanings"] input[type="checkbox"]').length).toBe(0);
@@ -396,7 +396,7 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
   it('says the protected sentence in Arabic', async () => {
     await setup({ template: PROTECTED, stage: REQUEST_STAGE, language: 'ar' });
     expect(text('[data-protected-banner]')).toContain(
-      'تحافظ AccreditMe على عمل سير العمل هذا: يمكن إعادة تسمية مراحله وتحديد مهلها، ولا يمكن تغيير ما تسمح به أو ما تعنيه.',
+      'تحافظ AccreditMe على عمل سير العمل هذا: يمكن إعادة تسمية مراحله وتحديد مهلها وإضافة مراحل مراجعة قبل البتّ في الطلب، ولا يمكن تغيير ما تسمح به مراحله أو ما تعنيه.',
     );
   });
 

@@ -1830,6 +1830,27 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       'workflowInstance.findMany',
       'workflowStage.findMany',
       'workflowStage.findMany',
+      // PR 3b — the review stages' app advances, in the same wave as the template's stages.
+      'workflowTransition.findMany',
+    ];
+    /** PR 3b — GET one request standing in an added review stage, read by a chain decider. */
+    const SINGLE_READ_QUERIES = [
+      'committeeChangeRequest.findFirst',
+      '$queryRaw',
+      'workflowStage.findFirst',
+      'workflowStageRecordAction.findMany',
+      'workflowInstance.findMany',
+      'workflowStage.findMany',
+      'committee.findMany',
+      'committeeMember.findMany',
+      '$queryRaw',
+      'user.findMany',
+      'orgUnitHeadAssignment.findMany',
+      'workflowStageAssignee.findMany',
+      'user.findMany',
+      'workflowStage.findMany',
+      // PR 3b — the one query the new fields add (the stage read above only widened).
+      'workflowTransition.findMany',
     ];
     /** P203 — a chain page: its candidates, its rows, ONE chain resolution (5). */
     const CHAIN_PAGE = ['$queryRaw', 'committeeChangeRequest.findMany', 'committee.findMany', 'committeeMember.findMany', '$queryRaw', 'user.findMany', 'orgUnitHeadAssignment.findMany'];
@@ -2188,7 +2209,10 @@ describe('Committee change requests against a real database (ACC-239)', () => {
 
       expect(await awaitingIds(w, asLegal)).toEqual([r.id]);
       const [row] = await requests.awaitingDecision(w.org, asLegal);
-      expect(row!.awaitingDecisionBy).toEqual({ kind: 'REVIEW_STAGE', stage: { id: stage.id, nameEn: 'Legal review', nameAr: null } });
+      const underReview = (await shape(w)).byKey('under_review');
+      const decides = { id: underReview.id, nameEn: underReview.nameEn, nameAr: underReview.nameAr };
+      // PR 3b — one review stage: its Approve leads to Under review, which is also the deciding stage.
+      expect(row!.awaitingDecisionBy).toEqual({ kind: 'REVIEW_STAGE', stage: { id: stage.id, nameEn: 'Legal review', nameAr: null }, next: decides, decision: decides });
       expect((await requests.getOne(r.id, w.org, w.approver)).awaitingDecisionBy).toEqual(row!.awaitingDecisionBy);
       // The chain decides only once the reviews are done.
       expect(await awaitingIds(w, w.approver)).toEqual([]);
@@ -2196,6 +2220,46 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       await requests.approve(r.id, w.org, asLegal);
       expect(await awaitingIds(w, asLegal)).toEqual([]);
       expect(await awaitingIds(w, w.approver)).toEqual([r.id]);
+    });
+
+    it('PR 3b: with two review stages, a request in the first names the SECOND as next (never Under review), and Under review as the decision', async () => {
+      const w = await world();
+      const [a, c] = [await person(w, 'A'), await person(w, 'C')];
+      const r1 = await addReview(w, 'R1', [a]);
+      const r2 = await addReview(w, 'R2', [c]);
+      const r = await submitted(w);
+      const underReview = (await shape(w)).byKey('under_review');
+      const decides = { id: underReview.id, nameEn: underReview.nameEn, nameAr: underReview.nameAr };
+      expect(await stageNow(w, r.id)).toBe(r1.id); // non-vacuity: it stands in R1
+      const [inR1] = await requests.awaitingDecision(w.org, { userId: a, permissions: [VIEW] });
+      expect(inR1!.awaitingDecisionBy).toEqual({
+        kind: 'REVIEW_STAGE',
+        stage: { id: r1.id, nameEn: 'R1', nameAr: null },
+        next: { id: r2.id, nameEn: 'R2', nameAr: null },
+        decision: decides,
+      });
+      // The single read agrees.
+      expect((await requests.getOne(r.id, w.org, w.approver)).awaitingDecisionBy).toEqual(inR1!.awaitingDecisionBy);
+      // In R2, the last review stage: next and decision are both Under review.
+      await requests.approve(r.id, w.org, { userId: a, permissions: [VIEW] });
+      expect((await requests.getOne(r.id, w.org, w.approver)).awaitingDecisionBy).toEqual({
+        kind: 'REVIEW_STAGE',
+        stage: { id: r2.id, nameEn: 'R2', nameAr: null },
+        next: decides,
+        decision: decides,
+      });
+    });
+
+    it('PR 3b: the single read costs the same with or without the two new fields — the stage query widened, one transition query added', async () => {
+      const w = await world();
+      const legal = await person(w, 'Legal');
+      await addReview(w, 'Legal review', [legal]);
+      const r = await submitted(w);
+      const { svc, log } = countedRequests();
+      expect((await svc.getOne(r.id, w.org, w.approver)).awaitingDecisionBy?.kind).toBe('REVIEW_STAGE');
+      // The names come from one batch: one stage read and one transition read, never one per request.
+      expect(log.filter((q) => q === 'workflowTransition.findMany')).toHaveLength(1);
+      expect(log).toEqual(SINGLE_READ_QUERIES);
     });
 
     it('PR 2: the list keeps only reviewers who may open the committee, never the requester, and nobody outside the pool', async () => {

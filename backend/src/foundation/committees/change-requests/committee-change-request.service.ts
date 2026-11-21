@@ -11,6 +11,7 @@ import { StageRulesService } from '../../workflow/stage-rules.service';
 import { STAGE_FLAG } from '../../workflow/record-registry';
 import { CHANGE_REQUEST_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { MAX_REVIEW_STAGES } from '../../workflow/review-stages';
+import { APP_MOVER_WHERE } from '../../workflow/workflow-pool';
 import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
 import { committeeTypeValues } from '../committee-type-values';
@@ -174,8 +175,18 @@ export type AwaitingDecisionBy =
       seats: { id: string; labelEn: string; labelAr: string | null }[];
     }
   | { kind: 'UNIT_HEAD'; unit: { id: string; nameEn: string; nameAr: string | null } }
-  /** ACC-245 PR 2 — an added review stage, decided by its own people: named by the stage, never a person. */
-  | { kind: 'REVIEW_STAGE'; stage: { id: string; nameEn: string; nameAr: string | null } };
+  /**
+   * ACC-245 PR 2 — an added review stage, decided by its own people: named by the stage, never a person.
+   * PR 3b — `next` is the stage its Approve moves the request into (its single app ADVANCE, as
+   * triggerSystemAdvance() finds it, never the next by order), and `decision` the template's
+   * deciding stage (Under review). Either is null when the template does not say.
+   */
+  | {
+      kind: 'REVIEW_STAGE';
+      stage: { id: string; nameEn: string; nameAr: string | null };
+      next: { id: string; nameEn: string; nameAr: string | null } | null;
+      decision: { id: string; nameEn: string; nameAr: string | null } | null;
+    };
 
 /** ACC-245 PR 2 — one arm of the awaiting list: the rows the viewer decides, and their decisions. */
 interface DecidedRows {
@@ -1535,8 +1546,9 @@ export class CommitteeChangeRequestService {
 
   /**
    * ACC-283 PR 2 — names the deciding steps for `awaitingDecisionBy`: the Reports-to
-   * committees, their seats and the units, each read once (three queries at most),
-   * scoped by organisation. Never a person.
+   * committees, their seats and the units, each read once, scoped by organisation;
+   * with an added review stage, that template's stages and the review stages' app
+   * advances (ACC-245): five queries at most, in one wave. Never a person.
    */
   private async nameSteps(chains: ChainResult[], organizationId: string): Promise<(step: ChainStep) => AwaitingDecisionBy | null> {
     const committeeIds = new Set<string>();
@@ -1551,7 +1563,7 @@ export class CommitteeChangeRequestService {
       if (step.kind === 'UNIT_HEAD') unitIds.add(step.unitId);
       if (step.kind === 'REVIEW_STAGE') stageIds.add(step.stageId);
     }
-    const [committees, units, seats, stages] = await Promise.all([
+    const [committees, units, seats, stages, advances] = await Promise.all([
       committeeIds.size
         ? this.prisma.committee.findMany({ where: { id: { in: [...committeeIds] }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
         : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
@@ -1560,15 +1572,37 @@ export class CommitteeChangeRequestService {
         : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
       seatsNeeded ? seatValues(this.prisma, organizationId) : Promise.resolve([]),
       // ACC-245 PR 2 — added review stages, by name: the stage belongs to this
-      // organisation's template.
+      // organisation's template. PR 3b — every stage of that template, so the
+      // stage a review's Approve leads to and the deciding stage are named
+      // from the same read (the template has at most 6 + MAX_REVIEW_STAGES).
       stageIds.size
         ? this.prisma.workflowStage.findMany({
-            where: { id: { in: [...stageIds] }, workflowTemplate: { organizationId } },
-            select: { id: true, nameEn: true, nameAr: true },
+            where: { workflowTemplate: { organizationId, stages: { some: { id: { in: [...stageIds] } } } } },
+            select: { id: true, nameEn: true, nameAr: true, key: true, workflowTemplateId: true },
           })
-        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
+        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null; key: string | null; workflowTemplateId: string }[]),
+      // ACC-245 PR 3b — each review stage's forward app move, found the way
+      // triggerSystemAdvance() finds it (kind ADVANCE, mover APP, one only).
+      stageIds.size
+        ? this.prisma.workflowTransition.findMany({
+            where: { fromStageId: { in: [...stageIds] }, kind: 'ADVANCE', ...APP_MOVER_WHERE, fromStage: { workflowTemplate: { organizationId } } },
+            select: { fromStageId: true, toStageId: true },
+          })
+        : Promise.resolve([] as { fromStageId: string; toStageId: string }[]),
     ]);
     const stageById = new Map(stages.map((st) => [st.id, st]));
+    const named = (st: { id: string; nameEn: string; nameAr: string | null }) => ({ id: st.id, nameEn: st.nameEn, nameAr: st.nameAr });
+    /** The stage a review stage's Approve moves the request into: its single app ADVANCE, within the template; else null. */
+    const nextOf = (from: { id: string; workflowTemplateId: string }) => {
+      const targets = advances.filter((m) => m.fromStageId === from.id).map((m) => stageById.get(m.toStageId));
+      const target = targets.length === 1 ? targets[0] : undefined;
+      return target && target.workflowTemplateId === from.workflowTemplateId ? named(target) : null;
+    };
+    /** The template's deciding stage (Under review), by its key. */
+    const decisionOf = (templateId: string) => {
+      const stage = stages.find((st) => st.workflowTemplateId === templateId && st.key !== null && AWAITING_DECISION_KEYS.includes(st.key));
+      return stage ? named(stage) : null;
+    };
     const committeeById = new Map(committees.map((c) => [c.id, c]));
     const unitById = new Map(units.map((u) => [u.id, u]));
     const seatById = new Map(seats.map((v) => [v.id, v]));
@@ -1591,7 +1625,7 @@ export class CommitteeChangeRequestService {
       }
       if (step.kind === 'REVIEW_STAGE') {
         const stage = stageById.get(step.stageId);
-        return stage ? { kind: 'REVIEW_STAGE', stage } : null;
+        return stage ? { kind: 'REVIEW_STAGE', stage: named(stage), next: nextOf(stage), decision: decisionOf(stage.workflowTemplateId) } : null;
       }
       return null;
     };

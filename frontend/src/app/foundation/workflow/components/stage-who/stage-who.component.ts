@@ -107,7 +107,19 @@ const MODE_HELP: Readonly<Record<string, string>> = {
         <p class="am-who__note" data-starting-note>{{ 'workflow.who.startingNote' | translate }}</p>
       }
 
-      @if (d.choice().shown) {
+      @if (decides().length) {
+        <!-- ACC-245 PR 3b — a stage whose people decide one way only (an added
+             review stage: the server's reviewStages.who.modes): no choice, the
+             caller's read-only lines in its place. -->
+        <div class="am-who__decides" data-who-decides>
+          @for (line of decides(); track $index; let first = $first) {
+            <p [class]="first ? 'am-who__decides-main' : 'am-who__note'">{{ line }}</p>
+          }
+          @if (d.modeError(); as key) {
+            <small class="am-who__error" role="alert" data-who-mode-error>{{ key | translate }}</small>
+          }
+        </div>
+      } @else if (d.choice().shown) {
         <fieldset class="am-who__modes" data-who-modes>
           <legend class="am-who__legend">{{ 'workflow.who.modesLegend' | translate }}</legend>
           @if (readonly()) {
@@ -285,6 +297,23 @@ const MODE_HELP: Readonly<Record<string, string>> = {
         padding: 0;
         border: 0;
       }
+      /* ACC-245 PR 3b — the fixed decision, in the place of the choice. */
+      .am-who__decides {
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-4);
+        min-inline-size: 0;
+        margin-block-start: var(--am-space-8);
+      }
+      .am-who__decides p {
+        margin: 0;
+      }
+      .am-who__decides-main {
+        font-size: var(--am-type-body-size);
+        font-weight: 600;
+        color: var(--am-ink-900);
+        overflow-wrap: anywhere;
+      }
       .am-who__legend {
         padding: 0;
         margin-block-end: var(--am-space-4);
@@ -354,6 +383,12 @@ export class StageWhoComponent {
   readonly stage = input<WorkflowStageDto | null>(null);
   readonly readonly = input(false);
   readonly submitted = input(false);
+  /**
+   * ACC-245 PR 3b — read-only lines that take the place of "When there are
+   * several people", for a stage whose people decide one way only. Empty: the
+   * choice shows as whoRules says.
+   */
+  readonly decides = input<string[]>([]);
 
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);

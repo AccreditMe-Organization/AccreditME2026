@@ -84,6 +84,23 @@ const NUMBER_TRACK = '32px';
               (onClick)="openAdd($any($event)?.currentTarget ?? null)"
             />
           }
+          <!-- ACC-245 PR 3b — the protected change request workflow takes review
+               stages only, where Add Stage sits elsewhere: the button while one more
+               fits (the server's canAdd), and at the maximum a line saying why not. -->
+          @if (canCreate() && template()?.reviewStages; as rs) {
+            @if (rs.canAdd) {
+              <p-button
+                icon="pi pi-plus"
+                severity="secondary"
+                [outlined]="true"
+                [label]="'workflow.reviewStage.add' | translate"
+                (onClick)="openAddReview($any($event)?.currentTarget ?? null)"
+                data-testid="add-review-stage"
+              />
+            } @else if (rs.count >= rs.max) {
+              <p class="am-review-limit" data-testid="review-stage-limit">{{ rs.max | amCount: 'workflow.reviewStageLimit' }}</p>
+            }
+          }
         </div>
       </app-page-header>
 
@@ -111,11 +128,13 @@ const NUMBER_TRACK = '32px';
           [template]="t"
           [stage]="editingStage()"
           [nextOrder]="nextOrderForNewStage()"
+          [addingReview]="addingReview()"
           [menu]="editingStage() ? menuFor(editingStage()!) : []"
           (saved)="onPanelSaved($event)"
           (closed)="closePanel()"
           (openStage)="openStage($event, null)"
           (menuPicked)="pick(editingStage()!, $event)"
+          (removed)="onReviewStageRemoved()"
         />
       }
 
@@ -217,12 +236,20 @@ const NUMBER_TRACK = '32px';
                         <span data-stage-name>{{ stageDisplayName(stage) }}</span>
                       </span>
                     }
-                    @if (meaningsOf(stage).length) {
+                    @if (meaningsOf(stage).length || stage.reviewStage) {
                       <span class="flex flex-wrap gap-1 mt-1" data-cell="meanings">
                         @for (meaning of meaningsOf(stage); track meaning.key) {
                           <span class="am-stage-meaning">{{ meaning.labelKey | translate }}</span>
                         }
+                        <!-- ACC-245 PR 3b — an added review stage says so (the server's reviewStage). -->
+                        @if (stage.reviewStage) {
+                          <span class="am-stage-meaning" data-review-chip>{{ 'workflow.reviewStage.chip' | translate }}</span>
+                        }
                       </span>
+                    }
+                    @if (stage.reviewStage && whoLine(stage); as who) {
+                      <!-- Who works it, in the server's own words (whoSentence). -->
+                      <span class="block text-xs truncate mt-1 am-stage-who-line" [pTooltip]="who" tooltipPosition="top" data-review-who>{{ who }}</span>
                     }
                     @if (phone()) {
                       <ng-container *ngTemplateOutlet="allowsTpl; context: { $implicit: stage }" />
@@ -369,6 +396,18 @@ const NUMBER_TRACK = '32px';
       .am-stage-allows-none {
         color: var(--am-text-secondary);
       }
+      /* ACC-245 PR 3b — who works a review stage, under its name; the 9-stage line. */
+      .am-stage-who-line {
+        color: var(--am-text-secondary);
+        max-width: 100%;
+      }
+      .am-review-limit {
+        margin: 0;
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-text-secondary);
+        max-inline-size: 36ch;
+      }
       .am-stage-details {
         display: inline-flex;
         align-items: center;
@@ -419,6 +458,8 @@ export class WorkflowStageListComponent implements OnInit {
   /** ACC-255 PR 4b — the editor panel: open, and on which stage (null while adding one). */
   readonly panelOpen = signal(false);
   readonly editingStage = signal<WorkflowStageDto | null>(null);
+  /** ACC-245 PR 3b — while adding: the stage added is a review stage. */
+  readonly addingReview = signal(false);
   /**
    * ACC-271 PR 5b — the transition panel: open on a transition (its id), or on
    * a new one leaving fromStageId (id null). Never open beside the stage panel.
@@ -616,6 +657,24 @@ export class WorkflowStageListComponent implements OnInit {
     this.whenDiscarded(() => this.showPanel(null, opener));
   }
 
+  /** ACC-245 PR 3b — Add review stage: the panel, empty, as a review stage. */
+  openAddReview(opener: HTMLElement | null): void {
+    this.whenDiscarded(() => this.showPanel(null, opener, true));
+  }
+
+  /** ACC-245 PR 3b — a review stage removed from its panel: the panel closes and the page reloads. */
+  onReviewStageRemoved(): void {
+    this.closePanel();
+    this.loadTemplate();
+  }
+
+  /** ACC-245 PR 3b — who works a review stage, in the server's sentence, under its name. */
+  whoLine(stage: WorkflowStageDto): string {
+    const sentence = stage.whoSentence;
+    if (!sentence) return '';
+    return this.languageService.isArabic() ? sentence.ar || sentence.en : sentence.en;
+  }
+
   /** A strip card, a row's name, or a refusal's link opens that stage in the panel. */
   openStage(stageId: string, opener: HTMLElement | null): void {
     const stage = this.stages().find((s) => s.id === stageId);
@@ -627,11 +686,12 @@ export class WorkflowStageListComponent implements OnInit {
     this.whenDiscarded(() => this.showPanel(stage, opener));
   }
 
-  private showPanel(stage: WorkflowStageDto | null, opener: HTMLElement | null): void {
+  private showPanel(stage: WorkflowStageDto | null, opener: HTMLElement | null, review = false): void {
     // A link inside a panel (a refusal's, or a transition's from-stage) keeps
     // the first opener, so Cancel still returns there.
     if (opener || !this.anyPanelOpen()) this.opener = opener ?? (this.document.activeElement as HTMLElement | null);
     this.transitionPanel.set(null);
+    this.addingReview.set(!stage && review);
     this.editingStage.set(stage);
     this.panelOpen.set(true);
   }

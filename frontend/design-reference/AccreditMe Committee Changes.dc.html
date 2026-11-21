@@ -22,6 +22,7 @@
 
   <div style="margin-block-end: 14px;">
     <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 15 Oct 2026 · Editing a committee, and the committee change request · on Committee Record, Templates, Task Screens, Record Tasks Panel</div>
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #067647; margin-block-start: 2px;">Change request review stages added 20 Nov 2026 · section 5</div>
     <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Committee changes</h1>
     <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 112ch; text-wrap: pretty;">A committee is edited directly only in Formation, read-only in Terms Review, changed through a change request with its own approval once Active or Suspended, and closed to change from Dissolution Pending. Members stay outside all of this. Stage names are tenant data and render as data. Example: Infection Prevention &amp; Control Committee (QMC-014), Change request 3 by Nora Al-Otaibi, reviewed by A. Al-Harbi.</p>
   </div>
@@ -459,6 +460,65 @@ class Component extends DCLogic {
       frame(false, { kind: "dialog", w: 420, cap: "Withdraw · Confirm 420 · requester", title: "Withdraw change request 3?", ctx: IPC, blocks: [E.text("It ends here and nothing is changed. You can start a new request afterwards.", null, 0)], buttons: [E.btn("Keep it", "text"), E.btn("Withdraw", "danger")], measure: "Sentence 42 (2 lines). Arabic 48." })
     ];
 
+    // ---- 5 · review stages (20 Nov 2026, ACC-245 PR 3) ----
+    const RQ_STEPS4 = ["Draft", "Legal review", "Under review", "Approved"], RQ_STEPS4_AR = ["مسودة", "المراجعة القانونية", "قيد المراجعة", "معتمد"];
+    const rvHead = (ar, actions, phone) => { const X = ar ? A : E;
+      return X.head({ crumb: phone ? (ar ? "طلبات التغيير" : "Change requests") : (ar ? "اللجان / " + IPC_AR + " / طلبات التغيير" : "Committees / " + IPC + " / Change requests"), eyebrow: ar ? "طلب التغيير " + iso("3") : "Change request 3",
+        title: phone ? (ar ? "طلب التغيير " + iso("3") + " · لجنة مكافحة العدوى" : "Change request 3 · IPC Committee") : (ar ? "طلب التغيير " + iso("3") + " · " + IPC_AR : "Change request 3 · " + IPC), small: 1,
+        chips: [X.chip(ar ? "المراجعة القانونية" : "Legal review", "stage")].concat(phone ? [] : [X.chip(ar ? "قدّمته نورة العتيبي · " + iso("15 Oct 2026") : "Requested by Nora Al-Otaibi · 15 Oct 2026")]),
+        actions, steps: X.steps(ar ? RQ_STEPS4_AR : RQ_STEPS4, 1) }, 0); };
+    const WAIT = (ar) => ar ? "بانتظار «المراجعة القانونية» منذ 15 أكتوبر 2026. يمكنك سحبه إلى أن يُبتّ فيه." : "Waiting for Legal review since 15 Oct 2026. You can withdraw it until it's decided.";
+    const H_LEGAL = [["15 Oct 2026, 09:12", "Draft", "Nora Al-Otaibi", "Created"], ["15 Oct 2026, 09:20", "Legal review", "Nora Al-Otaibi", "Submitted"]];
+    const H_LEGAL_AR = [[iso("15 Oct 2026, 09:12"), "مسودة", "نورة العتيبي", "أُنشئ"], [iso("15 Oct 2026, 09:20"), "المراجعة القانونية", "نورة العتيبي", "أُرسل"]];
+    const histAr = (rows) => A.table({ title: "سجل المراحل", cols: [{ l: "الوقت", w: 150 }, { l: "المرحلة", w: 140 }, { l: "من", f: 170 }, { l: "ملاحظة", f: 200 }], rows: rows.map(r => ({ c: r })) }, 12);
+    const reasonAr = A.pairs([["السبب", "قرار مجلس الإدارة 14/2026 ينقل مكافحة العدوى إلى اللجنة التنفيذية الطبية."]], 1, 12);
+    const RV_BTNS = (ar) => ar ? [A.btn("رفض…", "dangerOut"), A.btn("إعادة للتعديل…", "secondary"), A.btn("اعتماد…", "primary")] : [E.btn("Reject…", "dangerOut"), E.btn("Return for changes…", "secondary"), E.btn("Approve…", "primary")];
+    const RV_ITEMS = [
+      frame(false, { kind: "page", w: 900, cap: "Legal review · seen by the requester, Nora Al-Otaibi", blocks: [rvHead(false, [E.btn("Withdraw…", "secondary")]), cmp(false), E.text(WAIT(false), "muted", 10)] }),
+      frame(true, { kind: "page", w: 760, cap: "المراجعة القانونية · مقدّمة الطلب · العربية", blocks: [rvHead(true, [A.btn("سحب…", "secondary")]), cmp(true), A.text(WAIT(true), "muted", 10)] }),
+      frame(false, { kind: "page", w: 900, cap: "Legal review · seen by a reviewer, Omar Haddad (Legal Counsel · Legal Affairs)", blocks: [rvHead(false, RV_BTNS(false)), cmp(false), reasonB, impactEn, hist(H_LEGAL)] }),
+      frame(true, { kind: "page", w: 760, cap: "المراجعة القانونية · المراجِع · العربية", blocks: [rvHead(true, RV_BTNS(true)), cmp(true), reasonAr, impactAr, histAr(H_LEGAL_AR)] }),
+      frame(false, { kind: "page", w: 900, cap: "After Omar Haddad approves · stage history, as today", blocks: [hist(H_LEGAL.concat([["16 Oct 2026", "Legal review", "Omar Haddad", "Approved"]]))] }),
+      frame(true, { kind: "page", w: 760, cap: "سجل المراحل بعد الاعتماد · العربية", blocks: [histAr(H_LEGAL_AR.concat([[iso("16 Oct 2026"), "المراجعة القانونية", "عمر حداد", "اعتُمد"]]))] }),
+      frame(false, { kind: "page", w: 390, phone: 1, cap: "Phone · requester", blocks: [rvHead(false, [], 1), E.table({ cols: [{ l: "Field", w: 84 }, { l: "Current → Proposed", f: 200 }], rows: [{ c: ["Quorum", { v: "6", bold: 1, sub: "was 5" }] }, { c: ["Reports to", { v: "Medical Executive Committee", bold: 1, sub: "was Quality & Patient Safety Council" }] }] }, 12), E.text(WAIT(false), "muted", 12), E.text("Withdraw… sits in the sticky bottom bar.", "small", 12)] }),
+      frame(true, { kind: "page", w: 390, phone: 1, cap: "هاتف · المراجِع · العربية", blocks: [rvHead(true, [], 1), A.table({ cols: [{ l: "الحقل", w: 84 }, { l: "الحالي ← المقترح", f: 200 }], rows: [{ c: ["النصاب", { v: iso("6"), bold: 1, sub: "كان " + iso("5") }] }, { c: ["يرفع تقاريره إلى", { v: "اللجنة التنفيذية الطبية", bold: 1, sub: "كان: مجلس الجودة وسلامة المرضى" }] }] }, 12), reasonAr] }),
+      frame(false, { kind: "dialog", w: 420, cap: "Approve · review variant · Confirm 420", title: "Approve and send it on to Under review?", ctx: "Change request 3 · " + IPC, blocks: [E.list("", [["#", "Quorum: 5 → 6", ""], ["↗", "Reports to: Quality & Patient Safety Council → Medical Executive Committee", ""]], 0), E.text("Nothing is applied yet. The changes apply only when Under review approves them.", "small", 12)], buttons: [E.btn("Cancel", "text"), E.btn("Approve", "primary")], measure: "Measured 117 of 420: the two change rows (the second wraps) + 12 + the muted line, 2 lines × 17. The task line isn't shown. {{next}} is the next review stage or Under review; {{decision}} names the deciding stage as the organisation names it." }),
+      frame(true, { kind: "dialog", w: 420, cap: "اعتماد · مرحلة مراجعة · العربية", title: "اعتماد الطلب وإرساله إلى «قيد المراجعة»؟", ctx: "طلب التغيير " + iso("3") + " · " + IPC_AR, blocks: [A.list("", [["#", "النصاب: " + iso("5") + " ← " + iso("6"), ""], ["↖", "يرفع تقاريره إلى: مجلس الجودة وسلامة المرضى ← اللجنة التنفيذية الطبية", ""]], 0), A.text("لم يُطبَّق شيء بعد. ولا تُطبَّق التغييرات إلا عند اعتمادها في «قيد المراجعة».", "small", 12)], buttons: [A.btn("إلغاء", "text"), A.btn("اعتماد", "primary")], measure: "Measured 107 of 420." })
+    ];
+    const BAN_RS_EN = ["Change request 3 is in Legal review: Quorum, Reports to", "Submitted by Nora Al-Otaibi on 15 Oct 2026. Until it is decided, the committee carries on as it is.", "View request"];
+    const BAN_RS_AR = ["طلب التغيير " + iso("3") + " في مرحلة «المراجعة القانونية»: النصاب، ترفع تقاريرها إلى", "قدّمته نورة العتيبي في " + iso("15 Oct 2026") + ". وإلى أن يُبتّ فيه، تبقى اللجنة على حالها.", "عرض الطلب"];
+    const ROWS3_RS = [["Change request 3 · Quorum, Reports to", "Legal review", "Nora Al-Otaibi · submitted 15 Oct 2026", "open"]].concat(ROWS3.slice(1));
+    const ROWS3_RS_AR = [["طلب التغيير " + iso("3") + " · النصاب، يرفع تقاريره إلى", "المراجعة القانونية", "نورة العتيبي · قُدّم " + iso("15 Oct 2026"), "open"]].concat(ROWS3_AR.slice(1));
+    const homePanel = (ar, phone) => { const p = panel(ar, { title: ar ? "بانتظار إجرائي" : "Awaiting my action", count: "2", rows: ar
+        ? [["طلب التغيير " + iso("3") + " · " + IPC_AR, "", "من نورة العتيبي · المراجعة القانونية", "ok"], ["طلب التغيير " + iso("7") + " · مجلس الجودة وسلامة المرضى", "", "من ليلى حداد · قيد المراجعة", "ok"]]
+        : [["Change request 3 · " + IPC, "", "From Nora Al-Otaibi · Legal review", "ok"], ["Change request 7 · Quality & Patient Safety Council", "", "From Laila Haddad · Under review", "ok"]], filler: null });
+      p.frame = p.frame.replace("flex: 1 1 320px;", "flex: 1 1 " + (phone ? 340 : 440) + "px;"); return p; };
+    const HOME_ITEMS = [
+      crop(false, 520, "Home · Awaiting my action · Omar Haddad, Legal Counsel", [E.panels([homePanel(false)], 480, 0), E.text("The title is the built home.awaitingChange; only the meta is new (home.awaitingChangeMetaStage). Change request 7 shows that Under review rows carry the stage too.", "small", 8)]),
+      crop(true, 520, "الرئيسية · بانتظار إجرائي · العربية", [A.panels([homePanel(true)], 480, 0)]),
+      crop(false, 390, "Home · phone (390)", [E.panels([homePanel(false, 1)], 362, 0)], 1),
+      crop(true, 390, "الرئيسية · هاتف · العربية", [A.panels([homePanel(true, 1)], 362, 0)], 1)
+    ];
+    const BANNER_ITEMS = [
+      crop(false, 1172, "The committee record's banner · in a review stage", [ghost("Header card · " + IPC + " · Active", false, 56), lbanner(false, BAN_RS_EN[0], BAN_RS_EN[1], BAN_RS_EN[2]), ghost("Lifecycle · Stage history (unchanged)", false, 44)]),
+      crop(true, 900, "لافتة سجل اللجنة · العربية", [ghost("بطاقة الرأس · " + IPC_AR, true, 56), lbanner(true, BAN_RS_AR[0], BAN_RS_AR[1], BAN_RS_AR[2]), ghost("دورة الحياة · سجل المراحل", true, 44)]),
+      crop(false, 420, "Change requests panel · Status shows the stage", [E.panels([lpanel(false, { title: "Change requests", count: "3", rows: ROWS3_RS })], 400, 0)]),
+      crop(true, 420, "لوحة طلبات التغيير · العربية", [A.panels([lpanel(true, { title: "طلبات التغيير", count: "3", rows: ROWS3_RS_AR })], 400, 0)]),
+      crop(false, 390, "Banner · phone (390)", [ghost("Header card", false, 44), lbanner(false, BAN_RS_EN[0], "Nora Al-Otaibi · 15 Oct 2026", BAN_RS_EN[2]), ghost("Lifecycle", false, 36)], 1)
+    ];
+    const secRS = { id: "s5", n: "5", title: "Review stages · a request in Legal review", sub: "Added 20 Nov 2026 (ACC-245 PR 3). Al Nakheel Specialist Hospital added Legal review between Draft and Under review; its people are Legal Counsel · Legal Affairs. Readers see the stage's name, never the reviewers' names. Only Under review applies the change.",
+      items: RV_ITEMS.concat(BANNER_ITEMS, HOME_ITEMS),
+      notes: [
+        { k: "The stage is the status.", v: "The chip shows the stage's own name in Under review's tone, in place of the “Open” fallback; the steps read Draft → Legal review → Under review → Approved with “now” on Legal review." },
+        { k: "The requester waits on a stage, not a person.", v: "The waiting line names the stage and when the request entered it. Under review keeps its built line, “Waiting for a decision since …”. Withdraw… only." },
+        { k: "Reviewers get Under review's three buttons.", v: "Reject…, Return for changes… and Approve…, from the server's actions only. Return and Reject use their existing dialogs and notes." },
+        { k: "Approve sends it on; it applies nothing.", v: "The review variant keeps the list of changes, drops the task line, and says the changes apply only when Under review approves them." },
+        { k: "History names who acted.", v: "Stage history rows read as today: when, stage, who, what. The waiting line and the banner name no one." },
+        { k: "New Arabic for review.", v: "Not in the notes, written here: the history table's «سجل المراحل · الوقت · المرحلة · من · ملاحظة» with «أُنشئ» and «أُرسل» · «سحب…» · the phone's «الحالي ← المقترح» and «كان» · «لجنة مكافحة العدوى» as the short phone title · «ليلى حداد» · the banner body, «قدّمته نورة العتيبي في 15 Oct 2026. وإلى أن يُبتّ فيه، تبقى اللجنة على حالها.» · «اعتُمد» in the history" },
+        { k: "The banner names no reviewer.", v: "Its body is the existing “Submitted by … Until it is decided, the committee carries on as it is.”, so a review stage's people stay unnamed." }
+      ],
+      outs: [{ k: "Loading", v: "As the request page: header, comparison and history as skeletons." }, { k: "Populated", v: "As drawn, per viewer." }, { k: "Empty", v: "Doesn't apply." }, { k: "Denied", v: "A reviewer who made the request sees the requester's view: nobody decides on their own request." }, { k: "Error", v: "Approve fails: “Nothing was applied · Try again”, as built; the request stays in Legal review." }, { k: "Partial", v: "As the request page." }] };
+
     const sections = [
       { id: "s1", n: "1", title: "Edit committee · Formation only", sub: "Form 560, three tabs so no tab scrolls; one Save for all three.", items: D_EDIT,
         notes: [
@@ -499,6 +559,7 @@ class Component extends DCLogic {
           { k: "Phone.", v: "Current → Proposed stacks in one column with “was …” under the new value; the approver's actions sit in a sticky bottom bar." }
         ],
         outs: [{ k: "Loading", v: "Header, comparison and history as skeletons." }, { k: "Populated", v: "As drawn per stage and viewer." }, { k: "Empty", v: "Doesn't apply: a request always changes at least one field." }, { k: "Denied", v: "Someone who can't open the committee gets the shared not-allowed page." }, { k: "Error", v: "Approve fails: “Nothing was applied · Try again”; the request stays Under review." }, { k: "Partial", v: "Applied but the task couldn't be created: the banner says so, with “Create task” for the approver." }] }
+    ,secRS
     ];
 
     return {
@@ -515,9 +576,10 @@ class Component extends DCLogic {
       sections,
       measures: [
         ["Edit · Identity", "560 · form", 349, 374], ["Edit · Governance", "560 · form", 127, 136], ["Edit · Structure", "560 · form", 309, 328], ["Edit · someone else saved (footer message)", "560 · form", 349, 374],
-        ["Approve", "420 · confirm", 126, 138], ["Approve · typo only", "420 · confirm", 98, 108], ["Return for changes", "560 · form", 152, 166], ["Reject", "560 · form", 152, 166], ["Withdraw", "420 · confirm", 42, 48], ["Request a change · record", "page", "—", "—"]
+        ["Approve", "420 · confirm", 126, 138], ["Approve · typo only", "420 · confirm", 98, 108], ["Return for changes", "560 · form", 152, 166], ["Reject", "560 · form", 152, 166], ["Withdraw", "420 · confirm", 42, 48], ["Request a change · record", "page", "—", "—"], ["Approve · review variant (20 Nov)", "420 · confirm", 117, 107]
       ].map(m => ({ d: m[0], s: m[1], en: String(m[2]), ar: String(m[3]) })),
       changes: [
+        { s: "Committee changes · 20 Nov 2026 · review stages", w: "New section 5: a request in Legal review. The head's chip shows the stage name and the steps include it; the requester's waiting line; a reviewer's Reject…, Return for changes… and Approve…; the Approve confirm's review variant with no task line; the committee record's banner variant and the panel's Status; the Home awaiting row's new meta, “From Nora Al-Otaibi · Legal review”. Everything in sections 1 to 4 is unchanged." },
         { s: "Committee changes · round 2", w: "Only the new parts of the committee record (header actions, locked line, banner, Change requests panel and its slot), example data aligned, requests renumbered." },
         { s: "Committee Record · header actions", w: "Edit after the transition button in Formation; Request a change after the transition buttons in Active and Suspended (absent while a request is open); nothing new in Dissolution Pending and Dissolved." },
         { s: "Committee Record · locked line", w: "In Terms Review, under the title row, for committees:edit_details only." },

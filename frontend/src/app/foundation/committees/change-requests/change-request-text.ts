@@ -5,7 +5,7 @@ import { FormatService } from '../../../core/formatting';
 import { LanguageService } from '../../../core/services/language.service';
 import { refusalBody, refusalCode } from '../../../core/http/refusal';
 import { committeeRefusal } from '../committee-references';
-import { CHANGE_FIELDS, ChangeField, ChangeImpactDto, ChangeRequestLabelsDto, ChangeValue, ChangeValues } from './change-request.service';
+import { CHANGE_FIELDS, ChangeField, ChangeImpactDto, ChangeRequestDto, ChangeRequestLabelsDto, ChangeValue, ChangeValues } from './change-request.service';
 
 /**
  * ACC-240 — every word the change request screens say about a request, in one
@@ -73,6 +73,34 @@ export function isUnreachable(err: unknown): boolean {
   return err instanceof HttpErrorResponse && UNREACHABLE.has(err.status);
 }
 
+/**
+ * ACC-245 PR 3b — the added review stage a request stands in, as the server
+ * names it (`awaitingDecisionBy` REVIEW_STAGE); null anywhere else. A review
+ * stage has no key, so this — never `status` — is how a screen knows one.
+ */
+/**
+ * ACC-245 PR 3b — a review stage's two onward names, for its Approve confirm: the
+ * stage its Approve sends the request to, and the stage that decides. Null unless
+ * BOTH are present (an older API sends neither).
+ */
+export function reviewStepsOf(
+  r: Pick<ChangeRequestDto, 'awaitingDecisionBy'> | null | undefined,
+): { next: { nameEn: string; nameAr: string | null }; decision: { nameEn: string; nameAr: string | null } } | null {
+  const by = r?.awaitingDecisionBy;
+  return by?.kind === 'REVIEW_STAGE' && by.next && by.decision ? { next: by.next, decision: by.decision } : null;
+}
+
+export function reviewStageOf(r: Pick<ChangeRequestDto, 'awaitingDecisionBy'> | null | undefined): { id: string; nameEn: string; nameAr: string | null } | null {
+  const by = r?.awaitingDecisionBy;
+  return by?.kind === 'REVIEW_STAGE' ? by.stage : null;
+}
+
+/** The translation key of a stage KEY's status word; "Open" for a key the screens don't know. */
+export function statusWordKey(key: string | null): string {
+  const known = ['draft', 'under_review', 'returned', 'approved', 'rejected', 'withdrawn'];
+  return `committee.changeRequest.status.${key && known.includes(key) ? key : 'unknown'}`;
+}
+
 /** The fields a set of values changes, in the screens' order. */
 export function changedFields(changes: ChangeValues | null | undefined): ChangeField[] {
   if (!changes) return [];
@@ -134,8 +162,22 @@ export class ChangeRequestText {
   }
 
   status(key: string | null): string {
-    const known = ['draft', 'under_review', 'returned', 'approved', 'rejected', 'withdrawn'];
-    return this.translate.instant(`committee.changeRequest.status.${key && known.includes(key) ? key : 'unknown'}`);
+    return this.translate.instant(statusWordKey(key));
+  }
+
+  /**
+   * ACC-245 PR 3b — a request's status as a person reads it: in an added review
+   * stage, that stage's own name (it replaces the "Open" fallback); otherwise
+   * the word for its stage key.
+   */
+  stageOf(r: Pick<ChangeRequestDto, 'status' | 'awaitingDecisionBy'>): string {
+    const review = reviewStageOf(r);
+    return review ? this.language.bilingual(review.nameEn, review.nameAr) : this.status(r.status);
+  }
+
+  /** The tone a status chip takes: a review stage reads in Under review's. */
+  toneOf(r: Pick<ChangeRequestDto, 'status' | 'awaitingDecisionBy'>): string | null {
+    return reviewStageOf(r) ? 'under_review' : r.status;
   }
 
   /** One impact line, in words, from the server's code and numbers. */
