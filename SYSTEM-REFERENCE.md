@@ -17524,11 +17524,21 @@ Visibility is in the `WHERE`, before `LIMIT`, and every order ends in the id, so
 a page never repeats or skips. It runs two queries (the page and the count),
 then reads the page's meetings and their stages in one batch each.
 
+**A meeting is upcoming until it ENDS, and past once it has ended** (P262,
+Ahmad's live test, 21 Nov: a Secretary lost her running meeting to Past just as
+she came to record attendance). It ends at `scheduledAt` plus `durationMinutes`,
+or `DEFAULT_MINUTES` (60, the clash check's) when it has none. The end test is
+written once, `meetingNotEndedSql()` / `meetingEndedSql()` beside the list;
+each adds a start bound (`MAX_MINUTES` before now, and not after now) so the
+`scheduledAt` index stays usable. A running meeting sorts first in Mine. What
+keys off the START is unchanged: attendance opens, the invitation answer and
+invitee sync close, the series' held count, reschedule and "this and later".
+
 | `view` | Rows |
 |---|---|
-| `mine` (default) | meetings the viewer is invited to (a member by seat, unit or invitation) or organised; upcoming, soonest first. The SCHEDULER clause does not count here (PR 7): a scheduler's unit's meetings are in `upcoming`, not Mine |
-| `upcoming` | every meeting the viewer sees that has not started; soonest first |
-| `past` | every meeting the viewer sees that has started; latest first |
+| `mine` (default) | meetings the viewer is invited to (a member by seat, unit or invitation) or organised; not yet ended, soonest first. The SCHEDULER clause does not count here (PR 7): a scheduler's unit's meetings are in `upcoming`, not Mine |
+| `upcoming` | every meeting the viewer sees that has not ended; soonest first |
+| `past` | every meeting the viewer sees that has ended; latest first |
 | `minutes` | meetings whose minutes the viewer records: a seat with `record_minutes`, or `meetings:record_minutes` in the unit |
 | `all` | every meeting; `meetings:view` only, else 403 |
 | `subunits` | meetings the viewer oversees and is not otherwise part of |
@@ -18168,7 +18178,7 @@ could not open; since the scheduler clause (§18.2) it refuses nothing, and the
 db-spec forces the two rules apart to prove nothing is written.
 
 **The panels list by the plain rule:** `view=upcoming` (every meeting the
-person may see that has not started) and `past`, by owner, and the header count
+person may see that has not ended, P262) and `past`, by owner, and the header count
 is the two totals. **The list's `canSeeAll`** says whether All meetings is
 offered; the screen keeps no copy of `meetings:view`.
 

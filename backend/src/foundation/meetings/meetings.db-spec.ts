@@ -237,9 +237,15 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   };
 
   /** A meeting written straight to the table at Planned, for the list's past rows. */
-  async function meetingRow(w: World, owner: { committeeId?: string; orgUnitId?: string }, scheduledAt: Date, organizerId: string): Promise<string> {
+  async function meetingRow(
+    w: World,
+    owner: { committeeId?: string; orgUnitId?: string },
+    scheduledAt: Date,
+    organizerId: string,
+    durationMinutes: number | null = 30,
+  ): Promise<string> {
     const m = await prisma.meeting.create({
-      data: { organizationId: w.orgId, organizerId, title: `Row ${randomUUID().slice(0, 4)}`, typeValueId: meetingType, scheduledAt, durationMinutes: 30, location: 'Room 1', ...owner },
+      data: { organizationId: w.orgId, organizerId, title: `Row ${randomUUID().slice(0, 4)}`, typeValueId: meetingType, scheduledAt, durationMinutes, location: 'Room 1', ...owner },
     });
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.orgId, objectType: 'MEETING', isDefault: true } });
     const stage = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key: 'planned' } });
@@ -435,6 +441,42 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       const first = (await meetings.list({ view: 'mine' } as never, w.orgId, as(w, 'chair'), now)).items[0]!;
       expect(first.stage.nameEn).toBe('Planned');
       expect(first.owner).toEqual({ kind: 'COMMITTEE', id: w.committeeId, nameEn: 'Committee active', nameAr: null });
+    });
+
+    it('P262: a meeting stays in Mine and Upcoming until it ENDS, and is in Past once it has ended', async () => {
+      const w = await world();
+      const now = new Date();
+      const MIN = 60_000;
+      const at = (minutes: number) => new Date(now.getTime() + minutes * MIN);
+      const chair = w.people['chair']!;
+      const c = { committeeId: w.committeeId };
+      // Running: started 20 minutes ago, 60 minutes long.
+      const running = await meetingRow(w, c, at(-20), chair, 60);
+      // Just ended: started 61 minutes ago, 60 minutes long.
+      const ended = await meetingRow(w, c, at(-61), chair, 60);
+      // Ends exactly now: ended (the end is not after now).
+      const endsNow = await meetingRow(w, c, at(-45), chair, 45);
+      // No duration: taken as DEFAULT_MINUTES (60). 50 minutes in, still running; 70 in, ended.
+      const noDurationRunning = await meetingRow(w, c, at(-50), chair, null);
+      const noDurationEnded = await meetingRow(w, c, at(-70), chair, null);
+      // Not started yet, and long over.
+      const soon = await meetingRow(w, c, at(30), chair, 60);
+      const lastWeek = await meetingRow(w, c, later(-7, now), chair, 60);
+
+      const ids = async (view: string) => (await meetings.list({ view } as never, w.orgId, as(w, 'chair'), now)).items.map((i) => i.id);
+      const notEnded = [noDurationRunning, running, soon];
+      const past = [endsNow, ended, noDurationEnded, lastWeek];
+      // A running meeting sorts first: the order stays scheduledAt ASC.
+      expect(await ids('mine')).toEqual(notEnded);
+      expect(await ids('upcoming')).toEqual(notEnded);
+      expect(await ids('past')).toEqual(past);
+      expect((await meetings.list({ view: 'upcoming' } as never, w.orgId, as(w, 'chair'), now)).total).toBe(3);
+      expect((await meetings.list({ view: 'past' } as never, w.orgId, as(w, 'chair'), now)).total).toBe(4);
+      // The same meeting is still running a minute before its end, and past a minute after.
+      const at59 = new Date(now.getTime() + 39 * MIN);
+      expect((await meetings.list({ view: 'mine' } as never, w.orgId, as(w, 'chair'), at59)).items.map((i) => i.id)).toContain(running);
+      const at61 = new Date(now.getTime() + 41 * MIN);
+      expect((await meetings.list({ view: 'past' } as never, w.orgId, as(w, 'chair'), at61)).items.map((i) => i.id)).toContain(running);
     });
 
     it('a listed row always opens, in every view — an organiser who has left the unit no longer lists the meeting', async () => {
