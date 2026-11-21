@@ -986,3 +986,110 @@ caps, the lock order and the deletes. What the build settled, or added:
   - the writer-only notes read;
   - the past-date rule;
   - the batched availability.
+
+---
+
+## 11. PR 2 as built (P261, 21 Nov)
+
+**The screens, as §5's table says:**
+- **Rough notes and Draft minutes** sit at the top of Agenda & minutes.
+- **Each item's suggestions** sit under its minutes. The votes are flagged
+  (M6), and a line names what Accept replaces (M5).
+- **The action-item suggestions** have Accept, an inline Edit and Discard.
+- **The undecided count** is in the panel header and the Action items card.
+- **The Distribute confirm** has the M2 line.
+
+What the build settled, or added:
+
+- **One additive field on the AI read:** `leftToDraft`, the items a press
+  would still draft.
+  - It uses the same M8 rule the press uses, `draftPartsOf()`, extracted from
+    `itemsToDraft()`.
+  - It is computed from rows the read already loads, so it adds no query.
+  - The trigger is absent at 0, as §1.2 says. The press's
+    `MEETING_AI_NOTHING_TO_DRAFT` stays as the backstop.
+  - The working line names the number: "Drafting minutes for 5 agenda items
+    from your notes…", at most 6.
+- **The Action items card did not exist.** The Meetings plan left it to PR
+  7c, which didn't build it. PR 2 builds it as 6.2 draws it, while the minutes
+  are a draft:
+  - every draft action item, "From item n";
+  - for whoever records the minutes, "3 AI suggestions undecided · items 2,
+    4" and "Not action items until accepted."
+- **One state for the page: `MeetingMinutesAi`.** The meeting page provides
+  it, beside `MinutesWriteOrder`.
+  - It holds the AI read, and the newest read wins.
+  - An accept is a minutes write in the page's order (P206).
+  - A draft or a discard makes the page read the minutes again, so the
+    Distribute confirm's count is current (M2).
+  - The AI read is made only while the minutes are a draft the viewer
+    records. Anyone else makes no request.
+- **The notes are saved 800 ms after typing stops.**
+  - The stored value is never written back into the box.
+  - A press saves any unsaved text first, because the server drafts from the
+    saved notes.
+  - Notes that can't be saved stop the press, and the notes line says so.
+- **The press waits 330 s** (`DRAFT_MINUTES_WAIT_MS`), longer than the
+  server's 300 s call.
+  - A client timeout or a lost connection reads `GET …/ai`. A run still
+    going shows "Minutes are being drafted…" with Check again. A run that
+    finished shows its suggestions.
+  - Retry is offered only when the run ended with nothing saved: the call
+    failed and was refunded, so nothing is in flight.
+  - `MEETING_AI_IN_PROGRESS` is shown the same way.
+  - **Cancel** stops waiting and says the draft still finishes and is
+    charged (ACC-193 Q2). The screen never polls.
+- **`am-ai-assist` gained three opt-in inputs, off by default:**
+  - `quiet`: a saved suggestion drawn on load takes no focus and is not
+    announced. The notes box announces a fresh draft and moves focus to its
+    first suggestion.
+  - `acceptLabel`: "Accept into minutes".
+  - `busy`: Accept, Edit and Discard are disabled while one is in flight.
+- **Edit on a minutes suggestion accepts it, then moves focus into that
+  item's discussion box.**
+- **Edit on an action suggestion opens the three fields inline:** what,
+  owner and due, prefilled. Saving accepts with those values.
+  - The owners are Raise action item's: invitees who are people. That rule
+    is now one function, `actionOwnerOptions()`.
+  - The suggested owner is offered too when they are a person of the
+    organisation who wasn't invited.
+- **Refusals, each from its code:**
+  - the gateway's through `core/ai/ai-refusal.ts`;
+  - the seven Draft minutes codes through `meeting-refusal.ts`.
+    `MEETING_AI_TOO_LONG` is said for its `feature`.
+  - `MEETING_AI_SUGGESTION_GONE` and `MEETING_AI_NOT_OFFERED` offer Reload.
+    Draft minutes is absent where it isn't offered, so that refusal means the
+    page is stale.
+- **Strings:** §8's and the design's, in both languages. Arabic about a
+  person is neutral (build note 1), and the organisation is «المنشأة».
+  Counted strings are plural objects with all six Arabic forms.
+- **Measured (`meeting-page.ai.layout.spec.ts`,
+  `meeting-distribute-dialog.layout.spec.ts`):**
+
+  | | EN 1280 | AR 1280 | EN 390 | AR 390 |
+  |---|---|---|---|---|
+  | Rough notes block | 247 | 274 | 281 | 308 |
+  | Item 2's minutes suggestion | 281 | 284 | 390 | 386 |
+  | Three action suggestions | 583 | 619 | 705 | 718 |
+  | The inline Edit row | 306 | 321 | 332 | 344 |
+  | Action items card | 229 | 227 | 229 | 247 |
+  | Distribute confirm body, with the M2 line (cap 420) | 177 (243 to spare) | 190 (230) | 177 (243) | 190 (230) |
+  | Distribute confirm body, refused | 207 (213) | 222 (198) | 207 (213) | 222 (198) |
+
+  - Each part stays inside its column, with nothing wider than its own box,
+    in both languages at both widths. The Edit row is measured open on the
+    outside-guest suggestion.
+  - On the phone every button in the notes and the suggestions is at least
+    44px tall. The page's phone rule now reaches the AI pattern's own
+    buttons (`.am-ai button`), which are not PrimeNG buttons.
+  - No dialog was added. The Distribute confirm is the only dialog this PR
+    changes, and it keeps 198px or more of its 420.
+- **Mutation-checked:**
+  - the notes written back;
+  - a 120 s wait;
+  - a lost wait offering Retry;
+  - Accept without an owner (M7);
+  - `quiet` ignored;
+  - the M2 line removed;
+  - the 44px rule removed.
+- **No migration.**

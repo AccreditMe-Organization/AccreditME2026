@@ -17255,13 +17255,13 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
 
-### 17.12 Meetings AI — Draft minutes, with the action items (ACC-322 PR 1)
+### 17.12 Meetings AI — Draft minutes, with the action items (ACC-322 PR 1, PR 2)
 
 Plan, Ahmad's answers (20 Nov, §6) and the PR order:
 `backend/Plans/step-322-meetings-ai.md`. Code: `foundation/meetings/ai/`, and
-`MeetingMinutesService.applyAiDraft()`. Backend only: the screens are PR 2.
-Suggest agenda items (PR 3) and the absent-member summary (PR 5) are not
-built.
+`MeetingMinutesService.applyAiDraft()`; the screens (PR 2, §17.12.1) are in
+`frontend/src/app/foundation/meetings/`. Suggest agenda items (PR 3) and the
+absent-member summary (PR 5) are not built.
 
 - **Who and where.**
   - **Who:** whoever records the minutes (`MEETING_RECORDERS`). Anyone else
@@ -17403,7 +17403,7 @@ built.
   - and, in P249, the provider using the request's timeout, the 120 s
     default, the gateway passing a feature's timeout on, and the stale window
     longer than the timeout.
-- **For PR 2:**
+- **For PR 2 (built, §17.12.1):**
   - **Never write the saved notes back into the box while someone types.**
     The notes DTO trims, so writing the saved value back would eat a trailing
     space.
@@ -17411,6 +17411,64 @@ built.
     client timeout, the screen reads `GET …/ai` and shows `running` or the
     saved suggestions, never Retry. Giving up earlier would say "timed out"
     while the server finishes the run and charges for it.
+
+#### 17.12.1 The screens (PR 2)
+
+- **Who sees anything.** The meeting page makes the AI read only while the
+  minutes are a draft the viewer records (`phase === 'draft'` and
+  `may.recordMinutes`). The box shows only where the read's `minutes.may` is
+  true, so M9 is included. The trigger shows only where `minutes.available`
+  is true and `leftToDraft > 0`.
+  - **`leftToDraft`** (PR 2, additive) counts the items a press would draft.
+    It uses `draftPartsOf()`, the one M8 rule, from the rows the read already
+    loads: no query of its own.
+- **One state, `MeetingMinutesAi`** (`meeting-minutes-ai.ts`), provided by
+  the meeting page. Its readers:
+  - `am-meeting-rough-notes`: the box and the trigger;
+  - `am-meeting-item-ai`: an item's suggestions;
+  - the agenda panel's header count: "✦ 3 items drafted · 3 action items
+    undecided";
+  - `am-meeting-action-items-card`: the side card while the minutes are a
+    draft.
+
+  An accept goes through `MinutesWriteOrder` (P206). A draft or a discard
+  makes the page read the minutes again, so the Distribute confirm's
+  `aiUndecided` is current (M2).
+- **The notes.**
+  - Saved 800 ms after typing stops (`PUT …/ai/notes`), and never written
+    back into the box.
+  - A press saves unsaved text first.
+  - A save that fails stops the press, said on the notes line.
+- **The press** waits `DRAFT_MINUTES_WAIT_MS` (330 s).
+  - **A timeout, a lost connection or `MEETING_AI_IN_PROGRESS`** reads the
+    run's state. Still running: "Minutes are being drafted…" with Check
+    again. Finished: its suggestions show. Never polled.
+  - **Retry only when the run ended with nothing saved.**
+  - **Cancel** stops waiting. The run finishes and is charged.
+- **Suggestions.**
+  - **Each is an `am-ai-assist` result with `quiet`:** no focus move or
+    announcement on load.
+  - **The minutes suggestion** shows each vote as the notes stated it. It
+    adds the M6 flag where `abovePresent` is set, and the M5 line from
+    `replaces`.
+    - "Accept into minutes" accepts it.
+    - Edit accepts it and moves focus into the item's discussion box.
+    - An item the notes say nothing about reads so, with Discard only.
+  - **The action suggestions:**
+    - each row shows what, owner and due, with the reason for an empty one
+      (outside guest, nobody matches, date passed);
+    - Accept only with both an owner and a due date;
+    - Edit opens the three fields inline (owners from
+      `actionOwnerOptions()`, the same as Raise action item). Saving accepts
+      with those values.
+- **Refusals** are said from their code: the gateway's through
+  `ai-refusal.ts`, the meeting's through `meeting-refusal.ts`.
+  `MEETING_AI_SUGGESTION_GONE` and `MEETING_AI_NOT_OFFERED` are in
+  `RELOAD_CODES`.
+- **`am-ai-assist` gained** `quiet`, `acceptLabel` and `busy`. All are
+  opt-in and off by default.
+- **On the phone (390)** the page's 44px rule reaches `.am-ai button`.
+  Measurements: the plan's §11.
 
 ---
 
