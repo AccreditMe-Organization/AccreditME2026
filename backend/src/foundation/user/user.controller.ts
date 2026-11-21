@@ -7,6 +7,7 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { UserService, toSafeUser } from './user.service';
+import type { SeatPosition } from '../../common/services/seat-holders';
 import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
 import { TwoStepForViewer, UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { InviteUserDto } from './dto/invite-user.dto';
@@ -87,6 +88,15 @@ export class UserController {
     return this.userService.getStatusCounts(tenantId);
   }
 
+  // ACC-159 — the seats in use and the limit, for the invite form: whoever may
+  // invite may know whether there is room. Declared before @Get(':id') for the
+  // same reason as status-counts above.
+  @Get('seats')
+  @Permissions(USERS_PERMISSIONS.INVITE)
+  getSeatPosition(@CurrentTenant() tenantId: string): Promise<SeatPosition> {
+    return this.userService.getSeatPosition(tenantId);
+  }
+
   // ACC-43 — no @Permissions() decorator here on purpose, same reasoning
   // as updateProfile()/updateOutOfOffice() below: viewing your OWN profile
   // must never require users:view — every authenticated user already
@@ -104,7 +114,14 @@ export class UserController {
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
     @ImpersonatedBy() impersonatedBy: string | undefined,
-  ): Promise<IUser & { references: IUserReferenceNames; isAccountOwner: boolean; twoStep: TwoStepForViewer | null }> {
+  ): Promise<
+    IUser & {
+      references: IUserReferenceNames;
+      isAccountOwner: boolean;
+      twoStep: TwoStepForViewer | null;
+      invitationExpiresAt: Date | null;
+    }
+  > {
     // ACC-45 — see listUsers() above.
     const user = await this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
     // ACC-79 — names for the ids on the record, so a read-only profile can show
@@ -117,7 +134,14 @@ export class UserController {
       { id: user.id, isAccountOwner: user.isAccountOwner, twoFactorEnabled: user.twoFactorEnabled },
     );
     // ACC-221 — read in getByIdForViewer()'s own query, not a second request.
-    return { ...toSafeUser(user), isAccountOwner: user.isAccountOwner, references, twoStep };
+    // ACC-159 — set for an INVITED person only (getByIdForViewer decides).
+    return {
+      ...toSafeUser(user),
+      isAccountOwner: user.isAccountOwner,
+      references,
+      twoStep,
+      invitationExpiresAt: user.invitationExpiresAt,
+    };
   }
 
   @Post('invite')
@@ -280,6 +304,18 @@ export class UserController {
     @CurrentUser() actorId: string,
   ): Promise<void> {
     return this.userService.revokeInvitation(id, tenantId, actorId);
+  }
+
+  // ACC-159 — a new link, and two more days. Under users:invite, like revoke:
+  // whoever may send an invitation may send it again.
+  @Post(':id/resend-invitation')
+  @Permissions(USERS_PERMISSIONS.INVITE)
+  resendInvitation(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<{ invitationExpiresAt: Date }> {
+    return this.userService.resendInvitation(id, tenantId, actorId);
   }
 
   // ── Migrated from RoleController (Step 9) — same paths, same behavior ──

@@ -14266,6 +14266,62 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   (`/users/:id/roles` reads better than a separate `/roles` sub-resource
   controller) — code comment states this migration happened in Step 9,
   same behavior, same underlying `RoleService` ownership.
+- **Resend, two days, and who holds a seat (ACC-159).**
+  - **An invitation lasts two days** (`INVITATION_TTL_MS`), every invitation,
+    the owner's from `createTenant()` included.
+  - **`POST /users/:id/resend-invitation`** (`users:invite`) writes a new
+    `invitationToken`, so the old link stops working, and a new
+    `invitationExpiresAt`, under the person's row lock. The invitation email
+    and one audit row (`invitation_resent`, no token) follow the commit.
+    Anyone not INVITED is 409 `INVITATION_NOT_PENDING`; another
+    organisation's person is the identical 404.
+  - **An expired invitation holds no seat and no position**:
+    `holdsSeatWhere()` (`common/services/seat-holders.ts`) is the one rule
+    (ACTIVE, or INVITED with `invitationExpiresAt >= now`). It is used by
+    `assertSeatAvailable()`, Home's seats line, `validateSingleAssigneeCap()`,
+    and `OrgPositionService.hasAnyHeadConferringHolder()` /
+    `listAvailablePositionsForUser()`. The seat frees itself by not being
+    counted, with no sweep. So resending an EXPIRED invitation takes a seat
+    and the position again, through the same checks `invite()` runs.
+  - **`GET /users/seats`** (`users:invite`) answers `{ occupied, maxUsers }`
+    for the invite form, by the same count. `GET /users/:id` carries
+    `invitationExpiresAt` for an INVITED person only, never the token.
+  - **The seat limit and the three position rules carry codes**
+    (`user-refusal.ts`): `SEAT_LIMIT_REACHED`, `POSITION_INACTIVE`,
+    `POSITION_ALREADY_HELD`, `UNIT_ALREADY_HAS_HEAD`. Their English messages
+    are unchanged. Invite and Resend say them, `INVITATION_NOT_PENDING`
+    (with the status it names) and `ROLE_INACTIVE` from the code, through
+    one function, `invitationRefusalMessage()` (`foundation/user/invitation-refusal.ts`).
+  - **The screens.**
+    - **Resend invitation** sits beside Revoke invitation, for an INVITED
+      person, to a `users:invite` holder: a button on the record page, and the
+      item before Revoke in the Users list's row ⋯. The rule is
+      `mayResendInvitation()` (`user-status-actions.service.ts`), beside
+      `statusActionFor()`, and the account owner's invitation is resent too
+      (only Revoke is withheld from it).
+    - **A press sends at once**, with no confirm: nothing is lost. A second
+      press while one is in flight sends nothing, and the button is never
+      disabled. Success names the person in the page's own message slot
+      ("Invitation sent again to …") and the record page reads the record
+      again; a refusal is said in the error slot.
+    - **The record page's facts strip has an "Invitation" fact** for an
+      INVITED person the server sent an expiry for: "Expires in 2 days" or
+      "Expired 3 days ago" (`relative()`), with the full date-time under it
+      (`dateTime()`), in the tenant's zone.
+    - **The invite form reads `GET /users/seats` when it is built**, which is
+      every opening (the host rebuilds it from a TemplateRef), and only for a
+      `users:invite` holder. "7 of 25 seats in use." joins the subtitle's
+      paragraph (Home's own `home.seatsInUse` plural). When full, one sentence
+      takes the whole paragraph: no free seat until an invitation expires or
+      someone is deactivated. A failed read, or no limit, shows nothing, never
+      "0 of 0". Send stays enabled; a seat refusal on Send reads the line again.
+    - **Measured against the 420 cap** (`invite-user.seats.layout.spec.ts`,
+      560 and a 390 phone): the full state is 366 / 376 at 560 and 384 / 396
+      at 390 (English / Arabic). Before the line the form measured 369 / 380 at
+      both widths, so 560 gained nothing and the phone 15 / 16px. Two
+      states were over the cap before this change, and stay so: "this unit has
+      no head" and a refusal said above the fields. The spec logs them, and
+      does not hold them to the cap.
 
 ### 12.4 Invitation Acceptance — `AuthService.acceptInvitation()`
 

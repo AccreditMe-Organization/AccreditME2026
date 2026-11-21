@@ -166,6 +166,15 @@ export interface IUserDto {
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // ACC-159 — when a pending invitation stops working. Only GET /users/:id sends
+  // it, and only for an INVITED person; absent elsewhere.
+  invitationExpiresAt?: string | null;
+}
+
+/** ACC-159 — GET /users/seats: the seats in use and the limit (users:invite). */
+export interface ISeatPositionDto {
+  occupied: number;
+  maxUsers: number;
 }
 
 export interface InviteUserDto {
@@ -376,6 +385,17 @@ export class UserService {
 
   revokeInvitation(id: string): Observable<void> {
     return this.http.post<void>(`${this.base}/${id}/revoke-invitation`, {});
+  }
+
+  // ACC-159 — a new link and two more days (users:invite). The old link stops
+  // working. Every refusal is a 404, or a 409 with a code (invitation-refusal.ts).
+  resendInvitation(id: string): Observable<{ invitationExpiresAt: string }> {
+    return this.http.post<{ invitationExpiresAt: string }>(`${this.base}/${id}/resend-invitation`, {});
+  }
+
+  // ACC-159 — the seats in use and the limit, for the invite form.
+  getSeats(): Observable<ISeatPositionDto> {
+    return this.http.get<ISeatPositionDto>(`${this.base}/seats`);
   }
 
   // ACC-46 Section 2.6.b Step 2 — automatic context load, not a user

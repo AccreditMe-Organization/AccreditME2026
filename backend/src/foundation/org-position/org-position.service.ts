@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { holdsSeatWhere } from '../../common/services/seat-holders';
 import { OrganizationService } from '../organization/organization.service';
 import { CreateOrgPositionDto } from './dto/create-org-position.dto';
 import { UpdateOrgPositionDto } from './dto/update-org-position.dto';
@@ -239,7 +240,8 @@ export class OrgPositionService {
       where: {
         organizationId,
         primaryOrgUnitId: orgUnitId,
-        status: { in: ['ACTIVE', 'INVITED'] },
+        // ACC-159 — an expired invitation no longer holds the position.
+        ...holdsSeatWhere(new Date()),
         position: { isUnitHeadPosition: true },
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
@@ -283,7 +285,8 @@ export class OrgPositionService {
           where: {
             organizationId,
             primaryOrgUnitId: orgUnitId,
-            status: { in: ['ACTIVE', 'INVITED'] }, // matches 2.1's INVITED-status fix
+            // matches 2.1's INVITED-status fix; ACC-159 — an open invitation only
+            ...holdsSeatWhere(new Date()),
             position: { isSingleAssignee: true },
             id: { not: candidateUserId },
           },

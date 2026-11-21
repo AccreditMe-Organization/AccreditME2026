@@ -73,9 +73,20 @@ import { RoleInactiveException } from '../roles/role-active';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 import { buildTenantUrl } from '../../common/config/app-url.config';
-import { PlacementField, UseTransferException } from './user-refusal';
+import {
+  InvitationNotPendingException,
+  PlacementField,
+  PositionAlreadyHeldException,
+  PositionInactiveException,
+  SeatLimitReachedException,
+  UnitAlreadyHasHeadException,
+  UseTransferException,
+} from './user-refusal';
+import { holdsSeatWhere, seatPosition, SeatPosition } from '../../common/services/seat-holders';
 
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// ACC-159 — two days (Ahmad, 1 Oct): the link sets a password, so it must not
+// sit live in an inbox for long. Resend issues a new one and restarts the two days.
+export const INVITATION_TTL_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
 // ACC-120 — the local copy that stood here is gone, and so is its comment
 // saying it "mirrors RoleService's own TENANT_ADMIN_KEY guard". It did not
@@ -325,7 +336,7 @@ export class UserService {
     organizationId: string,
     actorId: string,
     actorPermissions: string[],
-  ): Promise<IUser & { isAccountOwner: boolean; twoFactorEnabled: boolean }> {
+  ): Promise<IUser & { isAccountOwner: boolean; twoFactorEnabled: boolean; invitationExpiresAt: Date | null }> {
     const isSelf = actorId === id;
     const canView = actorPermissions.includes('users:view');
     if (!isSelf && !canView) throw new ForbiddenException();
@@ -349,6 +360,9 @@ export class UserService {
       ...user,
       isAccountOwner: ownedOrganizations.length > 0,
       twoFactorEnabled: authUser?.twoFactorEnabled ?? false,
+      // ACC-159 — when a pending invitation stops working, for the record page.
+      // An INVITED person only; never the token (toSafeUser() stays the allowlist).
+      invitationExpiresAt: user.status === 'INVITED' ? user.invitationExpiresAt : null,
     };
   }
 
@@ -877,24 +891,22 @@ export class UserService {
    * grids, and on the last-admin guard, where four copies disagreed about
    * whether to count assignment rows or people.
    *
-   * IT COUNTS ACTIVE **AND** INVITED, and that is load-bearing rather than
-   * incidental: a pending invitation holds a seat, so a tenant at its limit
-   * cannot invite someone, and equally cannot bring a departed person back
-   * until a seat is actually free. Had reactivation been written with its own
-   * count of ACTIVE users only, the two paths would disagree about what "full"
-   * means — the tenant could reactivate past a limit that blocks inviting.
+   * IT COUNTS ACTIVE **AND** a pending invitation, and that is load-bearing
+   * rather than incidental: a pending invitation holds a seat, so a tenant at
+   * its limit cannot invite someone, and equally cannot bring a departed person
+   * back until a seat is actually free. Had reactivation been written with its
+   * own count of ACTIVE users only, the two paths would disagree about what
+   * "full" means — the tenant could reactivate past a limit that blocks inviting.
+   *
+   * ACC-159 — an invitation past its expiry holds no seat: the count is
+   * seatPosition() (common/services/seat-holders.ts), the one rule: two reads
+   * in parallel, the limit and the count.
    */
   private async assertSeatAvailable(organizationId: string): Promise<void> {
-    const organization = await this.prisma.organization.findUnique({
-      where: { id: organizationId },
-    });
-    if (!organization) throw new NotFoundException('Organization not found');
-
-    const occupied = await this.prisma.user.count({
-      where: { organizationId, status: { in: ['ACTIVE', 'INVITED'] } },
-    });
-    if (occupied >= organization.maxUsers) {
-      throw new ConflictException('This plan has reached its full-user seat limit');
+    const seats = await seatPosition(this.prisma, organizationId, new Date());
+    if (!seats) throw new NotFoundException('Organization not found');
+    if (seats.occupied >= seats.maxUsers) {
+      throw new SeatLimitReachedException();
     }
   }
 
@@ -1006,17 +1018,7 @@ export class UserService {
       },
     });
 
-    await this.notificationService.create(
-      {
-        userId: user.id,
-        titleEn: `You've been invited to join ${organization.name} on AccreditMe`,
-        titleAr: `تمت دعوتك للانضمام إلى ${organization.name} على AccreditMe`,
-        bodyEn: `Accept your invitation to set your password and get started: ${invitationUrl}`,
-        bodyAr: `اقبل الدعوة لتعيين كلمة المرور والبدء: ${invitationUrl}`,
-        channel: 'EMAIL',
-      },
-      organizationId,
-    );
+    await this.sendInvitationNotice(user.id, organization.name, invitationUrl, organizationId);
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -1059,6 +1061,110 @@ export class UserService {
     }
 
     return user;
+  }
+
+  // ACC-159 — the invitation email. invite() and resendInvitation() send the
+  // same one; the link is built by the caller before anything is written.
+  private async sendInvitationNotice(
+    userId: string,
+    organizationName: string,
+    invitationUrl: string,
+    organizationId: string,
+  ): Promise<void> {
+    await this.notificationService.create(
+      {
+        userId,
+        titleEn: `You've been invited to join ${organizationName} on AccreditMe`,
+        titleAr: `تمت دعوتك للانضمام إلى ${organizationName} على AccreditMe`,
+        bodyEn: `Accept your invitation to set your password and get started: ${invitationUrl}`,
+        bodyAr: `اقبل الدعوة لتعيين كلمة المرور والبدء: ${invitationUrl}`,
+        channel: 'EMAIL',
+      },
+      organizationId,
+    );
+  }
+
+  /**
+   * ACC-159 — resend a pending invitation: a NEW token, so the old link stops
+   * working, and the two days start again.
+   *
+   * - A missing user, or another organisation's, is the identical 404
+   *   (`{ id, organizationId }` in one where).
+   * - Anyone not INVITED is 409 INVITATION_NOT_PENDING, checked again under the
+   *   person's row lock, so a resend racing an acceptance or a revoke can't
+   *   write a token onto an account that is no longer an invitation.
+   * - An EXPIRED invitation holds no seat and no position (seat-holders.ts),
+   *   so resending it takes one of each again: the seat limit and the position
+   *   rules invite() runs, with the person excluded from their own position
+   *   count. An open invitation already holds both.
+   * - The email is sent, and the audit row written, AFTER the commit. The token
+   *   is in neither the audit row nor the response.
+   */
+  async resendInvitation(
+    id: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ invitationExpiresAt: Date }> {
+    const before = await this.prisma.user.findFirst({
+      where: { id, organizationId },
+      select: { status: true, invitationExpiresAt: true, positionId: true, primaryOrgUnitId: true },
+    });
+    if (!before) throw new NotFoundException('User not found');
+    if (before.status !== 'INVITED') throw new InvitationNotPendingException(before.status);
+
+    const organization = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { name: true, slug: true },
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+
+    const now = new Date();
+    const wasOpen = !!before.invitationExpiresAt && before.invitationExpiresAt >= now;
+    if (!wasOpen) {
+      await this.assertSeatAvailable(organizationId);
+      if (before.positionId) {
+        await this.validatePositionAssignment(before.positionId, before.primaryOrgUnitId, organizationId, id);
+      }
+    }
+
+    const invitationToken = randomBytes(24).toString('hex');
+    const invitationExpiresAt = new Date(now.getTime() + INVITATION_TTL_MS);
+    // Built before the write, as invite() does: a configuration error refuses
+    // the resend whole instead of leaving a new token nobody was sent.
+    const invitationUrl = buildTenantUrl(organization.slug, `/accept-invitation?token=${invitationToken}`);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+      const current = await tx.user.findFirst({ where: { id, organizationId }, select: { status: true } });
+      if (!current) throw new NotFoundException('User not found');
+      if (current.status !== 'INVITED') throw new InvitationNotPendingException(current.status);
+      await tx.user.updateMany({ where: { id, organizationId }, data: { invitationToken, invitationExpiresAt } });
+    });
+
+    await this.sendInvitationNotice(id, organization.name, invitationUrl, organizationId);
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'User',
+      objectId: id,
+      before: { invitationExpiresAt: before.invitationExpiresAt },
+      after: { invitationExpiresAt },
+      metadata: { event: 'invitation_resent' },
+    });
+
+    return { invitationExpiresAt };
+  }
+
+  /**
+   * ACC-159 — the seats in use and the limit, for the invite form (users:invite,
+   * on the route). The same count assertSeatAvailable() refuses by: two reads
+   * in parallel, the limit and the count.
+   */
+  async getSeatPosition(organizationId: string): Promise<SeatPosition> {
+    const seats = await seatPosition(this.prisma, organizationId, new Date());
+    if (!seats) throw new NotFoundException('Organization not found');
+    return seats;
   }
 
   // ACC-82 — the other half of invite()'s refresh above. The invited user
@@ -1371,7 +1477,7 @@ export class UserService {
     // that already has a real, currently-active holder, so this can never
     // legitimately fire during one.
     if (!position.isActive) {
-      throw new ConflictException('This position is inactive and cannot be assigned');
+      throw new PositionInactiveException();
     }
     // ACC-154 — a head position grants its role to whoever holds it
     // (syncHeadAuthorityRoleGrant), and a deactivated role is never given out
@@ -1432,12 +1538,13 @@ export class UserService {
         organizationId,
         positionId: position.id,
         primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: { in: ['ACTIVE', 'INVITED'] },
+        // ACC-159 — an expired invitation no longer holds the position.
+        ...holdsSeatWhere(new Date()),
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
     });
     if (existingHolders >= 1) {
-      throw new ConflictException('This position already has an active holder in this org unit');
+      throw new PositionAlreadyHeldException();
     }
   }
 
@@ -1479,7 +1586,7 @@ export class UserService {
       excludeUserId,
     );
     if (hasAnyHeadHolder) {
-      throw new ConflictException('This org unit already has an active Head-position holder');
+      throw new UnitAlreadyHasHeadException();
     }
   }
 

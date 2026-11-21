@@ -20,12 +20,21 @@ interface OrgRow {
   maxUsers: number;
   planCatalog: { maxFullUsers: number | null } | null;
 }
-type UserWhere = { organizationId?: string; status?: string | { in: string[] }; invitationExpiresAt?: { lt: Date } };
+type UserWhere = {
+  organizationId?: string;
+  status?: string | { in: string[] };
+  invitationExpiresAt?: { lt?: Date; gte?: Date };
+  OR?: UserWhere[];
+};
 
-const matches = (u: UserRow, w: UserWhere) =>
+// ACC-159 — honours OR and gte too, so the seat rule (seat-holders.ts) is
+// evaluated, not assumed.
+const matches = (u: UserRow, w: UserWhere): boolean =>
   (w.organizationId === undefined || u.organizationId === w.organizationId) &&
   (w.status === undefined || (typeof w.status === 'string' ? u.status === w.status : w.status.in.includes(u.status))) &&
-  (w.invitationExpiresAt === undefined || (u.invitationExpiresAt !== null && u.invitationExpiresAt < w.invitationExpiresAt.lt));
+  (w.invitationExpiresAt?.lt === undefined || (u.invitationExpiresAt !== null && u.invitationExpiresAt < w.invitationExpiresAt.lt)) &&
+  (w.invitationExpiresAt?.gte === undefined || (u.invitationExpiresAt !== null && u.invitationExpiresAt >= w.invitationExpiresAt.gte)) &&
+  (w.OR === undefined || w.OR.some((branch) => matches(u, branch)));
 
 function setup(users: UserRow[], orgs: OrgRow[]) {
   const prisma = {
@@ -59,10 +68,11 @@ describe('UserHomeCountsService (ACC-279)', () => {
     expect(await service.counts(ORG_A, { withSeats: false }, NOW)).toEqual({ active: 2, invited: 2, invitedExpired: 1, seats: null });
   });
 
-  it('seats are ACTIVE + INVITED of the enforced limit, when the plan sets a limit', async () => {
+  it('seats are ACTIVE + open invitations of the enforced limit; an expired invitation holds none (ACC-159)', async () => {
     const { service } = setup(people(ORG_A), [{ id: ORG_A, maxUsers: 25, planCatalog: { maxFullUsers: 50 } }]);
 
-    expect((await service.counts(ORG_A, { withSeats: true }, NOW)).seats).toEqual({ occupied: 4, maxUsers: 25 });
+    // 2 active + 1 open invitation; the expired one and the inactive person hold no seat.
+    expect((await service.counts(ORG_A, { withSeats: true }, NOW)).seats).toEqual({ occupied: 3, maxUsers: 25 });
   });
 
   it('no seats line without a plan, with a plan that sets no limit, or with a limit of 0 — never "of 0"', async () => {

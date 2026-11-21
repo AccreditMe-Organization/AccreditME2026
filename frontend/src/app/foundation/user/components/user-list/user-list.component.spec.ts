@@ -8,6 +8,7 @@ import { OrgPositionService } from '../../../org-position/services/org-position.
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { UserStatusActionsService } from '../../services/user-status-actions.service';
 
 // The signed-in viewer — someone other than every user these specs list, so
 // the own-row rule (CC-88, A1) only applies where a test says so.
@@ -80,9 +81,10 @@ describe('UserListComponent row actions (ACC-79)', () => {
     expect(create(ADMIN).rowActionsFor(user({ status: 'INACTIVE' }))).toEqual(['reactivate']);
   });
 
-  it('offers Revoke invitation for an invited user, NOT Deactivate', () => {
+  it('offers Resend and Revoke invitation for an invited user, NOT Deactivate', () => {
     const actions = create(ADMIN).rowActionsFor(user({ status: 'INVITED' }));
-    expect(actions).toEqual(['revokeInvitation']);
+    // ACC-159 — Resend sits just before Revoke.
+    expect(actions).toEqual(['resendInvitation', 'revokeInvitation']);
     // Named explicitly: offering Deactivate here is the defect, not a near miss.
     expect(actions).not.toContain('deactivate');
   });
@@ -114,7 +116,30 @@ describe('UserListComponent row actions (ACC-79)', () => {
     expect(list.rowActionsFor(user({ status: 'INACTIVE' }))).toEqual([]);
   });
 
-  it('does not offer Revoke invitation without users:invite', () => {
+  it('Resend says what happened in the message slot, and a refusal in the error slot', () => {
+    const list = create(ADMIN);
+    const actions = TestBed.inject(UserStatusActionsService);
+    const u = user({ status: 'INVITED' });
+
+    spyOn(actions, 'resendInvitation').and.callFake((_user, result) => result.succeeded('Invitation sent again to Dr. Yasser Al-Amri.'));
+    list.resendInvitation(u);
+    expect(actions.resendInvitation).toHaveBeenCalledOnceWith(u, jasmine.anything());
+    expect(list.infoMessage()).toBe('Invitation sent again to Dr. Yasser Al-Amri.');
+    expect(list.error()).toBeNull();
+
+    (actions.resendInvitation as jasmine.Spy).and.callFake((_user, result) => result.failed('Every seat is in use.'));
+    list.resendInvitation(u);
+    expect(list.infoMessage()).toBeNull();
+    expect(list.error()).toBe('Every seat is in use.');
+  });
+
+  it('offers Resend invitation to no other status', () => {
+    for (const status of ['ACTIVE', 'INACTIVE', 'SUSPENDED'] as const) {
+      expect(create(ADMIN).rowActionsFor(user({ status }))).withContext(status).not.toContain('resendInvitation');
+    }
+  });
+
+  it('does not offer Resend or Revoke invitation without users:invite', () => {
     const list = create(['users:view', 'users:deactivate', 'users:reactivate']);
     expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual([]);
   });
@@ -132,9 +157,9 @@ describe('UserListComponent row actions (ACC-79)', () => {
   // transferUser() requires ACTIVE and a current org unit to move from.
   it('does not offer Transfer to a user the backend would refuse to transfer', () => {
     const list = create(ADMIN);
-    // Not ACTIVE: the status slot is Revoke invitation here, and Transfer is
+    // Not ACTIVE: Resend and Revoke invitation here (ACC-159), and Transfer is
     // absent — which is the assertion.
-    expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual(['revokeInvitation']);
+    expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual(['resendInvitation', 'revokeInvitation']);
     // ACTIVE but no unit to move from.
     expect(list.rowActionsFor(user({ primaryOrgUnitId: null }))).toEqual(['deactivate']);
   });
@@ -156,7 +181,8 @@ describe('UserListComponent row actions (ACC-79)', () => {
   it("offers neither Deactivate nor Revoke invitation on the account owner's row", () => {
     const list = create(ADMIN);
     expect(list.rowActionsFor(user({ isAccountOwner: true }))).toEqual(['transfer']);
-    expect(list.rowActionsFor(user({ isAccountOwner: true, status: 'INVITED' }))).toEqual([]);
+    // ACC-159 — the owner's invitation can't be revoked here, but it can be resent.
+    expect(list.rowActionsFor(user({ isAccountOwner: true, status: 'INVITED' }))).toEqual(['resendInvitation']);
   });
 
   it("offers both on another administrator's row", () => {
@@ -184,6 +210,7 @@ describe('UserListComponent row actions (ACC-79)', () => {
       transfer: spyOn(list, 'openTransfer'),
       deactivate: spyOn(list, 'confirmDeactivate'),
       reactivate: spyOn(list, 'confirmReactivate'),
+      resendInvitation: spyOn(list, 'resendInvitation'),
       revokeInvitation: spyOn(list, 'confirmRevokeInvitation'),
     };
     for (const [action, spy] of Object.entries(calls)) {
