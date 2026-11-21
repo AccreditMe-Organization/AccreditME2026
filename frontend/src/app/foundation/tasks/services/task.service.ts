@@ -14,7 +14,6 @@ export interface ITaskDto {
   sourceId: string;
   sourceStageId: string | null;
   workflowInstanceId: string | null;
-  meetingId: string | null;
   createdById: string;
   status: string;
   priority: string;
@@ -445,7 +444,6 @@ export interface CreateTaskDto {
   description?: string;
   sourceType: string;
   sourceId: string;
-  meetingId?: string;
   // Named people. The task form sends `assignTo` instead (ACC-167); sending
   // both is refused by the server.
   assigneeUserIds?: string[];

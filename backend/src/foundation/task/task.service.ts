@@ -317,7 +317,6 @@ export class TaskService {
         sourceId: dto.sourceId,
         sourceStageId: internal?.sourceStageId ?? null,
         workflowInstanceId: internal?.workflowInstanceId ?? null,
-        meetingId: dto.meetingId ?? null,
         requiresEvidence: dto.requiresEvidence ?? false,
         priority,
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',

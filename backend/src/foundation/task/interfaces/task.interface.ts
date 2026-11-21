@@ -7,7 +7,6 @@ export interface ITask {
   sourceId: string;
   sourceStageId: string | null;
   workflowInstanceId: string | null;
-  meetingId: string | null;
   createdById: string;
   status: string; // TaskStatus
   priority: string; // TaskPriority

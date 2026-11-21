@@ -30,7 +30,6 @@ const MOCK_TASK: ITask = {
   sourceId: 'doc-1',
   sourceStageId: null,
   workflowInstanceId: null,
-  meetingId: null,
   createdById: USER_ID,
   status: 'PENDING',
   priority: 'MEDIUM',

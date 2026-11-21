@@ -1572,7 +1572,9 @@ model Task {
   sourceId                     String
   sourceStageId                String?
   workflowInstanceId           String?
-  meetingId                    String?
+  // ACC-316 contract (9a) — never written or read; @ignore takes it out of the
+  // generated client while the column stays. 9b drops it with its index.
+  meetingId                    String?        @ignore
   createdById                  String
   status                       TaskStatus     @default(PENDING)
   priority                     TaskPriority   @default(MEDIUM)
@@ -2218,8 +2220,12 @@ model Meeting {
   scheduledAt        DateTime
   location           String?
   meetingUrl         String?
-  status             String    @default("DRAFT")
-  minutesText        String?
+  // ACC-316 contract (9a) — superseded by the meeting's workflow stage and its
+  // minutes; never read or written. @ignore takes them out of the generated
+  // client while the columns stay (status keeps its database default). 9b drops
+  // them.
+  status             String    @default("DRAFT") @ignore
+  minutesText        String?   @ignore
   minutesApprovedAt  DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -2277,8 +2283,9 @@ model AgendaItem {
   description           String?
   order                 Int
   duration              Int?
-  // ACC-316 — superseded by presenterAttendeeId; dropped in the contract step.
-  presenter             String?
+  // ACC-316 — superseded by presenterAttendeeId. Contract 9a: @ignore, out of
+  // the generated client while the column stays; 9b drops it.
+  presenter             String?                 @ignore
   // ACC-316 — NOT NULL from the start: the table has no rows and no writer.
   organizationId        String
   // The presenter is an invitee: a member, a guest, or an outside guest.
