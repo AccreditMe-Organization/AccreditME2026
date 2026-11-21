@@ -377,3 +377,63 @@ Decided for PR 3 (19 Nov): two PRs, 3a (backend) then 3b (screens). The awaiting
 - **G4: not needed.** The request page already reads the instance's stages.
 - **Rewording**, both languages: `ADD_STAGE` ("Only review stages can be added…, after a request is drafted and before it is decided": no stage named, since a tenant may rename them) and `CHANGE_REQUEST_NOT_UNDER_REVIEW` ("…waiting for a decision…").
 - **The read and the save share one shape check** (`shapeOf()` in `review-stages.ts`): all five seeded keyed stages, so `canAdd` is never true where the save refuses `ADD_STAGE` (P209).
+
+## 14. As built (PR 3b, the screens)
+
+Built from the accepted drawings (Workflow Setup §3 and §13, Committee Changes §5; design review 21 Nov) and the copy in the design notes (19 Nov, §1.6 for the refusals, P265). No backend change, no migration.
+
+**The stages page (Committee change request).**
+- **"Add review stage"** sits in the page header, where Add Stage sits on other workflows, while the server's `reviewStages.canAdd` holds. At the maximum (`count ≥ max`) one muted line takes its place, counted from the server's `max`. Add Stage never shows here (`isProtected`).
+- **The panel's review mode** (the stage editor panel, a page panel, uncapped: Q14):
+  - **Adding:** Name (English) required; Name (Arabic), Description and the deadline marked "· optional"; **Goes after**, required, with the server's `reviewStages.after` (Draft, then each review stage, in order), starting on the last.
+  - **An existing review stage:** what may change is its own `editableFields`. Goes after is read only (the stage before it in `after`), with "To move it, remove it and add it again…".
+  - **Never shown on a review stage:** Initial and Final, What can be done here, What this stage means, and the protected banner.
+  - **Who:** `am-stage-who` with the template's kinds and modes narrowed to `reviewStages.who` (so never "Who started the record", never a vote). The mode choice is replaced by two read-only lines: "Any one of them decides. Nobody decides on their own request." and "Only people who can open the committee can decide." (`am-stage-who`'s new opt-in `decides` input).
+  - **The add sends** names, description, deadline, `who` and `reviewAfterStageId` (`order` too, which the DTO requires and the server ignores), and nothing else.
+  - **Remove stage** is in the footer, apart, in red. Its confirm reads "Requests will go from {prev} straight to {next}": `prev` is the stage before it in `after`, `next` the target of its own ADVANCE move. A refusal (`STAGE_IN_USE`, counted) stands in the panel above the footer, keeping what was typed.
+  - **Refusals from their codes:** `REVIEW_STAGE_LIMIT` with the server's `max`; `REVIEW_STAGE_POSITION`, `REVIEW_STAGE_NO_CREATOR`, `REVIEW_STAGE_ANY_ONE`, `ADD_STAGE`, `STAGE_FIELD` and `WORKFLOW_TEMPLATE_PROTECTED` through the existing map, with the notes' texts.
+- **The list:** an added stage carries the "Review stage" chip and, under its name, who works it in the server's `whoSentence`.
+- **The strip:** an added stage carries the chip. A move the app makes (`mover` APP) is drawn in the "Done by the app" style, and the legend names it when the strip has one. Three review stages scroll sideways in the strip's own frame, as before.
+- **Found while measuring:** the panel's Description box (`rows="2"`) scrolled inside the panel once its text passed two lines. It now grows with its text (`autoResize`), for every stage.
+
+**The request (Committee Changes §5).** A request in an added review stage has `status` null. The server names the stage for every reader in `awaitingDecisionBy` (`REVIEW_STAGE`), and that name is its status everywhere (`reviewStageOf()`, `ChangeRequestText.stageOf()` / `toneOf()`):
+- **The page's chip:** the stage's name, in Under review's tone. The "Open" fallback no longer shows for a review stage.
+- **The requester's line:** "Waiting for {stage} since {date}. You can withdraw it until it's decided."
+  - `{date}` is the open visit's entry, from the stage history the indicator already reads (its new `historyLoaded` output), never a third request.
+  - Under review keeps its own line.
+- **A reviewer's buttons** are the server's `actions`, as before. The drift marker covers a review stage too.
+- **The committee's banner:** "Change request {n} is in {stage}: {fields}", with the body `bodyUnderReview` (Q8). It names the requester, never a reviewer.
+- **The Change requests panel:** Status is the stage's name; who and when reads "submitted".
+- **Home:** every change request row reads "From {name} · {stage}" (`home.awaitingChangeMetaStage`). Under review shows by its status word.
+- **The Approve confirm's review variant:** PENDING (see the report on P264: the server names neither {next} nor {decision} for a reviewer).
+
+**Measured** (the real theme, font and translations; `stage-editor-panel.review.layout.spec.ts`), with three review stages on the strip:
+
+| | 1280 EN | 1280 AR | 390 EN | 390 AR |
+|---|---|---|---|---|
+| Panel, adding (page panel, uncapped) | 662 | 678 | 1170 | 1191 |
+| Panel, editing (page panel, uncapped) | 700 | 737 | 1276 | 1274 |
+| Remove stage confirm, body (cap 420) | 41 (room 379) | 44 (room 376) | 41 (room 379) | 44 (room 376) |
+
+Nothing inside the panel scrolls at either width, nothing passes the page's edge, and only the strip scrolls sideways, in its own frame.
+
+**Specs and mutations.** `change-request-review-stage.spec.ts`, `stage-editor-panel.review.spec.ts`, `workflow-stage-list.review.spec.ts`, the layout spec above, and two new cases in `awaiting-rows.spec.ts`. Each of these mutations turned a named test red:
+- **The change request screens:**
+  - reviewStageOf ignoring the kind;
+  - stageOf / toneOf reading the key;
+  - the banner, panel and Home falling back;
+  - the waiting date taken from a closed visit;
+  - the drift marker limited to Under review.
+- **The stages page:**
+  - the add button ignoring `canAdd`;
+  - the limit line shown below the maximum;
+  - the list and strip chips;
+  - the strip's app style;
+  - the who template not narrowed;
+  - the two lines missing;
+  - Goes after starting on the first entry, or not required;
+  - an add or save sending start and end;
+  - Remove's next read from the RETURN move;
+  - a removal refusal titled as a failed save;
+  - the limit said without the server's max.
+- **The layout:** without `autoResize` the layout spec goes red on the scrolling textarea.
