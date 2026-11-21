@@ -25,8 +25,10 @@ import {
   flagExactlyOne,
   startEndRefusal,
   plainWorkflowRefusalKey,
+  removeRefusal,
   whoRefusal,
 } from '../../workflow-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
@@ -46,6 +48,7 @@ import { StageWhoComponent } from '../stage-who/stage-who.component';
 import { StageWhoDraft } from '../stage-who/stage-who-draft';
 import { StageWhoOptionsStore } from '../stage-who/stage-who-options.store';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -59,7 +62,15 @@ const FIELD_LABELS: Record<string, string> = {
   slaWorkingHours: 'workflow.slaWorkingHours',
   isInitial: 'workflow.isInitial',
   isFinal: 'workflow.isFinal',
+  goesAfter: 'workflow.reviewStage.goesAfter',
 };
+
+/**
+ * ACC-245 PR 3b — what adding a review stage takes, as the panel draws it
+ * (Workflow Setup §13): its names, description, deadline and people. Once it
+ * exists, the server's own `editableFields` for the stage decide.
+ */
+const REVIEW_ADD_FIELDS: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'who']);
 
 /** A label key's companion: the one-line description the drawing gives each row. */
 const hintKey = (labelKey: string): string =>
@@ -75,6 +86,8 @@ interface PanelRefusal {
   flagKey?: string;
   /** The other stage to open, when the refusal names one. */
   link?: { stageId: string; label: string };
+  /** ACC-245 PR 3b — a refused Remove: the sentence alone, with no "can't be saved" title. */
+  untitled?: boolean;
 }
 
 /**
@@ -119,6 +132,7 @@ interface PanelRefusal {
     InputNumberLatinDigits,
     CheckboxModule,
     FieldComponent,
+    OverlaySelectComponent,
     StageWhoComponent,
     RowMenuComponent,
     StageChecksComponent,
@@ -141,7 +155,8 @@ interface PanelRefusal {
         }
       </header>
 
-      @if (isProtected()) {
+      <!-- A review stage is the organisation's own: what it may change is its whole panel. -->
+      @if (isProtected() && !review()) {
         <div class="am-sep__banner am-sep__banner--muted" role="status" data-protected-banner>
           <p class="am-sep__banner-title">{{ 'workflow.editor.protectedTitle' | translate }}</p>
           <p class="am-sep__banner-body">{{ 'workflow.editor.protectedBody' | translate }}</p>
@@ -158,15 +173,17 @@ interface PanelRefusal {
               [errorMessages]="{ required: 'workflow.editor.nameRequired' }" [forceShowErrors]="submitted()">
               <input pInputText id="sep-nameEn" formControlName="nameEn" autocomplete="off" />
             </am-field>
-            <am-field [label]="'workflow.nameAr' | translate" [control]="form.controls.nameAr" inputId="sep-nameAr"
+            <am-field [label]="(review() ? 'workflow.reviewStage.nameArOptional' : 'workflow.nameAr') | translate" [control]="form.controls.nameAr" inputId="sep-nameAr"
               [readonly]="!editable('nameAr')" [readonlyText]="form.controls.nameAr.value || '—'">
               <input pInputText id="sep-nameAr" formControlName="nameAr" dir="rtl" autocomplete="off" />
             </am-field>
-            <am-field [label]="'workflow.description' | translate" [control]="form.controls.description" inputId="sep-description"
+            <am-field [label]="(review() ? 'workflow.reviewStage.descriptionOptional' : 'workflow.description') | translate" [control]="form.controls.description" inputId="sep-description"
               [readonly]="!editable('description')" [readonlyText]="form.controls.description.value || '—'">
-              <textarea pTextarea id="sep-description" rows="2" formControlName="description"></textarea>
+              <!-- ACC-245 PR 3b — grows with its text: a page panel never scrolls
+                   inside (Templates 6b), and a description longer than two lines did. -->
+              <textarea pTextarea id="sep-description" rows="2" [autoResize]="true" formControlName="description"></textarea>
             </am-field>
-            <am-field [label]="'workflow.slaWorkingHours' | translate" [control]="form.controls.slaWorkingHours" inputId="sep-sla"
+            <am-field [label]="(review() ? 'workflow.reviewStage.slaOptional' : 'workflow.slaWorkingHours') | translate" [control]="form.controls.slaWorkingHours" inputId="sep-sla"
               [readonly]="!editable('slaWorkingHours')" [readonlyText]="deadlineText()"
               [hint]="slaRefusal() ? '' : deadlineText()">
               <!-- The field and its input fill the card and may shrink: the input's
@@ -178,6 +195,26 @@ interface PanelRefusal {
             @if (slaRefusal(); as refusal) {
               <small class="am-sep__refusal" role="alert" data-sla-refusal>{{ refusal }}</small>
             }
+            @if (review()) {
+              <!-- ACC-245 PR 3b — where a review stage goes: chosen when adding, from
+                   the server's reviewStages.after; fixed once it exists (Q6). -->
+              @if (stageSig()) {
+                <am-field [label]="'workflow.reviewStage.goesAfter' | translate" [readonly]="true" [readonlyText]="goesAfterText()"
+                  [hint]="'workflow.reviewStage.goesAfterFixed' | translate" data-goes-after />
+
+              } @else {
+                <am-field [label]="'workflow.reviewStage.goesAfter' | translate" [control]="form.controls.goesAfter" inputId="sep-goesAfter"
+                  [hint]="'workflow.reviewStage.goesAfterHelp' | translate" [forceShowErrors]="submitted()" data-goes-after>
+                  <app-overlay-select
+                    formControlName="goesAfter"
+                    [options]="afterOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    [ariaLabel]="'workflow.reviewStage.goesAfter' | translate"
+                  />
+                </am-field>
+              }
+            } @else {
             <div class="am-sep__flags">
               @for (flag of boolFields; track flag) {
                 @if (editable(flag)) {
@@ -194,6 +231,7 @@ interface PanelRefusal {
                 }
               }
             </div>
+            }
             <!-- ACC-57 — said under the box it is about, from the refusal's code and the stage it names. -->
             @if (initialRefusal(); as refusal) {
               <small class="am-sep__refusal" role="alert" data-initial-refusal>{{ refusal }}</small>
@@ -208,17 +246,22 @@ interface PanelRefusal {
           </div>
 
           <!-- ACC-271 PR 5a — who works the stage, and how several of them decide. -->
+          <!-- ACC-245 PR 3b — on a review stage, the server's reviewStages.who
+               (whoTemplate), and two lines where the choice of how they decide was. -->
           <am-stage-who
             class="am-sep__who"
             [draft]="whoDraft"
-            [template]="templateSig()"
+            [template]="whoTemplate()"
             [stage]="stageSig()"
             [readonly]="!editable('who')"
             [submitted]="submitted()"
+            [decides]="decidesLines()"
           />
         </div>
 
-        @if (!stage) {
+        @if (review()) {
+          <!-- ACC-245 PR 3b — a review stage allows and means nothing of its own. -->
+        } @else if (!stage) {
           <!-- Ahmad's Q1: what a new stage allows is the server's default, set once it exists. -->
           <p class="am-sep__note" data-adding-note>{{ 'workflow.editor.addingNote' | translate }}</p>
         } @else {
@@ -267,7 +310,9 @@ interface PanelRefusal {
 
         @if (refusal(); as r) {
           <div class="am-sep__banner am-sep__banner--danger" role="alert" data-panel-refusal>
-            <p class="am-sep__banner-title">{{ 'workflow.editor.cantSave' | translate }}</p>
+            @if (!r.untitled) {
+              <p class="am-sep__banner-title">{{ 'workflow.editor.cantSave' | translate }}</p>
+            }
             <p class="am-sep__banner-body">{{ r.body }}</p>
             @if (r.link; as link) {
               <button type="button" class="am-sep__link" (click)="openStage.emit(link.stageId)" data-refusal-link>{{ link.label }}</button>
@@ -276,6 +321,12 @@ interface PanelRefusal {
         }
 
         <footer class="am-sep__foot">
+          @if (review() && stage) {
+            <!-- ACC-245 PR 3b — apart, in red, as the accepted panels place it. -->
+            <button type="button" class="am-sep__remove" [disabled]="removing()" (click)="removeReviewStage()" data-panel-remove>
+              {{ 'workflow.reviewStage.removeStage' | translate }}
+            </button>
+          }
           <span class="am-sep__count" aria-live="polite" data-change-count>
             @if (changeCount()) {
               {{ changeCount() | amCount: 'workflow.editorChanges' }}
@@ -284,7 +335,7 @@ interface PanelRefusal {
             }
           </span>
           <p-button [label]="'common.cancel' | translate" severity="secondary" [text]="true" type="button" (onClick)="closed.emit()" data-panel-cancel />
-          <p-button type="submit" [label]="(stage ? 'workflow.editor.saveStage' : 'workflow.addStage') | translate" [loading]="saving()" data-panel-save />
+          <p-button type="submit" [label]="saveLabel() | translate" [loading]="saving()" data-panel-save />
         </footer>
       </form>
     </section>
@@ -445,6 +496,28 @@ interface PanelRefusal {
         padding-block-start: var(--am-space-12);
         border-block-start: 1px solid var(--am-border);
       }
+      /* ACC-245 PR 3b — Remove stage, apart at the start of the footer, in red. */
+      .am-sep__remove {
+        padding: 0;
+        background: none;
+        border: 0;
+        font: inherit;
+        font-weight: 600;
+        color: var(--am-danger-ink);
+        cursor: pointer;
+      }
+      .am-sep__remove:hover {
+        text-decoration: underline;
+      }
+      .am-sep__remove:focus-visible {
+        outline: 2px solid var(--am-primary-600);
+        outline-offset: 2px;
+        border-radius: var(--am-radius-control);
+      }
+      .am-sep__remove:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
       .am-sep__count {
         margin-inline-end: auto;
         font-size: var(--am-type-meta-size);
@@ -468,11 +541,19 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   @Input() nextOrder = 10;
   /** The panel's ⋯ (Move up, Move down, Remove), from the page; empty for none. */
   @Input() menu: RowMenuItem[][] = [];
+  /**
+   * ACC-245 PR 3b — while adding (stage null): the stage added is a REVIEW stage
+   * of the protected change request workflow ("Add review stage"). An existing
+   * review stage is known from the server's own `reviewStage`.
+   */
+  @Input() addingReview = false;
   @Output() saved = new EventEmitter<WorkflowStageDto>();
   @Output() closed = new EventEmitter<void>();
   /** A refusal names another stage: open it. */
   @Output() openStage = new EventEmitter<string>();
   @Output() menuPicked = new EventEmitter<string>();
+  /** ACC-245 PR 3b — a review stage removed from its panel's footer. */
+  @Output() removed = new EventEmitter<string>();
 
   @ViewChild('headingEl', { static: true }) private headingRef!: ElementRef<HTMLElement>;
 
@@ -522,25 +603,99 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     slaWorkingHours: [null as number | null, [Validators.min(0)]],
     isInitial: [false],
     isFinal: [false],
+    // ACC-245 PR 3b — "Goes after", adding a review stage only (required then).
+    goesAfter: [null as string | null],
   });
 
   readonly isProtected = computed(() => !!this.templateSig()?.isProtected);
 
+  readonly addingReviewSig = signal(false);
+  /** ACC-245 PR 3b — an added review stage (the server's `reviewStage`), or one being added. */
+  readonly review = computed(() => {
+    const stage = this.stageSig();
+    return stage ? !!stage.reviewStage : this.addingReviewSig();
+  });
+  private readonly addingReviewStage = computed(() => !this.stageSig() && this.addingReviewSig());
+
   /**
    * Whether a stage field may change: always, unless the workflow is protected,
-   * where only the fields the server lists (editableStageFields) may. A
-   * protected template whose read lists none leaves everything read-only.
+   * where only the fields the server lists may — `editableFields` on an added
+   * review stage, else the template's `editableStageFields`. A protected
+   * template whose read lists none leaves everything read-only. Adding a review
+   * stage, every field the panel draws is the add's own.
    */
   editable(field: string): boolean {
     const template = this.templateSig();
     if (!template?.isProtected) return true;
+    const stage = this.stageSig();
+    if (stage?.reviewStage) return (stage.editableFields ?? []).includes(field);
+    if (this.addingReviewStage()) return REVIEW_ADD_FIELDS.has(field);
     return (template.editableStageFields ?? []).includes(field);
   }
+
+  /**
+   * ACC-245 PR 3b — the template as "Who works this stage" reads it. On a review
+   * stage the kinds and the ways of deciding are the server's `reviewStages.who`
+   * (never "Who started the record", never a vote), so the choice of how they
+   * decide has nothing to offer and the panel's two lines stand in its place.
+   */
+  readonly whoTemplate = computed<WorkflowTemplateDto | null>(() => {
+    const template = this.templateSig();
+    const rs = template?.reviewStages;
+    if (!template || !rs || !this.review()) return template;
+    const rules = template.whoRules;
+    return {
+      ...template,
+      assigneeKinds: rs.who.assigneeKinds,
+      whoRules: rules && {
+        ...rules,
+        modes: rules.modes.filter((m) => rs.who.modes.includes(m.key)),
+        defaultMode: rs.who.modes[0] ?? rules.defaultMode,
+      },
+    };
+  });
+
+  readonly decidesLines = computed<string[]>(() => {
+    this.translate.currentLang();
+    if (!this.review()) return [];
+    return [this.translate.instant('workflow.reviewStage.anyOne') as string, this.translate.instant('workflow.reviewStage.readers') as string];
+  });
+
+  /** "Goes after": Draft, then each review stage, in order — the server's `reviewStages.after`. */
+  readonly afterOptions = computed(() => {
+    this.translate.currentLang();
+    return (this.templateSig()?.reviewStages?.after ?? []).map((a) => ({ value: a.id, label: this.languageService.bilingual(a.nameEn, a.nameAr) }));
+  });
+
+  /** An existing review stage: the stage it follows, read only (no reordering, Q6). */
+  readonly goesAfterText = computed(() => {
+    this.translate.currentLang();
+    const after = this.templateSig()?.reviewStages?.after ?? [];
+    const index = after.findIndex((a) => a.id === this.stageSig()?.id);
+    const before = index > 0 ? after[index - 1] : undefined;
+    return before ? this.languageService.bilingual(before.nameEn, before.nameAr) : '—';
+  });
+
+  /** The stage a review stage's requests go on to: its own forward (ADVANCE) move's target. */
+  private readonly nextStageName = computed(() => {
+    const stage = this.stageSig();
+    const forward = stage?.transitions?.find((t) => t.kind === 'ADVANCE');
+    const next = forward && this.templateSig()?.stages?.find((s) => s.id === forward.toStageId);
+    return next ? this.languageService.bilingual(next.nameEn, next.nameAr) : '—';
+  });
+
+  readonly saveLabel = computed(() => {
+    if (!this.review()) return this.stageSig() ? 'workflow.editor.saveStage' : 'workflow.addStage';
+    return this.stageSig() ? 'common.save' : 'common.add';
+  });
+
+  readonly removing = signal(false);
 
   readonly heading = computed(() => {
     this.translate.currentLang();
     const stage = this.stageSig();
-    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : (this.translate.instant('workflow.addStage') as string);
+    if (stage) return this.languageService.bilingual(stage.nameEn, stage.nameAr);
+    return this.translate.instant(this.addingReviewSig() ? 'workflow.reviewStage.add' : 'workflow.addStage') as string;
   });
 
   readonly positionText = computed(() => {
@@ -654,6 +809,7 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['template']) this.templateSig.set(this.template);
+    if (changes['addingReview']) this.addingReviewSig.set(this.addingReview);
     if (!changes['stage']) return;
     const previous = changes['stage'].previousValue as WorkflowStageDto | null | undefined;
     const switched = changes['stage'].firstChange || previous?.id !== this.stage?.id;
@@ -689,12 +845,17 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
         slaWorkingHours: stage?.slaWorkingHours ?? null,
         isInitial: stage?.isInitial ?? false,
         isFinal: stage?.isFinal ?? false,
+        // ACC-245 PR 3b — a new review stage goes after the last review stage, or Draft.
+        goesAfter: this.addingReviewStage() ? (this.templateSig()?.reviewStages?.after.at(-1)?.id ?? null) : null,
       });
+      // Required only where it is asked: adding a review stage.
+      this.form.controls.goesAfter.setValidators(this.addingReviewStage() ? [Validators.required] : []);
+      this.form.controls.goesAfter.updateValueAndValidity({ emitEvent: false });
     } finally {
       this.refilling = false;
     }
     this.baseForm.set(this.form.getRawValue() as Record<string, unknown>);
-    this.whoDraft.load(stage, this.templateSig());
+    this.whoDraft.load(stage, this.whoTemplate());
     const actions = new Set(stage?.actions ?? []);
     const flags = new Set(stage?.flags ?? []);
     this.actions.set(actions);
@@ -735,6 +896,38 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       message: this.translate.instant('dialog.discardMessage'),
       acceptLabel: this.translate.instant('dialog.discard'),
       accept: () => this.closed.emit(),
+    });
+  }
+
+  /**
+   * ACC-245 PR 3b — Remove stage, from a review stage's footer: the confirm says
+   * where requests will go instead (the stage before it, and its own forward
+   * move's target), and a refusal — a request has entered it — stands in the
+   * panel above the footer, keeping what was typed.
+   */
+  removeReviewStage(): void {
+    const stage = this.stage;
+    if (!stage || this.removing()) return;
+    this.confirm.ask({
+      tone: 'destructive',
+      header: this.translate.instant('workflow.confirmRemoveStageHeader', { name: this.heading() }),
+      message: this.translate.instant('workflow.reviewStage.removeBody', { prev: this.goesAfterText(), next: this.nextStageName() }),
+      acceptLabel: this.translate.instant('common.remove'),
+      accept: () => {
+        this.removing.set(true);
+        this.refusal.set(null);
+        this.workflowTemplateService.removeStage(stage.id).subscribe({
+          next: () => {
+            this.removing.set(false);
+            this.removed.emit(stage.id);
+          },
+          error: (err: unknown) => {
+            this.removing.set(false);
+            const said = removeRefusal(err, (key, n) => this.format.count(key, n)) ?? extractErrorMessage(err, 'workflow.error.removeFailed');
+            this.refusal.set({ body: this.translate.instant(said) as string, untitled: true });
+          },
+        });
+      },
     });
   }
 
@@ -780,9 +973,27 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
         : {}),
     };
 
-    const request$ = stage
-      ? this.workflowTemplateService.updateStage(stage.id, { ...shared, ...rules } satisfies UpdateWorkflowStageDto)
-      : this.workflowTemplateService.addStage(this.template?.id ?? '', { ...shared, order: this.nextOrder } satisfies CreateWorkflowStageDto);
+    // ACC-245 PR 3b — a review stage carries no start or end, actions or
+    // meanings: only what its panel draws, and where a new one goes.
+    const reviewShared = {
+      nameEn: shared.nameEn,
+      nameAr: shared.nameAr,
+      ...(raw.description ? { description: raw.description } : {}),
+      ...(raw.slaWorkingHours != null ? { slaWorkingHours: raw.slaWorkingHours } : {}),
+      ...(sendWho ? { who: this.whoDraft.write() } : {}),
+    };
+    const request$ = this.review()
+      ? stage
+        ? this.workflowTemplateService.updateStage(stage.id, reviewShared satisfies UpdateWorkflowStageDto)
+        : this.workflowTemplateService.addStage(this.template?.id ?? '', {
+            ...reviewShared,
+            // Required by the stage DTO; the server sets a review stage's order itself.
+            order: this.nextOrder,
+            reviewAfterStageId: raw.goesAfter!,
+          } satisfies CreateWorkflowStageDto)
+      : stage
+        ? this.workflowTemplateService.updateStage(stage.id, { ...shared, ...rules } satisfies UpdateWorkflowStageDto)
+        : this.workflowTemplateService.addStage(this.template?.id ?? '', { ...shared, order: this.nextOrder } satisfies CreateWorkflowStageDto);
 
     request$.subscribe({
       next: (saved) => {
@@ -862,6 +1073,11 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
 
   /** Every other refusal, for the banner: the exactly-one meaning names and links the other stage. */
   private panelRefusal(err: unknown): PanelRefusal {
+    // ACC-245 PR 3b — the limit, said with the server's own maximum.
+    const max = this.template?.reviewStages?.max;
+    if (refusalCode(err) === 'REVIEW_STAGE_LIMIT' && max !== undefined) {
+      return { body: this.format.count('workflow.reviewStageLimit', max) };
+    }
     const exactlyOne = flagExactlyOne(err);
     if (exactlyOne) {
       const flagDef = this.template?.stageFlags?.find((f) => f.key === exactlyOne.flag);

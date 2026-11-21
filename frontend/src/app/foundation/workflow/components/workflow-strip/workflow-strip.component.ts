@@ -24,8 +24,8 @@ interface StripItem {
   name: string;
   /** The labels of every transition out of this stage, for the card's last line. */
   exits: string;
-  /** Transitions from this stage to the NEXT one in order (solid, forward). */
-  forward: string[];
+  /** Transitions from this stage to the NEXT one in order (solid, forward), and whether the app makes each. */
+  forward: { label: string; app: boolean }[];
   /** RETURN transitions from the next stage back to this one (dashed). */
   back: string[];
 }
@@ -90,6 +90,10 @@ interface StripItem {
                 <span class="am-strip__num" aria-hidden="true">{{ i + 1 | amNumber }}</span>
                 <span class="am-strip__name" data-strip-name>{{ item.name }}</span>
               </span>
+              @if (item.stage.reviewStage) {
+                <!-- ACC-245 PR 3b — an added review stage (the server's reviewStage). -->
+                <span class="am-strip__chip" data-strip-review>{{ 'workflow.reviewStage.chip' | translate }}</span>
+              }
               @if (item.stage.liveCount !== undefined) {
                 <span class="am-strip__live" data-strip-live>{{ item.stage.liveCount | amCount: 'workflow.liveInStage' }}</span>
               }
@@ -97,8 +101,8 @@ interface StripItem {
             </button>
             @if (!last) {
               <span class="am-strip__conn" aria-hidden="true" data-strip-conn>
-                @for (label of item.forward; track $index) {
-                  <span class="am-strip__label">{{ label }}</span>
+                @for (move of item.forward; track $index) {
+                  <span class="am-strip__label" [class.am-strip__label--app]="move.app" [attr.data-strip-app]="move.app ? '' : null">{{ move.label }}</span>
                 }
                 <span class="am-strip__line"></span>
                 @for (label of item.back; track $index) {
@@ -116,6 +120,9 @@ interface StripItem {
       <p class="am-strip__legend">
         <span class="am-strip__key"><span class="am-strip__swatch"></span>{{ 'workflow.strip.forward' | translate }}</span>
         <span class="am-strip__key"><span class="am-strip__swatch am-strip__swatch--back"></span>{{ 'workflow.strip.back' | translate }}</span>
+        @if (hasAppMove()) {
+          <span class="am-strip__key" data-strip-app-key><span class="am-strip__label am-strip__label--app">{{ 'workflow.mover.APP' | translate }}</span></span>
+        }
       </p>
     </div>
   `,
@@ -244,6 +251,28 @@ interface StripItem {
       .am-strip__label--back {
         color: var(--am-warning-ink);
       }
+      /* ACC-245 PR 3b — a move the app makes: the round 4 "Done by the app" chip style. */
+      .am-strip__label--app {
+        font-weight: 600;
+        color: var(--am-primary-700);
+        background: var(--am-card);
+        border: 1px solid var(--am-primary-600);
+        border-radius: var(--am-radius-control);
+        padding: 0 var(--am-space-6);
+      }
+      /* ACC-245 PR 3b — "Review stage", under an added stage's name. */
+      .am-strip__chip {
+        align-self: flex-start;
+        font-size: var(--am-type-micro-size);
+        line-height: var(--am-type-micro-line);
+        font-weight: 600;
+        white-space: nowrap;
+        color: var(--am-primary-700);
+        background: var(--am-card);
+        border: 1px solid var(--am-primary-600);
+        border-radius: var(--am-radius-control);
+        padding: 0 var(--am-space-6);
+      }
       .am-strip__line {
         inline-size: 100%;
         border-block-start: 2px solid var(--am-control-border);
@@ -337,6 +366,9 @@ export class WorkflowStripComponent implements AfterViewInit {
     this.zoom.set(this.fitValue());
   }
 
+  /** ACC-245 PR 3b — the legend names "Done by the app" when the strip draws such a move. */
+  readonly hasAppMove = computed(() => this.items().some((item) => item.forward.some((move) => move.app)));
+
   readonly items = computed<StripItem[]>(() => {
     const stages = this.stages();
     const label = (t: WorkflowTransitionDto): string => this.language.bilingual(t.labelEn, t.labelAr);
@@ -347,7 +379,10 @@ export class WorkflowStripComponent implements AfterViewInit {
         stage,
         name: this.language.bilingual(stage.nameEn, stage.nameAr),
         exits: out.map(label).join(' · '),
-        forward: next ? out.filter((t) => t.toStageId === next.id && t.kind !== 'RETURN').map(label) : [],
+        // ACC-245 PR 3b — a move the app makes (the server's mover) is drawn as such.
+        forward: next
+          ? out.filter((t) => t.toStageId === next.id && t.kind !== 'RETURN').map((t) => ({ label: label(t), app: t.mover === 'APP' }))
+          : [],
         back: next ? (next.transitions ?? []).filter((t) => t.toStageId === stage.id && t.kind === 'RETURN').map(label) : [],
       };
     });
