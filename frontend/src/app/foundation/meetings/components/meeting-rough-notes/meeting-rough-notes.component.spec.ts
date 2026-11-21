@@ -7,6 +7,7 @@ import { NEVER, Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { anAi } from '../../meeting-fixtures.testing';
 import { DRAFT_MINUTES_WAIT_MS, MeetingMinutesAi } from '../../meeting-minutes-ai';
 import { MinutesWriteOrder } from '../../minutes-write-order';
@@ -17,6 +18,7 @@ import { MeetingRoughNotesComponent } from './meeting-rough-notes.component';
 // flags only), the notes saved as typed and never written back, the press
 // saving them first, the long wait, and each refusal said from its code.
 describe('MeetingRoughNotesComponent (ACC-322 PR 2)', () => {
+  preserveDocumentLanguage();
   let svc: Record<string, jasmine.Spy>;
   let fixture: ComponentFixture<MeetingRoughNotesComponent>;
   let el: HTMLElement;

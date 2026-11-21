@@ -7,6 +7,7 @@ import { of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { FormatService } from '../../../../core/formatting';
 import { aMinutes, anAi, anAiAction, anAttendanceRow } from '../../meeting-fixtures.testing';
 import { MeetingMinutesAi } from '../../meeting-minutes-ai';
@@ -29,6 +30,7 @@ const MINUTES_SUGG: MeetingAiMinutesSuggestionDto = {
 // suggestions with our code's reasons, Accept only when complete, and the
 // inline Edit that accepts with what it chose.
 describe('MeetingItemAiComponent (ACC-322 PR 2)', () => {
+  preserveDocumentLanguage();
   let svc: Record<string, jasmine.Spy>;
   let fixture: ComponentFixture<MeetingItemAiComponent>;
   let el: HTMLElement;

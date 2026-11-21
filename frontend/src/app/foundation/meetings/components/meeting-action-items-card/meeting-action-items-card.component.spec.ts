@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { aMinutes, aMinutesItem, anAi, anAiAction } from '../../meeting-fixtures.testing';
 import { MeetingMinutesAi } from '../../meeting-minutes-ai';
 import { MinutesWriteOrder } from '../../minutes-write-order';
@@ -14,6 +15,7 @@ import { MeetingActionItemsCardComponent } from './meeting-action-items-card.com
 // and, for whoever records the minutes, the undecided AI action suggestions
 // and the items they sit under.
 describe('MeetingActionItemsCardComponent (ACC-322 PR 2)', () => {
+  preserveDocumentLanguage();
   const MINUTES = aMinutes({
     items: [
       aMinutesItem({ id: 'i-1', order: 2, title: 'Hand hygiene', actionItems: [{ id: 'act-1', title: 'Re-audit wards 4B and 6A', owner: { id: 'u-2', name: 'Omar Haddad' }, dueAt: '2027-04-30T13:00:00.000Z', task: null }] }),
