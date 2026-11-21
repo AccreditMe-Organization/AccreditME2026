@@ -17467,6 +17467,10 @@ absent-member summary (PR 5) are not built.
   `RELOAD_CODES`.
 - **`am-ai-assist` gained** `quiet`, `acceptLabel` and `busy`. All are
   opt-in and off by default.
+  - **`busy` never disables a button.** Accept, Edit and Discard stay
+    enabled, so focus and their names are kept; a press while busy emits
+    nothing, in the component, so no host needs its own guard. The one
+    pressed is marked `aria-busy`.
 - **On the phone (390)** the page's 44px rule reaches `.am-ai button`.
   Measurements: the plan's §11.
 

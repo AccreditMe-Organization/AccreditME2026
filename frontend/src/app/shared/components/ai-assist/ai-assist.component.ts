@@ -18,6 +18,7 @@ import type { AiRefusal } from '../../../core/ai/ai-refusal';
 
 export type AiAssistState = 'idle' | 'working' | 'result' | 'refusal';
 export type AiAssistPlacement = 'card' | 'inline' | 'header';
+export type AiAssistPress = 'accept' | 'edit' | 'discard';
 
 /**
  * am-ai-assist — the ONE AI pattern (ACC-198), from the drawing "AccreditMe AI
@@ -135,9 +136,9 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
             }
             @if (accept()) {
               <div class="am-ai__actions">
-                <button type="button" class="am-ai__primary" [disabled]="busy()" [attr.aria-busy]="busy() || null" (click)="accepted.emit()">{{ acceptLabel() || ('ai.assist.accept' | translate) }}</button>
-                <button type="button" class="am-ai__secondary" [disabled]="busy()" (click)="edited.emit()">{{ 'ai.assist.edit' | translate }}</button>
-                <button type="button" class="am-ai__text-button" [disabled]="busy()" (click)="discarded.emit()">{{ 'ai.assist.discard' | translate }}</button>
+                <button type="button" class="am-ai__primary" [attr.aria-busy]="busyOn('accept')" (click)="press('accept')">{{ acceptLabel() || ('ai.assist.accept' | translate) }}</button>
+                <button type="button" class="am-ai__secondary" [attr.aria-busy]="busyOn('edit')" (click)="press('edit')">{{ 'ai.assist.edit' | translate }}</button>
+                <button type="button" class="am-ai__text-button" [attr.aria-busy]="busyOn('discard')" (click)="press('discard')">{{ 'ai.assist.discard' | translate }}</button>
                 @if (actionsExtra(); as extra) {
                   <span class="am-ai__actions-extra ms-auto"><ng-container [ngTemplateOutlet]="extra" /></span>
                 }
@@ -443,7 +444,12 @@ export class AiAssistComponent {
   readonly quiet = input(false);
   /** ACC-322 — opt-in: the Accept button's words ("Accept into minutes"); "Accept" when empty. */
   readonly acceptLabel = input('');
-  /** ACC-322 — opt-in: Accept, Edit and Discard are disabled while the host's request for one of them is in flight. */
+  /**
+   * ACC-322 — opt-in: the host's request for Accept, Edit or Discard is in
+   * flight. The three stay ENABLED, so focus and their names are kept, and a
+   * press while busy emits nothing — here, so no host needs its own guard.
+   * The button pressed is marked `aria-busy`.
+   */
   readonly busy = input(false);
   /** The fold control's accessible names ("Collapse summary"); generic words when empty. */
   readonly collapseLabel = input('');
@@ -457,6 +463,22 @@ export class AiAssistComponent {
   readonly discarded = output<void>();
 
   private readonly resultRegion = viewChild<ElementRef<HTMLElement>>('resultRegion');
+
+  /** Which of Accept, Edit and Discard was pressed last; marks it busy while `busy`. */
+  private readonly pressed = signal<AiAssistPress | null>(null);
+
+  busyOn(kind: AiAssistPress): 'true' | null {
+    return this.busy() && this.pressed() === kind ? 'true' : null;
+  }
+
+  /** A press while busy is ignored, so a second click never sends a second request. */
+  press(kind: AiAssistPress): void {
+    if (this.busy()) return;
+    this.pressed.set(kind);
+    if (kind === 'accept') this.accepted.emit();
+    else if (kind === 'edit') this.edited.emit();
+    else this.discarded.emit();
+  }
 
   private static nextId = 0;
   readonly bodyId = `am-ai-body-${AiAssistComponent.nextId++}`;

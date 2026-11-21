@@ -5400,7 +5400,9 @@ Briefly:
   - **The press waits 330 s.** A lost wait reads the run's state, never
     Retry.
   - **Saved suggestions are `am-ai-assist` with `quiet`.** `quiet`,
-    `acceptLabel` and `busy` are opt-in, default off.
+    `acceptLabel` and `busy` are opt-in, default off. `busy` keeps the
+    buttons enabled and ignores a press in the component; it never sets
+    `disabled`.
   - **The Action items card** (6.2's side card) was built here: PR 7c never
     built it.
   - No migration.

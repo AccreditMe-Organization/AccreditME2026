@@ -188,19 +188,47 @@ describe('AiAssistComponent (ACC-198)', () => {
     expect(el().querySelector('[aria-live="polite"]')).toBeNull();
   });
 
-  it('acceptLabel names Accept; busy disables all three while a request is in flight', () => {
+  it('acceptLabel names Accept', () => {
     host.state.set('result');
     host.accept.set(true);
     host.acceptLabel.set('Accept into minutes');
-    host.busy.set(true);
     render();
     const buttons = Array.from(el().querySelectorAll('.am-ai__actions button')) as HTMLButtonElement[];
     expect(buttons[0]!.textContent!.trim()).toBe('Accept into minutes');
-    expect(buttons.every((b) => b.disabled)).toBeTrue();
-    host.busy.set(false);
-    render();
-    expect(buttons.some((b) => b.disabled)).toBeFalse();
   });
+
+  for (const [index, event] of [
+    [0, 'accepted'],
+    [1, 'edited'],
+    [2, 'discarded'],
+  ] as const) {
+    it(`busy: the three stay enabled, the pressed one (${event}) is marked busy and keeps focus, and a press emits nothing`, () => {
+      host.state.set('result');
+      host.accept.set(true);
+      render();
+      const buttons = Array.from(el().querySelectorAll('.am-ai__actions button')) as HTMLButtonElement[];
+      expect(buttons.length).toBe(3);
+      const pressed = buttons[index]!;
+      pressed.focus();
+      pressed.click();
+      expect(host.events).toEqual([event]);
+      // The host's request is now in flight.
+      host.busy.set(true);
+      render();
+      expect(buttons.every((b) => !b.hasAttribute('disabled'))).toBeTrue();
+      expect(buttons.map((b) => b.getAttribute('aria-busy'))).toEqual(buttons.map((_, i) => (i === index ? 'true' : null)));
+      for (const b of buttons) b.click();
+      render();
+      expect(host.events).toEqual([event]);
+      expect(document.activeElement).toBe(pressed);
+      // Done: nothing is busy, and a press emits again.
+      host.busy.set(false);
+      render();
+      expect(buttons.every((b) => b.getAttribute('aria-busy') === null)).toBeTrue();
+      pressed.click();
+      expect(host.events).toEqual([event, event]);
+    });
+  }
 
   it('unavailable or failed: the danger box with Try again', () => {
     host.state.set('refusal');

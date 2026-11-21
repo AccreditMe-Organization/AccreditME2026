@@ -1044,7 +1044,10 @@ What the build settled, or added:
     announced. The notes box announces a fresh draft and moves focus to its
     first suggestion.
   - `acceptLabel`: "Accept into minutes".
-  - `busy`: Accept, Edit and Discard are disabled while one is in flight.
+  - `busy`: while one of Accept, Edit and Discard is in flight, a press on
+    any of them emits nothing, in the component itself. The three stay
+    enabled, so focus and their names are kept (lane A's review, P263); the
+    one pressed is marked `aria-busy`.
 - **Edit on a minutes suggestion accepts it, then moves focus into that
   item's discussion box.**
 - **Edit on an action suggestion opens the three fields inline:** what,
@@ -1091,5 +1094,6 @@ What the build settled, or added:
   - Accept without an owner (M7);
   - `quiet` ignored;
   - the M2 line removed;
-  - the 44px rule removed.
+  - the 44px rule removed;
+  - `am-ai-assist` emitting a press while `busy`.
 - **No migration.**
