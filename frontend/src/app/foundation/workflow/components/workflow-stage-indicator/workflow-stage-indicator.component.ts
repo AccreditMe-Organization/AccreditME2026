@@ -207,6 +207,11 @@ export class WorkflowStageIndicatorComponent {
   // does not have to care whether the fetch has resolved yet.
   readonly loaded = output<number>();
 
+  // ACC-245 PR 3b — the history itself, once read, for a page that words a line
+  // from it (the change request's "Waiting for {stage} since {date}", the open
+  // visit's entry) without reading it a second time.
+  readonly historyLoaded = output<WorkflowStageHistoryDto>();
+
   readonly history = signal<WorkflowStageHistoryDto | null>(null);
 
   constructor() {
@@ -218,6 +223,7 @@ export class WorkflowStageIndicatorComponent {
         next: (history) => {
           this.history.set(history);
           this.loaded.emit(history.visits.length);
+          this.historyLoaded.emit(history);
         },
         error: () => this.history.set(null),
       });

@@ -12,11 +12,11 @@ import { LanguageService } from '../../../core/services/language.service';
 import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { WorkflowStageIndicatorComponent } from '../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
-import { WorkflowInstanceDto, WorkflowService } from '../../workflow/services/workflow.service';
+import { WorkflowInstanceDto, WorkflowService, WorkflowStageHistoryDto } from '../../workflow/services/workflow.service';
 import { CommitteeDetailDto, CommitteeService } from '../services/committee.service';
 import { ChangeRequestDecision, ChangeRequestDecisionDialogComponent } from './change-request-decision-dialog.component';
 import { ChangeRequestChangesComponent, ChangeRow } from './change-request-changes.component';
-import { APPROVE_LIST_MAX, ChangeRequestText, ImpactLineText, changedFields } from './change-request-text';
+import { APPROVE_LIST_MAX, ChangeRequestText, ImpactLineText, changedFields, reviewStageOf } from './change-request-text';
 import { ChangeField, ChangeRequestDto, ChangeRequestLabelsDto, ChangeRequestPreviewDto, ChangeRequestService, ChangeValue } from './change-request.service';
 import { injectIsPhone } from './phone';
 
@@ -74,7 +74,7 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
           <div class="am-crp" [class.am-crp--phone]="phone()">
             <app-page-header [eyebrow]="eyebrow()" [title]="title()">
               <span pageMeta class="am-crp__chips">
-                <span class="am-crp__chip" [attr.data-status]="r.status" data-testid="crp-status">{{ text.status(r.status) }}</span>
+                <span class="am-crp__chip" [attr.data-status]="text.toneOf(r)" data-testid="crp-status">{{ text.stageOf(r) }}</span>
                 @if (whoChip(); as who) {
                   <span class="am-crp__chip am-crp__chip--plain" data-testid="crp-who">{{ who }}</span>
                 }
@@ -141,11 +141,17 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
               <p class="am-crp__banner am-crp__banner--info" data-testid="crp-banner-waiting">
                 {{ 'committee.changeRequest.page.waiting' | translate: { date: format.date(r.submittedAt) } }}
               </p>
+            } @else if (reviewStage() && isRequester() && stageEnteredAt(); as since) {
+              <!-- ACC-245 PR 3b — an added review stage: the stage's name and when the
+                   request entered it (the open visit), never who reviews it. -->
+              <p class="am-crp__banner am-crp__banner--info" data-testid="crp-banner-waiting-stage">
+                {{ 'committee.changeRequest.page.waitingStage' | translate: { stage: text.stageOf(r), date: format.date(since) } }}
+              </p>
             }
 
             @if (instance(); as instance) {
               <section class="am-crp__card" data-testid="crp-stepper">
-                <app-workflow-stage-indicator [instance]="instance" show="sequence" />
+                <app-workflow-stage-indicator [instance]="instance" show="sequence" (historyLoaded)="onHistory($event)" />
               </section>
             }
 
@@ -320,6 +326,10 @@ export class CommitteeChangeRequestPageComponent implements OnDestroy {
     const r = this.request();
     return !!r && !(r.status && CLOSED_STATUSES.has(r.status));
   });
+  /** ACC-245 PR 3b — the added review stage the request stands in, as the server names it; else null. */
+  readonly reviewStage = computed(() => reviewStageOf(this.request()));
+  /** When the request entered the stage it stands in: the stage history's open visit. */
+  readonly stageEnteredAt = signal<string | null>(null);
   readonly isClosedUnapplied = computed(() => {
     const s = this.request()?.status;
     return s === 'rejected' || s === 'withdrawn';
@@ -395,7 +405,9 @@ export class CommitteeChangeRequestPageComponent implements OnDestroy {
         current = from ? (from[field] ?? null) : (live[field] ?? null);
       } else {
         current = live[field] ?? null;
-        drift = r.status === 'under_review' && !!from && field in from && !same(from[field], live[field]);
+        // Submitted and not yet decided: Under review, or an added review stage (ACC-245).
+        const submitted = r.status === 'under_review' || !!reviewStageOf(r);
+        drift = submitted && !!from && field in from && !same(from[field], live[field]);
       }
       return {
         field,
@@ -462,7 +474,13 @@ export class CommitteeChangeRequestPageComponent implements OnDestroy {
     });
   }
 
+  /** The stage indicator's read of the history: the open visit says when the request entered its stage. */
+  onHistory(history: WorkflowStageHistoryDto): void {
+    this.stageEnteredAt.set(history.visits.find((v) => v.exitedAt === null)?.enteredAt ?? null);
+  }
+
   private loadInstance(): void {
+    this.stageEnteredAt.set(null);
     this.workflow.getInstancesByObject('COMMITTEE_CHANGE_REQUEST', this.requestId).subscribe({
       next: (instances) => this.instance.set(instances[0] ?? null),
       error: () => this.instance.set(null),
