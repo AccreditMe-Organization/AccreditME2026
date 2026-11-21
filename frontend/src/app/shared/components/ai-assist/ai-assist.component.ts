@@ -135,9 +135,9 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
             }
             @if (accept()) {
               <div class="am-ai__actions">
-                <button type="button" class="am-ai__primary" (click)="accepted.emit()">{{ 'ai.assist.accept' | translate }}</button>
-                <button type="button" class="am-ai__secondary" (click)="edited.emit()">{{ 'ai.assist.edit' | translate }}</button>
-                <button type="button" class="am-ai__text-button" (click)="discarded.emit()">{{ 'ai.assist.discard' | translate }}</button>
+                <button type="button" class="am-ai__primary" [disabled]="busy()" [attr.aria-busy]="busy() || null" (click)="accepted.emit()">{{ acceptLabel() || ('ai.assist.accept' | translate) }}</button>
+                <button type="button" class="am-ai__secondary" [disabled]="busy()" (click)="edited.emit()">{{ 'ai.assist.edit' | translate }}</button>
+                <button type="button" class="am-ai__text-button" [disabled]="busy()" (click)="discarded.emit()">{{ 'ai.assist.discard' | translate }}</button>
                 @if (actionsExtra(); as extra) {
                   <span class="am-ai__actions-extra ms-auto"><ng-container [ngTemplateOutlet]="extra" /></span>
                 }
@@ -169,7 +169,9 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         }
       }
 
-      <p class="sr-only" aria-live="polite">{{ announcement() | translate: announcementParams() }}</p>
+      @if (!quiet()) {
+        <p class="sr-only" aria-live="polite">{{ announcement() | translate: announcementParams() }}</p>
+      }
       }
     </div>
   `,
@@ -432,6 +434,17 @@ export class AiAssistComponent {
    * readable when the result opens at two lines.
    */
   readonly tagNote = input('');
+  /**
+   * ACC-322 — opt-in: a result SHOWN, not just made: a saved suggestion drawn
+   * when the page loads (Draft minutes puts one in every agenda item). No
+   * focus move and no announcement, which would otherwise fire once per
+   * instance; the trigger's own place announces a fresh result. Off by default.
+   */
+  readonly quiet = input(false);
+  /** ACC-322 — opt-in: the Accept button's words ("Accept into minutes"); "Accept" when empty. */
+  readonly acceptLabel = input('');
+  /** ACC-322 — opt-in: Accept, Edit and Discard are disabled while the host's request for one of them is in flight. */
+  readonly busy = input(false);
   /** The fold control's accessible names ("Collapse summary"); generic words when empty. */
   readonly collapseLabel = input('');
   readonly expandLabel = input('');
@@ -471,7 +484,7 @@ export class AiAssistComponent {
   constructor() {
     // Focus moves to the result when it arrives, so a keyboard user lands on it.
     effect(() => {
-      if (this.state() !== 'result') return;
+      if (this.state() !== 'result' || this.quiet()) return;
       afterNextRender(() => this.resultRegion()?.nativeElement.focus(), { injector: this.injector });
     });
   }

@@ -1,4 +1,4 @@
-import type { MeetingAttendanceRowDto, MeetingAttendeeDto, MeetingDto, MeetingMinutesDto, MeetingMinutesItemDto, MeetingSeriesDto } from './services/meeting.service';
+import type { MeetingAiActionSuggestionDto, MeetingAiDto, MeetingAttendanceRowDto, MeetingAttendeeDto, MeetingDto, MeetingMinutesDto, MeetingMinutesItemDto, MeetingSeriesDto } from './services/meeting.service';
 
 /**
  * ACC-316 PR 6 — a meeting as the server answers GET /meetings/:id, for the
@@ -106,10 +106,42 @@ export function aMinutes(overrides: Partial<MeetingMinutesDto> = {}): MeetingMin
     items: [aMinutesItem()],
     openActions: [],
     review: { round: 0, reviewBy: null, datePassed: false, closed: false, reviewers: [], suggestions: [], changes: [], mine: null },
-    distribute: { ready: false, blockedBy: { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: [{ attendeeId: 'a-1', name: 'Dr. Nora Al-Otaibi' }] }, defaultReviewBy: '2027-03-25' },
+    distribute: { ready: false, blockedBy: { code: 'MEETING_ATTENDANCE_INCOMPLETE', missing: [{ attendeeId: 'a-1', name: 'Dr. Nora Al-Otaibi' }] }, defaultReviewBy: '2027-03-25', aiUndecided: 0 },
     approvedAt: null,
     approvedBy: null,
     may: { recordAttendance: true, recordMinutes: true, distribute: true, returnForCorrection: false, review: false, applySuggestions: false, changeActionDates: false },
+    ...overrides,
+  };
+}
+
+/**
+ * ACC-322 PR 2 — GET /meetings/:id/ai for whoever records a draft that was
+ * never returned: Draft minutes offered and available, nothing drafted yet,
+ * one item left to draft.
+ */
+export function anAi(overrides: Partial<MeetingAiDto> = {}): MeetingAiDto {
+  return {
+    minutes: { may: true, available: true, creditCost: 8, running: false },
+    notes: null,
+    presentMembers: 0,
+    suggestions: { minutes: [], actions: [] },
+    undecided: 0,
+    leftToDraft: 1,
+    ...overrides,
+  };
+}
+
+/** ACC-322 PR 2 — an action suggestion with an owner and a due date: Accept is offered. */
+export function anAiAction(overrides: Partial<MeetingAiActionSuggestionDto> = {}): MeetingAiActionSuggestionDto {
+  return {
+    id: 'ai-act-1',
+    agendaItemId: 'i-1',
+    language: 'en',
+    title: 'Repair negative-pressure alarm, room 3',
+    owner: { userId: 'u-3', name: 'Eng. Saad Al-Dosari' },
+    ownerReason: null,
+    dueAt: '2027-04-15T13:00:00.000Z',
+    dueReason: null,
     ...overrides,
   };
 }

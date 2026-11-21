@@ -12,6 +12,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { MeetingService, type MeetingAttendanceRowDto, type MeetingMinutesDto } from '../../services/meeting.service';
 import { meetingRefusalKey } from '../../meeting-refusal';
 import { MinutesWriteOrder } from '../../minutes-write-order';
+import { actionOwnerOptions } from '../../meeting-action-owners';
 import { MeetingWhenFieldComponent } from '../meeting-when-field/meeting-when-field.component';
 import { dayInstant, meetingStart, meetingTimeValidator, meetingToday } from '../../meeting-when';
 
@@ -128,12 +129,7 @@ export class MeetingActionDialogComponent {
   /** People of the organisation among the invitees; an outside guest has no user. */
   readonly ownerOptions = computed(() => {
     this.language.isArabic();
-    return this.attendance()
-      .filter((r) => !!r.userId)
-      .map((r) => ({
-        value: r.userId!,
-        label: `${r.name} · ${r.kind === 'MEMBER' && r.seat ? this.language.bilingual(r.seat.labelEn, r.seat.labelAr) : this.translate.instant(r.kind === 'MEMBER' ? 'meeting.agendaItem.member' : 'meeting.invitees.guest')}`,
-      }));
+    return actionOwnerOptions(this.attendance(), this.language, this.translate);
   });
 
   constructor() {

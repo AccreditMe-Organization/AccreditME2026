@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { refusalCode } from '../../core/http/refusal';
+import { refusalBody, refusalCode } from '../../core/http/refusal';
 
 /**
  * ACC-316 PR 6 — a meeting write's refusal, said from its CODE in the reader's
@@ -65,11 +65,28 @@ export const MEETING_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   // PR 8d — End series.
   MEETING_SERIES_NOT_FOUND: 'meeting.refusal.seriesNotFound',
   MEETING_SERIES_CANNOT_CANCEL: 'meeting.refusal.seriesCannotCancel',
+  // ACC-322 PR 2 — Draft minutes (PR 4 and PR 6 add their own codes with their screens).
+  MEETING_AI_NOT_OFFERED: 'meeting.refusal.aiNotOffered',
+  MEETING_AI_IN_PROGRESS: 'meeting.refusal.aiInProgress',
+  MEETING_AI_NO_NOTES: 'meeting.refusal.aiNoNotes',
+  MEETING_AI_NOTHING_TO_DRAFT: 'meeting.refusal.aiNothingToDraft',
+  MEETING_AI_NOTHING_SUGGESTED: 'meeting.refusal.aiNothingSuggested',
+  MEETING_AI_TOO_LONG: 'meeting.refusal.aiTooLong.minutes',
+  MEETING_AI_SUGGESTION_GONE: 'meeting.refusal.aiSuggestionGone',
+};
+
+/** MEETING_AI_TOO_LONG names its feature ({ feature }): one sentence each (plan step-322 §1.0). */
+const AI_TOO_LONG_KEYS: Readonly<Record<string, string>> = {
+  minutes: 'meeting.refusal.aiTooLong.minutes',
 };
 
 /** The translation key for a meeting refusal, or null when the error carries no code this file knows. */
 export function meetingRefusalKey(err: unknown): string | null {
   const code = refusalCode(err);
+  if (code === 'MEETING_AI_TOO_LONG') {
+    const feature = refusalBody(err)?.['feature'];
+    return (typeof feature === 'string' ? AI_TOO_LONG_KEYS[feature] : undefined) ?? MEETING_REFUSAL_KEYS[code]!;
+  }
   return code ? (MEETING_REFUSAL_KEYS[code] ?? null) : null;
 }
 
@@ -88,6 +105,10 @@ const RELOAD_CODES: ReadonlySet<string> = new Set([
   'MEETING_SUGGESTION_DECIDED',
   // P227 — "No corrections" pressed on a banner that predates the person's own suggestion.
   'MEETING_REVIEW_SUGGESTED',
+  // ACC-322 — an AI suggestion already decided, or replaced by Draft again.
+  'MEETING_AI_SUGGESTION_GONE',
+  // ACC-322 — Draft minutes is absent where it isn't offered, so this refusal means the page is stale.
+  'MEETING_AI_NOT_OFFERED',
 ]);
 
 export function meetingNeedsReload(err: unknown): boolean {
