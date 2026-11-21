@@ -18828,3 +18828,20 @@ Cancel Meeting, Ahmad's answer of 20 Nov (Q4).
     smaller field fails locally too, not only on CI's fonts;
   - Cancel Meeting in a series, with its context line: 157 / 171 (178 at 390
     in English); the context line never runs sideways.
+
+### 18.26 The contract, 9a: four superseded columns out of the client
+
+Plan §6 item 9, in ACC-278's two-deploy shape (§2.19, "6c").
+
+- **`@ignore`, no migration:** `Meeting.status` and `Meeting.minutesText` (a
+  meeting's state is its workflow stage, its minutes the minutes tables),
+  `AgendaItem.presenter` (`presenterAttendeeId`) and `Task.meetingId`. They
+  stay in the database; `status` keeps its database default, which fills it on
+  insert. `Task`'s `meetingId` index stays until 9b.
+- **`POST /tasks` no longer takes `meetingId`.** It was the only writer, and no
+  screen sent it; a client that sends it now gets the global whitelist's 400.
+  `GET /tasks/...` no longer returns it.
+- **`meeting-contract-columns.client.spec.ts`** fails if the generated client
+  knows one of the four again, or if one loses `@ignore` before 9b.
+- **9b drops the four columns.** It runs only after 9a's container serves, and
+  Railway is never rolled back past 9a once it has.

@@ -445,7 +445,7 @@ A short index. Each line names its source.
 - **`typeValueId` gains its relation.** It is safe: there are 0 rows.
 - **The state is the workflow stage.** The instance is created with the meeting
   in one transaction (`startInstance()` prepare/insert/finish, ACC-239).
-  `status` is not read, and is dropped in the contract PR.
+  `status` is not read, and is dropped in the contract PR (9a: `@ignore`).
 - **Location or link: at least one** (Design, step 1). The link stays LTR.
 - **Times** are stored as UTC and shown in the organisation's zone (ACC-97),
   with Hijri beside them through the formatting layer.
@@ -1876,9 +1876,25 @@ them together with their resolver.
          - R4-1: a moved meeting keeps the pattern's month in its title;
          - an outside guest is never checked.
          **Recorded by lane B (P236).**
-9. **PR 9: contract.**
+9. **PR 9: contract**, in two deploys (ACC-278's shape, P260): an older
+   client that still names a dropped column fails with P2022 during the deploy
+   overlap or a rollback.
    - Drop `Meeting.status`, `Meeting.minutesText`, `AgendaItem.presenter` and
      `Task.meetingId`, after nothing reads them.
+   - **9a (no migration), built:** the four columns are `@ignore`, out of the
+     generated client and still in the database (`prisma migrate diff` from
+     the 75 migrations is empty; deleting a field instead shows its DROP).
+     The only reader or writer was `CreateTaskDto.meetingId` →
+     `TaskService.create()` → `Task.meetingId`; no screen sent it, so removing
+     it turns no existing request into a 400. The frontend's `Task` and
+     `CreateTaskDto` lost the field too. `meeting-contract-columns.client.spec.ts`
+     pins the four out of the client and still `@ignore` (mutation-checked).
+     Shared database, 21 Nov, read only: 0 rows hold a value in any of the
+     four (Meeting 0 rows, AgendaItem 0, Task 46 with no `meetingId`).
+   - **9b, after 9a is live:** the migration drops the four columns (and
+     `Task`'s `meetingId` index); the PR shows 9a's client working against
+     the dropped schema before it merges. From then, never roll Railway back
+     past 9a.
 
 **Not in these slices:**
 
