@@ -12,11 +12,13 @@ import { MeetingDistributeDialogComponent } from './meeting-distribute-dialog.co
 // MEASURED in both languages at 1280 (a confirm, 420 wide) and on a 390 phone:
 // ready, refused (said in the body), and blocked by incomplete attendance with
 // five people missing. The design measured 185 / 200. Each keeps 20px.
+// ACC-322 PR 2 (M2): "ready" carries the undecided-AI line ("3 AI suggestions
+// undecided will be discarded."), the design's +21 EN / +24 AR, re-measured.
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass.
 
 const READY = aMinutes({
   attendance: [anAttendanceRow({ attendance: 'PRESENT' }), anAttendanceRow({ attendeeId: 'a-2', userId: 'u-2', name: 'Huda Al-Harbi', attendance: 'PRESENT' })],
-  distribute: { ready: true, blockedBy: null, defaultReviewBy: '2027-03-25' },
+  distribute: { ready: true, blockedBy: null, defaultReviewBy: '2027-03-25', aiUndecided: 3 },
 });
 const BLOCKED = aMinutes({
   distribute: {
@@ -26,6 +28,7 @@ const BLOCKED = aMinutes({
       missing: ['Dr. Nora Al-Otaibi', 'Huda Al-Harbi', 'Eng. Saad Al-Dosari', 'Dr. Khalid Al-Mutairi', 'Fatima Al-Anazi'].map((name, i) => ({ attendeeId: `a-${i}`, name })),
     },
     defaultReviewBy: '2027-03-25',
+    aiUndecided: 0,
   },
 });
 
@@ -54,7 +57,8 @@ describe('Distribute Minutes dialog — layout, measured (ACC-316 PR 7b)', () =>
         await layout.open(Host, language, width, { distribute: () => respond() });
         // Non-vacuity: the date field is there, on the server's default.
         expect(document.querySelector<HTMLInputElement>('[data-testid="distribute-review-by"]')?.value).toBeTruthy();
-        layout.check('ready', language, width, 420);
+        expect(document.querySelector('[data-testid="distribute-ai-undecided"]')).withContext('the M2 line is in the measurement').not.toBeNull();
+        layout.check('ready, with the M2 line', language, width, 420);
 
         respond = () => throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'MEETING_REVIEW_DATE_INVALID' } }));
         await layout.click('[data-testid="distribute-submit"] button');

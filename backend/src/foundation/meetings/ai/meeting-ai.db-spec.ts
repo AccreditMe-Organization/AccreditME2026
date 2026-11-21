@@ -494,8 +494,22 @@ describe('Meetings AI: Draft minutes against a real database (ACC-322 PR 1)', ()
       const first = await draft(a, m.id);
       await meetingAi.accept(m.id, first.suggestions.minutes[0]!.id, {}, a.orgId, as(a, 'secretary'));
       for (const s of first.suggestions.actions) await meetingAi.discard(m.id, s.id, a.orgId, as(a, 'secretary'));
+      // PR 2 — the read says so first, from the same rule, so the screen shows no trigger.
+      expect((await meetingAi.getAi(m.id, a.orgId, as(a, 'secretary'))).leftToDraft).toBe(0);
       expect(await code(draft(a, m.id))).toBe('MEETING_AI_NOTHING_TO_DRAFT');
       expect(calls).toHaveLength(1);
+    });
+
+    it("the read's leftToDraft counts what a press would draft: every item before the first run, then M8's", async () => {
+      const m = await meetingAt(a, 'minutes_draft');
+      await withNotes(a, m.id);
+      expect((await meetingAi.getAi(m.id, a.orgId, as(a, 'secretary'))).leftToDraft).toBe(1);
+      const first = await draft(a, m.id);
+      // Its minutes and actions undecided: drafted again.
+      expect(first.leftToDraft).toBe(1);
+      await meetingAi.accept(m.id, first.suggestions.minutes[0]!.id, {}, a.orgId, as(a, 'secretary'));
+      // Minutes accepted, actions undecided: still sent, for its actions.
+      expect((await meetingAi.getAi(m.id, a.orgId, as(a, 'secretary'))).leftToDraft).toBe(1);
     });
   });
 

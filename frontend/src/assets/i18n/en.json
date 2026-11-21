@@ -3791,6 +3791,34 @@
       "endSeriesFailed": {
         "one": "{{count}} meeting couldn't be cancelled. End series again to finish.",
         "other": "{{count}} meetings couldn't be cancelled. End series again to finish."
+      },
+      "aiDrafting": {
+        "one": "Drafting minutes for {{count}} agenda item from your notes…",
+        "other": "Drafting minutes for {{count}} agenda items from your notes…"
+      },
+      "aiItemsDrafted": {
+        "one": "{{count}} item drafted",
+        "other": "{{count}} items drafted"
+      },
+      "aiActionsUndecided": {
+        "one": "{{count}} action item undecided",
+        "other": "{{count}} action items undecided"
+      },
+      "aiSuggestionsUndecided": {
+        "one": "{{count}} AI suggestion undecided",
+        "other": "{{count}} AI suggestions undecided"
+      },
+      "aiFromItems": {
+        "one": "item {{list}}",
+        "other": "items {{list}}"
+      },
+      "aiVotesAbove": {
+        "one": "These add up to {{total}}, more than the {{count}} member present.",
+        "other": "These add up to {{total}}, more than the {{count}} members present."
+      },
+      "aiDiscardedOnDistribute": {
+        "one": "{{count}} AI suggestion undecided will be discarded.",
+        "other": "{{count}} AI suggestions undecided will be discarded."
       }
     }
   },
@@ -5355,7 +5383,16 @@
       "seriesTimeInvalid": "Give the time as hours and minutes.",
       "notInSeries": "This meeting isn't part of a series any more.",
       "seriesNotFound": "This series doesn't exist any more.",
-      "seriesCannotCancel": "You can't cancel some of this series' meetings, so the series wasn't ended."
+      "seriesCannotCancel": "You can't cancel some of this series' meetings, so the series wasn't ended.",
+      "aiNotOffered": "Draft minutes isn't offered at this point any more. Reload to see the meeting as it is now.",
+      "aiInProgress": "Minutes are already being drafted for this meeting.",
+      "aiNoNotes": "Add notes first.",
+      "aiNothingToDraft": "Every item already has minutes or decided suggestions. Nothing is left to draft.",
+      "aiNothingSuggested": "AI couldn't suggest anything from these notes. Add more detail and try again.",
+      "aiTooLong": {
+        "minutes": "These notes are too long to draft from. Shorten them and try again."
+      },
+      "aiSuggestionGone": "This suggestion was already decided, or replaced by a new draft."
     },
     "agendaItem": {
       "addTitle": "Add agenda item",
@@ -5591,6 +5628,52 @@
       "keep": "Keep series",
       "confirm": "End series",
       "error": "The series wasn't ended. Try again."
+    },
+    "ai": {
+      "roughNotes": "Rough notes",
+      "draftMinutes": "Draft minutes",
+      "draftAgain": "Draft again",
+      "notesHint": "Seen only by whoever writes the minutes. Paste or type; nothing here is in the minutes until you accept it.",
+      "notesProvider": "Draft minutes sends these notes to AccreditMe's AI provider.",
+      "notesFailed": "Your notes couldn't be saved.",
+      "notesUnreachable": "Your notes couldn't be saved: the server didn't answer.",
+      "draftingAll": "Drafting minutes from your notes…",
+      "drafted": "Minutes drafted: {{items}}, {{actions}}. Each suggestion is under its agenda item.",
+      "running": "Minutes are being drafted from these notes. It can take a few minutes; the suggestions show under their items when it's done.",
+      "stopped": "You stopped waiting. The draft still finishes, and is charged; its suggestions show under their items.",
+      "checkAgain": "Check again",
+      "lostWait": "The page stopped waiting for the draft. Check again in a moment.",
+      "draftFailed": "The minutes couldn't be drafted.",
+      "loadFailed": "Couldn't load the AI suggestions.",
+      "minutesTag": "AI suggestion · check before using",
+      "acceptIntoMinutes": "Accept into minutes",
+      "votes": "Vote: {{for}} for · {{against}} against · {{abstain}} abstain · from your notes",
+      "votesEmpty": "Vote: not in your notes · left empty",
+      "replacesDiscussion": "Accepting replaces the discussion you typed.",
+      "replacesDecisions": "Accepting replaces the decision you typed.",
+      "replacesBoth": "Accepting replaces the discussion and decisions you typed.",
+      "nothing": "Nothing in your notes for this item.",
+      "discardNothing": "Discard: nothing in your notes for {{title}}",
+      "actionsTag": "AI suggestions · action items · accept, edit or discard each",
+      "ownerNone": "Owner —",
+      "dueNone": "Due —",
+      "whyOutsideGuest": "{{name}} is an outside guest, so isn't suggested as owner. Choose a person in the organisation.",
+      "whyNoMatch": "No one in the organisation matches “{{name}}”. Choose a person.",
+      "whyDatePassed": "The date in your notes, {{day}}, has passed. Choose a due date.",
+      "acceptAction": "Accept: {{title}}",
+      "editAction": "Edit: {{title}}",
+      "discardAction": "Discard: {{title}}",
+      "acceptEdited": "Accept",
+      "decideFailed": "The suggestion couldn't be saved.",
+      "decideUnreachable": "The suggestion couldn't be saved: the server didn't answer.",
+      "listSeparator": ", "
+    },
+    "actionsCard": {
+      "title": "Action items · drafts",
+      "lead": "No task exists yet and owners aren't told. Each becomes a task about this meeting when the minutes are approved.",
+      "empty": "None yet. They're added under agenda items while the minutes are written, and become tasks when the minutes are approved.",
+      "fromItem": "From item {{n}}",
+      "notYet": "Not action items until accepted."
     }
   }
 }

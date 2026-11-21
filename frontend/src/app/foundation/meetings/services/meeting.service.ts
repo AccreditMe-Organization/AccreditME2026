@@ -420,6 +420,8 @@ export interface MeetingMinutesDto {
       | { code: 'MEETING_VOTES_EXCEED_PRESENT'; items: { agendaItemId: string; title: string; total: number; present: number }[] }
       | null;
     defaultReviewBy: string;
+    /** ACC-322 — undecided AI suggestions, which Distribute discards (M2): its confirm says how many. */
+    aiUndecided: number;
   } | null;
   approvedAt: string | null;
   /** PR 7d-1 — who approved, named even after they leave, with the seat they held then (null for a unit meeting's approver). */
@@ -446,6 +448,65 @@ export interface MeetingActionRequest {
   title: string;
   ownerUserId: string;
   dueAt: string;
+}
+
+// ── Meetings AI (ACC-322; backend PR 1, SYSTEM-REFERENCE §17.12) ─────────────
+
+/** What one Meetings AI feature offers this viewer. Every flag is the server's. */
+export interface MeetingAiFeatureDto {
+  /** This viewer may press it here: the person, the stage, the phase (and M9). */
+  may: boolean;
+  /** The organisation may use the feature now (switched on, priced, an allowance). */
+  available: boolean;
+  creditCost: number | null;
+  /** A run is in progress on this meeting: someone pressed, and its answer isn't saved yet. */
+  running: boolean;
+}
+
+export interface MeetingAiMinutesSuggestionDto {
+  id: string;
+  agendaItemId: string;
+  language: 'en' | 'ar';
+  /** The notes say nothing about this item: "Nothing in your notes for this item." Discard only. */
+  nothing: boolean;
+  discussion: string | null;
+  decisions: { text: string; votes: MeetingVotesDto | null; abovePresent: boolean }[];
+  /** What Accept replaces of what is already in the minutes (M5). */
+  replaces: { discussion: boolean; decisions: boolean };
+}
+
+export type MeetingAiOwnerReason = { code: 'OUTSIDE_GUEST'; name: string } | { code: 'NO_MATCH'; name: string } | null;
+
+export interface MeetingAiActionSuggestionDto {
+  id: string;
+  agendaItemId: string;
+  language: 'en' | 'ar';
+  title: string;
+  owner: { userId: string; name: string } | null;
+  ownerReason: MeetingAiOwnerReason;
+  dueAt: string | null;
+  /** `day` is yyyy-MM-dd, the day the notes named. */
+  dueReason: { code: 'DATE_PASSED'; day: string } | null;
+}
+
+/** GET /meetings/:id/ai: one read for the page. Anyone but whoever records the minutes gets every flag false and nothing else. */
+export interface MeetingAiDto {
+  minutes: MeetingAiFeatureDto;
+  /** The viewer's own rough notes (M3). */
+  notes: string | null;
+  presentMembers: number;
+  suggestions: { minutes: MeetingAiMinutesSuggestionDto[]; actions: MeetingAiActionSuggestionDto[] };
+  /** Undecided suggestions, minutes and actions together. */
+  undecided: number;
+  /** The agenda items a Draft minutes press would still draft (M8): at 0 there is no trigger. */
+  leftToDraft: number;
+}
+
+/** An action suggestion's Accept: what its inline Edit chose; anything not sent keeps the suggestion's value. */
+export interface MeetingAiAcceptRequest {
+  title?: string;
+  ownerUserId?: string;
+  dueAt?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -663,6 +724,34 @@ export class MeetingService {
   /** Return for Correction: back to Minutes Draft, with an optional reason the present members read. */
   returnMinutes(id: string, reason: string | null): Observable<void> {
     return this.http.post<void>(`${this.base}/${id}/return`, { reason }).pipe(tap(() => this.myWork.changed()));
+  }
+
+  // ── Meetings AI (ACC-322) ────────────────────────────────────────────────────
+
+  ai(id: string): Observable<MeetingAiDto> {
+    return this.http.get<MeetingAiDto>(`${this.base}/${id}/ai`);
+  }
+
+  /** The rough notes as typed; empty removes them. Answers with what was stored, which the screen never writes back into the box. */
+  saveAiNotes(id: string, text: string | null): Observable<{ notes: string | null }> {
+    return this.http.put<{ notes: string | null }>(`${this.base}/${id}/ai/notes`, { text });
+  }
+
+  /**
+   * Draft minutes, written in `language`. The call may take 300 s on the
+   * server: the caller waits longer than that (meeting-minutes-ai.ts), never
+   * the HTTP default.
+   */
+  draftMinutes(id: string, language: 'en' | 'ar'): Observable<MeetingAiDto> {
+    return this.http.post<MeetingAiDto>(`${this.base}/${id}/ai/minutes`, { language });
+  }
+
+  acceptAi(id: string, suggestionId: string, body: MeetingAiAcceptRequest = {}): Observable<{ minutes: MeetingMinutesDto; ai: MeetingAiDto }> {
+    return this.http.post<{ minutes: MeetingMinutesDto; ai: MeetingAiDto }>(`${this.base}/${id}/ai/suggestions/${suggestionId}/accept`, body);
+  }
+
+  discardAi(id: string, suggestionId: string): Observable<MeetingAiDto> {
+    return this.http.post<MeetingAiDto>(`${this.base}/${id}/ai/suggestions/${suggestionId}/discard`, {});
   }
 
   /** The app's move into Minutes Review; `reviewBy` (yyyy-MM-dd) only when the person changed the default. */

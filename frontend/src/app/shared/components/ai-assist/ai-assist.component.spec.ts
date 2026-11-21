@@ -29,6 +29,9 @@ import { useLayoutFonts } from '../../../../testing/layout-fonts';
         [tagNote]="tagNote()"
         collapseLabel="Collapse summary"
         expandLabel="Expand summary"
+        [quiet]="quiet()"
+        [acceptLabel]="acceptLabel()"
+        [busy]="busy()"
         (trigger)="events.push('trigger')"
         (retry)="events.push('retry')"
         (cancel)="events.push('cancel')"
@@ -50,6 +53,9 @@ class HostComponent {
   readonly collapsible = signal(false);
   readonly clamped = signal(false);
   readonly tagNote = signal('');
+  readonly quiet = signal(false);
+  readonly acceptLabel = signal('');
+  readonly busy = signal(false);
   readonly dir = signal<'ltr' | 'rtl'>('ltr');
   readonly bodyTpl = viewChild<TemplateRef<unknown>>('bodyTpl');
   readonly body = () => this.bodyTpl() ?? null;
@@ -171,6 +177,58 @@ describe('AiAssistComponent (ACC-198)', () => {
     expect(box.querySelector('button')).toBeNull();
     expect(el().querySelector('[aria-live="polite"]')!.textContent).toContain('They renew on 21 Oct 2026.');
   });
+
+  // ACC-322 — opt-in, off by default: a saved suggestion shown on load neither takes focus nor is announced.
+  it('quiet: a result shown on load takes no focus and has no live region', async () => {
+    host.quiet.set(true);
+    host.state.set('result');
+    render();
+    await fixture.whenStable();
+    expect(document.activeElement).not.toBe(el().querySelector('.am-ai__result'));
+    expect(el().querySelector('[aria-live="polite"]')).toBeNull();
+  });
+
+  it('acceptLabel names Accept', () => {
+    host.state.set('result');
+    host.accept.set(true);
+    host.acceptLabel.set('Accept into minutes');
+    render();
+    const buttons = Array.from(el().querySelectorAll('.am-ai__actions button')) as HTMLButtonElement[];
+    expect(buttons[0]!.textContent!.trim()).toBe('Accept into minutes');
+  });
+
+  for (const [index, event] of [
+    [0, 'accepted'],
+    [1, 'edited'],
+    [2, 'discarded'],
+  ] as const) {
+    it(`busy: the three stay enabled, the pressed one (${event}) is marked busy and keeps focus, and a press emits nothing`, () => {
+      host.state.set('result');
+      host.accept.set(true);
+      render();
+      const buttons = Array.from(el().querySelectorAll('.am-ai__actions button')) as HTMLButtonElement[];
+      expect(buttons.length).toBe(3);
+      const pressed = buttons[index]!;
+      pressed.focus();
+      pressed.click();
+      expect(host.events).toEqual([event]);
+      // The host's request is now in flight.
+      host.busy.set(true);
+      render();
+      expect(buttons.every((b) => !b.hasAttribute('disabled'))).toBeTrue();
+      expect(buttons.map((b) => b.getAttribute('aria-busy'))).toEqual(buttons.map((_, i) => (i === index ? 'true' : null)));
+      for (const b of buttons) b.click();
+      render();
+      expect(host.events).toEqual([event]);
+      expect(document.activeElement).toBe(pressed);
+      // Done: nothing is busy, and a press emits again.
+      host.busy.set(false);
+      render();
+      expect(buttons.every((b) => b.getAttribute('aria-busy') === null)).toBeTrue();
+      pressed.click();
+      expect(host.events).toEqual([event, event]);
+    });
+  }
 
   it('unavailable or failed: the danger box with Try again', () => {
     host.state.set('refusal');

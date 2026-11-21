@@ -20,6 +20,9 @@ import { MeetingAgendaItemDialogComponent } from '../meeting-agenda-item-dialog/
 import { MeetingFileListComponent } from '../meeting-file-list/meeting-file-list.component';
 import { MeetingOpenActionsComponent } from '../meeting-open-actions/meeting-open-actions.component';
 import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-item-minutes.component';
+import { MeetingRoughNotesComponent } from '../meeting-rough-notes/meeting-rough-notes.component';
+import { MeetingItemAiComponent } from '../meeting-item-ai/meeting-item-ai.component';
+import { MeetingMinutesAi } from '../../meeting-minutes-ai';
 
 /**
  * ACC-316 PR 7 — the meeting's Agenda panel (Meeting Screens round 5, section
@@ -33,7 +36,7 @@ import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-ite
 @Component({
   selector: 'am-meeting-agenda-panel',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, CdkDropList, CdkDrag, CdkDragHandle, MeetingAgendaItemDialogComponent, MeetingFileListComponent, MeetingOpenActionsComponent, MeetingItemMinutesComponent],
+  imports: [TranslatePipe, ButtonModule, CdkDropList, CdkDrag, CdkDragHandle, MeetingAgendaItemDialogComponent, MeetingFileListComponent, MeetingOpenActionsComponent, MeetingItemMinutesComponent, MeetingRoughNotesComponent, MeetingItemAiComponent],
   template: `
     <section class="flex flex-col gap-2 rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] p-3" data-testid="meeting-agenda">
       <h2 class="m-0 flex flex-wrap items-center justify-between gap-2 text-[15px] font-semibold">
@@ -43,11 +46,19 @@ import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-ite
           @if (planned(); as p) {
             <span class="text-meta font-normal text-[var(--am-ink-500)]" data-testid="meeting-agenda-planned">{{ p }}</span>
           }
+          <!-- ACC-322 — the undecided AI suggestions, for whoever records the minutes (the AI read gives nobody else any). -->
+          @if (aiCount(); as c) {
+            <span class="text-meta font-medium text-[var(--am-primary-700)]" data-testid="meeting-agenda-ai-count"><span aria-hidden="true">✦ </span>{{ c }}</span>
+          }
         </span>
         @if (canManage()) {
           <p-button size="small" [text]="true" icon="pi pi-plus" [label]="'meeting.agenda.add' | translate" data-testid="meeting-agenda-add" (onClick)="openItem(null)" />
         }
       </h2>
+      <!-- ACC-322 — Rough notes and Draft minutes: only for whoever records a draft the AI read offers it to. -->
+      @if (ai) {
+        <am-meeting-rough-notes [meetingId]="meeting().id" (reload)="reload.emit()" />
+      }
       <!-- PR 7b — the fixed first section: never an agenda item, never moved, edited or removed. -->
       <am-meeting-open-actions
         [meetingId]="meeting().id"
@@ -108,6 +119,9 @@ import { MeetingItemMinutesComponent } from '../meeting-item-minutes/meeting-ite
                   (applied)="suggestionApplied.emit()"
                   (reload)="reload.emit()"
                 />
+                @if (ai) {
+                  <am-meeting-item-ai [itemId]="im.id" [itemTitle]="im.title" [attendance]="minutes()!.attendance" (reload)="reload.emit()" />
+                }
               }
             </div>
             @if (canManage()) {
@@ -182,6 +196,8 @@ export class MeetingAgendaPanelComponent {
   /** The item whose handle had focus when it was moved by key: focused again once its row is redrawn in its new place. */
   private refocus: { id: string; at: number } | null = null;
   readonly format = inject(FormatService);
+  /** ACC-322 — the page's Meetings AI state; absent where the panel is used on its own. */
+  readonly ai = inject(MeetingMinutesAi, { optional: true });
 
   readonly meeting = input.required<MeetingDto>();
   readonly items = input<MeetingAgendaItemDto[]>([]);
@@ -237,6 +253,19 @@ export class MeetingAgendaPanelComponent {
     if (!total) return null;
     const sum = this.items().reduce((n, i) => n + (i.durationMinutes ?? 0), 0);
     return this.format.count('meeting.minutesPlanned', total, { planned: this.format.number(sum) });
+  });
+
+  /** ACC-322 — "3 items drafted · 3 action items undecided", or null with nothing undecided. */
+  readonly aiCount = computed(() => {
+    this.language.isArabic();
+    if (!this.ai) return null;
+    const items = this.ai.itemsDrafted();
+    const actions = this.ai.actionSuggestions().length;
+    if (!items && !actions) return null;
+    const parts = [];
+    if (items) parts.push(this.format.count('meeting.aiItemsDrafted', items));
+    if (actions) parts.push(this.format.count('meeting.aiActionsUndecided', actions));
+    return parts.join(' · ');
   });
 
   /** This item's suggestions in the current review round. */

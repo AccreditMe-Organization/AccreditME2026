@@ -14,6 +14,7 @@ import {
   ITEM_TITLE_IN,
   NOTES_MAX,
   OPEN_NOTES,
+  draftPartsOf,
   dueInstant,
   minutesInputTokens,
   minutesPrompt,
@@ -128,6 +129,22 @@ describe('parseMinutesAnswer (ACC-322)', () => {
     expect(parseMinutesAnswer('Here are the minutes.', s)).toEqual({ kind: 'unusable' });
     expect(parseMinutesAnswer('{"items": "none"}', s)).toEqual({ kind: 'unusable' });
     expect(parseMinutesAnswer(JSON.stringify({ items: [{ item: 'A4', discussion: 'x' }] }), s)).toEqual({ kind: 'unusable' });
+  });
+});
+
+describe('draftPartsOf, M8 (ACC-322)', () => {
+  const none = { minutes: false, actions: false };
+  it('the first press drafts every item, both parts, whatever it holds', () => {
+    expect(draftPartsOf({ discussion: 'typed', decisions: 2 }, none, true)).toBe('both');
+  });
+  it('afterwards: an empty item, or one with an undecided minutes suggestion, is drafted whole', () => {
+    expect(draftPartsOf({ discussion: null, decisions: 0 }, none, false)).toBe('both');
+    expect(draftPartsOf({ discussion: 'typed', decisions: 1 }, { minutes: true, actions: false }, false)).toBe('both');
+  });
+  it('settled minutes with undecided actions: actions only; nothing undecided: left out', () => {
+    expect(draftPartsOf({ discussion: 'typed', decisions: 0 }, { minutes: false, actions: true }, false)).toBe('actions');
+    expect(draftPartsOf({ discussion: null, decisions: 1 }, none, false)).toBeNull();
+    expect(draftPartsOf({ discussion: 'typed', decisions: 0 }, none, false)).toBeNull();
   });
 });
 

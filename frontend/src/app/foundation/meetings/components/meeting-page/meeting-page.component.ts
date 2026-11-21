@@ -40,6 +40,8 @@ import { MeetingAttendanceComponent } from '../meeting-attendance/meeting-attend
 import { MeetingActionDialogComponent } from '../meeting-action-dialog/meeting-action-dialog.component';
 import { MeetingDistributeDialogComponent } from '../meeting-distribute-dialog/meeting-distribute-dialog.component';
 import { MinutesWriteOrder } from '../../minutes-write-order';
+import { MeetingMinutesAi } from '../../meeting-minutes-ai';
+import { MeetingActionItemsCardComponent } from '../meeting-action-items-card/meeting-action-items-card.component';
 import { MeetingReviewBannerComponent } from '../meeting-review-banner/meeting-review-banner.component';
 import { MeetingReviewCardComponent } from '../meeting-review-card/meeting-review-card.component';
 import { MeetingSuggestDialogComponent } from '../meeting-suggest-dialog/meeting-suggest-dialog.component';
@@ -58,7 +60,8 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
   selector: 'app-meeting-page',
   standalone: true,
   // P206 — one order for the page's minutes writes: an older answer never puts back what a newer one changed.
-  providers: [MinutesWriteOrder],
+  // ACC-322 — the Meetings AI state (Draft minutes), shared by the agenda panel's notes, items and count, and the Action items card.
+  providers: [MinutesWriteOrder, MeetingMinutesAi],
   imports: [
     TranslatePipe,
     RouterLink,
@@ -83,6 +86,7 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
     MeetingDeclineDialogComponent,
     MeetingReturnDialogComponent,
     MeetingCantApproveDialogComponent,
+    MeetingActionItemsCardComponent,
   ],
   template: `
     @if (state() === 'loading') {
@@ -271,6 +275,10 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
             <!-- PR 7b — once the meeting is held, attendance takes the invitees' place. -->
             <div class="am-mp__side flex min-w-0 flex-col gap-3" data-testid="meeting-side">
               <am-meeting-attendance [meetingId]="m.id" [minutes]="mm" [scheduledAt]="m.scheduledAt" (minutesChange)="minutes.set($event)" (startReached)="refreshMinutes()" />
+              <!-- ACC-322 — the draft action items, and the undecided AI suggestions for whoever records them. -->
+              @if (mm.phase === 'draft') {
+                <am-meeting-action-items-card [minutes]="mm" />
+              }
               <am-meeting-review-card
                 [minutes]="mm"
                 [failure]="wholeFailure()?.failure ?? null"
@@ -471,6 +479,10 @@ import { MEETING_APPROVAL_BLOCKS, MeetingCantApproveDialogComponent } from '../m
         .am-mp ::ng-deep .p-button.p-button-icon-only {
           min-inline-size: 44px;
         }
+        /* ACC-322 — the AI pattern's own buttons (trigger, Accept / Edit / Discard, Try again). */
+        .am-mp ::ng-deep .am-ai button {
+          min-block-size: 44px;
+        }
       }
       .am-segmented {
         display: inline-flex;
@@ -514,6 +526,7 @@ export class MeetingPageComponent {
   private readonly language = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   readonly format = inject(FormatService);
+  private readonly ai = inject(MeetingMinutesAi);
 
   readonly id = this.route.snapshot.paramMap.get('id')!;
   readonly state = signal<'loading' | 'ready' | 'notFound' | 'error'>('loading');
@@ -606,6 +619,9 @@ export class MeetingPageComponent {
     inject(MinutesWriteOrder)
       .reread.pipe(takeUntilDestroyed())
       .subscribe(() => this.refreshMinutes());
+    // ACC-322 — an AI accept is a minutes write; a draft or a discard changes the count Distribute's confirm says (M2).
+    this.ai.minutesChange.pipe(takeUntilDestroyed()).subscribe((m) => this.minutes.set(m));
+    this.ai.countChanged.pipe(takeUntilDestroyed()).subscribe(() => this.refreshMinutes());
     this.load();
   }
 
@@ -637,6 +653,7 @@ export class MeetingPageComponent {
         this.agenda.set(agenda);
         this.files.set(files);
         this.minutes.set(minutes);
+        this.syncAi(minutes, true);
         this.openActions.set(openActions);
         if (this.readFailed() === 'files' || this.readFailed() === 'attendees') this.readFailed.set(null);
         this.instance.set(instances[0] ?? null);
@@ -721,8 +738,24 @@ export class MeetingPageComponent {
   /** The minutes read again (attendance opens at the start time, without a reload). */
   refreshMinutes(): void {
     this.optional(this.meetings.minutes(this.id), 'minutes').subscribe((m) => {
-      if (m) this.minutes.set(m);
+      if (m) {
+        this.minutes.set(m);
+        this.syncAi(m, false);
+      }
     });
+  }
+
+  /**
+   * ACC-322 — the AI read, only while the minutes are a draft the viewer
+   * records (it gives nobody else anything, 6.6). Read on every full load;
+   * a minutes re-read only clears it once the draft has moved on.
+   */
+  private syncAi(minutes: MeetingMinutesDto | null, read: boolean): void {
+    if (minutes?.phase === 'draft' && minutes.may.recordMinutes) {
+      if (read || !this.ai.ai()) this.ai.load(this.id);
+    } else {
+      this.ai.clear();
+    }
   }
 
   /** Retry the read that failed after a write. */

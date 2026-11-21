@@ -41,6 +41,24 @@ export const CLOSE_NOTES = 'NOTES>>>';
 /** What is drafted for one item (M8): both parts, or only its actions. */
 export type DraftParts = 'both' | 'actions';
 
+/**
+ * M8, the ONE rule for what a press drafts of one item. The FIRST press (no
+ * finished run yet) drafts every item, both parts. Afterwards an item's
+ * minutes are drafted again only when it has no discussion and no decision,
+ * or an undecided minutes suggestion; its actions when it has an undecided
+ * action suggestion or its minutes are drafted. Null: the item is left out.
+ * The press and the read's `leftToDraft` (PR 2) both ask it.
+ */
+export function draftPartsOf(
+  item: { discussion: string | null; decisions: number },
+  undecided: { minutes: boolean; actions: boolean },
+  first: boolean,
+): DraftParts | null {
+  if (first) return 'both';
+  if ((!item.discussion && item.decisions === 0) || undecided.minutes) return 'both';
+  return undecided.actions ? 'actions' : null;
+}
+
 export interface MinutesItemInput {
   /** A1 … A6, in agenda order. */
   label: string;

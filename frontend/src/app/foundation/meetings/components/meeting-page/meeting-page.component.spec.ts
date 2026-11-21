@@ -13,7 +13,7 @@ import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { WorkflowService, type WorkflowMoveDto } from '../../../workflow/services/workflow.service';
-import { aMeeting, aMinutes, aMinutesItem, aSeries, anAttendee } from '../../meeting-fixtures.testing';
+import { aMeeting, aMinutes, aMinutesItem, aSeries, anAi, anAttendee } from '../../meeting-fixtures.testing';
 import { MeetingService, type MeetingAgendaItemDto, type MeetingAttendeeDto, type MeetingDto, type MeetingMinutesDto, type MeetingOpenActionsDto } from '../../services/meeting.service';
 import { MeetingPageComponent } from './meeting-page.component';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
@@ -60,6 +60,8 @@ describe('MeetingPageComponent (ACC-316 PR 6)', () => {
             agenda: () => agendaRead(),
             files: () => filesRead(),
             minutes: () => minutesRead(),
+            // ACC-322 — the AI read, made while the minutes are a draft the viewer records; nothing offered here.
+            ai: () => of(anAi({ minutes: { may: false, available: false, creditCost: null, running: false }, leftToDraft: 0 })),
             openActions: () => openActionsRead(),
             recordAttendance: () => writes.attendance,
             saveDiscussion: () => writes.discussion,

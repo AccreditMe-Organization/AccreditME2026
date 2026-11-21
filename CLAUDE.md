@@ -5389,6 +5389,23 @@ Briefly:
 - **One additive migration** (`acc322_meetings_ai`): two enums, three tables,
   and two nullable `AgendaItem` source columns for PR 3. It runs in the
   pre-deploy step.
+- **PR 2, THE MINUTES SCREENS** (SYSTEM-REFERENCE §17.12.1, plan §11):
+  - **`MeetingMinutesAi` is the page's one AI state.** The meeting page
+    provides it, and makes the AI read only while the minutes are a draft the
+    viewer records. Every flag is the server's.
+  - **The trigger hides at `leftToDraft` 0**, from the press's own M8 rule
+    (`draftPartsOf()`).
+  - **The notes are never written back** into the box, and a press saves
+    them first.
+  - **The press waits 330 s.** A lost wait reads the run's state, never
+    Retry.
+  - **Saved suggestions are `am-ai-assist` with `quiet`.** `quiet`,
+    `acceptLabel` and `busy` are opt-in, default off. `busy` keeps the
+    buttons enabled and ignores a press in the component; it never sets
+    `disabled`.
+  - **The Action items card** (6.2's side card) was built here: PR 7c never
+    built it.
+  - No migration.
 
 ## Open / Deferred Items
 
