@@ -16,6 +16,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { FormatService } from '../../../../core/formatting';
 import { IUserDto } from '../../services/user.service';
 import { UserSessionsPanelComponent } from './user-sessions-panel.component';
 
@@ -219,13 +220,14 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
   });
 
   // ── Test 3 ──────────────────────────────────────────────────────────────
-  it('3 · an invited user shows the Invited chip and only Edit profile and Revoke', () => {
+  it('3 · an invited user shows the Invited chip and only Edit profile, Resend and Revoke', () => {
     const ctx = render({ permissions: ADMIN });
     flushUser(ctx, record({ status: 'INVITED' }));
     const chip = ctx.el.querySelector('app-status-chip')!;
     expect(chip.textContent).toContain('Invited');
     expect(chip.querySelector('.font-semibold')).not.toBeNull(); // the attention tier
-    expect(actions(ctx.el)).toEqual(['editProfile', 'revokeInvitation']);
+    // ACC-159 — Resend sits beside Revoke.
+    expect(actions(ctx.el)).toEqual(['editProfile', 'resendInvitation', 'revokeInvitation']);
     // Invited: the date they were invited, not "Never signed in".
     expect(ctx.el.querySelector('[data-fact="invited"]')).not.toBeNull();
     expect(ctx.el.querySelector('[data-fact="lastSignIn"]')).toBeNull();
@@ -698,5 +700,150 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(fact).toContain('20 Oct 2026');
     expect(fact).toContain('24 Oct 2026');
     expect(fact).toContain('Covered by Dr. Omar Siddiqui');
+  });
+
+  // ── ACC-159 — Resend invitation, and when the link stops working ─────────
+  describe('Resend invitation and the expiry line (ACC-159)', () => {
+    const NOW = new Date('2026-11-21T09:00:00.000Z');
+    beforeEach(() => {
+      jasmine.clock().install();
+      jasmine.clock().mockDate(NOW);
+    });
+    afterEach(() => jasmine.clock().uninstall());
+
+    const invited = (overrides: Partial<IUserDto> = {}): IUserDto =>
+      record({ status: 'INVITED', invitationExpiresAt: '2026-11-23T09:00:00.000Z', ...overrides });
+
+    const press = (ctx: ReturnType<typeof render>): void => {
+      (ctx.el.querySelector('[data-action="resendInvitation"] button') as HTMLButtonElement).click();
+      ctx.fixture.detectChanges();
+    };
+    const resendCall = (ctx: ReturnType<typeof render>) =>
+      ctx.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/resend-invitation`) && r.method === 'POST');
+    const errorText = (ctx: ReturnType<typeof render>): string =>
+      ctx.el.querySelector('[data-user-action-error]')?.textContent?.trim() ?? '';
+
+    it('is offered beside Revoke for an invited person, to a users:invite holder only', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited());
+      expect(actions(ctx.el)).toEqual(['editProfile', 'resendInvitation', 'revokeInvitation']);
+
+      const without = render({ permissions: ADMIN.filter((p) => p !== 'users:invite') });
+      flushUser(without, invited());
+      expect(actions(without.el)).not.toContain('resendInvitation');
+
+      for (const status of ['ACTIVE', 'INACTIVE', 'SUSPENDED']) {
+        const other = render({ permissions: ADMIN });
+        flushUser(other, record({ status }));
+        expect(actions(other.el)).withContext(status).not.toContain('resendInvitation');
+      }
+    });
+
+    it("is offered on the account owner's pending invitation, where Revoke is not", () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited({ isAccountOwner: true }));
+      expect(actions(ctx.el)).toContain('resendInvitation');
+      expect(actions(ctx.el)).not.toContain('revokeInvitation');
+    });
+
+    it('calls the endpoint once, names the person, and reads the record again', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited({ invitationExpiresAt: '2026-11-18T09:00:00.000Z' }));
+      press(ctx);
+      // A second press while the first is in flight sends nothing more.
+      press(ctx);
+      const calls = ctx.http.match((r) => r.url.endsWith(`/users/${OTHER}/resend-invitation`) && r.method === 'POST');
+      expect(calls.length).withContext('one press, one request').toBe(1);
+      calls[0]!.flush({ invitationExpiresAt: '2026-11-23T09:00:00.000Z' });
+      ctx.fixture.detectChanges();
+
+      expect(ctx.el.querySelector('[data-user-action-message]')!.textContent!.trim()).toBe(
+        'Invitation sent again to Dr. Yasser Al-Amri.',
+      );
+      flushUser(ctx, invited());
+      expect(ctx.el.querySelector('[data-fact="invitationExpiry"]')!.textContent).toContain('Expires in 2 days');
+    });
+
+    const REFUSALS: { code: string; body?: Record<string, unknown>; text: string }[] = [
+      {
+        code: 'INVITATION_NOT_PENDING',
+        body: { userStatus: 'ACTIVE' },
+        text: 'Dr. Yasser Al-Amri no longer has a pending invitation. Status now: Active.',
+      },
+      {
+        code: 'SEAT_LIMIT_REACHED',
+        text: "Every seat on your organisation's plan is in use. A seat frees up when an invitation expires or someone is deactivated.",
+      },
+      { code: 'POSITION_INACTIVE', text: "This position is inactive, so it can't be given to anyone." },
+      { code: 'POSITION_ALREADY_HELD', text: 'Someone else already holds this position in this unit.' },
+      { code: 'UNIT_ALREADY_HAS_HEAD', text: 'This unit already has a head.' },
+    ];
+    for (const r of REFUSALS) {
+      it(`says ${r.code} in words, never the server's English`, () => {
+        const ctx = render({ permissions: ADMIN });
+        flushUser(ctx, invited());
+        press(ctx);
+        resendCall(ctx).flush(
+          { statusCode: 409, message: 'SERVER ENGLISH', error: 'Conflict', code: r.code, ...r.body },
+          { status: 409, statusText: 'Conflict' },
+        );
+        ctx.fixture.detectChanges();
+        expect(errorText(ctx)).toBe(r.text);
+        expect(errorText(ctx)).not.toContain('SERVER ENGLISH');
+      });
+    }
+
+    it('says a refusal with no code in its own words, and the button stays enabled', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited());
+      press(ctx);
+      resendCall(ctx).flush({ statusCode: 500, message: 'SERVER ENGLISH' }, { status: 500, statusText: 'Error' });
+      ctx.fixture.detectChanges();
+      expect(errorText(ctx)).toBe("The invitation couldn't be sent again. Try again.");
+      const button = ctx.el.querySelector('[data-action="resendInvitation"] button') as HTMLButtonElement;
+      expect(button.disabled).toBeFalse();
+      // A press after a refusal is a new request.
+      press(ctx);
+      resendCall(ctx);
+    });
+
+    it('shows when an open invitation stops working, relative, with the full date-time under it', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited());
+      const fact = ctx.el.querySelector('[data-fact="invitationExpiry"]')!;
+      expect(fact.querySelector('dt')!.textContent!.trim()).toBe('Invitation');
+      expect(fact.querySelector('dd')!.textContent!.trim()).toBe('Expires in 2 days');
+      expect(fact.querySelector('[data-fact-detail]')!.textContent!.trim()).toBe(
+        TestBed.inject(FormatService).dateTime('2026-11-23T09:00:00.000Z'),
+      );
+    });
+
+    it('says an expired invitation has expired', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, invited({ invitationExpiresAt: '2026-11-18T09:00:00.000Z' }));
+      expect(ctx.el.querySelector('[data-fact="invitationExpiry"] dd')!.textContent!.trim()).toBe('Expired 3 days ago');
+    });
+
+    it('shows nothing for someone not invited, or with no expiry sent', () => {
+      const active = render({ permissions: ADMIN });
+      flushUser(active, record({ invitationExpiresAt: '2026-11-23T09:00:00.000Z' }));
+      expect(active.el.querySelector('[data-fact="invitationExpiry"]')).toBeNull();
+
+      const none = render({ permissions: ADMIN });
+      flushUser(none, record({ status: 'INVITED' }));
+      expect(none.el.querySelector('[data-fact="invitationExpiry"]')).toBeNull();
+    });
+
+    it('Arabic: «إعادة إرسال الدعوة», «تنتهي خلال يومين» and «انتهت»', () => {
+      const ctx = render({ permissions: ADMIN, arabic: true });
+      flushUser(ctx, invited());
+      expect(ctx.el.querySelector('[data-action="resendInvitation"]')!.textContent!.trim()).toBe('إعادة إرسال الدعوة');
+      expect(ctx.el.querySelector('[data-fact="invitationExpiry"] dt')!.textContent!.trim()).toBe('الدعوة');
+      expect(ctx.el.querySelector('[data-fact="invitationExpiry"] dd')!.textContent!.trim()).toBe('تنتهي خلال يومين');
+
+      const expired = render({ permissions: ADMIN, arabic: true });
+      flushUser(expired, invited({ invitationExpiresAt: '2026-11-18T09:00:00.000Z' }));
+      expect(expired.el.querySelector('[data-fact="invitationExpiry"] dd')!.textContent!.trim()).toMatch(/^انتهت قبل/);
+    });
   });
 });

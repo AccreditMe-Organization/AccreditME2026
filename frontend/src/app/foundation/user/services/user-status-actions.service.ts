@@ -8,6 +8,7 @@ import { rootUnitNeedsHeadMessage } from '../../organization/root-unit-refusal';
 import { RoleService, UserRoleGrantDto } from '../../roles/services/role.service';
 import { IUserDto, UserService } from './user.service';
 import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
+import { invitationRefusalMessage } from '../invitation-refusal';
 
 /**
  * ACC-120 slice 5 — the three status actions, written ONCE for both screens
@@ -52,6 +53,19 @@ export function statusActionFor(
       // SUSPENDED: no feature produces it, and no action is defined for it.
       return null;
   }
+}
+
+/**
+ * ACC-159 — Resend invitation sits BESIDE the status slot, not in it: an
+ * invited person is offered both Revoke and Resend. users:invite, an INVITED
+ * person, and the account owner too (the server protects the owner from
+ * revoke, not from a new link). The one rule both screens read.
+ */
+export function mayResendInvitation(
+  user: Pick<IUserDto, 'status'>,
+  hasPermission: (permission: string) => boolean,
+): boolean {
+  return user.status === 'INVITED' && hasPermission('users:invite');
 }
 
 /** What the caller does once the action has run, or failed. */
@@ -206,6 +220,21 @@ export class UserStatusActionsService {
           error: (err: unknown) => result.failed(this.refusalMessage(err, 'Revoke failed')),
         });
       },
+    });
+  }
+
+  /**
+   * ACC-159 — a new link and two more days, at once: no confirm, because
+   * nothing is lost (the person gets the same email again). A refusal is said
+   * from its code after the press; the button is never disabled.
+   */
+  resendInvitation(user: IUserDto, result: UserStatusActionResult): void {
+    this.userService.resendInvitation(user.id).subscribe({
+      next: () => result.succeeded(this.translate.instant('user.resendInvitationSummary', { name: user.name })),
+      error: (err: unknown) =>
+        result.failed(
+          invitationRefusalMessage(err, this.translate, user.name) ?? this.translate.instant('user.resendInvitationFailed'),
+        ),
     });
   }
 

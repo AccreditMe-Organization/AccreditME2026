@@ -24,7 +24,7 @@ import { RoleService, UserRoleGrantDto } from '../../../roles/services/role.serv
 import { orderGrants } from '../../../roles/permission-matrix/user-permissions.model';
 import { USER_PERMISSIONS_LOOKUP } from '../../../../core/navigation/nav-items';
 import { IBilingualNameDto, IUserDto, UserService } from '../../services/user.service';
-import { UserStatusActionsService, statusActionFor } from '../../services/user-status-actions.service';
+import { UserStatusActionsService, mayResendInvitation, statusActionFor } from '../../services/user-status-actions.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
 import { EditProfileDialogComponent } from './edit-profile-dialog.component';
 import { CoverOption, OutOfOfficeDialogComponent } from './out-of-office-dialog.component';
@@ -54,6 +54,8 @@ interface Fact {
   value: string;
   /** Dates read left to right inside Arabic. */
   ltr?: boolean;
+  /** ACC-159 — a second, smaller line: the full date-time behind a relative value. */
+  detail?: string;
 }
 
 /**
@@ -73,6 +75,7 @@ interface Fact {
  *   Transfer            users:transfer, an active user in a unit
  *   Deactivate          users:deactivate, an active user, NOT your own (D4)
  *   Reactivate          users:reactivate, an inactive user
+ *   Resend invitation   users:invite, an invited user — a new link, two more days
  *   Revoke invitation   users:invite, an invited user — then back to /users
  *   Manage roles        roles:manage, on the Roles panel
  *   Two-step sign-in    own record: Set up / Turn off (the endpoints act on the
@@ -240,6 +243,18 @@ interface Fact {
                   data-action="reactivate"
                 />
               }
+              <!-- ACC-159 — beside Revoke: a new link and two more days. Never
+                   disabled; a refusal is said after the press. -->
+              @if (canResendInvitation()) {
+                <p-button
+                  [label]="'user.resendInvitation' | translate"
+                  icon="pi pi-send"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="resendInvitation()"
+                  data-action="resendInvitation"
+                />
+              }
               @if (canRevokeInvitation()) {
                 <p-button
                   [label]="'user.revokeInvitation' | translate"
@@ -267,6 +282,9 @@ interface Fact {
                   {{ fact.labelKey | translate }}
                 </dt>
                 <dd class="m-0 text-[13px]">{{ fact.value }}</dd>
+                @if (fact.detail) {
+                  <dd class="m-0 mt-0.5 text-[11.5px] text-[var(--am-ink-500)]" data-fact-detail>{{ fact.detail }}</dd>
+                }
               </div>
             }
           </dl>
@@ -610,6 +628,11 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canDeactivate = computed(() => this.statusAction() === 'deactivate');
   readonly canReactivate = computed(() => this.statusAction() === 'reactivate');
   readonly canRevokeInvitation = computed(() => this.statusAction() === 'revokeInvitation');
+  /** ACC-159 — beside Revoke, from the same permission source (mayResendInvitation). */
+  readonly canResendInvitation = computed(() => {
+    const user = this.user();
+    return !!user && mayResendInvitation(user, this.can);
+  });
   readonly canViewRoles = computed(() => this.can('roles:view'));
   /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
   readonly canViewCommittees = computed(() => this.can('committees:view'));
@@ -726,6 +749,19 @@ export class UserRecordComponent implements OnInit, OnDestroy {
     }
     if (user.status === 'INVITED') {
       facts.push({ key: 'invited', labelKey: 'userRecord.invitedOn', value: this.format.date(user.createdAt) });
+      // ACC-159 — when the link stops working, relative, with the full date-time
+      // under it. Nothing when the server sent no expiry.
+      if (user.invitationExpiresAt) {
+        const expired = new Date(user.invitationExpiresAt).getTime() < Date.now();
+        facts.push({
+          key: 'invitationExpiry',
+          labelKey: 'userRecord.invitation',
+          value: this.translate.instant(expired ? 'userRecord.invitationExpired' : 'userRecord.invitationExpires', {
+            when: this.format.relative(user.invitationExpiresAt),
+          }),
+          detail: this.format.dateTime(user.invitationExpiresAt),
+        });
+      }
     } else {
       facts.push({
         key: 'lastSignIn',
@@ -894,6 +930,31 @@ export class UserRecordComponent implements OnInit, OnDestroy {
     this.rolesOpen.set(false);
     this.rolesDirty.set(false);
     this.rolesHandle()?.retry();
+  }
+
+  /**
+   * ACC-159 — resend at once (no confirm: nothing is lost). A second press
+   * while the first is in flight does nothing, so one press sends one email;
+   * the button itself is never disabled.
+   */
+  private resending = false;
+  resendInvitation(): void {
+    const user = this.user();
+    if (!user || this.resending) return;
+    this.resending = true;
+    this.actionMessage.set(null);
+    this.actionError.set(null);
+    this.statusActions.resendInvitation(user, {
+      succeeded: (message) => {
+        this.resending = false;
+        this.actionMessage.set(message);
+        this.loadUser();
+      },
+      failed: (message) => {
+        this.resending = false;
+        this.actionError.set(message);
+      },
+    });
   }
 
   runStatusAction(action: 'deactivate' | 'reactivate' | 'revokeInvitation'): void {

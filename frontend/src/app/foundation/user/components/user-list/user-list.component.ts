@@ -32,6 +32,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import {
   UserStatusAction,
   UserStatusActionsService,
+  mayResendInvitation,
   statusActionFor,
 } from '../../services/user-status-actions.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
@@ -47,6 +48,8 @@ export type RowAction =
   // Deactivate, INACTIVE gets Reactivate, INVITED gets Revoke invitation.
   | 'deactivate'
   | 'reactivate'
+  // ACC-159 — beside Revoke invitation, for an INVITED row.
+  | 'resendInvitation'
   | 'revokeInvitation';
 
 // ACC-78 — the full-page table, rebuilt against
@@ -594,6 +597,9 @@ export class UserListComponent implements OnInit {
     // the viewer's OWN row (CC-88, A1): the backend allows it, and the first
     // thing it does is end the caller's sessions.
     const status = statusActionFor(user, (p) => this.access.hasPermission(p), this.authService.currentUser()?.id);
+    // ACC-159 — Resend sits just before Revoke (or alone, for the account
+    // owner, whose invitation can't be revoked here).
+    if (mayResendInvitation(user, (p) => this.access.hasPermission(p))) actions.push('resendInvitation');
     if (status) actions.push(status);
     return actions;
   }
@@ -608,6 +614,7 @@ export class UserListComponent implements OnInit {
       transfer: { key: 'user.transfer.menuAction' },
       deactivate: { key: 'user.deactivate', danger: true },
       reactivate: { key: 'user.reactivate' },
+      resendInvitation: { key: 'user.resendInvitation' },
       revokeInvitation: { key: 'user.revokeInvitation', danger: true },
     };
     return this.rowActionsFor(user).map((action) => ({
@@ -623,6 +630,7 @@ export class UserListComponent implements OnInit {
       transfer: () => this.openTransfer(user),
       deactivate: () => this.confirmDeactivate(user),
       reactivate: () => this.confirmReactivate(user),
+      resendInvitation: () => this.resendInvitation(user),
       revokeInvitation: () => this.confirmRevokeInvitation(user),
     };
     run[id as RowAction]?.();
@@ -743,6 +751,19 @@ export class UserListComponent implements OnInit {
 
   confirmRevokeInvitation(user: IUserDto): void {
     this.runStatusAction('revokeInvitation', user);
+  }
+
+  /**
+   * ACC-159 — a new link and two more days, at once. Nothing on the row
+   * changes (the person is still Invited), so nothing is re-read.
+   */
+  resendInvitation(user: IUserDto): void {
+    this.infoMessage.set(null);
+    this.error.set(null);
+    this.statusActions.resendInvitation(user, {
+      succeeded: (message) => this.infoMessage.set(message),
+      failed: (message) => this.error.set(message),
+    });
   }
 
   private runStatusAction(action: UserStatusAction, user: IUserDto): void {

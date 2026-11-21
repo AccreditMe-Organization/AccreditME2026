@@ -5,7 +5,11 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { UserService } from '../../services/user.service';
+import { ISeatPositionDto, UserService } from '../../services/user.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { FormatService } from '../../../../core/formatting';
+import { refusalCode } from '../../../../core/http/refusal';
+import { invitationRefusalMessage } from '../../invitation-refusal';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import {
   OrgUnitService,
@@ -29,7 +33,6 @@ import { LanguageService } from '../../../../core/services/language.service';
 // note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
-import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
 
 /**
  * Invite user — rebuilt to the drawing, ACC-120 slice 5.
@@ -76,8 +79,29 @@ import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-2">
-      <p class="text-[12.5px] text-[var(--am-text-secondary)] -mt-1 mb-1">
-        {{ 'user.inviteSubtitle' | translate }}
+      <!-- ACC-159 — the seats in use, read when the dialog opens, said in the
+           subtitle's own paragraph rather than a row of its own: measured, a
+           separate row left Arabic 2px under the 420 cap once full. Nothing
+           at all when the read fails or there is no limit (never "0 of 0").
+           FULL takes the paragraph: no seat is free and what frees one, in
+           place of the count AND of "they'll get an email", which a full
+           organisation's Send would not do (and a phone keeps its room). Send
+           stays enabled, and the server's own refusal is said from its code. -->
+      <p
+        class="-mt-1 mb-1 text-[length:var(--am-type-meta-size)] leading-[var(--am-type-meta-line)] text-[var(--am-ink-500)]"
+        data-invite-subtitle
+      >
+        @if (!seatsFull()) {
+          {{ 'user.inviteSubtitle' | translate }}
+        }
+        @if (seatsLine(); as line) {
+          <span
+            [class.am-invite-seats--full]="seatsFull()"
+            data-invite-seats
+            [attr.data-full]="seatsFull() ? '' : null"
+            >{{ seatsFull() ? ('user.inviteSeatsFull' | translate) : ('user.inviteSeats' | translate: { seats: line }) }}</span
+          >
+        }
       </p>
 
       @if (denied()) {
@@ -218,6 +242,9 @@ import { roleInactiveMessage } from '../../../roles/role-inactive-refusal';
         color: #1f5480;
         text-wrap: pretty;
       }
+      .am-invite-seats--full {
+        color: var(--am-warning-ink);
+      }
       .am-invite-note__link {
         font-weight: 600;
         color: inherit;
@@ -234,6 +261,21 @@ export class InviteUserComponent implements OnInit {
   private readonly orgUnitHeadService = inject(OrgUnitHeadService);
   private readonly translate = inject(TranslateService);
   private readonly languageService = inject(LanguageService);
+  private readonly access = inject(NavigationAccessService);
+  private readonly format = inject(FormatService);
+
+  /** ACC-159 — GET /users/seats, or null: not read, failed, or no limit. */
+  readonly seats = signal<ISeatPositionDto | null>(null);
+  readonly seatsFull = computed(() => {
+    const seats = this.seats();
+    return !!seats && seats.occupied >= seats.maxUsers;
+  });
+  /** "3 of 10 seats in use" — Home's own counted string, so the two agree. */
+  readonly seatsLine = computed(() => {
+    this.languageService.isArabic();
+    const seats = this.seats();
+    return seats ? this.format.count('home.seatsInUse', seats.maxUsers, { occupied: this.format.number(seats.occupied) }) : null;
+  });
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -336,6 +378,9 @@ export class InviteUserComponent implements OnInit {
 
   ngOnInit(): void {
     this.ready.emit(this);
+    // The host rebuilds this form on every opening (TemplateRef), so this is
+    // "when the dialog opens", never at the page's construction.
+    this.loadSeats();
     this.form.valueChanges.subscribe(() => this.dirtyChange.emit(this.form.dirty));
 
     this.orgPositionService.listPositions().subscribe({
@@ -362,6 +407,15 @@ export class InviteUserComponent implements OnInit {
     this.form.controls.positionId.valueChanges.subscribe(() => this.updateManagerIdRequirement());
     this.onOrgUnitChange(this.form.controls.primaryOrgUnitId.value);
     this.updateManagerIdRequirement();
+  }
+
+  /** Only for a users:invite holder; a failed read says nothing about seats. */
+  private loadSeats(): void {
+    if (!this.access.hasPermission('users:invite')) return;
+    this.userService.getSeats().subscribe({
+      next: (seats) => this.seats.set(seats.maxUsers > 0 ? seats : null),
+      error: () => this.seats.set(null),
+    });
   }
 
   private captureLoadError(err: unknown): void {
@@ -453,7 +507,13 @@ export class InviteUserComponent implements OnInit {
             this.denied.set(true);
             return;
           }
-          this.error.set(roleInactiveMessage(err, this.translate) ?? extractErrorMessage(err, this.translate.instant('user.errorInvite')));
+          // ACC-159 — the seat limit and the position rules are said from their
+          // code; the seats line is read again so it shows the organisation full.
+          if (refusalCode(err) === 'SEAT_LIMIT_REACHED') this.loadSeats();
+          this.error.set(
+            invitationRefusalMessage(err, this.translate, value.name ?? '') ??
+              extractErrorMessage(err, this.translate.instant('user.errorInvite')),
+          );
         },
       });
   }

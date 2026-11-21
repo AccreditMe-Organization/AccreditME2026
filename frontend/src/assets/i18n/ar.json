@@ -2304,7 +2304,20 @@
     "revokeInvitationSummary": "تم إلغاء دعوة {{name}}.",
     "deactivateHeader": "إلغاء تنشيط {{name}}؟",
     "reactivateHeader": "إعادة تنشيط {{name}}؟",
-    "revokeInvitationHeader": "إلغاء دعوة {{name}}؟"
+    "revokeInvitationHeader": "إلغاء دعوة {{name}}؟",
+    "resendInvitation": "إعادة إرسال الدعوة",
+    "resendInvitationSummary": "أُعيد إرسال الدعوة إلى {{name}}.",
+    "resendInvitationFailed": "تعذّرت إعادة إرسال الدعوة. حاول مرة أخرى.",
+    "inviteSeats": "{{seats}}.",
+    "inviteSeatsFull": "لا مقاعد شاغرة في المنشأة: يتوفر مقعد بانتهاء صلاحية دعوة أو بإلغاء تفعيل مستخدم.",
+    "invitationRefusal": {
+      "notPending": "لم تعد هناك دعوة معلّقة لـ {{name}}. أعد تحميل الصفحة لمعرفة السبب.",
+      "notPendingStatus": "لم تعد هناك دعوة معلّقة لـ {{name}}. الحالة الآن: {{status}}.",
+      "seatLimit": "جميع المقاعد في خطة المنشأة مستخدمة. يتوفر مقعد عند انتهاء صلاحية دعوة أو إلغاء تفعيل أحد المستخدمين.",
+      "positionInactive": "هذا المنصب غير نشط، فلا يمكن إسناده إلى أحد.",
+      "positionAlreadyHeld": "يشغل هذا المنصب في هذه الوحدة شخص آخر بالفعل.",
+      "unitAlreadyHasHead": "لهذه الوحدة رئيس بالفعل."
+    }
   },
   "platform": {
     "accountOwner": {
@@ -5035,7 +5048,10 @@
       "toBeforeFrom": "تاريخ الانتهاء قبل تاريخ البدء.",
       "clearAll": "مسح الكل",
       "clearDate": "مسح {{label}}"
-    }
+    },
+    "invitation": "الدعوة",
+    "invitationExpires": "تنتهي {{when}}",
+    "invitationExpired": "انتهت {{when}}"
   },
   "taskPage": {
     "kicker": "مهمة",

@@ -2304,7 +2304,20 @@
     "revokeInvitationSummary": "{{name}}'s invitation was revoked.",
     "deactivateHeader": "Deactivate {{name}}?",
     "reactivateHeader": "Reactivate {{name}}?",
-    "revokeInvitationHeader": "Revoke {{name}}'s invitation?"
+    "revokeInvitationHeader": "Revoke {{name}}'s invitation?",
+    "resendInvitation": "Resend invitation",
+    "resendInvitationSummary": "Invitation sent again to {{name}}.",
+    "resendInvitationFailed": "The invitation couldn't be sent again. Try again.",
+    "inviteSeats": "{{seats}}.",
+    "inviteSeatsFull": "No free seats until an invitation expires or someone is deactivated.",
+    "invitationRefusal": {
+      "notPending": "{{name}} no longer has a pending invitation. Reload the page to see why.",
+      "notPendingStatus": "{{name}} no longer has a pending invitation. Status now: {{status}}.",
+      "seatLimit": "Every seat on your organisation's plan is in use. A seat frees up when an invitation expires or someone is deactivated.",
+      "positionInactive": "This position is inactive, so it can't be given to anyone.",
+      "positionAlreadyHeld": "Someone else already holds this position in this unit.",
+      "unitAlreadyHasHead": "This unit already has a head."
+    }
   },
   "platform": {
     "accountOwner": {
@@ -4275,7 +4288,10 @@
       "toBeforeFrom": "The end date is before the start date.",
       "clearAll": "Clear all",
       "clearDate": "Clear {{label}}"
-    }
+    },
+    "invitation": "Invitation",
+    "invitationExpires": "Expires {{when}}",
+    "invitationExpired": "Expired {{when}}"
   },
   "taskPage": {
     "kicker": "Task",
