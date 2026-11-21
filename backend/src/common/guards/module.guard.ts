@@ -102,9 +102,10 @@ export class ModuleGuard implements CanActivate {
       FROM "Organization" o
       LEFT JOIN "PlanModule" pm ON pm."planId" = o."planId"
       WHERE o."id" = ${organizationId}`;
-    if (rows.length === 0) return undefined;
+    const first = rows[0];
+    if (!first) return undefined;
 
-    const { settings, planId } = rows[0];
+    const { settings, planId } = first;
     const enabledModules = (settings as { modules?: Record<string, boolean> } | null)?.modules ?? {};
     // null, not [], with no plan: the resolver's NULL_PLAN_FALLBACK_ACCESS
     // applies only to the no-plan state. A plan with no rows grants nothing.
