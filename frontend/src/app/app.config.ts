@@ -9,6 +9,7 @@ import { ConfirmationService } from 'primeng/api';
 import { firstValueFrom, of, switchMap } from 'rxjs';
 
 import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { moduleRefusalInterceptor } from './core/interceptors/module-refusal.interceptor';
 import { AuthService } from './core/services/auth.service';
 import { NavigationAccessService } from './core/services/navigation-access.service';
 import { AccreditMePreset } from './core/theme/accreditme-preset';
@@ -43,7 +44,7 @@ export const appConfig: ApplicationConfig = {
     // ACC-223 — with the navigation error handler that reloads ONCE when a lazy
     // chunk from before a release is gone (core/navigation/stale-chunk-reload.ts).
     provideRouter(routes, ...APP_ROUTER_FEATURES),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor, moduleRefusalInterceptor])),
     provideTranslateService({ lang: 'en' }),
     provideTranslateHttpLoader({ prefix: './assets/i18n/', suffix: '.json' }),
     // ACC-94 — must follow the HTTP loader: it replaces that loader binding to
