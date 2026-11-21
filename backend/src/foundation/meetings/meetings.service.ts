@@ -16,6 +16,7 @@ import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { peopleDateIn } from '../task/task-sla.service';
 import { insertMeetingsInTx } from './meeting-create';
+import { DEFAULT_MINUTES, MAX_MINUTES } from './meeting-clash.service';
 import { meetingAnswerSummary } from './meeting-people.service';
 import { outsideRescheduledEmail, rescheduledNotice } from './meeting-notices';
 import { emailOutsideGuests, notifyUsers, organisationNames, type OrganisationNames } from './meeting-send';
@@ -37,6 +38,28 @@ const PAGE = 25;
 /** PR 8b (P240) — the whole series view's hard cap: a series' most meetings (weekly for twelve months, CLASH_TIMES_CAP). */
 export const SERIES_LIST_CAP = 53;
 const MEETING_TYPE = 'meeting_type';
+
+/**
+ * P262 — when a meeting ENDS: its start plus its duration, or DEFAULT_MINUTES
+ * (the clash check's) when it has none. The one place the list's end test is
+ * written; meetingEndedSql is its exact complement.
+ */
+const meetingEndSql = (alias: string): Prisma.Sql =>
+  Prisma.sql`(${Prisma.raw(`${alias}."scheduledAt"`)} + make_interval(mins => COALESCE(${Prisma.raw(`${alias}."durationMinutes"`)}, ${DEFAULT_MINUTES})))`;
+
+/**
+ * Not yet ended (Mine, Upcoming). The start bound keeps the scheduledAt index
+ * usable: no meeting lasts longer than MAX_MINUTES, so one that started earlier
+ * than that has ended.
+ */
+export function meetingNotEndedSql(alias: string, now: Date): Prisma.Sql {
+  return Prisma.sql`${Prisma.raw(`${alias}."scheduledAt"`)} > ${new Date(now.getTime() - MAX_MINUTES * 60_000)} AND ${meetingEndSql(alias)} > ${now}`;
+}
+
+/** Ended (Past). The mirror bound: a meeting that has ended has started. */
+export function meetingEndedSql(alias: string, now: Date): Prisma.Sql {
+  return Prisma.sql`${Prisma.raw(`${alias}."scheduledAt"`)} <= ${now} AND ${meetingEndSql(alias)} <= ${now}`;
+}
 
 /** The fields an edit may change, in the order the audit names them. */
 const EDITABLE = ['title', 'typeValueId', 'durationMinutes', 'location', 'meetingUrl', 'unitQuorum'] as const;
@@ -357,9 +380,14 @@ export class MeetingsService {
    * Every view keeps the visibility rule in its WHERE, so a listed row always
    * opens: an organiser who has since left the unit or committee no longer
    * lists the meeting they could not open.
-   *   upcoming  every meeting the viewer may see that has not started; soonest first
+   *   upcoming  every meeting the viewer may see that has not ended; soonest first
    *             (the committee and unit panels, which list by owner)
-   *   past      every meeting the viewer may see that has started; latest first
+   *   past      every meeting the viewer may see that has ended; latest first
+   *
+   * P262 — Mine and Upcoming hold a meeting until it ENDS, not until it starts,
+   * so the person about to record attendance still finds it (meetingNotEndedSql).
+   * What keys off the START stays there: attendance opens, the invitation answer
+   * closes, the series' held count, reschedule.
    *   minutes   meetings whose minutes the viewer records (meeting-authority's RECORDERS, as SQL)
    *   all       every meeting: meetings:view only
    *   subunits  meetings of the units the viewer heads or covers, and below, that no other clause gives them
@@ -380,15 +408,15 @@ export class MeetingsService {
     switch (view) {
       case 'mine':
         // Invited or organiser (P189): the MEMBER clause without SCHEDULER.
-        where = Prisma.sql`${visible} AND (${meetingInviteeSql('m', viewer.id)} OR m."organizerId" = ${viewer.id}) AND m."scheduledAt" >= ${now}`;
+        where = Prisma.sql`${visible} AND (${meetingInviteeSql('m', viewer.id)} OR m."organizerId" = ${viewer.id}) AND ${meetingNotEndedSql('m', now)}`;
         order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
         break;
       case 'upcoming':
-        where = Prisma.sql`${visible} AND m."scheduledAt" >= ${now}`;
+        where = Prisma.sql`${visible} AND ${meetingNotEndedSql('m', now)}`;
         order = Prisma.sql`m."scheduledAt" ASC, m.id ASC`;
         break;
       case 'past':
-        where = Prisma.sql`${visible} AND m."scheduledAt" < ${now}`;
+        where = Prisma.sql`${visible} AND ${meetingEndedSql('m', now)}`;
         order = Prisma.sql`m."scheduledAt" DESC, m.id DESC`;
         break;
       case 'minutes':
